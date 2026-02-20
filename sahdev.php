@@ -6,7 +6,7 @@
  * @package    Sahdev AI
  * @author     WHMCS Addon Developer
  * @copyright  Copyright (c) WHMCS Addon Developer 2026
- * @version    1.0.0
+ * @version    2.0.0
  */
 
 if (!defined("WHMCS")) {
@@ -32,7 +32,7 @@ function sahdev_config()
         // Default language
         'language' => 'english',
         // Version number
-        'version' => '1.0.0',
+        'version' => '2.0.0',
         'fields' => [
             // Settings are handled in a custom admin UI built in sahdev_output,
             // but we can define standard WHMCS module settings here if we want them rendered automatically.
@@ -200,9 +200,9 @@ function sahdev_output($vars)
         // We will delegate this to our controller logic, but for simplicity we can include the file
         // Or inline the controller instantiation.
         require_once __DIR__ . '/controllers/AdminController.php';
-        
+
         $controller = new \Sahdev\Controllers\AdminController($vars);
-        
+
         if (method_exists($controller, $action)) {
             echo $controller->$action();
         } else {

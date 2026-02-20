@@ -17,14 +17,8 @@ function sahdev_inject_ticket_panel($vars)
     // Generate CSRF form token securely
     $csrfToken = generate_token("form");
 
-    // We get module URL for AJAX securely
-    $systemUrl = Capsule::table('tblconfiguration')->where('setting', 'SystemURL')->value('value');
-    if (empty($systemUrl)) {
-        // Fallback to relative if sysurl undefined (rare but safe)
-        $systemUrl = '../';
-    }
-
-    $ajaxUrl = rtrim($systemUrl, '/') . '/modules/addons/sahdev/ajax.php';
+    // We use a relative path for AJAX to avoid CORS problems if SystemURL has an HTTP/HTTPS mismatch
+    $ajaxUrl = '../modules/addons/sahdev/ajax.php';
 
     // Output HTML Panel (collapsible using WHMCS bootstrap structure)
     // Needs to append into the "viewticket" page typically above replies or side sidebar
@@ -228,10 +222,18 @@ function sahdev_inject_ticket_panel($vars)
                 error: function(xhr, status, error) {
                     $('#sahdev-loading').hide();
                     $('#btn-sahdev-analyze').prop('disabled', false);
-                    var msg = 'AJAX Error: ' + error;
+                    var msg = 'AJAX Error: ' + error + ' (Status: ' + xhr.status + ')<br><br>';
+                    
                     if(xhr.responseJSON && xhr.responseJSON.message) {
-                        msg = xhr.responseJSON.message;
+                        msg += xhr.responseJSON.message;
+                    } else if (xhr.responseText) {
+                        // Dump raw response for debugging purposes
+                        msg += '<strong>Raw Server Response:</strong><br><textarea class="form-control" rows="5" readonly>' + xhr.responseText + '</textarea>';
+                        console.error('Sahdev Raw Response:', xhr.responseText);
+                    } else {
+                        msg += 'No response text available. Check browser console or network tab.';
                     }
+                    
                     $('#sahdev-error').html('<i class="fas fa-exclamation-triangle"></i> ' + msg).show();
                 }
             });

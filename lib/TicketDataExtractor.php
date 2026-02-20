@@ -172,7 +172,14 @@ class TicketDataExtractor
 
         $text = "";
         $files = explode('|', $attachmentString);
-        $whmcsAttachmentsDir = \DI::make('config')->get('attachments_dir');
+
+        // Grab standard WHMCS attachments directory
+        global $attachments_dir;
+        $whmcsAttachmentsDir = $attachments_dir ?? '';
+
+        if (empty($whmcsAttachmentsDir)) {
+            $whmcsAttachmentsDir = \WHMCS\Database\Capsule::table('tblconfiguration')->where('setting', 'Attachments_Dir')->value('value');
+        }
 
         foreach ($files as $file) {
             if (empty($file))

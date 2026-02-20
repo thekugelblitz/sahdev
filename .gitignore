@@ -1,0 +1,13 @@
+# Vendor dependencies
+vendor/
+
+# WHMCS Specific
+# Include if you are symlinking to a local WHMCS install
+*.log
+ajax_debug.log
+
+# IDE and OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
