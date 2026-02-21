@@ -42,8 +42,11 @@ class AIController
 
     private function loadSettings()
     {
-        // Auto-migration check
-        if (!Capsule::schema()->hasTable('tblsahdev_providers') || !Capsule::schema()->hasColumn('tblsahdev_settings', 'primary_provider_id')) {
+        // Auto-migration check bypassing WHMCS schema cache
+        try {
+            Capsule::table('tblsahdev_providers')->first();
+            Capsule::table('tblsahdev_settings')->select('primary_provider_id')->first();
+        } catch (\Exception $e) {
             require_once dirname(__DIR__) . '/sahdev.php';
             if (function_exists('sahdev_activate')) {
                 sahdev_activate();

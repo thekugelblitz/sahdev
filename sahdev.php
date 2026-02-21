@@ -244,7 +244,10 @@ function sahdev_output($vars)
     // Basic routing
     try {
         // Auto-migration for overwrites without reactivation
-        if (!\WHMCS\Database\Capsule::schema()->hasTable('tblsahdev_providers') || !\WHMCS\Database\Capsule::schema()->hasColumn('tblsahdev_settings', 'primary_provider_id')) {
+        try {
+            \WHMCS\Database\Capsule::table('tblsahdev_providers')->first();
+            \WHMCS\Database\Capsule::table('tblsahdev_settings')->select('primary_provider_id')->first();
+        } catch (\Exception $e) {
             sahdev_activate();
         }
 
