@@ -243,8 +243,11 @@ function sahdev_output($vars)
 
     // Basic routing
     try {
-        // We will delegate this to our controller logic, but for simplicity we can include the file
-        // Or inline the controller instantiation.
+        // Auto-migration for overwrites without reactivation
+        if (!\WHMCS\Database\Capsule::schema()->hasTable('tblsahdev_providers') || !\WHMCS\Database\Capsule::schema()->hasColumn('tblsahdev_settings', 'primary_provider_id')) {
+            sahdev_activate();
+        }
+
         require_once __DIR__ . '/controllers/AdminController.php';
 
         $controller = new \Sahdev\Controllers\AdminController($vars);

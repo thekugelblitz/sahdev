@@ -42,6 +42,14 @@ class AIController
 
     private function loadSettings()
     {
+        // Auto-migration check
+        if (!Capsule::schema()->hasTable('tblsahdev_providers') || !Capsule::schema()->hasColumn('tblsahdev_settings', 'primary_provider_id')) {
+            require_once dirname(__DIR__) . '/sahdev.php';
+            if (function_exists('sahdev_activate')) {
+                sahdev_activate();
+            }
+        }
+
         $this->settings = Capsule::table('tblsahdev_settings')->first();
         if (!$this->settings) {
             throw new \Exception("Sahdev settings not configured. Please visit Addons > Sahdev.");
