@@ -125,6 +125,22 @@ class LMStudioAIProvider implements AIProviderInterface
     /**
      * @inheritDoc
      */
+    public function getProviderType(): string
+    {
+        return 'lmstudio';
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function getApiUrl(): string
+    {
+        return $this->apiUrl;
+    }
+
+    /**
+     * @inheritDoc
+     */
     public function getAvailableModels(string $apiKey): array
     {
         // For LM Studio, the models endpoint is typically /v1/models

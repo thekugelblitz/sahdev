@@ -35,6 +35,20 @@ interface AIProviderInterface
     public function getLastTokenDetails(): array;
 
     /**
+     * Get the provider type string (google or lmstudio).
+     * 
+     * @return string
+     */
+    public function getProviderType(): string;
+
+    /**
+     * Get the API URL endpoint.
+     * 
+     * @return string
+     */
+    public function getApiUrl(): string;
+
+    /**
      * Refetch models dynamically
      *
      * @param string $apiKey Unencrypted API key to fetch available models

@@ -163,8 +163,8 @@ class AIController
         }
 
         $executionTimeMs = round((microtime(true) - $startTime) * 1000);
-        $tokenUsage = $this->provider->getLastTokenUsage();
-        $tokenDetails = $this->provider->getLastTokenDetails();
+        $tokenUsage = $activeProvider->getLastTokenUsage();
+        $tokenDetails = $activeProvider->getLastTokenDetails();
 
         // 6. Cache the successful result
         Capsule::table('tblsahdev_cache')->insert([
@@ -222,7 +222,7 @@ class AIController
         $this->checkRateLimit();
 
         // 2. Extract Data
-        $extractor = new TicketDataExtractor($this->ticketId);
+        $extractor = new TicketDataExtractor($this->ticketId, $this->adminId);
         $context = $extractor->getContext();
 
         if (!$tone) {

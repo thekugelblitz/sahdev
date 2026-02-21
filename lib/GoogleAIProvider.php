@@ -119,6 +119,22 @@ class GoogleAIProvider implements AIProviderInterface
     /**
      * @inheritDoc
      */
+    public function getProviderType(): string
+    {
+        return 'google';
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function getApiUrl(): string
+    {
+        return "https://generativelanguage.googleapis.com";
+    }
+
+    /**
+     * @inheritDoc
+     */
     public function getAvailableModels(string $apiKey): array
     {
         $endpoint = "https://generativelanguage.googleapis.com/v1beta/models?key=" . $apiKey;
