@@ -237,7 +237,13 @@ HTML;
                 var rawContent = data.choices && data.choices[0] && data.choices[0].message ? data.choices[0].message.content : "";
                 
                 var cleanContent = rawContent.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
-                cleanContent = cleanContent.replace(/```json\s*/gi, '').replace(/```\s*$/gi, '').trim();
+                
+                // Sometimes models hallucinate markdown formatting or conversational padding
+                var firstBrace = cleanContent.indexOf('{');
+                var lastBrace = cleanContent.lastIndexOf('}');
+                if (firstBrace !== -1 && lastBrace !== -1) {
+                    cleanContent = cleanContent.substring(firstBrace, lastBrace + 1);
+                }
                 
                 var parsedResponse;
                 try {
