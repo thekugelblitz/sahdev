@@ -49,7 +49,7 @@ class AIController
         }
     }
 
-    public function getAnalysis(string $tone = null, string $customInstruction = null): array
+    public function getAnalysis(string $tone = null, string $customInstruction = null, bool $forceRegenerate = false): array
     {
         // 1. Rate Limit Check
         $this->checkRateLimit();
@@ -74,17 +74,19 @@ class AIController
         $hashSignature = hash('sha256', $hashData);
 
         // 4. Check Cache
-        $cached = Capsule::table('tblsahdev_cache')
-            ->where('ticket_id', $this->ticketId)
-            ->where('hash_signature', $hashSignature)
-            ->first();
+        if (!$forceRegenerate) {
+            $cached = Capsule::table('tblsahdev_cache')
+                ->where('ticket_id', $this->ticketId)
+                ->where('hash_signature', $hashSignature)
+                ->first();
 
-        if ($cached) {
-            return [
-                'status' => 'success',
-                'data' => json_decode($cached->ai_response, true),
-                'cached' => true
-            ];
+            if ($cached) {
+                return [
+                    'status' => 'success',
+                    'data' => json_decode($cached->ai_response, true),
+                    'cached' => true
+                ];
+            }
         }
 
         // 5. Call AI Provider
@@ -153,7 +155,7 @@ class AIController
         );
     }
 
-    public function getPayload(string $tone = null, string $customInstruction = null): array
+    public function getPayload(string $tone = null, string $customInstruction = null, bool $forceRegenerate = false): array
     {
         // 1. Rate Limit Check
         $this->checkRateLimit();
@@ -178,17 +180,19 @@ class AIController
         $hashSignature = hash('sha256', $hashData);
 
         // 4. Check Cache
-        $cached = Capsule::table('tblsahdev_cache')
-            ->where('ticket_id', $this->ticketId)
-            ->where('hash_signature', $hashSignature)
-            ->first();
+        if (!$forceRegenerate) {
+            $cached = Capsule::table('tblsahdev_cache')
+                ->where('ticket_id', $this->ticketId)
+                ->where('hash_signature', $hashSignature)
+                ->first();
 
-        if ($cached) {
-            return [
-                'status' => 'success',
-                'cached' => true,
-                'data' => json_decode($cached->ai_response, true)
-            ];
+            if ($cached) {
+                return [
+                    'status' => 'success',
+                    'cached' => true,
+                    'data' => json_decode($cached->ai_response, true)
+                ];
+            }
         }
 
         // Return the payload data needed for the browser to make the request

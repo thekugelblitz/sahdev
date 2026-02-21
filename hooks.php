@@ -69,6 +69,9 @@ function sahdev_inject_ticket_panel($vars)
                 <button type="button" id="btn-sahdev-analyze" class="btn btn-primary" style="font-weight: 600;">
                     <i class="fas fa-magic"></i> Analyze & Generate Reply
                 </button>
+                <button type="button" id="btn-sahdev-regenerate" class="btn btn-warning" style="font-weight: 600; display: none; margin-left: 5px;" data-force="true">
+                    <i class="fas fa-sync"></i> Regenerate Reply
+                </button>
             </div>
         </form>
 
@@ -177,20 +180,23 @@ HTML;
     }
 
     $(document).ready(function() {
-        $('#btn-sahdev-analyze').on('click', function(e) {
+        $('#btn-sahdev-analyze, #btn-sahdev-regenerate').on('click', function(e) {
             e.preventDefault();
+            
+            var isRegenerate = $(this).data('force') === true;
             
             $('#sahdev-results').hide();
             $('#sahdev-error').hide();
             $('#sahdev-loading').show();
             var $btn = $(this);
-            $btn.prop('disabled', true);
+            $('#btn-sahdev-analyze, #btn-sahdev-regenerate').prop('disabled', true);
             
             var baseReqData = {
                 ticket_id: $('#sahdev_ticket_id').val(),
                 tone: $('#sahdev_tone').val(),
                 instruction: $('#sahdev_instruction').val(),
-                token: $('input[name="token"]').val()
+                token: $('input[name="token"]').val(),
+                force_regenerate: isRegenerate ? 'true' : 'false'
             };
 
             var payloadReqData = Object.assign({ action: 'get_payload' }, baseReqData);
@@ -214,12 +220,12 @@ HTML;
                         }
                     } else {
                         showSahdevError(res.message || 'Failed to initialize AI request.');
-                        $btn.prop('disabled', false);
+                        $('#btn-sahdev-analyze, #btn-sahdev-regenerate').prop('disabled', false);
                     }
                 },
                 error: function(xhr, status, error) {
                     handleAjaxError(xhr, error);
-                    $btn.prop('disabled', false);
+                    $('#btn-sahdev-analyze, #btn-sahdev-regenerate').prop('disabled', false);
                 }
             });
         });
@@ -402,6 +408,7 @@ HTML;
             $('#sahdev-token-usage').text(stats);
 
             $('#sahdev-results').fadeIn();
+            $('#btn-sahdev-regenerate').show();
         }
 
         function showSahdevError(msg) {

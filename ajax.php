@@ -44,11 +44,12 @@ try {
     require_once __DIR__ . '/lib/AIController.php';
 
     $action = $_POST['action'] ?? '';
+    $forceRegenerate = !empty($_POST['force_regenerate']) && $_POST['force_regenerate'] === 'true';
 
     $controller = new \Sahdev\Lib\AIController($ticketId, $adminId);
 
     if ($action === 'get_payload') {
-        $response = $controller->getPayload($tone, $instruction);
+        $response = $controller->getPayload($tone, $instruction, $forceRegenerate);
     } elseif ($action === 'save_response') {
         $hashSignature = $_POST['hash_signature'] ?? '';
         $aiResponseRaw = $_POST['ai_response'] ?? '{}';
