@@ -58,6 +58,14 @@ try {
     $action = $_POST['action'] ?? '';
     $forceRegenerate = !empty($_POST['force_regenerate']) && $_POST['force_regenerate'] === 'true';
 
+    // Auto-migration for overwrites without reactivation, specifically for AJAX calls
+    if (!\WHMCS\Database\Capsule::schema()->hasTable('tblsahdev_providers') || !\WHMCS\Database\Capsule::schema()->hasColumn('tblsahdev_settings', 'primary_provider_id')) {
+        require_once __DIR__ . '/sahdev.php';
+        if (function_exists('sahdev_activate')) {
+            sahdev_activate();
+        }
+    }
+
     $controller = new \Sahdev\Lib\AIController($ticketId, $adminId);
 
     if ($action === 'get_payload') {
