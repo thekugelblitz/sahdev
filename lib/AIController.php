@@ -12,11 +12,32 @@ class AIController
     private $provider;
     private $settings;
 
+    private $fallbackProvider = null;
+
     public function __construct(int $ticketId, int $adminId)
     {
         $this->ticketId = $ticketId;
         $this->adminId = $adminId;
         $this->loadSettings();
+    }
+
+    private function initializeProvider($providerData)
+    {
+        if (!$providerData)
+            return null;
+
+        if ($providerData->provider_type === 'google') {
+            $apiKey = !empty($providerData->api_key) ? decrypt($providerData->api_key) : '';
+            if (empty($apiKey))
+                throw new \Exception("Google AI Provider '{$providerData->name}' lacks an API Key.");
+            return new GoogleAIProvider($apiKey);
+        } elseif ($providerData->provider_type === 'lmstudio') {
+            if (empty($providerData->api_url))
+                throw new \Exception("Local AI Provider '{$providerData->name}' lacks an API URL.");
+            require_once __DIR__ . '/LMStudioAIProvider.php';
+            return new LMStudioAIProvider($providerData->api_url);
+        }
+        throw new \Exception("Unsupported AI Provider Type: " . $providerData->provider_type);
     }
 
     private function loadSettings()
@@ -29,23 +50,24 @@ class AIController
         // Convert to array for easier passing
         $this->settings = (array) $this->settings;
 
-        if (empty($this->settings['api_key'])) {
-            throw new \Exception("AI Provider API Key is missing. Configure in Addons > Sahdev.");
-        }
+        // Load Primary Provider
+        $primaryId = $this->settings['primary_provider_id'] ?? 1;
+        $primaryData = Capsule::table('tblsahdev_providers')->where('id', $primaryId)->first();
+        if (!$primaryData)
+            throw new \Exception("Primary AI Provider not found. Please check Sahdev settings.");
 
-        $apiKey = decrypt($this->settings['api_key']);
+        $this->settings['model_name'] = $primaryData->model_name; // inject for hash logic
+        $this->provider = $this->initializeProvider($primaryData);
 
-        // Initialize provider
-        if ($this->settings['ai_provider'] === 'google') {
-            $this->provider = new GoogleAIProvider($apiKey);
-        } elseif ($this->settings['ai_provider'] === 'lmstudio') {
-            if (empty($this->settings['api_url'])) {
-                throw new \Exception("LM Studio API URL is missing. Configure in Addons > Sahdev.");
+        // Load Fallback Provider (Optional)
+        $fallbackId = $this->settings['fallback_provider_id'] ?? 0;
+        if ($fallbackId > 0 && $fallbackId !== $primaryId) {
+            $fallbackData = Capsule::table('tblsahdev_providers')->where('id', $fallbackId)->first();
+            if ($fallbackData) {
+                // We keep the settings instance mostly the same but initialize the second provider
+                $this->fallbackProvider = $this->initializeProvider($fallbackData);
+                $this->settings['fallback_model_name'] = $fallbackData->model_name;
             }
-            require_once __DIR__ . '/LMStudioAIProvider.php';
-            $this->provider = new LMStudioAIProvider($this->settings['api_url']);
-        } else {
-            throw new \Exception("Unsupported AI Provider: " . $this->settings['ai_provider']);
         }
     }
 
@@ -89,18 +111,44 @@ class AIController
             }
         }
 
-        // 5. Call AI Provider
+        // 5. Call AI Provider (Primary with Fallback logic)
         $startTime = microtime(true);
+        $usedFallback = false;
+
         try {
+            // Attempt Primary Note: The provider utilizes $this->settings['model_name']
             $response = $this->provider->generateResponse(
                 $context,
                 $this->settings,
                 $tone,
                 $customInstruction
             );
+            $activeProvider = $this->provider;
         } catch (\Exception $e) {
-            $this->logRequest($context, null, 0, microtime(true) - $startTime, $e->getMessage());
-            throw $e;
+            $this->logRequest($context, null, 0, microtime(true) - $startTime, "Primary Error: " . $e->getMessage());
+
+            if ($this->fallbackProvider) {
+                // Attempt Fallback
+                $usedFallback = true;
+                $fallbackStart = microtime(true);
+                // Temporarily swap model_name to the fallback's model string if the fallback provider configures it like that
+                $this->settings['model_name'] = $this->settings['fallback_model_name'];
+
+                try {
+                    $response = $this->fallbackProvider->generateResponse(
+                        $context,
+                        $this->settings,
+                        $tone,
+                        $customInstruction
+                    );
+                    $activeProvider = $this->fallbackProvider;
+                } catch (\Exception $fallbackErr) {
+                    $this->logRequest($context, null, 0, microtime(true) - $fallbackStart, "Fallback Error: " . $fallbackErr->getMessage());
+                    throw new \Exception("Both Primary and Fallback AI Providers failed. Latest Error: " . $fallbackErr->getMessage());
+                }
+            } else {
+                throw $e;
+            }
         }
 
         $executionTimeMs = round((microtime(true) - $startTime) * 1000);
@@ -224,15 +272,14 @@ class AIController
             'status' => 'success',
             'cached' => false,
             'hash_signature' => $hashSignature,
-            'provider' => $this->settings['ai_provider'],
+            'provider' => $this->provider instanceof LMStudioAIProvider ? 'lmstudio' : 'google',
             'api_url' => $this->settings['api_url'] ?? '',
             'model' => $this->settings['model_name'],
             'temperature' => (float) $this->settings['temperature'],
             'max_tokens' => (int) $this->settings['max_tokens'],
             'system_prompt' => $systemPrompt,
             'context' => $context,
-            // Pre-built prompt logic typically sits in the Provider, but we can expose it if needed
-            // For now, let's just send the raw context so the frontend can build it, or we add a helper
+            'has_fallback' => $this->fallbackProvider !== null,
         ];
     }
 

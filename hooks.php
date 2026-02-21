@@ -342,10 +342,16 @@ HTML;
             } catch (err) {
                 var isFailedToFetch = err.message.toLowerCase().indexOf('failed to fetch') !== -1 || err.message.toLowerCase().indexOf('networkerror') !== -1;
                 var errMsg = isFailedToFetch ? "Could not connect to LM Studio at " + config.api_url + ". Ensure LM Studio is running, Local Server is started, and CORS is enabled." : err.message;
-                showSahdevError("Local AI Error: " + errMsg);
-                $btn.prop('disabled', false);
+                
+                if (config.has_fallback) {
+                    $('#sahdev-loading p').text("Local AI failed. Attempting Fallback Provider...");
+                    baseReqData.force_fallback = 'true';
+                    executeBackendGoogleCall(baseReqData, $btn);
+                } else {
+                    showSahdevError("Local AI Error: " + errMsg);
+                    $btn.prop('disabled', false);
+                }
             }
-        }
 
         function saveResponseToBackend(hashSignature, aiResponseObj, tokensUsed, execTime, baseReqData, $btn, tokenDetails) {
             // Encode as base64 to avoid backend framework sanitization destroying newlines and quotes

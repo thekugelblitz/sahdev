@@ -65,9 +65,8 @@ function sahdev_activate()
                 'tblsahdev_settings',
                 function ($table) {
                     $table->increments('id');
-                    $table->string('ai_provider')->default('google');
-                    $table->text('api_key')->nullable()->comment('Encrypted API Key');
-                    $table->string('model_name')->default('models/gemini-1.5-pro');
+                    $table->integer('primary_provider_id')->nullable();
+                    $table->integer('fallback_provider_id')->nullable();
                     $table->decimal('temperature', 3, 2)->default(0.70);
                     $table->integer('max_tokens')->default(2048);
                     $table->string('tone_default')->default('Professional');
@@ -78,11 +77,58 @@ function sahdev_activate()
 
             // Insert default setting record
             Capsule::table('tblsahdev_settings')->insert([
-                'ai_provider' => 'google',
+                'primary_provider_id' => 1,
                 'temperature' => 0.70,
                 'max_tokens' => 2048,
                 'tone_default' => 'Professional',
                 'system_prompt' => "You are Sahdev, an expert web hosting support engineer. You provide highly accurate and helpful solutions.\nAlways respond strictly with the JSON format requested.",
+                'created_at' => \Carbon\Carbon::now(),
+                'updated_at' => \Carbon\Carbon::now(),
+            ]);
+        } else {
+            // Apply migration if activating over an older version
+            if (!Capsule::schema()->hasColumn('tblsahdev_settings', 'primary_provider_id')) {
+                Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                    $table->integer('primary_provider_id')->nullable()->after('id');
+                    $table->integer('fallback_provider_id')->nullable()->after('primary_provider_id');
+                });
+            }
+        }
+
+        // Create tblsahdev_providers
+        if (!Capsule::schema()->hasTable('tblsahdev_providers')) {
+            Capsule::schema()->create(
+                'tblsahdev_providers',
+                function ($table) {
+                    $table->increments('id');
+                    $table->string('name');
+                    $table->string('provider_type')->default('lmstudio'); // google or lmstudio
+                    $table->text('api_key')->nullable()->comment('Encrypted API Key');
+                    $table->string('api_url')->nullable();
+                    $table->string('model_name')->nullable();
+                    $table->boolean('is_active')->default(true);
+                    $table->timestamps();
+                }
+            );
+
+            // Insert default Google AI Provider
+            Capsule::table('tblsahdev_providers')->insert([
+                'name' => 'Default Google Gemini',
+                'provider_type' => 'google',
+                'api_key' => '', // Needs to be set via UI
+                'api_url' => '',
+                'model_name' => 'models/gemini-1.5-pro',
+                'created_at' => \Carbon\Carbon::now(),
+                'updated_at' => \Carbon\Carbon::now(),
+            ]);
+
+            // Insert default LM Studio Provider
+            Capsule::table('tblsahdev_providers')->insert([
+                'name' => 'Default Local AI',
+                'provider_type' => 'lmstudio',
+                'api_key' => '',
+                'api_url' => 'http://localhost:1234/v1/chat/completions',
+                'model_name' => 'local-model',
                 'created_at' => \Carbon\Carbon::now(),
                 'updated_at' => \Carbon\Carbon::now(),
             ]);
