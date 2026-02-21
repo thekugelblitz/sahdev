@@ -82,7 +82,7 @@ class AIController
         }
     }
 
-    public function getAnalysis(string $tone = null, string $customInstruction = null, bool $forceRegenerate = false): array
+    public function getAnalysis(string $tone = null, string $customInstruction = null, bool $forceRegenerate = false, bool $forceFallback = false): array
     {
         // 1. Rate Limit Check
         $this->checkRateLimit();
@@ -127,6 +127,9 @@ class AIController
         $usedFallback = false;
 
         try {
+            if ($forceFallback && $this->fallbackProvider) {
+                throw new \Exception("Manual fallback requested via frontend.");
+            }
             // Attempt Primary Note: The provider utilizes $this->settings['model_name']
             $response = $this->provider->generateResponse(
                 $context,

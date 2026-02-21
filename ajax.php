@@ -57,6 +57,7 @@ try {
 
     $action = $_POST['action'] ?? '';
     $forceRegenerate = !empty($_POST['force_regenerate']) && $_POST['force_regenerate'] === 'true';
+    $forceFallback = !empty($_POST['force_fallback']) && $_POST['force_fallback'] === 'true';
 
     // Auto-migration for overwrites without reactivation, specifically for AJAX calls
     try {

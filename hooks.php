@@ -352,6 +352,7 @@ HTML;
                     $btn.prop('disabled', false);
                 }
             }
+        }
 
         function saveResponseToBackend(hashSignature, aiResponseObj, tokensUsed, execTime, baseReqData, $btn, tokenDetails) {
             // Encode as base64 to avoid backend framework sanitization destroying newlines and quotes
