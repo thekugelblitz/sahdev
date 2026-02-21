@@ -51,14 +51,23 @@ try {
         $response = $controller->getPayload($tone, $instruction);
     } elseif ($action === 'save_response') {
         $hashSignature = $_POST['hash_signature'] ?? '';
-        $aiResponseStr = $_POST['ai_response'] ?? '{}';
+        $aiResponseRaw = $_POST['ai_response'] ?? '{}';
         $tokenUsage = (int) ($_POST['token_usage'] ?? 0);
         $execTime = (int) ($_POST['exec_time'] ?? 0);
+        
+        $aiResponseStr = trim($aiResponseRaw);
+        // Decode base64 if it's not starting with a JSON brace
+        if (!empty($aiResponseStr) && !str_starts_with($aiResponseStr, '{') && !str_starts_with($aiResponseStr, '[')) {
+            $decoded = base64_decode($aiResponseStr);
+            if ($decoded !== false) {
+                $aiResponseStr = $decoded;
+            }
+        }
         
         $aiResponse = json_decode($aiResponseStr, true);
         if (!$aiResponse) {
             $err = json_last_error_msg();
-            throw new \Exception("Invalid JSON response payload provided. Error: {$err} | Raw: " . substr($aiResponseStr, 0, 200));
+            throw new \Exception("Invalid JSON response payload provided. Error: {$err} | Raw: " . substr($aiResponseStr, 0, 800));
         }
         
         $response = $controller->saveResponse($hashSignature, $aiResponse, $tokenUsage, $execTime);

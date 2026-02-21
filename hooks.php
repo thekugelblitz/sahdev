@@ -266,10 +266,13 @@ HTML;
         }
 
         function saveResponseToBackend(hashSignature, aiResponseObj, tokensUsed, execTime, baseReqData, $btn) {
+            // Encode as base64 to avoid backend framework sanitization destroying newlines and quotes
+            var base64Json = btoa(unescape(encodeURIComponent(JSON.stringify(aiResponseObj))));
+
             var reqData = Object.assign({ 
                 action: 'save_response',
                 hash_signature: hashSignature,
-                ai_response: JSON.stringify(aiResponseObj),
+                ai_response: base64Json,
                 token_usage: tokensUsed,
                 exec_time: execTime
             }, baseReqData);
