@@ -329,13 +329,15 @@ HTML;
                 }
 
                 var tokenDetails = { input: 0, output: 0 };
+                var totalTokens = 0;
                 if (data.usage) {
                     tokenDetails.input = data.usage.prompt_tokens || 0;
                     tokenDetails.output = data.usage.completion_tokens || 0;
+                    totalTokens = data.usage.total_tokens || (tokenDetails.input + tokenDetails.output);
                 }
                 var execTimeMs = Math.round(performance.now() - startTime);
 
-                saveResponseToBackend(config.hash_signature, parsedResponse, tokensUsed, execTimeMs, baseReqData, $btn, tokenDetails);
+                saveResponseToBackend(config.hash_signature, parsedResponse, totalTokens, execTimeMs, baseReqData, $btn, tokenDetails);
 
             } catch (err) {
                 var isFailedToFetch = err.message.toLowerCase().indexOf('failed to fetch') !== -1 || err.message.toLowerCase().indexOf('networkerror') !== -1;
