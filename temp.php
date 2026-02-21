@@ -180,9 +180,8 @@ HTML;
     }
 
     $(document).ready(function() {
-        $(document).on('click', '#btn-sahdev-analyze, #btn-sahdev-regenerate', function(e) {
+        $('#btn-sahdev-analyze, #btn-sahdev-regenerate').on('click', function(e) {
             e.preventDefault();
-            console.log("Sahdev AI Button Clicked", $(this).attr('id'));
             
             var isRegenerate = $(this).data('force') === true;
             
