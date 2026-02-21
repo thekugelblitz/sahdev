@@ -20,12 +20,20 @@ class AdminController
      */
     public function settings()
     {
+        // Dynamically add api_url field if it does not exist
+        if (!Capsule::schema()->hasColumn('tblsahdev_settings', 'api_url')) {
+            Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                $table->string('api_url')->nullable()->after('api_key');
+            });
+        }
+
         // Handle form submission
         if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_settings'])) {
             check_token("WHMCS.admin.default"); // Verify CSRF
 
             $aiProvider = $_POST['ai_provider'] ?? 'google';
             $apiKey = $_POST['api_key'] ?? '';
+            $apiUrl = $_POST['api_url'] ?? '';
             $modelName = $_POST['model_name'] ?? 'models/gemini-1.5-pro';
             $temperature = (float) ($_POST['temperature'] ?? 0.70);
             $maxTokens = (int) ($_POST['max_tokens'] ?? 2048);
@@ -46,6 +54,7 @@ class AdminController
                     [
                         'ai_provider' => $aiProvider,
                         'api_key' => $encryptedApiKey,
+                        'api_url' => $apiUrl,
                         'model_name' => $modelName,
                         'temperature' => $temperature,
                         'max_tokens' => $maxTokens,
@@ -60,6 +69,7 @@ class AdminController
                     ['id' => 1],
                     [
                         'ai_provider' => $aiProvider,
+                        'api_url' => $apiUrl,
                         'model_name' => $modelName,
                         'temperature' => $temperature,
                         'max_tokens' => $maxTokens,
@@ -79,12 +89,15 @@ class AdminController
             // Fallback object to avoid errors if the table wasn't seeded correctly
             $settings = (object) [
                 'ai_provider' => 'google',
+                'api_url' => '',
                 'model_name' => 'models/gemini-1.5-pro',
                 'temperature' => 0.70,
                 'max_tokens' => 2048,
                 'tone_default' => 'Professional',
                 'system_prompt' => '',
             ];
+        } else if (!isset($settings->api_url)) {
+            $settings->api_url = '';
         }
 
         // Output HTML using heredoc, embedding variables securely
@@ -116,22 +129,29 @@ class AdminController
                     <select name="ai_provider" class="form-control" style="width: 100%; max-width: 300px;">
                         <option value="google" <?php echo ($settings->ai_provider === 'google') ? 'selected' : ''; ?>>Google AI
                             (Gemini)</option>
-                        <!-- Add other providers here in the future -->
+                        <option value="lmstudio" <?php echo ($settings->ai_provider === 'lmstudio') ? 'selected' : ''; ?>>LM Studio / Local AI</option>
                     </select>
                 </div>
 
                 <div class="form-group" style="margin-bottom: 15px;">
-                    <label style="font-weight: 600; display: block; margin-bottom: 5px;">API Key</label>
+                    <label style="font-weight: 600; display: block; margin-bottom: 5px;">API Key (Google AI / OpenAI)</label>
                     <input type="password" name="api_key" class="form-control"
                         placeholder="Enter new API key to update. Leave blank to keep existing." style="width: 100%;">
                     <small class="text-muted">Stored encrypted using WHMCS core helpers.</small>
                 </div>
 
                 <div class="form-group" style="margin-bottom: 15px;">
+                    <label style="font-weight: 600; display: block; margin-bottom: 5px;">API URL (LM Studio/Local API Only)</label>
+                    <input type="text" name="api_url" class="form-control"
+                        value="<?php echo htmlspecialchars($settings->api_url); ?>" placeholder="e.g. http://192.168.1.67:1234/v1/chat/completions" style="width: 100%;">
+                    <small class="text-muted">Full endpoint URL including /v1/chat/completions or /api/v1/chat</small>
+                </div>
+
+                <div class="form-group" style="margin-bottom: 15px;">
                     <label style="font-weight: 600; display: block; margin-bottom: 5px;">Model Name</label>
                     <input type="text" name="model_name" class="form-control"
                         value="<?php echo htmlspecialchars($settings->model_name); ?>" style="width: 100%; max-width: 300px;">
-                    <small class="text-muted">e.g., models/gemini-1.5-pro or models/gemini-1.5-flash</small>
+                    <small class="text-muted">Google: e.g. models/gemini-1.5-pro | LM Studio: e.g. google/gemma-3n-e4b</small>
                 </div>
 
                 <div class="row" style="display: flex; gap: 20px; margin-bottom: 15px;">

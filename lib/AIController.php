@@ -38,6 +38,11 @@ class AIController
         // Initialize provider
         if ($this->settings['ai_provider'] === 'google') {
             $this->provider = new GoogleAIProvider($apiKey);
+        } elseif ($this->settings['ai_provider'] === 'lmstudio') {
+            if (empty($this->settings['api_url'])) {
+                throw new \Exception("LM Studio API URL is missing. Configure in Addons > Sahdev.");
+            }
+            $this->provider = new LMStudioAIProvider($this->settings['api_url']);
         } else {
             throw new \Exception("Unsupported AI Provider: " . $this->settings['ai_provider']);
         }
