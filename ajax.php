@@ -57,7 +57,8 @@ try {
         
         $aiResponse = json_decode($aiResponseStr, true);
         if (!$aiResponse) {
-            throw new \Exception("Invalid JSON response payload provided.");
+            $err = json_last_error_msg();
+            throw new \Exception("Invalid JSON response payload provided. Error: {$err} | Raw: " . substr($aiResponseStr, 0, 200));
         }
         
         $response = $controller->saveResponse($hashSignature, $aiResponse, $tokenUsage, $execTime);
