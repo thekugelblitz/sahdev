@@ -39,6 +39,7 @@ if (!$ticketId) {
 try {
     require_once __DIR__ . '/lib/AIProviderInterface.php';
     require_once __DIR__ . '/lib/GoogleAIProvider.php';
+    require_once __DIR__ . '/lib/LMStudioAIProvider.php';
     require_once __DIR__ . '/lib/TicketDataExtractor.php';
     require_once __DIR__ . '/lib/AIController.php';
 

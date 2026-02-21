@@ -42,6 +42,7 @@ class AIController
             if (empty($this->settings['api_url'])) {
                 throw new \Exception("LM Studio API URL is missing. Configure in Addons > Sahdev.");
             }
+            require_once __DIR__ . '/LMStudioAIProvider.php';
             $this->provider = new LMStudioAIProvider($this->settings['api_url']);
         } else {
             throw new \Exception("Unsupported AI Provider: " . $this->settings['ai_provider']);
