@@ -371,6 +371,11 @@ HTML;
             if (customInstruction) {
                 prompt += "CUSTOM ADMIN INSTRUCTION (Follow strictly): " + customInstruction + "\n\n";
             }
+            if (context.admin_signature && context.admin_signature.trim() !== '') {
+                prompt += "ADMIN SIGNATURE: The human agent replying to this ticket has the following signature:\n";
+                prompt += "---\n" + context.admin_signature + "\n---\n";
+                prompt += "You MUST include this exact signature verbatim in the CLIENT_REPLY. If the signature looks like it has a top greeting (e.g., 'Hi x,') and a bottom sign-off, you MUST place your generated reply strictly in the middle between the greeting and sign-off. If it is only a sign-off, append it to the end.\n\n";
+            }
 
             prompt += "=== TICKET DATA ===\n";
             prompt += "Client Name: " + (context.client_name || 'Unknown') + "\n";

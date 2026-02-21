@@ -6,15 +6,16 @@ use WHMCS\Database\Capsule;
 
 class TicketDataExtractor
 {
-    private $ticketId;
+    private $adminId;
 
     // Limits to prevent massive memory usage
     private $maxMessages = 10;
     private $maxAttachmentSize = 1048576; // 1 MB (extracted text threshold)
 
-    public function __construct(int $ticketId)
+    public function __construct(int $ticketId, int $adminId = null)
     {
         $this->ticketId = $ticketId;
+        $this->adminId = $adminId;
     }
 
     /**
@@ -52,7 +53,23 @@ class TicketDataExtractor
         // 4. Extract simple text from attachments (if any and if safe)
         $context['attachments_text'] = $this->extractAttachmentText($ticket);
 
+        // 5. Extract active admin's signature
+        $context['admin_signature'] = $this->extractAdminSignature();
+
         return $context;
+    }
+
+    private function extractAdminSignature(): string
+    {
+        if (!$this->adminId) {
+            return '';
+        }
+        
+        $signature = Capsule::table('tbladmins')
+            ->where('id', $this->adminId)
+            ->value('signature');
+            
+        return $signature ? trim(strip_tags($signature, '<br><p><a><b><strong><i><em>')) : '';
     }
 
     private function getDepartmentName($did): string

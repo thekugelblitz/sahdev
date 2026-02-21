@@ -55,7 +55,7 @@ class AIController
         $this->checkRateLimit();
 
         // 2. Extract Data
-        $extractor = new TicketDataExtractor($this->ticketId);
+        $extractor = new TicketDataExtractor($this->ticketId, $this->adminId);
         $context = $extractor->getContext();
 
         if (!$tone) {
@@ -168,6 +168,28 @@ class AIController
             $tone = $this->settings['tone_default'];
         }
 
+        $systemPrompt = $this->settings['system_prompt'];
+
+        // Append Knowledgebase Rules
+        $kbPath = dirname(__DIR__) . '/knowledgebase';
+        if (is_dir($kbPath)) {
+            $kbRules = "";
+            $dir = new \DirectoryIterator($kbPath);
+            foreach ($dir as $fileinfo) {
+                if (!$fileinfo->isDot() && $fileinfo->getExtension() === 'txt') {
+                    $content = @file_get_contents($fileinfo->getPathname());
+                    if ($content) {
+                        $kbRules .= "\n--- Rule: {$fileinfo->getFilename()} ---\n" . trim($content) . "\n";
+                    }
+                }
+            }
+            if (!empty($kbRules)) {
+                $systemPrompt .= "\n\n=== RULES & KNOWLEDGEBASE ===\n" .
+                    "The following facts, rules, and guidelines MUST be strictly adhered to when crafting the CLIENT_REPLY:\n" .
+                    $kbRules;
+            }
+        }
+
         // 3. Hash generation for Cache checking
         $hashData = serialize([
             $context['subject'],
@@ -175,7 +197,7 @@ class AIController
             $tone,
             $customInstruction,
             $this->settings['model_name'],
-            $this->settings['system_prompt']
+            $systemPrompt
         ]);
         $hashSignature = hash('sha256', $hashData);
 
@@ -205,7 +227,7 @@ class AIController
             'model' => $this->settings['model_name'],
             'temperature' => (float) $this->settings['temperature'],
             'max_tokens' => (int) $this->settings['max_tokens'],
-            'system_prompt' => $this->settings['system_prompt'],
+            'system_prompt' => $systemPrompt,
             'context' => $context,
             // Pre-built prompt logic typically sits in the Provider, but we can expose it if needed
             // For now, let's just send the raw context so the frontend can build it, or we add a helper

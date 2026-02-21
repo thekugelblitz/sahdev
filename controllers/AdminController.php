@@ -114,11 +114,22 @@ class AdminController
                 <?php echo htmlspecialchars($successMessage); ?>
             </div>
         <?php endif; ?>
-
+        <style>
+            .sahdev-nav { margin-bottom: 20px; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+            .sahdev-nav a { margin-right: 15px; font-weight: 600; text-decoration: none; padding: 5px 10px; border-radius: 4px; }
+            .sahdev-nav a.active { background: #0d6efd; color: white; }
+            .sahdev-nav a:not(.active) { color: #0d6efd; background: #f8f9fa; }
+        </style>
+        
         <div class="sahdev-settings-container"
             style="max-width: 800px; padding: 20px; background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-            <h2 style="border-bottom: 1px solid #eee; padding-bottom: 15px; margin-bottom: 20px;">Sahdev AI Intelligence -
-                Settings</h2>
+            
+            <div class="sahdev-nav">
+                <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>" class="active">General Settings</a>
+                <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=knowledgebase">Knowledgebase Engine Rules</a>
+            </div>
+
+            <h2 style="border-bottom: 1px solid #eee; padding-bottom: 15px; margin-bottom: 20px;">Sahdev AI Intelligence - Settings</h2>
 
             <form method="post" action="<?php echo $actionUrl; ?>">
                 <?php echo $csrfToken; ?>
@@ -198,6 +209,149 @@ class AdminController
         <?php
         $html = ob_get_clean();
         return $html;
+    }
+
+    /**
+     * Knowledgebase & Rules Manager View
+     *
+     * @return string
+     */
+    public function knowledgebase()
+    {
+        $kbPath = dirname(__DIR__) . '/knowledgebase';
+        if (!is_dir($kbPath)) {
+            mkdir($kbPath, 0755, true);
+        }
+
+        $successMessage = '';
+        $errorMessage = '';
+
+        // Handle form submissions
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            check_token("WHMCS.admin.default");
+
+            $action = $_POST['kb_action'] ?? '';
+            $filename = $_POST['filename'] ?? '';
+            $content = $_POST['file_content'] ?? '';
+
+            // Basic sanitization
+            $filename = preg_replace('/[^a-zA-Z0-9_-]/', '', $filename);
+            
+            if (!empty($action) && !empty($filename)) {
+                $filePath = $kbPath . '/' . $filename . '.txt';
+
+                if ($action === 'save') {
+                    if (file_put_contents($filePath, $content) !== false) {
+                        $successMessage = "File '$filename.txt' saved successfully.";
+                    } else {
+                        $errorMessage = "Failed to save file. Check directory permissions.";
+                    }
+                } elseif ($action === 'delete') {
+                    if (file_exists($filePath) && unlink($filePath)) {
+                        $successMessage = "File '$filename.txt' deleted successfully.";
+                    } else {
+                        $errorMessage = "Failed to delete file.";
+                    }
+                }
+            } else {
+                if ($action === 'save') $errorMessage = "Filename is required.";
+            }
+        }
+
+        // List files
+        $files = [];
+        $dir = new \DirectoryIterator($kbPath);
+        foreach ($dir as $fileinfo) {
+            if (!$fileinfo->isDot() && $fileinfo->getExtension() === 'txt') {
+                $files[$fileinfo->getFilename()] = file_get_contents($fileinfo->getPathname());
+            }
+        }
+        ksort($files);
+
+        $csrfToken = generate_token("form");
+        $actionUrl = htmlspecialchars($this->moduleVars['modulelink']) . '&action=knowledgebase';
+        $settingsUrl = htmlspecialchars($this->moduleVars['modulelink']);
+
+        ob_start();
+        ?>
+        <style>
+            .sahdev-container { max-width: 1000px; padding: 20px; background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+            .sahdev-nav { margin-bottom: 20px; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+            .sahdev-nav a { margin-right: 15px; font-weight: 600; text-decoration: none; padding: 5px 10px; border-radius: 4px; }
+            .sahdev-nav a.active { background: #0d6efd; color: white; }
+            .sahdev-nav a:not(.active) { color: #0d6efd; background: #f8f9fa; }
+            .kb-file-card { border: 1px solid #ddd; border-radius: 6px; padding: 15px; margin-bottom: 15px; background: #fafafa; }
+            .kb-file-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        </style>
+
+        <div class="sahdev-container">
+            <div class="sahdev-nav">
+                <a href="<?php echo $settingsUrl; ?>">General Settings</a>
+                <a href="<?php echo $actionUrl; ?>" class="active">Knowledgebase Engine Rules</a>
+            </div>
+
+            <h2 style="margin-bottom: 10px;">Knowledgebase & AI Rules</h2>
+            <p class="text-muted" style="margin-bottom: 25px;">Create text files below containing context, rules, and facts you want Sahdev AI to always know about when replying to users. It reads all <code>.txt</code> files here automatically.</p>
+
+            <?php if (!empty($successMessage)): ?>
+                <div class="alert alert-success"><i class="fas fa-check-circle"></i> <?php echo htmlspecialchars($successMessage); ?></div>
+            <?php endif; ?>
+            <?php if (!empty($errorMessage)): ?>
+                <div class="alert alert-danger"><i class="fas fa-exclamation-circle"></i> <?php echo htmlspecialchars($errorMessage); ?></div>
+            <?php endif; ?>
+
+            <!-- Add New File Form -->
+            <div class="kb-file-card" style="border-left: 4px solid #198754; background: #f8fff9;">
+                <h4 style="margin-top:0;"><i class="fas fa-plus-circle"></i> Create New Rule / File</h4>
+                <form method="post" action="<?php echo $actionUrl; ?>">
+                    <?php echo $csrfToken; ?>
+                    <input type="hidden" name="kb_action" value="save">
+                    <div class="row">
+                        <div class="col-md-3">
+                            <label>Filename (No spaces, no extension)</label>
+                            <input type="text" name="filename" class="form-control" placeholder="e.g. migration_rules" required pattern="[a-zA-Z0-9_-]+">
+                        </div>
+                        <div class="col-md-9">
+                            <label>File Content (Rules, Context, Fact Sheet)</label>
+                            <textarea name="file_content" class="form-control" rows="4" required placeholder="Enter instructions like 'If a user asks about migration, tell them it costs $50...'"></textarea>
+                        </div>
+                    </div>
+                    <div style="margin-top: 10px; text-align: right;">
+                        <button type="submit" class="btn btn-sm btn-success"><i class="fas fa-save"></i> Save File</button>
+                    </div>
+                </form>
+            </div>
+
+            <hr style="margin: 30px 0;">
+
+            <!-- List Existing Files -->
+            <h4 style="margin-bottom: 15px;">Existing Knowledgebase Files</h4>
+            <?php if (empty($files)): ?>
+                <div class="alert alert-info">No knowledgebase files found. Create one above!</div>
+            <?php else: ?>
+                <?php foreach ($files as $fullname => $content): ?>
+                    <?php $basename = pathinfo($fullname, PATHINFO_FILENAME); ?>
+                    <div class="kb-file-card">
+                        <form method="post" action="<?php echo $actionUrl; ?>">
+                            <?php echo $csrfToken; ?>
+                            <input type="hidden" name="filename" value="<?php echo htmlspecialchars($basename); ?>">
+                            
+                            <div class="kb-file-header">
+                                <strong><i class="far fa-file-alt"></i> <?php echo htmlspecialchars($fullname); ?></strong>
+                                <div>
+                                    <button type="submit" name="kb_action" value="save" class="btn btn-xs btn-primary"><i class="fas fa-save"></i> Update</button>
+                                    <button type="submit" name="kb_action" value="delete" class="btn btn-xs btn-danger" onclick="return confirm('Delete <?php echo htmlspecialchars($fullname); ?>?');"><i class="fas fa-trash"></i> Delete</button>
+                                </div>
+                            </div>
+                            <textarea name="file_content" class="form-control" rows="4"><?php echo htmlspecialchars($content); ?></textarea>
+                        </form>
+                    </div>
+                <?php endforeach; ?>
+            <?php endif; ?>
+
+        </div>
+        <?php
+        return ob_get_clean();
     }
 }
 
