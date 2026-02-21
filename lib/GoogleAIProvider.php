@@ -10,6 +10,7 @@ class GoogleAIProvider implements AIProviderInterface
 {
     private $apiKey;
     private $lastTokenUsage = 0;
+    private $lastTokenDetails = ['input' => 0, 'output' => 0];
     private $maxRetries = 2;
     private $timeout = 30; // seconds
 
@@ -82,8 +83,10 @@ class GoogleAIProvider implements AIProviderInterface
         $responseText = $response['candidates'][0]['content']['parts'][0]['text'] ?? '';
 
         // Update token usage calculation
-        if (isset($response['usageMetadata']['totalTokenCount'])) {
-            $this->lastTokenUsage = $response['usageMetadata']['totalTokenCount'];
+        if (isset($response['usageMetadata'])) {
+            $this->lastTokenUsage = $response['usageMetadata']['totalTokenCount'] ?? 0;
+            $this->lastTokenDetails['input'] = $response['usageMetadata']['promptTokenCount'] ?? 0;
+            $this->lastTokenDetails['output'] = $response['usageMetadata']['candidatesTokenCount'] ?? 0;
         }
 
         // Parse JSON
@@ -103,6 +106,14 @@ class GoogleAIProvider implements AIProviderInterface
     public function getLastTokenUsage(): int
     {
         return $this->lastTokenUsage;
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function getLastTokenDetails(): array
+    {
+        return $this->lastTokenDetails;
     }
 
     /**
@@ -198,8 +209,9 @@ class GoogleAIProvider implements AIProviderInterface
         $prompt .= "  \"RESPONSIBILITY\": \"string (Client, Host, 3rd Party)\",\n";
         $prompt .= "  \"RISK_LEVEL\": \"string (Low, Medium, High, Critical)\",\n";
         $prompt .= "  \"INTERNAL_ACTION_PLAN\": \"string (steps team needs to take)\",\n";
-        $prompt .= "  \"CLIENT_REPLY\": \"string (html formatted reply to be sent to user)\"\n";
+        $prompt .= "  \"CLIENT_REPLY\": \"string (markdown formatted reply to be sent to user)\"\n";
         $prompt .= "}\n\n";
+        $prompt .= "CRITICAL FOR CLIENT_REPLY: Generate ONLY the core body of the reply in Markdown format. Do NOT include any greetings (like 'Hi Name,') and do NOT include any sign-offs or signatures (like 'Regards, Support'). The admin will inject this between their existing greeting and signature.\n\n";
 
         if (!empty($tone)) {
             $prompt .= "The generated CLIENT_REPLY must have a {$tone} tone.\n";

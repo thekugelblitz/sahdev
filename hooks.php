@@ -45,7 +45,7 @@ function sahdev_inject_ticket_panel($vars)
             <input type="hidden" id="sahdev_ticket_id" value="{$ticketId}">
             
             <div class="row">
-                <div class="col-md-4">
+                <div class="col-md-3">
                     <div class="form-group">
                         <label>AI Tone</label>
                         <select id="sahdev_tone" class="form-control">
@@ -57,7 +57,13 @@ function sahdev_inject_ticket_panel($vars)
                         </select>
                     </div>
                 </div>
-                <div class="col-md-8">
+                <div class="col-md-3">
+                    <div class="form-group">
+                        <label>Dive Intensity: <span id="sahdev_intensity_val">3</span>/5</label>
+                        <input type="range" id="sahdev_intensity" class="form-control" style="padding: 0; box-shadow: none;" min="1" max="5" value="3" oninput="document.getElementById('sahdev_intensity_val').innerText = this.value;">
+                    </div>
+                </div>
+                <div class="col-md-6">
                     <div class="form-group">
                         <label>Custom Instruction (Optional)</label>
                         <input type="text" id="sahdev_instruction" class="form-control" placeholder="e.g. 'Ask for server credentials in the reply' or 'Explain why the load is high'">
@@ -174,9 +180,20 @@ HTML;
                 scrollTop: $("#replyticket").offset().top - 50
             }, 500);
         } else if ($('#replymessage').length) {
-            var currentVal = $('#replymessage').val();
+            var el = $('#replymessage').get(0);
             var plain = replyHtml.replace(/<br\s*\/?>/gi, "\n").replace(/(<([^>]+)>)/gi, "");
-            $('#replymessage').val(currentVal + "\n" + plain);
+            
+            if (el.selectionStart || el.selectionStart == '0') {
+                var startPos = el.selectionStart;
+                var endPos = el.selectionEnd;
+                el.value = el.value.substring(0, startPos) + plain + el.value.substring(endPos, el.value.length);
+                el.selectionStart = startPos + plain.length;
+                el.selectionEnd = startPos + plain.length;
+                el.focus();
+            } else {
+                el.value += "\n" + plain;
+                el.focus();
+            }
         }
     }
 
@@ -196,6 +213,7 @@ HTML;
             var baseReqData = {
                 ticket_id: $('#sahdev_ticket_id').val(),
                 tone: $('#sahdev_tone').val(),
+                intensity: $('#sahdev_intensity').val(),
                 instruction: $('#sahdev_instruction').val(),
                 token: $('input[name="token"]').val(),
                 force_regenerate: isRegenerate ? 'true' : 'false'
@@ -242,7 +260,7 @@ HTML;
                 success: function(res) {
                     $btn.prop('disabled', false);
                     if (res && res.status === 'success') {
-                        renderSahdevResults(res.data, res.tokens_used, res.execution_time_ms);
+                        renderSahdevResults(res.data, res.tokens_used, res.execution_time_ms, res.tokens_details);
                     } else {
                         showSahdevError(res.message || 'Unknown error occurred.');
                     }
@@ -310,10 +328,14 @@ HTML;
                     throw new Error("Failed to parse local AI JSON. Raw output: " + cleanContent.substring(0, 100));
                 }
 
-                var tokensUsed = data.usage ? data.usage.total_tokens : 0;
+                var tokenDetails = { input: 0, output: 0 };
+                if (data.usage) {
+                    tokenDetails.input = data.usage.prompt_tokens || 0;
+                    tokenDetails.output = data.usage.completion_tokens || 0;
+                }
                 var execTimeMs = Math.round(performance.now() - startTime);
 
-                saveResponseToBackend(config.hash_signature, parsedResponse, tokensUsed, execTimeMs, baseReqData, $btn);
+                saveResponseToBackend(config.hash_signature, parsedResponse, tokensUsed, execTimeMs, baseReqData, $btn, tokenDetails);
 
             } catch (err) {
                 var isFailedToFetch = err.message.toLowerCase().indexOf('failed to fetch') !== -1 || err.message.toLowerCase().indexOf('networkerror') !== -1;
@@ -323,7 +345,7 @@ HTML;
             }
         }
 
-        function saveResponseToBackend(hashSignature, aiResponseObj, tokensUsed, execTime, baseReqData, $btn) {
+        function saveResponseToBackend(hashSignature, aiResponseObj, tokensUsed, execTime, baseReqData, $btn, tokenDetails) {
             // Encode as base64 to avoid backend framework sanitization destroying newlines and quotes
             var base64Json = btoa(unescape(encodeURIComponent(JSON.stringify(aiResponseObj))));
 
@@ -332,7 +354,8 @@ HTML;
                 hash_signature: hashSignature,
                 ai_response: base64Json,
                 token_usage: tokensUsed,
-                exec_time: execTime
+                exec_time: execTime,
+                token_details: JSON.stringify(tokenDetails || {})
             }, baseReqData);
 
             $.ajax({
@@ -343,7 +366,7 @@ HTML;
                 success: function(res) {
                     $btn.prop('disabled', false);
                     if (res && res.status === 'success') {
-                        renderSahdevResults(aiResponseObj, tokensUsed, execTime);
+                        renderSahdevResults(aiResponseObj, tokensUsed, execTime, tokenDetails);
                     } else {
                         showSahdevError("AI succeeded but failed to save: " + (res.message || 'Unknown error'));
                     }
@@ -371,11 +394,8 @@ HTML;
             if (customInstruction) {
                 prompt += "CUSTOM ADMIN INSTRUCTION (Follow strictly): " + customInstruction + "\n\n";
             }
-            if (context.admin_signature && context.admin_signature.trim() !== '') {
-                prompt += "ADMIN SIGNATURE: The human agent replying to this ticket has the following signature:\n";
-                prompt += "---\n" + context.admin_signature + "\n---\n";
-                prompt += "You MUST include this exact signature verbatim in the CLIENT_REPLY. If the signature looks like it has a top greeting (e.g., 'Hi x,') and a bottom sign-off, you MUST place your generated reply strictly in the middle between the greeting and sign-off. If it is only a sign-off, append it to the end.\n\n";
-            }
+            // Remove the signature verbatim injection for markdown bodies
+            prompt += "CRITICAL FOR CLIENT_REPLY: Generate ONLY the core body of the reply in Markdown format. Do NOT include any greetings (like 'Hi Name,') and do NOT include any sign-offs or signatures (like 'Regards, Support'). The admin will inject this between their existing greeting and signature.\n\n";
 
             prompt += "=== TICKET DATA ===\n";
             prompt += "Client Name: " + (context.client_name || 'Unknown') + "\n";
@@ -401,7 +421,7 @@ HTML;
             return prompt;
         }
 
-        function renderSahdevResults(data, tokensUsed, executionTimeMs) {
+        function renderSahdevResults(data, tokensUsed, executionTimeMs, tokenDetails) {
             $('#sahdev-loading').hide();
             $('#sahdev-out-cause').text(data.ROOT_CAUSE || 'N/A');
             $('#sahdev-out-resp').text(data.RESPONSIBILITY || 'N/A');
@@ -411,7 +431,14 @@ HTML;
             var formattedReply = data.CLIENT_REPLY ? data.CLIENT_REPLY.replace(/\n/g, '<br>') : 'N/A';
             $('#sahdev-out-reply').html(formattedReply);
 
-            var stats = "Tokens: " + (tokensUsed || 'Unknown') + " | Time: " + (executionTimeMs || 0) + "ms";
+            var stats = "Tokens: ";
+            if (tokenDetails && (tokenDetails.input > 0 || tokenDetails.output > 0)) {
+                stats += tokenDetails.input + " In / " + tokenDetails.output + " Out";
+            } else {
+                stats += (tokensUsed || 'Unknown');
+            }
+            stats += " | Time: " + (executionTimeMs || 0) + "ms";
+            
             $('#sahdev-token-usage').text(stats);
 
             $('#sahdev-results').fadeIn();
@@ -440,7 +467,7 @@ HTML;
 EOT;
 
     $output .= $jsContentStart . $jsContentMain . "\n</script>";
-    
+
     return $output;
 }
 

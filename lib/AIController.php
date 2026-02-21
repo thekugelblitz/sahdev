@@ -105,6 +105,7 @@ class AIController
 
         $executionTimeMs = round((microtime(true) - $startTime) * 1000);
         $tokenUsage = $this->provider->getLastTokenUsage();
+        $tokenDetails = $this->provider->getLastTokenDetails();
 
         // 6. Cache the successful result
         Capsule::table('tblsahdev_cache')->insert([
@@ -125,7 +126,8 @@ class AIController
             'data' => $response,
             'cached' => false,
             'execution_time_ms' => $executionTimeMs,
-            'tokens_used' => $tokenUsage
+            'tokens_used' => $tokenUsage,
+            'tokens_details' => $tokenDetails
         ];
     }
 
@@ -234,7 +236,7 @@ class AIController
         ];
     }
 
-    public function saveResponse(string $hashSignature, array $response, int $tokenUsage, int $executionTimeMs): array
+    public function saveResponse(string $hashSignature, array $response, int $tokenUsage, int $executionTimeMs, array $tokenDetails = []): array
     {
         // Cache the successful result
         Capsule::table('tblsahdev_cache')->insert([
@@ -247,7 +249,7 @@ class AIController
         // Minimal context for logging
         $extractor = new TicketDataExtractor($this->ticketId);
         $context = $extractor->getContext();
-        
+
         // Log the Request
         $this->logRequest($context, $response, $tokenUsage, $executionTimeMs);
 
@@ -259,7 +261,7 @@ class AIController
         ];
     }
 
-    private function logRequest(array $requestPayload, array $responsePayload = null, int $tokenUsage, int $executionTimeMs, string $error = null)
+    private function logRequest(array $requestPayload, array $responsePayload = null, int $tokenUsage, int $executionTimeMs, string $error = null, array $tokenDetails = [])
     {
         // Avoid inserting full conversation history if it's massive, just essential params
         $strippedRequest = [

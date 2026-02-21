@@ -28,6 +28,13 @@ interface AIProviderInterface
     public function getLastTokenUsage(): int;
 
     /**
+     * Get detailed token usage (input vs output).
+     * 
+     * @return array An array with 'input' and 'output' token counts.
+     */
+    public function getLastTokenDetails(): array;
+
+    /**
      * Refetch models dynamically
      *
      * @param string $apiKey Unencrypted API key to fetch available models

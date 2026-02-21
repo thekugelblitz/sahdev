@@ -29,6 +29,18 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 $ticketId = (int) ($_POST['ticket_id'] ?? 0);
 $tone = strip_tags($_POST['tone'] ?? '');
 $instruction = strip_tags($_POST['instruction'] ?? '');
+$intensity = (int) ($_POST['intensity'] ?? 3);
+
+// Inject dive intensity context if higher than normal
+if ($intensity > 3) {
+    $intensityLabels = [
+        4 => "Deep Dive (Be highly rigorous and exhaustive)",
+        5 => "Maximum Intensity (Leave absolutely no stone unturned, hyper-detailed and rigorous analysis)"
+    ];
+    $label = $intensityLabels[$intensity] ?? "Deep rigorous focus";
+    $intensityContext = "DIVE INTENSITY RULE: The admin has requested an intensity level of {$intensity}/5. {$label}. Please ensure your ROOT_CAUSE and INTERNAL_ACTION_PLAN are profoundly detailed and rigorous.";
+    $instruction = empty($instruction) ? $intensityContext : $instruction . "\n\n" . $intensityContext;
+}
 
 if (!$ticketId) {
     header('HTTP/1.1 400 Bad Request');
@@ -55,7 +67,11 @@ try {
         $aiResponseRaw = $_POST['ai_response'] ?? '{}';
         $tokenUsage = (int) ($_POST['token_usage'] ?? 0);
         $execTime = (int) ($_POST['exec_time'] ?? 0);
-        
+        $tokenDetails = $_POST['token_details'] ?? [];
+        if (!is_array($tokenDetails)) {
+            $tokenDetails = json_decode($tokenDetails, true) ?: [];
+        }
+
         $aiResponseStr = trim($aiResponseRaw);
         // Decode base64 if it's not starting with a JSON brace
         if (!empty($aiResponseStr) && !str_starts_with($aiResponseStr, '{') && !str_starts_with($aiResponseStr, '[')) {
@@ -64,17 +80,17 @@ try {
                 $aiResponseStr = $decoded;
             }
         }
-        
+
         $aiResponse = json_decode($aiResponseStr, true);
         if (!$aiResponse) {
             $err = json_last_error_msg();
             throw new \Exception("Invalid JSON response payload provided. Error: {$err} | Raw: " . substr($aiResponseStr, 0, 800));
         }
-        
-        $response = $controller->saveResponse($hashSignature, $aiResponse, $tokenUsage, $execTime);
+
+        $response = $controller->saveResponse($hashSignature, $aiResponse, $tokenUsage, $execTime, $tokenDetails);
     } else {
         // Default analyze_ticket (server-side generation)
-        $response = $controller->getAnalysis($tone, $instruction);
+        $response = $controller->getAnalysis($tone, $instruction, $forceRegenerate);
     }
 
     // Clean any prior output to prevent malformed JSON

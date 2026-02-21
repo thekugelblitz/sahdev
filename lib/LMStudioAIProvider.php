@@ -10,6 +10,7 @@ class LMStudioAIProvider implements AIProviderInterface
 {
     private $apiUrl;
     private $lastTokenUsage = 0;
+    private $lastTokenDetails = ['input' => 0, 'output' => 0];
     private $maxRetries = 1;
     private $timeout = 120; // local models can take longer
 
@@ -30,7 +31,7 @@ class LMStudioAIProvider implements AIProviderInterface
         $model = $settings['model_name'] ?: 'local-model'; // LM Studio often ignores this but requires it
 
         $systemMessage = $settings['system_prompt'] ?? "You are a helpful assistant.";
-        
+
         $prompt = $this->buildPrompt($context, $tone, $customInstruction);
 
         $payload = [
@@ -79,8 +80,10 @@ class LMStudioAIProvider implements AIProviderInterface
 
         $responseText = $response['choices'][0]['message']['content'] ?? '';
 
-        if (isset($response['usage']['total_tokens'])) {
-            $this->lastTokenUsage = $response['usage']['total_tokens'];
+        if (isset($response['usage'])) {
+            $this->lastTokenUsage = $response['usage']['total_tokens'] ?? 0;
+            $this->lastTokenDetails['input'] = $response['usage']['prompt_tokens'] ?? 0;
+            $this->lastTokenDetails['output'] = $response['usage']['completion_tokens'] ?? 0;
         }
 
         // Clean up response if the model didn't strictly follow JSON output block
@@ -90,7 +93,7 @@ class LMStudioAIProvider implements AIProviderInterface
             $responseText = preg_replace('/```\s*$/', '', $responseText);
             $responseText = trim($responseText);
         }
-        
+
         // Strip out thought block if deepseek r1 format is used by local model
         $responseText = preg_replace('/<think>.*?<\/think>/s', '', $responseText);
         $responseText = trim($responseText);
@@ -114,6 +117,14 @@ class LMStudioAIProvider implements AIProviderInterface
     /**
      * @inheritDoc
      */
+    public function getLastTokenDetails(): array
+    {
+        return $this->lastTokenDetails;
+    }
+
+    /**
+     * @inheritDoc
+     */
     public function getAvailableModels(string $apiKey): array
     {
         // For LM Studio, the models endpoint is typically /v1/models
@@ -122,9 +133,9 @@ class LMStudioAIProvider implements AIProviderInterface
         if ($port) {
             $baseUrl .= ':' . $port;
         }
-        
+
         $endpoint = $baseUrl . '/v1/models';
-        
+
         $ch = curl_init($endpoint);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_TIMEOUT, 10);
@@ -160,7 +171,7 @@ class LMStudioAIProvider implements AIProviderInterface
         curl_setopt($ch, CURLOPT_HTTPHEADER, [
             'Content-Type: application/json',
             // Some local apis require a bearer token even if just dummy
-            'Authorization: Bearer dummy_token' 
+            'Authorization: Bearer dummy_token'
         ]);
         curl_setopt($ch, CURLOPT_TIMEOUT, $this->timeout);
 
@@ -204,8 +215,9 @@ class LMStudioAIProvider implements AIProviderInterface
         $prompt .= "  \"RESPONSIBILITY\": \"string (Client, Host, 3rd Party)\",\n";
         $prompt .= "  \"RISK_LEVEL\": \"string (Low, Medium, High, Critical)\",\n";
         $prompt .= "  \"INTERNAL_ACTION_PLAN\": \"string (steps team needs to take)\",\n";
-        $prompt .= "  \"CLIENT_REPLY\": \"string (html formatted reply to be sent to user)\"\n";
+        $prompt .= "  \"CLIENT_REPLY\": \"string (markdown formatted reply to be sent to user)\"\n";
         $prompt .= "}\n\n";
+        $prompt .= "CRITICAL FOR CLIENT_REPLY: Generate ONLY the core body of the reply in Markdown format. Do NOT include any greetings (like 'Hi Name,') and do NOT include any sign-offs or signatures (like 'Regards, Support'). The admin will inject this between their existing greeting and signature.\n\n";
 
         if (!empty($tone)) {
             $prompt .= "The generated CLIENT_REPLY must have a {$tone} tone.\n";
