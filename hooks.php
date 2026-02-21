@@ -32,7 +32,7 @@ function sahdev_inject_ticket_panel($vars)
         return $val === $current ? 'selected' : '';
     };
 
-    return <<<HTML
+    $htmlPanel = <<<HTML
 <div class="panel panel-info" id="sahdev-ai-panel" style="margin-top: 20px; border-color: #0d6efd;">
     <div class="panel-heading" style="background-color: #0d6efd; color: white; display: flex; justify-content: space-between; align-items: center; cursor: pointer;" onclick="$('#sahdev-ai-body').slideToggle();">
         <h3 class="panel-title"><i class="fas fa-robot"></i> Sahdev AI Ticket Intelligence</h3>
@@ -145,12 +145,13 @@ HTML;
     // Output the HTML first
     $output = $htmlPanel;
 
-    // Then append the javascript strictly wrapped in its own output buffering or clean string concatenation 
-    // to avoid ANY PHP variable interpolation issues breaking JS regexes.
-    ob_start();
-    ?>
+    // Use string concatenation instead of output buffering to prevent WHMCS from dropping the buffer
+    $jsContentStart = <<<HTML
 <script>
-    var sahdevAjaxUrl = "<?php echo $ajaxUrl; ?>";
+    var sahdevAjaxUrl = "{$ajaxUrl}";
+HTML;
+
+    $jsContentMain = <<<'EOT'
 
     function copySahdevReply() {
         var html = $('#sahdev-out-reply').html();
@@ -430,10 +431,10 @@ HTML;
             showSahdevError(msg);
         }
     });
-</script>
-<?php
-    $jsContent = ob_get_clean();
-    $output .= $jsContent;
+
+EOT;
+
+    $output .= $jsContentStart . $jsContentMain . "\n</script>";
     
     return $output;
 }
