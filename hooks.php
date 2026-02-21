@@ -148,7 +148,7 @@ function sahdev_inject_ticket_panel($vars)
         
         // Convert BRs to newlines for raw text copy if needed, but modern clipboards handles HTML somewhat
         // Let's copy plain text format
-        var plain = html.replace(/<br\\s*\\/?>/gi, "\\n").replace(/(<([^>]+)>)/gi, "");
+        var plain = html.replace(/<br\s*\/?>/gi, "\n").replace(/(<([^>]+)>)/gi, "");
         temp.val(plain).select();
         document.execCommand("copy");
         temp.remove();
@@ -167,8 +167,8 @@ function sahdev_inject_ticket_panel($vars)
         } else if ($('#replymessage').length) {
             // Fallback for native textarea (e.g. WHMCS mobile/lite versions or tinyMCE disabled)
             var currentVal = $('#replymessage').val();
-            var plain = replyHtml.replace(/<br\\s*\\/?>/gi, "\\n").replace(/(<([^>]+)>)/gi, "");
-            $('#replymessage').val(currentVal + "\\n" + plain);
+            var plain = replyHtml.replace(/<br\s*\/?>/gi, "\n").replace(/(<([^>]+)>)/gi, "");
+            $('#replymessage').val(currentVal + "\n" + plain);
         }
     }
 
@@ -292,8 +292,8 @@ function sahdev_inject_ticket_panel($vars)
                 var rawContent = data.choices && data.choices[0] && data.choices[0].message ? data.choices[0].message.content : "";
                 
                 // Clean markdown/thought blocks
-                var cleanContent = rawContent.replace(/<think>[\\s\\S]*?<\\/think>/gi, '').trim();
-                cleanContent = cleanContent.replace(/```json\\s*/gi, '').replace(/```\\s*$/gi, '').trim();
+                var cleanContent = rawContent.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+                cleanContent = cleanContent.replace(/```json\s*/gi, '').replace(/```\s*$/gi, '').trim();
                 
                 var parsedResponse;
                 try {
@@ -346,41 +346,41 @@ function sahdev_inject_ticket_panel($vars)
         }
 
         function buildPromptText(context, tone, customInstruction) {
-            var prompt = "Analyze the given ticket and output strictly in a valid JSON object matching this schema without any markdown formatting block:\\n";
-            prompt += "{\\n";
-            prompt += "  \\"ROOT_CAUSE\\": \\"string (brief analysis)\\",\\n";
-            prompt += "  \\"RESPONSIBILITY\\": \\"string (Client, Host, 3rd Party)\\",\\n";
-            prompt += "  \\"RISK_LEVEL\\": \\"string (Low, Medium, High, Critical)\\",\\n";
-            prompt += "  \\"INTERNAL_ACTION_PLAN\\": \\"string (steps team needs to take)\\",\\n";
-            prompt += "  \\"CLIENT_REPLY\\": \\"string (html formatted reply to be sent to user)\\"\\n";
-            prompt += "}\\n\\n";
+            var prompt = "Analyze the given ticket and output strictly in a valid JSON object matching this schema without any markdown formatting block:\n";
+            prompt += "{\n";
+            prompt += "  \"ROOT_CAUSE\": \"string (brief analysis)\",\n";
+            prompt += "  \"RESPONSIBILITY\": \"string (Client, Host, 3rd Party)\",\n";
+            prompt += "  \"RISK_LEVEL\": \"string (Low, Medium, High, Critical)\",\n";
+            prompt += "  \"INTERNAL_ACTION_PLAN\": \"string (steps team needs to take)\",\n";
+            prompt += "  \"CLIENT_REPLY\": \"string (html formatted reply to be sent to user)\"\n";
+            prompt += "}\n\n";
 
             if (tone) {
-                prompt += "The generated CLIENT_REPLY must have a " + tone + " tone.\\n";
+                prompt += "The generated CLIENT_REPLY must have a " + tone + " tone.\n";
             }
             if (customInstruction) {
-                prompt += "CUSTOM ADMIN INSTRUCTION (Follow strictly): " + customInstruction + "\\n\\n";
+                prompt += "CUSTOM ADMIN INSTRUCTION (Follow strictly): " + customInstruction + "\n\n";
             }
 
-            prompt += "=== TICKET DATA ===\\n";
-            prompt += "Client Name: " + (context.client_name || 'Unknown') + "\\n";
-            prompt += "Department: " + (context.department || 'Unknown') + "\\n";
-            prompt += "Subject: " + (context.subject || 'Unknown') + "\\n";
+            prompt += "=== TICKET DATA ===\n";
+            prompt += "Client Name: " + (context.client_name || 'Unknown') + "\n";
+            prompt += "Department: " + (context.department || 'Unknown') + "\n";
+            prompt += "Subject: " + (context.subject || 'Unknown') + "\n";
 
             if (context.services_summary) {
-                prompt += "Relevant Services: " + context.services_summary + "\\n";
+                prompt += "Relevant Services: " + context.services_summary + "\n";
             }
 
-            prompt += "\\n--- MESSAGES HISTORY ---\\n";
+            prompt += "\n--- MESSAGES HISTORY ---\n";
             if (context.messages && context.messages.length > 0) {
                 context.messages.forEach(function(msg) {
                     var type = msg.admin ? 'ADMIN/SUPPORT' : 'CLIENT';
-                    prompt += "[" + type + "] " + msg.date + ":\\n" + msg.message + "\\n------------\\n";
+                    prompt += "[" + type + "] " + msg.date + ":\n" + msg.message + "\n------------\n";
                 });
             }
 
             if (context.attachments_text) {
-                prompt += "\\n--- ATTACHMENT EXCERPTS ---\\n" + context.attachments_text + "\\n";
+                prompt += "\n--- ATTACHMENT EXCERPTS ---\n" + context.attachments_text + "\n";
             }
 
             return prompt;
@@ -393,7 +393,7 @@ function sahdev_inject_ticket_panel($vars)
             $('#sahdev-out-risk').text(data.RISK_LEVEL || 'N/A');
             $('#sahdev-out-plan').text(data.INTERNAL_ACTION_PLAN || 'N/A');
             
-            var formattedReply = data.CLIENT_REPLY ? data.CLIENT_REPLY.replace(/\\n/g, '<br>') : 'N/A';
+            var formattedReply = data.CLIENT_REPLY ? data.CLIENT_REPLY.replace(/\n/g, '<br>') : 'N/A';
             $('#sahdev-out-reply').html(formattedReply);
 
             var stats = "Tokens: " + (tokensUsed || 'Unknown') + " | Time: " + (executionTimeMs || 0) + "ms";
