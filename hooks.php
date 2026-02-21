@@ -216,10 +216,6 @@ HTML;
                 stream: false
             };
 
-            if (config.api_url.indexOf('v1/chat/completions') !== -1) {
-                llmPayload.response_format = { type: "json_object" };
-            }
-
             var startTime = performance.now();
 
             try {
