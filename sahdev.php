@@ -60,7 +60,19 @@ function sahdev_activate()
 {
     try {
         // Create tblsahdev_settings
-        if (!Capsule::schema()->hasTable('tblsahdev_settings')) {
+        try {
+            Capsule::table('tblsahdev_settings')->first();
+
+            // Apply migration if activating over an older version
+            try {
+                Capsule::table('tblsahdev_settings')->select('primary_provider_id')->first();
+            } catch (\Exception $e) {
+                Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                    $table->integer('primary_provider_id')->nullable()->after('id');
+                    $table->integer('fallback_provider_id')->nullable()->after('primary_provider_id');
+                });
+            }
+        } catch (\Exception $e) {
             Capsule::schema()->create(
                 'tblsahdev_settings',
                 function ($table) {
@@ -85,18 +97,12 @@ function sahdev_activate()
                 'created_at' => \Carbon\Carbon::now(),
                 'updated_at' => \Carbon\Carbon::now(),
             ]);
-        } else {
-            // Apply migration if activating over an older version
-            if (!Capsule::schema()->hasColumn('tblsahdev_settings', 'primary_provider_id')) {
-                Capsule::schema()->table('tblsahdev_settings', function ($table) {
-                    $table->integer('primary_provider_id')->nullable()->after('id');
-                    $table->integer('fallback_provider_id')->nullable()->after('primary_provider_id');
-                });
-            }
         }
 
         // Create tblsahdev_providers
-        if (!Capsule::schema()->hasTable('tblsahdev_providers')) {
+        try {
+            Capsule::table('tblsahdev_providers')->first();
+        } catch (\Exception $e) {
             Capsule::schema()->create(
                 'tblsahdev_providers',
                 function ($table) {
@@ -135,7 +141,9 @@ function sahdev_activate()
         }
 
         // Create tblsahdev_logs
-        if (!Capsule::schema()->hasTable('tblsahdev_logs')) {
+        try {
+            Capsule::table('tblsahdev_logs')->first();
+        } catch (\Exception $e) {
             Capsule::schema()->create(
                 'tblsahdev_logs',
                 function ($table) {
@@ -152,7 +160,9 @@ function sahdev_activate()
         }
 
         // Create tblsahdev_cache
-        if (!Capsule::schema()->hasTable('tblsahdev_cache')) {
+        try {
+            Capsule::table('tblsahdev_cache')->first();
+        } catch (\Exception $e) {
             Capsule::schema()->create(
                 'tblsahdev_cache',
                 function ($table) {
@@ -166,7 +176,9 @@ function sahdev_activate()
         }
 
         // Create tblsahdev_rate_limit
-        if (!Capsule::schema()->hasTable('tblsahdev_rate_limit')) {
+        try {
+            Capsule::table('tblsahdev_rate_limit')->first();
+        } catch (\Exception $e) {
             Capsule::schema()->create(
                 'tblsahdev_rate_limit',
                 function ($table) {
