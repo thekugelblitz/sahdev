@@ -43,8 +43,28 @@ try {
     require_once __DIR__ . '/lib/TicketDataExtractor.php';
     require_once __DIR__ . '/lib/AIController.php';
 
+    $action = $_POST['action'] ?? '';
+
     $controller = new \Sahdev\Lib\AIController($ticketId, $adminId);
-    $response = $controller->getAnalysis($tone, $instruction);
+
+    if ($action === 'get_payload') {
+        $response = $controller->getPayload($tone, $instruction);
+    } elseif ($action === 'save_response') {
+        $hashSignature = $_POST['hash_signature'] ?? '';
+        $aiResponseStr = $_POST['ai_response'] ?? '{}';
+        $tokenUsage = (int) ($_POST['token_usage'] ?? 0);
+        $execTime = (int) ($_POST['exec_time'] ?? 0);
+        
+        $aiResponse = json_decode($aiResponseStr, true);
+        if (!$aiResponse) {
+            throw new \Exception("Invalid JSON response payload provided.");
+        }
+        
+        $response = $controller->saveResponse($hashSignature, $aiResponse, $tokenUsage, $execTime);
+    } else {
+        // Default analyze_ticket (server-side generation)
+        $response = $controller->getAnalysis($tone, $instruction);
+    }
 
     // Clean any prior output to prevent malformed JSON
     if (ob_get_length() !== false) {

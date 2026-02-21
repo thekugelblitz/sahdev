@@ -153,6 +153,86 @@ class AIController
         );
     }
 
+    public function getPayload(string $tone = null, string $customInstruction = null): array
+    {
+        // 1. Rate Limit Check
+        $this->checkRateLimit();
+
+        // 2. Extract Data
+        $extractor = new TicketDataExtractor($this->ticketId);
+        $context = $extractor->getContext();
+
+        if (!$tone) {
+            $tone = $this->settings['tone_default'];
+        }
+
+        // 3. Hash generation for Cache checking
+        $hashData = serialize([
+            $context['subject'],
+            $context['messages'],
+            $tone,
+            $customInstruction,
+            $this->settings['model_name'],
+            $this->settings['system_prompt']
+        ]);
+        $hashSignature = hash('sha256', $hashData);
+
+        // 4. Check Cache
+        $cached = Capsule::table('tblsahdev_cache')
+            ->where('ticket_id', $this->ticketId)
+            ->where('hash_signature', $hashSignature)
+            ->first();
+
+        if ($cached) {
+            return [
+                'status' => 'success',
+                'cached' => true,
+                'data' => json_decode($cached->ai_response, true)
+            ];
+        }
+
+        // Return the payload data needed for the browser to make the request
+        return [
+            'status' => 'success',
+            'cached' => false,
+            'hash_signature' => $hashSignature,
+            'provider' => $this->settings['ai_provider'],
+            'api_url' => $this->settings['api_url'] ?? '',
+            'model' => $this->settings['model_name'],
+            'temperature' => (float) $this->settings['temperature'],
+            'max_tokens' => (int) $this->settings['max_tokens'],
+            'system_prompt' => $this->settings['system_prompt'],
+            'context' => $context,
+            // Pre-built prompt logic typically sits in the Provider, but we can expose it if needed
+            // For now, let's just send the raw context so the frontend can build it, or we add a helper
+        ];
+    }
+
+    public function saveResponse(string $hashSignature, array $response, int $tokenUsage, int $executionTimeMs): array
+    {
+        // Cache the successful result
+        Capsule::table('tblsahdev_cache')->insert([
+            'ticket_id' => $this->ticketId,
+            'hash_signature' => $hashSignature,
+            'ai_response' => json_encode($response),
+            'created_at' => Carbon::now()
+        ]);
+
+        // Minimal context for logging
+        $extractor = new TicketDataExtractor($this->ticketId);
+        $context = $extractor->getContext();
+        
+        // Log the Request
+        $this->logRequest($context, $response, $tokenUsage, $executionTimeMs);
+
+        // Update Rate Limit Counter
+        $this->incrementRateLimit();
+
+        return [
+            'status' => 'success'
+        ];
+    }
+
     private function logRequest(array $requestPayload, array $responsePayload = null, int $tokenUsage, int $executionTimeMs, string $error = null)
     {
         // Avoid inserting full conversation history if it's massive, just essential params
