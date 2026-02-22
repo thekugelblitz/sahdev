@@ -256,7 +256,9 @@ function sahdev_output($vars)
     // Basic routing
     try {
         // Handle AJAX requests via Native WHMCS Routing
-        if ($action === 'ajax_handler') {
+        // Use a unique parameter 'sahdev_act' to avoid collision with WHMCS/Lagom 'action' param
+        if (isset($_REQUEST['sahdev_act']) && $_REQUEST['sahdev_act'] === 'ajax_handler') {
+            if (ob_get_length()) ob_clean();
             require_once __DIR__ . '/ajax.php';
             exit;
         }

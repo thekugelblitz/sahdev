@@ -8,8 +8,11 @@
 // Initialize WHMCS securely if not already initialized
 if (!defined("WHMCS")) {
     require_once dirname(__DIR__, 3) . '/init.php';
-    header('Content-Type: application/json');
 }
+
+// Always ensure JSON output for this endpoint
+header('Content-Type: application/json');
+if (ob_get_length()) ob_clean();
 
 // Check if admin is logged in securely
 $adminId = $_SESSION['adminid'] ?? null;
