@@ -58,6 +58,9 @@ function sahdev_config()
  */
 function sahdev_activate()
 {
+    // Default user prompt template used when no custom one is configured
+    $defaultUserPromptTemplate = "{{CUSTOM_INSTRUCTION_BLOCK}}=== TASK ===\nAnalyze the provided technical support ticket and output ONLY a valid JSON object matching the schema below. No extra text.\n\n=== SCHEMA ===\n{\n  \"ROOT_CAUSE\": \"string (brief technical analysis)\",\n  \"RESPONSIBILITY\": \"string (Client, Host, or 3rd Party)\",\n  \"RISK_LEVEL\": \"string (Low, Medium, High, or Critical)\",\n  \"INTERNAL_ACTION_PLAN\": \"string (detailed steps for the support team)\",\n  \"CLIENT_REPLY\": \"string (reply to client in Markdown — body only, no greeting or sign-off)\"\n}\n\n=== TONE ===\nWrite CLIENT_REPLY in a {{TONE}} tone.\n\n=== TICKET DATA ===\nClient: {{CLIENT_NAME}}\nDepartment: {{DEPARTMENT}}\nSubject: {{SUBJECT}}\n{{SERVICES_BLOCK}}\n=== CONVERSATION ===\n{{MESSAGES}}\n{{ATTACHMENTS_BLOCK}}";
+
     try {
         // Create tblsahdev_settings
         try {
@@ -72,6 +75,16 @@ function sahdev_activate()
                     $table->integer('fallback_provider_id')->nullable()->after('primary_provider_id');
                 });
             }
+
+            // Migrate: add user_prompt_template column if missing
+            try {
+                Capsule::table('tblsahdev_settings')->select('user_prompt_template')->first();
+            } catch (\Exception $e) {
+                Capsule::schema()->table('tblsahdev_settings', function ($table) use ($defaultUserPromptTemplate) {
+                    $table->longText('user_prompt_template')->nullable()->after('system_prompt');
+                });
+                Capsule::table('tblsahdev_settings')->where('id', 1)->update(['user_prompt_template' => $defaultUserPromptTemplate]);
+            }
         } catch (\Exception $e) {
             Capsule::schema()->create(
                 'tblsahdev_settings',
@@ -83,6 +96,7 @@ function sahdev_activate()
                     $table->integer('max_tokens')->default(2048);
                     $table->string('tone_default')->default('Professional');
                     $table->text('system_prompt')->nullable();
+                    $table->longText('user_prompt_template')->nullable();
                     $table->timestamps(); // creates created_at, updated_at
                 }
             );
@@ -94,6 +108,7 @@ function sahdev_activate()
                 'max_tokens' => 2048,
                 'tone_default' => 'Professional',
                 'system_prompt' => "You are Sahdev, a Senior Technical Support Specialist for a premium web hosting company. Your goal is to provide elite-level support that feels empathetic, technical, and human.\n\nCORE DIRECTIVES:\n1. EMPATHY: Acknowledge the user's frustration or urgency without sounding corporate or robotic.\n2. PRECISION: If a technical issue is identified, explain it clearly and provide actionable insights.\n3. NATURAL FLOW: Use natural transitions. Avoid excessive bullet points or robotic lists.\n4. TONE: Strictly adhere to the requested Tone setting.\n\nAlways analyze the full conversation history to ensure the reply fits the current context perfectly.\n\nOutput only a valid JSON object as requested.",
+                'user_prompt_template' => $defaultUserPromptTemplate,
                 'created_at' => \Carbon\Carbon::now(),
                 'updated_at' => \Carbon\Carbon::now(),
             ]);

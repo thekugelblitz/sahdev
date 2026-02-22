@@ -32,9 +32,10 @@ class LMStudioAIProvider implements AIProviderInterface
     {
         $model = $settings['model_name'] ?: 'local-model'; // LM Studio often ignores this but requires it
 
-        $systemMessage = $settings['system_prompt'] ?? "You are a helpful assistant.";
+        $systemMessage = $settings['system_prompt'] ?? "You are a helpful Senior Technical Support Engineer.";
+        $userPromptTemplate = $settings['user_prompt_template'] ?? null;
 
-        $prompt = $this->buildPrompt($context, $tone, $customInstruction);
+        $prompt = $this->buildPrompt($context, $tone, $customInstruction, $userPromptTemplate);
 
         $payload = [
             'model' => $model,
@@ -229,59 +230,58 @@ class LMStudioAIProvider implements AIProviderInterface
         return array_merge($defaults, $parsed ?: []);
     }
 
-    private function buildPrompt(array $context, string $tone, string $customInstruction): string
+    private function buildPrompt(array $context, string $tone, string $customInstruction, ?string $userPromptTemplate = null): string
     {
-        $prompt = "=== TASK ===\n";
-        $prompt .= "Analyze the provided technical support ticket and output strictly in a valid JSON object matching the schema below. Do not include any extra text, markdown blocks, or commentary.\n\n";
-        
-        $prompt .= "=== SCHEMA ===\n";
-        $prompt .= "{\n";
-        $prompt .= "  \"ROOT_CAUSE\": \"string (brief technical analysis of the issue)\",\n";
+        // Build re-usable blocks
+        $msgs = array_reverse($context['messages'] ?? []);
+        $used = 0; $budget = 8000; $lines = [];
+        foreach ($msgs as $msg) {
+            $type = $msg['admin'] ? 'ADMIN' : 'CLIENT';
+            $entry = "[{$type}] ({$msg['date']}):\n" . ($msg['message'] ?? '') . "\n\n";
+            if ($used + strlen($entry) > $budget) break;
+            $lines[] = $entry; $used += strlen($entry);
+        }
+        $messagesBlock = implode('', array_reverse($lines));
+        $servicesBlock = !empty($context['services_summary']) ? "Services:\n{$context['services_summary']}\n" : '';
+        $attachmentsBlock = !empty($context['attachments_text'])
+            ? "\n=== ATTACHMENT CONTEXT ===\n" . substr($context['attachments_text'], 0, 2000) . "\n"
+            : '';
+
+        // Custom instruction is SUPREME PRIORITY — always rendered first
+        $customInstructionBlock = '';
+        if (!empty($customInstruction)) {
+            $customInstructionBlock = "\u26a0\ufe0f PRIORITY OVERRIDE \u2014 ADMIN INSTRUCTION \u26a0\ufe0f\n"
+                . "This instruction supersedes all other context. Re-interpret all ticket data through this lens.\n"
+                . trim($customInstruction) . "\n"
+                . str_repeat('\u2501', 40) . "\n\n";
+        }
+
+        // Use admin-defined template if available
+        if (!empty($userPromptTemplate)) {
+            return str_replace(
+                ['{{CUSTOM_INSTRUCTION_BLOCK}}', '{{TONE}}', '{{CLIENT_NAME}}', '{{DEPARTMENT}}', '{{SUBJECT}}', '{{SERVICES_BLOCK}}', '{{MESSAGES}}', '{{ATTACHMENTS_BLOCK}}'],
+                [$customInstructionBlock, $tone, $context['client_name'] ?? 'Unknown Client', $context['department'] ?? 'Support', $context['subject'] ?? 'Ticket', $servicesBlock, $messagesBlock, $attachmentsBlock],
+                $userPromptTemplate
+            );
+        }
+
+        // Fallback hardcoded prompt
+        $prompt  = $customInstructionBlock;
+        $prompt .= "=== TASK ===\nAnalyze the provided technical support ticket and output ONLY a valid JSON object. No extra text.\n\n";
+        $prompt .= "=== SCHEMA ===\n{\n";
+        $prompt .= "  \"ROOT_CAUSE\": \"string (brief technical analysis)\",\n";
         $prompt .= "  \"RESPONSIBILITY\": \"string (Client, Host, or 3rd Party)\",\n";
         $prompt .= "  \"RISK_LEVEL\": \"string (Low, Medium, High, or Critical)\",\n";
         $prompt .= "  \"INTERNAL_ACTION_PLAN\": \"string (detailed steps for the support team)\",\n";
-        $prompt .= "  \"CLIENT_REPLY\": \"string (The direct reply to the client, formatted in simple Markdown)\"\n";
-        $prompt .= "}\n\n";
-
-        $prompt .= "=== CONTEXTUAL DIRECTIVES ===\n";
-        if (!empty($tone)) {
-            $prompt .= "- TONE: Write the CLIENT_REPLY in a {$tone} tone.\n";
-        }
-        if (!empty($customInstruction)) {
-            $prompt .= "- CUSTOM ADMIN INSTRUCTION (MANDATORY): {$customInstruction}\n";
-        }
-        $prompt .= "- CLIENT_REPLY CONTENT: Generate ONLY the body. Skip all greetings and sign-offs.\n\n";
-
+        $prompt .= "  \"CLIENT_REPLY\": \"string (reply to client in Markdown — body only, no greeting or sign-off)\"\n}\n\n";
+        $prompt .= "=== TONE ===\nWrite CLIENT_REPLY in a {$tone} tone.\n\n";
         $prompt .= "=== TICKET DATA ===\n";
-        $prompt .= "Client Name: " . ($context['client_name'] ?? 'Unknown Client') . "\n";
+        $prompt .= "Client: " . ($context['client_name'] ?? 'Unknown Client') . "\n";
         $prompt .= "Department: " . ($context['department'] ?? 'Support') . "\n";
         $prompt .= "Subject: " . ($context['subject'] ?? 'Ticket') . "\n";
-
-        if (!empty($context['services_summary'])) {
-            $prompt .= "Services Information:\n" . $context['services_summary'] . "\n";
-        }
-
-        $prompt .= "\n=== CONVERSATION HISTORY ===\n";
-        if (!empty($context['messages'])) {
-            // Fill from newest -> oldest for context priority
-            $msgs = array_reverse($context['messages']);
-            $used = 0;
-            $budget = 8000;
-            $lines = [];
-            foreach ($msgs as $msg) {
-                $type = $msg['admin'] ? 'ADMIN' : 'CLIENT';
-                $entry = "[{$type}] ({$msg['date']}):\n" . ($msg['message'] ?? '') . "\n\n";
-                if ($used + strlen($entry) > $budget) break;
-                $lines[] = $entry;
-                $used += strlen($entry);
-            }
-            $prompt .= implode("", array_reverse($lines));
-        }
-
-        if (!empty($context['attachments_text'])) {
-            $prompt .= "\n=== ATTACHMENT CONTEXT ===\n" . substr($context['attachments_text'], 0, 2000) . "\n";
-        }
-
+        if ($servicesBlock) $prompt .= $servicesBlock;
+        $prompt .= "\n=== CONVERSATION ===\n" . $messagesBlock;
+        if ($attachmentsBlock) $prompt .= $attachmentsBlock;
         return $prompt;
     }
 }

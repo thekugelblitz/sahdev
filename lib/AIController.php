@@ -298,6 +298,7 @@ class AIController
             'temperature' => (float) $this->settings['temperature'],
             'max_tokens' => (int) $this->settings['max_tokens'],
             'system_prompt' => $systemPrompt,
+            'user_prompt_template' => $this->settings['user_prompt_template'] ?? null,
             'context' => $context,
             'tone' => $tone,
             'custom_instruction' => $customInstruction,

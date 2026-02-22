@@ -283,7 +283,7 @@ HTML;
             }
 
             // config.custom_instruction and config.tone are passed from backend get_payload
-            var promptText = buildPromptText(config.context, config.tone, config.custom_instruction);
+            var promptText = buildPromptText(config.context, config.tone, config.custom_instruction, config.user_prompt_template);
             var systemMessage = config.system_prompt || "You are a helpful Senior Technical Support Engineer.";
 
             // --- Context window budget guard ---
@@ -420,46 +420,15 @@ HTML;
             });
         }
 
-        function buildPromptText(context, tone, customInstruction) {
-            var prompt = "=== TASK ===\n";
-            prompt += "Analyze the provided technical support ticket and output strictly in a valid JSON object matching the schema below. Do not include any extra text, markdown blocks, or commentary.\n\n";
-            
-            prompt += "=== SCHEMA ===\n";
-            prompt += "{\n";
-            prompt += "  \"ROOT_CAUSE\": \"string (brief technical analysis of the issue)\",\n";
-            prompt += "  \"RESPONSIBILITY\": \"string (Client, Host, or 3rd Party)\",\n";
-            prompt += "  \"RISK_LEVEL\": \"string (Low, Medium, High, or Critical)\",\n";
-            prompt += "  \"INTERNAL_ACTION_PLAN\": \"string (detailed steps for the support team)\",\n";
-            prompt += "  \"CLIENT_REPLY\": \"string (The direct reply to the client, formatted in simple Markdown)\"\n";
-            prompt += "}\n\n";
-
-            prompt += "=== CONTEXTUAL DIRECTIVES ===\n";
-            if (tone) {
-                prompt += "- TONE: Write the CLIENT_REPLY in a " + tone + " tone.\n";
-            }
-            if (customInstruction) {
-                prompt += "- CUSTOM ADMIN INSTRUCTION (MANDATORY): " + customInstruction + "\n";
-            }
-            prompt += "- CLIENT_REPLY CONTENT: Generate ONLY the body. Skip all greetings and sign-offs.\n\n";
-
-            prompt += "=== TICKET DATA ===\n";
-            prompt += "Client Name: " + (context.client_name || 'Unknown Client') + "\n";
-            prompt += "Department: " + (context.department || 'Support') + "\n";
-            prompt += "Subject: " + (context.subject || 'Ticket') + "\n";
-
-            if (context.services_summary) {
-                prompt += "Services Information:\n" + context.services_summary + "\n";
-            }
-
-            prompt += "\n=== CONVERSATION HISTORY ===\n";
+        function buildPromptText(context, tone, customInstruction, userPromptTemplate) {
+            // Build messages block
+            var messagesBlock = '';
             if (context.messages && context.messages.length > 0) {
-                // Focus on context retention
                 var MSG_BUDGET = 8000;
                 var used = 0;
                 var lines = [];
                 var msgs = context.messages.slice();
-                msgs.reverse(); // Build from newest
-                
+                msgs.reverse(); // newest first for budget
                 for (var mi = 0; mi < msgs.length; mi++) {
                     var msg = msgs[mi];
                     var type = msg.admin ? 'ADMIN' : 'CLIENT';
@@ -469,13 +438,57 @@ HTML;
                     used += entry.length;
                 }
                 lines.reverse();
-                prompt += lines.join('');
+                messagesBlock = lines.join('');
             }
 
-            if (context.attachments_text) {
-                prompt += "\n=== ATTACHMENT CONTEXT ===\n" + context.attachments_text.substring(0, 2000) + "\n";
+            // Build services block
+            var servicesBlock = context.services_summary ? ('Services:\n' + context.services_summary + '\n') : '';
+
+            // Build attachments block
+            var attachmentsBlock = context.attachments_text
+                ? ('\n=== ATTACHMENT CONTEXT ===\n' + context.attachments_text.substring(0, 2000) + '\n')
+                : '';
+
+            // Build custom instruction block — SUPREME PRIORITY always at the top
+            var customInstructionBlock = '';
+            if (customInstruction && customInstruction.trim()) {
+                customInstructionBlock = '⚠️ PRIORITY OVERRIDE — ADMIN INSTRUCTION ⚠️\n' +
+                    'This instruction supersedes all other context. Re-interpret all ticket data through this lens.\n' +
+                    customInstruction.trim() + '\n' +
+                    '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n';
             }
 
+            // If admin has defined a custom template, use it
+            if (userPromptTemplate && userPromptTemplate.trim()) {
+                var prompt = userPromptTemplate
+                    .replace('{{CUSTOM_INSTRUCTION_BLOCK}}', customInstructionBlock)
+                    .replace('{{TONE}}', tone || 'Professional')
+                    .replace('{{CLIENT_NAME}}', context.client_name || 'Unknown Client')
+                    .replace('{{DEPARTMENT}}', context.department || 'Support')
+                    .replace('{{SUBJECT}}', context.subject || 'Ticket')
+                    .replace('{{SERVICES_BLOCK}}', servicesBlock)
+                    .replace('{{MESSAGES}}', messagesBlock)
+                    .replace('{{ATTACHMENTS_BLOCK}}', attachmentsBlock);
+                return prompt;
+            }
+
+            // Fallback: hardcoded prompt with same structure
+            var prompt = customInstructionBlock;
+            prompt += "=== TASK ===\nAnalyze the provided technical support ticket and output ONLY a valid JSON object. No extra text.\n\n";
+            prompt += "=== SCHEMA ===\n{\n";
+            prompt += "  \"ROOT_CAUSE\": \"string (brief technical analysis)\",\n";
+            prompt += "  \"RESPONSIBILITY\": \"string (Client, Host, or 3rd Party)\",\n";
+            prompt += "  \"RISK_LEVEL\": \"string (Low, Medium, High, or Critical)\",\n";
+            prompt += "  \"INTERNAL_ACTION_PLAN\": \"string (detailed steps for the support team)\",\n";
+            prompt += "  \"CLIENT_REPLY\": \"string (reply to client in Markdown — body only, no greeting or sign-off)\"\n}\n\n";
+            prompt += "=== TONE ===\nWrite CLIENT_REPLY in a " + (tone || 'Professional') + " tone.\n\n";
+            prompt += "=== TICKET DATA ===\n";
+            prompt += "Client: " + (context.client_name || 'Unknown Client') + "\n";
+            prompt += "Department: " + (context.department || 'Support') + "\n";
+            prompt += "Subject: " + (context.subject || 'Ticket') + "\n";
+            if (servicesBlock) prompt += servicesBlock;
+            prompt += "\n=== CONVERSATION ===\n" + messagesBlock;
+            if (attachmentsBlock) prompt += attachmentsBlock;
             return prompt;
         }
 

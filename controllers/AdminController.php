@@ -122,6 +122,7 @@ class AdminController
                     Manager</a>
                 <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=knowledgebase">Knowledgebase
                     Engine</a>
+                <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=prompt_manager">Prompt Manager 🔬</a>
             </div>
 
             <h2 style="border-bottom: 1px solid #eee; padding-bottom: 15px; margin-bottom: 20px;">Sahdev AI Intelligence -
@@ -330,6 +331,7 @@ class AdminController
                 <a href="<?php echo $settingsUrl; ?>">General Settings</a>
                 <a href="<?php echo $actionUrl; ?>" class="active">AI Providers Manager</a>
                 <a href="<?php echo $kbUrl; ?>">Knowledgebase Engine</a>
+                <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=prompt_manager">Prompt Manager 🔬</a>
             </div>
 
             <h2 style="margin-bottom: 10px;">AI Providers Manager</h2>
@@ -641,6 +643,111 @@ class AdminController
                 <?php endforeach; ?>
             <?php endif; ?>
 
+        </div>
+        <?php
+        return ob_get_clean();
+    }
+    /**
+     * Prompt Manager View — allows admins to edit the user prompt template
+     * sent to the AI on every ticket analysis.
+     *
+     * @return string
+     */
+    public function prompt_manager()
+    {
+        $defaultTemplate = "{{CUSTOM_INSTRUCTION_BLOCK}}=== TASK ===\nAnalyze the provided technical support ticket and output ONLY a valid JSON object matching the schema below. No extra text.\n\n=== SCHEMA ===\n{\n  \"ROOT_CAUSE\": \"string (brief technical analysis)\",\n  \"RESPONSIBILITY\": \"string (Client, Host, or 3rd Party)\",\n  \"RISK_LEVEL\": \"string (Low, Medium, High, or Critical)\",\n  \"INTERNAL_ACTION_PLAN\": \"string (detailed steps for the support team)\",\n  \"CLIENT_REPLY\": \"string (reply to client in Markdown — body only, no greeting or sign-off)\"\n}\n\n=== TONE ===\nWrite CLIENT_REPLY in a {{TONE}} tone.\n\n=== TICKET DATA ===\nClient: {{CLIENT_NAME}}\nDepartment: {{DEPARTMENT}}\nSubject: {{SUBJECT}}\n{{SERVICES_BLOCK}}\n=== CONVERSATION ===\n{{MESSAGES}}\n{{ATTACHMENTS_BLOCK}}";
+
+        $settings = Capsule::table('tblsahdev_settings')->first();
+        $currentTemplate = $settings->user_prompt_template ?? $defaultTemplate;
+
+        $successMessage = '';
+        $errorMessage = '';
+
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            check_token("WHMCS.admin.default");
+            $action = $_POST['prompt_action'] ?? '';
+
+            if ($action === 'save') {
+                $newTemplate = $_POST['user_prompt_template'] ?? '';
+                Capsule::table('tblsahdev_settings')->where('id', 1)->update([
+                    'user_prompt_template' => $newTemplate,
+                    'updated_at' => \Carbon\Carbon::now(),
+                ]);
+                $currentTemplate = $newTemplate;
+                $successMessage = 'Prompt template saved successfully.';
+            } elseif ($action === 'reset') {
+                Capsule::table('tblsahdev_settings')->where('id', 1)->update([
+                    'user_prompt_template' => $defaultTemplate,
+                    'updated_at' => \Carbon\Carbon::now(),
+                ]);
+                $currentTemplate = $defaultTemplate;
+                $successMessage = 'Prompt template reset to default.';
+            }
+        }
+
+        $csrfToken = generate_token("form");
+        $actionUrl = htmlspecialchars($this->moduleVars['modulelink']) . '&action=prompt_manager';
+        $settingsUrl = htmlspecialchars($this->moduleVars['modulelink']);
+
+        ob_start();
+        ?>
+        <style>
+            .sahdev-container { max-width: 1100px; padding: 20px; background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,.1); }
+            .sahdev-nav { margin-bottom: 20px; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+            .sahdev-nav a { margin-right: 15px; font-weight: 600; text-decoration: none; padding: 5px 10px; border-radius: 4px; }
+            .sahdev-nav a.active { background: #0d6efd; color: white; }
+            .sahdev-nav a:not(.active) { color: #0d6efd; background: #f8f9fa; }
+            .prompt-template-area { font-family: 'SFMono-Regular', Consolas, monospace; font-size: 13px; background: #1e1e2e; color: #cdd6f4; border: 1px solid #444; border-radius: 6px; }
+            .placeholder-tag { display: inline-block; background: #313244; color: #89dceb; padding: 2px 7px; border-radius: 4px; font-size: 12px; font-family: monospace; margin: 2px; }
+        </style>
+        <div class="sahdev-container">
+            <div class="sahdev-nav">
+                <a href="<?php echo $settingsUrl; ?>">General Settings</a>
+                <a href="<?php echo $settingsUrl; ?>&action=providers">AI Providers Manager</a>
+                <a href="<?php echo $settingsUrl; ?>&action=knowledgebase">Knowledgebase Engine</a>
+                <a href="<?php echo $actionUrl; ?>" class="active">Prompt Manager 🔬</a>
+            </div>
+
+            <h2 style="margin-bottom:5px;">🔬 Prompt Manager</h2>
+            <p class="text-muted" style="margin-bottom:20px;">Edit the exact <strong>user-prompt template</strong> sent to the AI on every ticket analysis. The <strong>System Prompt</strong> (AI persona / identity) is still managed in <a href="<?php echo $settingsUrl; ?>">General Settings</a>.</p>
+
+            <?php if (!empty($successMessage)): ?>
+                <div class="alert alert-success"><i class="fas fa-check-circle"></i> <?php echo htmlspecialchars($successMessage); ?></div>
+            <?php endif; ?>
+            <?php if (!empty($errorMessage)): ?>
+                <div class="alert alert-danger"><i class="fas fa-exclamation-circle"></i> <?php echo htmlspecialchars($errorMessage); ?></div>
+            <?php endif; ?>
+
+            <div class="alert alert-info" style="margin-bottom:20px;">
+                <strong>Available Placeholders:</strong><br>
+                <span class="placeholder-tag">{{CUSTOM_INSTRUCTION_BLOCK}}</span> Auto-injected admin instruction (supreme priority) — keep at the very top<br>
+                <span class="placeholder-tag">{{TONE}}</span> Tone selected in ticket panel &nbsp;
+                <span class="placeholder-tag">{{CLIENT_NAME}}</span> &nbsp;
+                <span class="placeholder-tag">{{DEPARTMENT}}</span> &nbsp;
+                <span class="placeholder-tag">{{SUBJECT}}</span><br>
+                <span class="placeholder-tag">{{SERVICES_BLOCK}}</span> Client active services &nbsp;
+                <span class="placeholder-tag">{{MESSAGES}}</span> Full conversation history &nbsp;
+                <span class="placeholder-tag">{{ATTACHMENTS_BLOCK}}</span>
+            </div>
+
+            <form method="post" action="<?php echo $actionUrl; ?>">
+                <?php echo $csrfToken; ?>
+                <div class="form-group" style="margin-bottom:15px;">
+                    <label style="font-weight:600; margin-bottom:5px; display:block;">User Prompt Template</label>
+                    <textarea name="user_prompt_template" class="form-control prompt-template-area" rows="28"
+                        style="width:100%; resize:vertical;"><?php echo htmlspecialchars($currentTemplate); ?></textarea>
+                    <small class="text-muted">This is the full prompt body sent to the AI (not the system persona). Placeholders are replaced with live ticket data at runtime.</small>
+                </div>
+                <div style="display:flex; gap:10px; justify-content:flex-end;">
+                    <button type="submit" name="prompt_action" value="reset" class="btn btn-default"
+                        onclick="return confirm('Reset the prompt template to the built-in default?');">
+                        <i class="fas fa-undo"></i> Reset to Default
+                    </button>
+                    <button type="submit" name="prompt_action" value="save" class="btn btn-primary">
+                        <i class="fas fa-save"></i> Save Prompt Template
+                    </button>
+                </div>
+            </form>
         </div>
         <?php
         return ob_get_clean();
