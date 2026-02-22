@@ -45,7 +45,27 @@ function sahdev_inject_ticket_panel($vars)
         <form id="sahdev-ai-form">
             {$csrfToken}
             <input type="hidden" id="sahdev_ticket_id" value="{$ticketId}">
-            
+            <input type="hidden" id="sahdev_intent" value="AUTO">
+
+            <!-- Intent Selector -->
+            <div class="form-group" style="margin-bottom: 12px;">
+                <label style="font-weight: 600; margin-bottom: 6px; display: block;"><i class="fas fa-bullseye"></i> Reply Intent</label>
+                <div id="sahdev-intent-btns" style="display: flex; flex-wrap: wrap; gap: 6px;">
+                    <button type="button" class="btn btn-xs sahdev-intent-btn sahdev-intent-active" data-intent="AUTO" style="border-radius: 20px; padding: 4px 12px; font-size: 12px; font-weight: 600;">🤖 Auto (AI Decides)</button>
+                    <button type="button" class="btn btn-xs sahdev-intent-btn" data-intent="RESOLVE" style="border-radius: 20px; padding: 4px 12px; font-size: 12px; font-weight: 600;">✅ Resolved Query</button>
+                    <button type="button" class="btn btn-xs sahdev-intent-btn" data-intent="INVESTIGATE" style="border-radius: 20px; padding: 4px 12px; font-size: 12px; font-weight: 600;">🔍 Checking Query</button>
+                    <button type="button" class="btn btn-xs sahdev-intent-btn" data-intent="MORE_INFO" style="border-radius: 20px; padding: 4px 12px; font-size: 12px; font-weight: 600;">❓ Need More Info</button>
+                    <button type="button" class="btn btn-xs sahdev-intent-btn" data-intent="GUIDE" style="border-radius: 20px; padding: 4px 12px; font-size: 12px; font-weight: 600;">🗺️ Guide to Solution</button>
+                    <button type="button" class="btn btn-xs sahdev-intent-btn" data-intent="OUT_OF_SCOPE" style="border-radius: 20px; padding: 4px 12px; font-size: 12px; font-weight: 600;">🚫 Out of Scope</button>
+                    <button type="button" class="btn btn-xs sahdev-intent-btn" data-intent="DUPLICATE" style="border-radius: 20px; padding: 4px 12px; font-size: 12px; font-weight: 600;">🔁 Duplicate Ticket</button>
+                </div>
+            </div>
+            <style>
+                .sahdev-intent-btn { background: #f0f0f0; color: #555; border: 1px solid #ccc; transition: all 0.15s ease; }
+                .sahdev-intent-btn:hover { background: #dbe4ff; color: #3a56c9; border-color: #3a56c9; }
+                .sahdev-intent-active { background: #0d6efd !important; color: #fff !important; border-color: #0d6efd !important; }
+            </style>
+
             <div class="row">
                 <div class="col-md-3">
                     <div class="form-group">
@@ -140,7 +160,7 @@ function sahdev_inject_ticket_panel($vars)
             </div>
 
             <div class="text-muted small text-right">
-                <span id="sahdev-token-usage"></span> • <span id="sahdev-exec-time"></span>
+                <span id="sahdev-intent-display"></span> &nbsp;|&nbsp; <span id="sahdev-token-usage"></span> • <span id="sahdev-exec-time"></span>
             </div>
         </div>
 
@@ -200,6 +220,13 @@ HTML;
         }
     }
 
+    // Intent pill button click handler
+    $(document).on('click', '#sahdev-intent-btns .sahdev-intent-btn', function() {
+        $('#sahdev-intent-btns .sahdev-intent-btn').removeClass('sahdev-intent-active');
+        $(this).addClass('sahdev-intent-active');
+        $('#sahdev_intent').val($(this).data('intent'));
+    });
+
     $(document).ready(function() {
         $(document).on('click', '#btn-sahdev-analyze, #btn-sahdev-regenerate', function(e) {
             e.preventDefault();
@@ -218,6 +245,7 @@ HTML;
                 tone: $('#sahdev_tone').val(),
                 intensity: $('#sahdev_intensity').val(),
                 instruction: $('#sahdev_instruction').val(),
+                intent: $('#sahdev_intent').val(),
                 token: $('input[name="token"]').val(),
                 force_regenerate: isRegenerate ? 'true' : 'false'
             };
@@ -283,6 +311,7 @@ HTML;
             }
 
             // config.custom_instruction and config.tone are passed from backend get_payload
+            // Note: config.custom_instruction already contains the intent directive (injected server-side)
             var promptText = buildPromptText(config.context, config.tone, config.custom_instruction, config.user_prompt_template);
             var systemMessage = config.system_prompt || "You are a helpful Senior Technical Support Engineer.";
 
@@ -632,6 +661,15 @@ HTML;
             
             var formattedReply = data.CLIENT_REPLY ? data.CLIENT_REPLY.replace(/\n/g, '<br>') : 'N/A';
             $('#sahdev-out-reply').html(formattedReply);
+
+            // Show intent badge
+            var intentLabels = {
+                'AUTO': '🤖 Auto', 'RESOLVE': '✅ Resolved', 'INVESTIGATE': '🔍 Investigating',
+                'MORE_INFO': '❓ More Info', 'GUIDE': '🗺️ Guide', 'OUT_OF_SCOPE': '🚫 Out of Scope', 'DUPLICATE': '🔁 Duplicate'
+            };
+            var currentIntent = $('#sahdev_intent').val() || 'AUTO';
+            var intentLabel = intentLabels[currentIntent] || currentIntent;
+            $('#sahdev-intent-display').html('<span style="background:#e9ecef; border-radius:10px; padding:1px 8px; font-size:11px;">Intent: <strong>' + intentLabel + '</strong></span>');
 
             var stats = "Tokens: ";
             if (tokenDetails && (tokenDetails.input > 0 || tokenDetails.output > 0)) {

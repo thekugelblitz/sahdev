@@ -87,7 +87,7 @@ class AIController
         }
     }
 
-    public function getAnalysis(string $tone = null, string $customInstruction = null, bool $forceRegenerate = false, bool $forceFallback = false): array
+    public function getAnalysis(string $tone = null, string $customInstruction = null, bool $forceRegenerate = false, bool $forceFallback = false, string $intent = 'AUTO'): array
     {
         // 1. Rate Limit Check
         $this->checkRateLimit();
@@ -100,12 +100,21 @@ class AIController
             $tone = $this->settings['tone_default'];
         }
 
+        // Inject intent directive into customInstruction (highest priority)
+        $intentDirective = $this->buildIntentDirective($intent);
+        if (!empty($intentDirective)) {
+            $customInstruction = empty($customInstruction)
+                ? $intentDirective
+                : $intentDirective . "\n\n" . $customInstruction;
+        }
+
         // 3. Hash Generation for Cache
         $hashData = serialize([
             $context['subject'],
             $context['messages'], // Includes full message history
             $tone,
             $customInstruction,
+            $intent,
             $this->settings['model_name'],
             $this->settings['system_prompt']
         ]);
@@ -224,7 +233,7 @@ class AIController
         );
     }
 
-    public function getPayload(string $tone = null, string $customInstruction = null, bool $forceRegenerate = false): array
+    public function getPayload(string $tone = null, string $customInstruction = null, bool $forceRegenerate = false, string $intent = 'AUTO'): array
     {
         // 1. Rate Limit Check
         $this->checkRateLimit();
@@ -235,6 +244,14 @@ class AIController
 
         if (!$tone) {
             $tone = $this->settings['tone_default'];
+        }
+
+        // Inject intent directive into customInstruction (highest priority)
+        $intentDirective = $this->buildIntentDirective($intent);
+        if (!empty($intentDirective)) {
+            $customInstruction = empty($customInstruction)
+                ? $intentDirective
+                : $intentDirective . "\n\n" . $customInstruction;
         }
 
         $systemPrompt = $this->settings['system_prompt'];
@@ -265,6 +282,7 @@ class AIController
             $context['messages'],
             $tone,
             $customInstruction,
+            $intent,
             $this->settings['model_name'],
             $systemPrompt
         ]);
@@ -302,6 +320,7 @@ class AIController
             'context' => $context,
             'tone' => $tone,
             'custom_instruction' => $customInstruction,
+            'intent' => $intent,
             'has_fallback' => $this->fallbackProvider !== null,
             'fallback_api_key' => $this->settings['fallback_api_key'] ?? '',
         ];
@@ -354,5 +373,24 @@ class AIController
             'execution_time_ms' => $executionTimeMs,
             'created_at' => Carbon::now()
         ]);
+    }
+
+    /**
+     * Returns a focused intent directive string that gets prepended to customInstruction
+     * before being passed to the AI prompt. Returns empty string for AUTO intent.
+     */
+    private function buildIntentDirective(string $intent): string
+    {
+        $directives = [
+            'RESOLVE'      => "REPLY INTENT — RESOLVED: The admin confirms this issue has been resolved. Write CLIENT_REPLY as a confident closing message. Acknowledge what was fixed, thank the client for their patience, and advise them to reopen the ticket if the issue recurs. Do NOT ask further questions.",
+            'INVESTIGATE'  => "REPLY INTENT — INVESTIGATING: The admin is still actively investigating this issue. Write CLIENT_REPLY to acknowledge the issue empathetically, confirm the support team is actively working on it, and set realistic expectations without making firm time commitments. Keep the client reassured.",
+            'MORE_INFO'    => "REPLY INTENT — NEED MORE INFORMATION: The admin needs additional details before proceeding. Write CLIENT_REPLY to clearly and politely list exactly what specific information, logs, screenshots, credentials, or steps are required from the client. Be precise — avoid vague requests.",
+            'GUIDE'        => "REPLY INTENT — GUIDE TO SOLUTION: The admin wants to guide the client to self-resolve. Write CLIENT_REPLY as a clear, step-by-step guide in simple language the client can follow independently. Use numbered steps. Anticipate likely stumbling points and address them proactively.",
+            'OUT_OF_SCOPE' => "REPLY INTENT — OUT OF SUPPORT SCOPE: This issue falls outside the support boundaries. Write CLIENT_REPLY to clearly but respectfully explain that this specific issue is not covered under the current support scope or plan. Where applicable, point to relevant resources, documentation, or upgrade options. Be firm yet courteous — avoid leaving the client feeling dismissed.",
+            'DUPLICATE'    => "REPLY INTENT — DUPLICATE TICKET: This is a duplicate of an existing ticket. Write CLIENT_REPLY to politely inform the client that this appears to be a duplicate of an existing ticket they have already submitted. Instruct them to continue communication on the original ticket to avoid confusion and ensure continuity of support. Close this ticket gracefully.",
+        ];
+
+        $key = strtoupper(trim($intent));
+        return $directives[$key] ?? ''; // Returns '' for 'AUTO' or unknown values
     }
 }

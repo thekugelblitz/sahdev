@@ -33,6 +33,7 @@ $ticketId = (int) ($_POST['ticket_id'] ?? 0);
 $tone = strip_tags($_POST['tone'] ?? '');
 $instruction = strip_tags($_POST['instruction'] ?? '');
 $intensity = (int) ($_POST['intensity'] ?? 3);
+$intent = strip_tags($_POST['intent'] ?? 'AUTO');
 
 // Inject dive intensity context if higher than normal
 if ($intensity > 3) {
@@ -76,7 +77,7 @@ try {
     $controller = new \Sahdev\Lib\AIController($ticketId, $adminId);
 
     if ($action === 'get_payload') {
-        $response = $controller->getPayload($tone, $instruction, $forceRegenerate);
+        $response = $controller->getPayload($tone, $instruction, $forceRegenerate, $intent);
     } elseif ($action === 'save_response') {
         $hashSignature = $_POST['hash_signature'] ?? '';
         $aiResponseRaw = $_POST['ai_response'] ?? '{}';
@@ -105,7 +106,7 @@ try {
         $response = $controller->saveResponse($hashSignature, $aiResponse, $tokenUsage, $execTime, $tokenDetails);
     } else {
         // Default analyze_ticket (server-side generation)
-        $response = $controller->getAnalysis($tone, $instruction, $forceRegenerate);
+        $response = $controller->getAnalysis($tone, $instruction, $forceRegenerate, $forceFallback, $intent);
     }
 
     // Clean any prior output to prevent malformed JSON
