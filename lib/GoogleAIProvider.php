@@ -229,9 +229,11 @@ class GoogleAIProvider implements AIProviderInterface
             $lines[] = $entry; $used += strlen($entry);
         }
         $messagesBlock = implode('', array_reverse($lines));
-        $servicesBlock = !empty($context['services_summary']) ? "Services:\n{$context['services_summary']}\n" : '';
+        $servicesBlock = !empty($context['services_summary'])
+            ? "Services:\n" . $this->sanitizeForPrompt($context['services_summary']) . "\n"
+            : '';
         $attachmentsBlock = !empty($context['attachments_text'])
-            ? "\n=== ATTACHMENT CONTEXT ===\n" . substr($context['attachments_text'], 0, 2000) . "\n"
+            ? "\n=== ATTACHMENT CONTEXT ===\n" . $this->sanitizeForPrompt(substr($context['attachments_text'], 0, 2000)) . "\n"
             : '';
 
         // Custom instruction is SUPREME PRIORITY — always rendered first
@@ -270,5 +272,22 @@ class GoogleAIProvider implements AIProviderInterface
         $prompt .= "\n=== CONVERSATION ===\n" . $messagesBlock;
         if ($attachmentsBlock) $prompt .= $attachmentsBlock;
         return $prompt;
+    }
+
+    private function sanitizeForPrompt(string $text): string
+    {
+        $s = strip_tags($text);
+        $s = html_entity_decode($s, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $s = preg_replace('/```[\s\S]*?```/', '[code block removed]', $s);
+        $s = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', '', $s);
+        $s = preg_replace('/\r\n|\r/', "\n", $s);
+        $s = preg_replace('/\n{4,}/', "\n\n\n", $s);
+        $s = preg_replace('/ {3,}/', '  ', $s);
+        return trim($s);
+    }
+
+    private function sanitizeMessageBody(array $msg): string
+    {
+        return $this->sanitizeForPrompt($msg['message'] ?? '');
     }
 }

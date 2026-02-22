@@ -237,14 +237,17 @@ class LMStudioAIProvider implements AIProviderInterface
         $used = 0; $budget = 8000; $lines = [];
         foreach ($msgs as $msg) {
             $type = $msg['admin'] ? 'ADMIN' : 'CLIENT';
-            $entry = "[{$type}] ({$msg['date']}):\n" . ($msg['message'] ?? '') . "\n\n";
+            $body = $this->sanitizeForPrompt($msg['message'] ?? '');
+            $entry = "[{$type}] ({$msg['date']}):\n{$body}\n\n";
             if ($used + strlen($entry) > $budget) break;
             $lines[] = $entry; $used += strlen($entry);
         }
         $messagesBlock = implode('', array_reverse($lines));
-        $servicesBlock = !empty($context['services_summary']) ? "Services:\n{$context['services_summary']}\n" : '';
+        $servicesBlock = !empty($context['services_summary'])
+            ? "Services:\n" . $this->sanitizeForPrompt($context['services_summary']) . "\n"
+            : '';
         $attachmentsBlock = !empty($context['attachments_text'])
-            ? "\n=== ATTACHMENT CONTEXT ===\n" . substr($context['attachments_text'], 0, 2000) . "\n"
+            ? "\n=== ATTACHMENT CONTEXT ===\n" . $this->sanitizeForPrompt(substr($context['attachments_text'], 0, 2000)) . "\n"
             : '';
 
         // Custom instruction is SUPREME PRIORITY — always rendered first
@@ -283,5 +286,21 @@ class LMStudioAIProvider implements AIProviderInterface
         $prompt .= "\n=== CONVERSATION ===\n" . $messagesBlock;
         if ($attachmentsBlock) $prompt .= $attachmentsBlock;
         return $prompt;
+    }
+
+    /**
+     * Sanitize input text before adding to the AI prompt.
+     * Removes HTML tags, control characters, code fences, and excess whitespace.
+     */
+    private function sanitizeForPrompt(string $text): string
+    {
+        $s = strip_tags($text);
+        $s = html_entity_decode($s, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $s = preg_replace('/```[\s\S]*?```/', '[code block removed]', $s);
+        $s = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', '', $s);
+        $s = preg_replace('/\r\n|\r/', "\n", $s);
+        $s = preg_replace('/\n{4,}/', "\n\n\n", $s);
+        $s = preg_replace('/ {3,}/', '  ', $s);
+        return trim($s);
     }
 }

@@ -356,9 +356,9 @@ HTML;
                 
                 var parsedResponse;
                 try {
-                    parsedResponse = JSON.parse(cleanContent);
+                    parsedResponse = robustJsonParse(cleanContent);
                 } catch (e) {
-                    throw new Error("Failed to parse local AI JSON. Raw output: " + cleanContent.substring(0, 100));
+                    throw new Error("Failed to parse local AI JSON even after recovery. Raw output: " + cleanContent.substring(0, 200));
                 }
 
                 var tokenDetails = { input: 0, output: 0 };
@@ -420,6 +420,134 @@ HTML;
             });
         }
 
+        /**
+         * Robust JSON parser — handles truncated, markdown-wrapped, and partially malformed AI responses.
+         *
+         * Pipeline:
+         *  1. Direct JSON.parse (happy path)
+         *  2. Strip markdown code fences
+         *  3. Extract balanced JSON object via brace counting
+         *  4. Attempt to repair truncated JSON (close open strings/arrays/objects)
+         *  5. Regex fallback: extract individual fields so we always return something
+         */
+        function robustJsonParse(raw) {
+            if (!raw) throw new Error("Empty response");
+
+            // --- Stage 1: direct parse ---
+            try { return JSON.parse(raw); } catch(e) {}
+
+            // --- Stage 2: strip markdown fences ---
+            var s = raw.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+            // Strip DeepSeek <think>...</think> blocks
+            s = s.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+            try { return JSON.parse(s); } catch(e) {}
+
+            // --- Stage 3: extract balanced JSON object via brace counting ---
+            var start = s.indexOf('{');
+            if (start !== -1) {
+                var depth = 0, inStr = false, esc = false, end = -1;
+                for (var i = start; i < s.length; i++) {
+                    var ch = s[i];
+                    if (esc) { esc = false; continue; }
+                    if (ch === '\\' && inStr) { esc = true; continue; }
+                    if (ch === '"') { inStr = !inStr; continue; }
+                    if (inStr) continue;
+                    if (ch === '{') depth++;
+                    else if (ch === '}') { depth--; if (depth === 0) { end = i; break; } }
+                }
+                if (end !== -1) {
+                    try { return JSON.parse(s.substring(start, end + 1)); } catch(e) {}
+                }
+
+                // --- Stage 4: repair truncated JSON (JSON not fully closed) ---
+                var partial = (end !== -1) ? s.substring(start, end + 1) : s.substring(start);
+                var repaired = repairTruncatedJson(partial);
+                if (repaired) {
+                    try { return JSON.parse(repaired); } catch(e) {}
+                }
+            }
+
+            // --- Stage 5: regex field extraction fallback ---
+            console.warn('Sahdev: JSON recovery falling back to regex field extraction. Raw:', s.substring(0, 300));
+            var defaults = {
+                ROOT_CAUSE: 'Analysis incomplete (response truncated by model).',
+                RESPONSIBILITY: 'Unknown',
+                RISK_LEVEL: 'Unknown',
+                INTERNAL_ACTION_PLAN: 'Review the ticket manually. The AI response was truncated before completing. Consider increasing max_tokens in settings.',
+                CLIENT_REPLY: 'We have received your ticket and are reviewing the issue. We will get back to you shortly.'
+            };
+            var fields = ['ROOT_CAUSE', 'RESPONSIBILITY', 'RISK_LEVEL', 'INTERNAL_ACTION_PLAN', 'CLIENT_REPLY'];
+            fields.forEach(function(f) {
+                // Match "FIELD": "value..." — value may be truncated
+                var re = new RegExp('"' + f + '"\\s*:\\s*"((?:[^"\\\\]|\\\\[\\s\\S])*)"?', 'i');
+                var m = s.match(re);
+                if (m && m[1]) defaults[f] = m[1].replace(/\\n/g, '\n').replace(/\\"/g, '"');
+            });
+            return defaults;
+        }
+
+        /**
+         * Attempts to close an unclosed / truncated JSON string by tracking open
+         * strings, arrays, and object keys.
+         */
+        function repairTruncatedJson(json) {
+            try {
+                // Remove trailing comma before closing
+                var s = json.replace(/,\s*$/, '');
+                var stack = [];
+                var inStr = false, esc = false;
+
+                for (var i = 0; i < s.length; i++) {
+                    var ch = s[i];
+                    if (esc) { esc = false; continue; }
+                    if (ch === '\\' && inStr) { esc = true; continue; }
+                    if (ch === '"') {
+                        inStr = !inStr;
+                        if (inStr) stack.push('"');
+                        else if (stack[stack.length - 1] === '"') stack.pop();
+                        continue;
+                    }
+                    if (inStr) continue;
+                    if (ch === '{') stack.push('}');
+                    else if (ch === '[') stack.push(']');
+                    else if (ch === '}' || ch === ']') stack.pop();
+                }
+
+                // If still inside a string, close it
+                var suffix = '';
+                if (inStr) suffix += '"';
+
+                // Close any open brackets/braces in reverse order
+                var closers = stack.filter(function(c) { return c === '}' || c === ']'; }).reverse();
+                suffix += closers.join('');
+
+                return s + suffix;
+            } catch(e) {
+                return null;
+            }
+        }
+
+        /**
+         * Sanitize text before inserting into the AI prompt.
+         * Removes HTML, control chars, code fences, and excess whitespace
+         * that can confuse the model and cause malformed JSON responses.
+         */
+        function sanitizeForPrompt(text) {
+            if (!text) return '';
+            var s = String(text);
+            // Strip HTML tags (ticket messages often contain HTML)
+            s = s.replace(/<[^>]*>/g, ' ');
+            // Decode common HTML entities
+            s = s.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ');
+            // Remove triple backtick blocks (code) — these can trip JSON mode
+            s = s.replace(/```[\s\S]*?```/g, '[code block removed]');
+            // Remove null bytes and other control chars (except newline/tab)
+            s = s.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+            // Normalize multiple spaces/newlines
+            s = s.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\n{4,}/g, '\n\n\n').replace(/ {3,}/g, '  ');
+            return s.trim();
+        }
+
         function buildPromptText(context, tone, customInstruction, userPromptTemplate) {
             // Build messages block
             var messagesBlock = '';
@@ -432,7 +560,8 @@ HTML;
                 for (var mi = 0; mi < msgs.length; mi++) {
                     var msg = msgs[mi];
                     var type = msg.admin ? 'ADMIN' : 'CLIENT';
-                    var entry = '[' + type + '] (' + msg.date + '):\n' + (msg.message || '') + '\n\n';
+                    var body = sanitizeForPrompt(msg.message || '');
+                    var entry = '[' + type + '] (' + msg.date + '):\n' + body + '\n\n';
                     if (used + entry.length > MSG_BUDGET) break;
                     lines.push(entry);
                     used += entry.length;
@@ -442,11 +571,13 @@ HTML;
             }
 
             // Build services block
-            var servicesBlock = context.services_summary ? ('Services:\n' + context.services_summary + '\n') : '';
+            var servicesBlock = context.services_summary
+                ? ('Services:\n' + sanitizeForPrompt(context.services_summary) + '\n')
+                : '';
 
             // Build attachments block
             var attachmentsBlock = context.attachments_text
-                ? ('\n=== ATTACHMENT CONTEXT ===\n' + context.attachments_text.substring(0, 2000) + '\n')
+                ? ('\n=== ATTACHMENT CONTEXT ===\n' + sanitizeForPrompt(context.attachments_text.substring(0, 2000)) + '\n')
                 : '';
 
             // Build custom instruction block — SUPREME PRIORITY always at the top
