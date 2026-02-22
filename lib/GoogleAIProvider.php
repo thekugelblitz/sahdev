@@ -218,45 +218,55 @@ class GoogleAIProvider implements AIProviderInterface
      */
     private function buildPrompt(array $context, string $tone, string $customInstruction, string $systemPrompt): string
     {
-        $prompt = "You will act as an expert technical support engineer based on the provided System Prompt.\n";
-        $prompt .= "Analyze the given ticket and output strictly in a valid JSON object matching this schema:\n";
+        $prompt = "=== TASK ===\n";
+        $prompt .= "Analyze the provided technical support ticket and output strictly in a valid JSON object matching the schema below. Do not include any extra text, markdown blocks, or commentary.\n\n";
+        
+        $prompt .= "=== SCHEMA ===\n";
         $prompt .= "{\n";
-        $prompt .= "  \"ROOT_CAUSE\": \"string (brief analysis)\",\n";
-        $prompt .= "  \"RESPONSIBILITY\": \"string (Client, Host, 3rd Party)\",\n";
-        $prompt .= "  \"RISK_LEVEL\": \"string (Low, Medium, High, Critical)\",\n";
-        $prompt .= "  \"INTERNAL_ACTION_PLAN\": \"string (steps team needs to take)\",\n";
-        $prompt .= "  \"CLIENT_REPLY\": \"string (markdown formatted reply to be sent to user)\"\n";
+        $prompt .= "  \"ROOT_CAUSE\": \"string (brief technical analysis of the issue)\",\n";
+        $prompt .= "  \"RESPONSIBILITY\": \"string (Client, Host, or 3rd Party)\",\n";
+        $prompt .= "  \"RISK_LEVEL\": \"string (Low, Medium, High, or Critical)\",\n";
+        $prompt .= "  \"INTERNAL_ACTION_PLAN\": \"string (detailed steps for the support team)\",\n";
+        $prompt .= "  \"CLIENT_REPLY\": \"string (The direct reply to the client, formatted in simple Markdown)\"\n";
         $prompt .= "}\n\n";
-        $prompt .= "CRITICAL FOR CLIENT_REPLY: Generate ONLY the core body of the reply in Markdown format. Do NOT include any greetings (like 'Hi Name,') and do NOT include any sign-offs or signatures (like 'Regards, Support'). The admin will inject this between their existing greeting and signature.\n\n";
 
+        $prompt .= "=== CONTEXTUAL DIRECTIVES ===\n";
         if (!empty($tone)) {
-            $prompt .= "The generated CLIENT_REPLY must have a {$tone} tone.\n";
+            $prompt .= "- TONE: Write the CLIENT_REPLY in a {$tone} tone.\n";
         }
-
         if (!empty($customInstruction)) {
-            $prompt .= "CUSTOM ADMIN INSTRUCTION (Follow strictly): {$customInstruction}\n\n";
+            $prompt .= "- CUSTOM ADMIN INSTRUCTION (MANDATORY): {$customInstruction}\n";
         }
+        $prompt .= "- CLIENT_REPLY CONTENT: Generate ONLY the body. Skip all greetings and sign-offs.\n\n";
 
         $prompt .= "=== TICKET DATA ===\n";
-        $prompt .= "Client Name: " . ($context['client_name'] ?? 'Unknown') . "\n";
-        $prompt .= "Department: " . ($context['department'] ?? 'Unknown') . "\n";
-        $prompt .= "Subject: " . ($context['subject'] ?? 'Unknown') . "\n";
+        $prompt .= "Client Name: " . ($context['client_name'] ?? 'Unknown Client') . "\n";
+        $prompt .= "Department: " . ($context['department'] ?? 'Support') . "\n";
+        $prompt .= "Subject: " . ($context['subject'] ?? 'Ticket') . "\n";
 
         if (!empty($context['services_summary'])) {
-            $prompt .= "Relevant Services: " . $context['services_summary'] . "\n";
+            $prompt .= "Services Information:\n" . $context['services_summary'] . "\n";
         }
 
-        $prompt .= "\n--- MESSAGES HISTORY ---\n";
+        $prompt .= "\n=== CONVERSATION HISTORY ===\n";
         if (!empty($context['messages'])) {
-            foreach ($context['messages'] as $msg) {
-                $type = $msg['admin'] ? 'ADMIN/SUPPORT' : 'CLIENT';
-                $prompt .= "[{$type}] {$msg['date']}:\n{$msg['message']}\n------------\n";
+            // Fill from newest -> oldest for context priority
+            $msgs = array_reverse($context['messages']);
+            $used = 0;
+            $budget = 8000;
+            $lines = [];
+            foreach ($msgs as $msg) {
+                $type = $msg['admin'] ? 'ADMIN' : 'CLIENT';
+                $entry = "[{$type}] ({$msg['date']}):\n" . ($msg['message'] ?? '') . "\n\n";
+                if ($used + strlen($entry) > $budget) break;
+                $lines[] = $entry;
+                $used += strlen($entry);
             }
+            $prompt .= implode("", array_reverse($lines));
         }
 
         if (!empty($context['attachments_text'])) {
-            $prompt .= "\n--- ATTACHMENT EXCERPTS ---\n";
-            $prompt .= $context['attachments_text'] . "\n";
+            $prompt .= "\n=== ATTACHMENT CONTEXT ===\n" . substr($context['attachments_text'], 0, 2000) . "\n";
         }
 
         return $prompt;

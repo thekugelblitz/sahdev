@@ -299,6 +299,8 @@ class AIController
             'max_tokens' => (int) $this->settings['max_tokens'],
             'system_prompt' => $systemPrompt,
             'context' => $context,
+            'tone' => $tone,
+            'custom_instruction' => $customInstruction,
             'has_fallback' => $this->fallbackProvider !== null,
             'fallback_api_key' => $this->settings['fallback_api_key'] ?? '',
         ];

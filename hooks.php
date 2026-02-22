@@ -282,8 +282,9 @@ HTML;
                 return;
             }
 
-            var promptText = buildPromptText(config.context, config.tone, config.customInstruction);
-            var systemMessage = config.system_prompt || "You are a helpful assistant.";
+            // config.custom_instruction and config.tone are passed from backend get_payload
+            var promptText = buildPromptText(config.context, config.tone, config.custom_instruction);
+            var systemMessage = config.system_prompt || "You are a helpful Senior Technical Support Engineer.";
 
             // --- Context window budget guard ---
             // Estimate available input tokens: assume model n_ctx ≈ 4096 (conservative default).
@@ -420,66 +421,59 @@ HTML;
         }
 
         function buildPromptText(context, tone, customInstruction) {
-            var prompt = "Analyze the given ticket and output strictly in a valid JSON object matching this schema without any markdown formatting block:\n";
+            var prompt = "=== TASK ===\n";
+            prompt += "Analyze the provided technical support ticket and output strictly in a valid JSON object matching the schema below. Do not include any extra text, markdown blocks, or commentary.\n\n";
+            
+            prompt += "=== SCHEMA ===\n";
             prompt += "{\n";
-            prompt += "  \"ROOT_CAUSE\": \"string (brief analysis)\",\n";
-            prompt += "  \"RESPONSIBILITY\": \"string (Client, Host, 3rd Party)\",\n";
-            prompt += "  \"RISK_LEVEL\": \"string (Low, Medium, High, Critical)\",\n";
-            prompt += "  \"INTERNAL_ACTION_PLAN\": \"string (steps team needs to take)\",\n";
-            prompt += "  \"CLIENT_REPLY\": \"string (html formatted reply to be sent to user)\"\n";
+            prompt += "  \"ROOT_CAUSE\": \"string (brief technical analysis of the issue)\",\n";
+            prompt += "  \"RESPONSIBILITY\": \"string (Client, Host, or 3rd Party)\",\n";
+            prompt += "  \"RISK_LEVEL\": \"string (Low, Medium, High, or Critical)\",\n";
+            prompt += "  \"INTERNAL_ACTION_PLAN\": \"string (detailed steps for the support team)\",\n";
+            prompt += "  \"CLIENT_REPLY\": \"string (The direct reply to the client, formatted in simple Markdown)\"\n";
             prompt += "}\n\n";
 
+            prompt += "=== CONTEXTUAL DIRECTIVES ===\n";
             if (tone) {
-                prompt += "The generated CLIENT_REPLY must have a " + tone + " tone.\n";
+                prompt += "- TONE: Write the CLIENT_REPLY in a " + tone + " tone.\n";
             }
             if (customInstruction) {
-                prompt += "CUSTOM ADMIN INSTRUCTION (Follow strictly): " + customInstruction + "\n\n";
+                prompt += "- CUSTOM ADMIN INSTRUCTION (MANDATORY): " + customInstruction + "\n";
             }
-            prompt += "CRITICAL FOR CLIENT_REPLY: Generate ONLY the core body of the reply in Markdown format. Do NOT include any greetings (like 'Hi Name,') and do NOT include any sign-offs or signatures (like 'Regards, Support'). The admin will inject this between their existing greeting and signature.\n\n";
+            prompt += "- CLIENT_REPLY CONTENT: Generate ONLY the body. Skip all greetings and sign-offs.\n\n";
 
             prompt += "=== TICKET DATA ===\n";
-            prompt += "Client Name: " + (context.client_name || 'Unknown') + "\n";
-            prompt += "Department: " + (context.department || 'Unknown') + "\n";
-            prompt += "Subject: " + (context.subject || 'Unknown') + "\n";
+            prompt += "Client Name: " + (context.client_name || 'Unknown Client') + "\n";
+            prompt += "Department: " + (context.department || 'Support') + "\n";
+            prompt += "Subject: " + (context.subject || 'Ticket') + "\n";
 
             if (context.services_summary) {
-                prompt += "Relevant Services: " + context.services_summary + "\n";
+                prompt += "Services Information:\n" + context.services_summary + "\n";
             }
 
-            prompt += "\n--- MESSAGES HISTORY ---\n";
+            prompt += "\n=== CONVERSATION HISTORY ===\n";
             if (context.messages && context.messages.length > 0) {
-                // Budget: ~10,000 chars for messages (~2,500 tokens), cap each message at 1,500 chars.
-                // Fill from newest → oldest so the most recent context is always included.
-                var MSG_BUDGET = 10000;
-                var MSG_MAX_CHARS = 1500;
+                // Focus on context retention
+                var MSG_BUDGET = 8000;
                 var used = 0;
                 var lines = [];
-                var msgs = context.messages.slice(); // copy
-                msgs.reverse(); // newest first
+                var msgs = context.messages.slice();
+                msgs.reverse(); // Build from newest
+                
                 for (var mi = 0; mi < msgs.length; mi++) {
                     var msg = msgs[mi];
-                    var type = msg.admin ? 'ADMIN/SUPPORT' : 'CLIENT';
-                    var body = msg.message || '';
-                    if (body.length > MSG_MAX_CHARS) {
-                        body = body.substring(0, MSG_MAX_CHARS) + '...[truncated]';
-                    }
-                    var entry = '[' + type + '] ' + msg.date + ':\n' + body + '\n------------\n';
+                    var type = msg.admin ? 'ADMIN' : 'CLIENT';
+                    var entry = '[' + type + '] (' + msg.date + '):\n' + (msg.message || '') + '\n\n';
                     if (used + entry.length > MSG_BUDGET) break;
                     lines.push(entry);
                     used += entry.length;
                 }
-                lines.reverse(); // restore chronological order
-                if (lines.length < context.messages.length) {
-                    prompt += '[Older messages omitted to fit context window]\n';
-                }
+                lines.reverse();
                 prompt += lines.join('');
             }
 
             if (context.attachments_text) {
-                // Cap attachment excerpts at 2,000 chars
-                var attText = context.attachments_text;
-                if (attText.length > 2000) { attText = attText.substring(0, 2000) + '...[truncated]'; }
-                prompt += "\n--- ATTACHMENT EXCERPTS ---\n" + attText + "\n";
+                prompt += "\n=== ATTACHMENT CONTEXT ===\n" + context.attachments_text.substring(0, 2000) + "\n";
             }
 
             return prompt;
