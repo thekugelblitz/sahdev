@@ -282,6 +282,35 @@ HTML;
             var promptText = buildPromptText(config.context, config.tone, config.customInstruction);
             var systemMessage = config.system_prompt || "You are a helpful assistant.";
 
+            // --- Context window budget guard ---
+            // Estimate available input tokens: assume model n_ctx ≈ 4096 (conservative default).
+            // Reserve config.max_tokens for output (or 512 if unset), rest is input budget.
+            var outputReserve = (config.max_tokens > 0 ? config.max_tokens : 512);
+            var estimatedNCtx = 4096; // conservative default; LM Studio doesn't expose n_ctx via API
+            var inputBudgetTokens = Math.max(estimatedNCtx - outputReserve, 1024);
+            var CHARS_PER_TOKEN = 4;
+            var inputBudgetChars = inputBudgetTokens * CHARS_PER_TOKEN;
+
+            // How many chars are we sending?
+            var totalChars = systemMessage.length + promptText.length;
+
+            if (totalChars > inputBudgetChars) {
+                // Reserve at least 25% of budget for system message (core identity), rest for user prompt
+                var minSystemChars = Math.floor(inputBudgetChars * 0.25);
+                var maxSystemChars = Math.floor(inputBudgetChars * 0.40);
+                var maxUserChars   = inputBudgetChars - Math.min(systemMessage.length, maxSystemChars);
+
+                if (systemMessage.length > maxSystemChars) {
+                    systemMessage = systemMessage.substring(0, maxSystemChars) + "\n...[system prompt truncated to fit context window]";
+                }
+                if (promptText.length > maxUserChars) {
+                    promptText = promptText.substring(0, maxUserChars) + "\n...[user prompt truncated to fit context window]";
+                }
+
+                console.warn("Sahdev: Prompt trimmed to fit LM Studio context window. Budget: " + inputBudgetChars + " chars. Was: " + totalChars + " chars.");
+            }
+            // --- End budget guard ---
+
             var llmPayload = {
                 model: config.model || "local-model",
                 messages: [
