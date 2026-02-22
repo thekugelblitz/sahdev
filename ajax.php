@@ -5,11 +5,11 @@
  * Secured entry point for analyzing tickets.
  */
 
-// Initialize WHMCS securely
-require_once dirname(__DIR__, 3) . '/init.php';
-
-// Ensure it returns JSON and blocks WHMCS output buffering warnings
-header('Content-Type: application/json');
+// Initialize WHMCS securely if not already initialized
+if (!defined("WHMCS")) {
+    require_once dirname(__DIR__, 3) . '/init.php';
+    header('Content-Type: application/json');
+}
 
 // Check if admin is logged in securely
 $adminId = $_SESSION['adminid'] ?? null;

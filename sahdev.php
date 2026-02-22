@@ -255,6 +255,12 @@ function sahdev_output($vars)
 
     // Basic routing
     try {
+        // Handle AJAX requests via Native WHMCS Routing
+        if ($action === 'ajax_handler') {
+            require_once __DIR__ . '/ajax.php';
+            exit;
+        }
+
         // Auto-migration for overwrites without reactivation
         try {
             \WHMCS\Database\Capsule::table('tblsahdev_providers')->first();

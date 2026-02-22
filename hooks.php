@@ -17,8 +17,8 @@ function sahdev_inject_ticket_panel($vars)
     // Generate CSRF form token securely
     $csrfToken = generate_token("form");
 
-    // We use a relative path for AJAX to avoid CORS problems if SystemURL has an HTTP/HTTPS mismatch
-    $ajaxUrl = '../modules/addons/sahdev/ajax.php';
+    // We use the native WHMCS addon routing for AJAX to ensure compatibility across custom admin folders and server setups
+    $ajaxUrl = 'addonmodules.php?module=sahdev&action=ajax_handler';
 
     // Output HTML Panel (collapsible using WHMCS bootstrap structure)
     // Needs to append into the "viewticket" page typically above replies or side sidebar
