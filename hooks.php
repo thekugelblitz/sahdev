@@ -328,7 +328,7 @@ HTML;
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'Authorization': 'Bearer local'
+                        'Authorization': 'Bearer ' + (config.api_key || 'local')
                     },
                     body: JSON.stringify(llmPayload)
                 });

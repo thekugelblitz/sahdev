@@ -35,7 +35,8 @@ class AIController
             if (empty($providerData->api_url))
                 throw new \Exception("Local AI Provider '{$providerData->name}' lacks an API URL.");
             require_once __DIR__ . '/LMStudioAIProvider.php';
-            return new LMStudioAIProvider($providerData->api_url);
+            $apiKey = !empty($providerData->api_key) ? decrypt($providerData->api_key) : '';
+            return new LMStudioAIProvider($providerData->api_url, $apiKey);
         }
         throw new \Exception("Unsupported AI Provider Type: " . $providerData->provider_type);
     }
@@ -70,6 +71,7 @@ class AIController
         $this->settings['model_name'] = $primaryData->model_name; // inject for hash logic
         $this->settings['api_url'] = $primaryData->api_url ?? ''; // inject for getPayload() LMStudio routing
         $this->settings['provider_type'] = $primaryData->provider_type; // inject provider type
+        $this->settings['api_key'] = !empty($primaryData->api_key) ? decrypt($primaryData->api_key) : ''; // inject decrypted key
         $this->provider = $this->initializeProvider($primaryData);
 
         // Load Fallback Provider (Optional)
@@ -80,6 +82,7 @@ class AIController
                 // We keep the settings instance mostly the same but initialize the second provider
                 $this->fallbackProvider = $this->initializeProvider($fallbackData);
                 $this->settings['fallback_model_name'] = $fallbackData->model_name;
+                $this->settings['fallback_api_key'] = !empty($fallbackData->api_key) ? decrypt($fallbackData->api_key) : ''; // inject decrypted key
             }
         }
     }
@@ -290,12 +293,14 @@ class AIController
             'hash_signature' => $hashSignature,
             'provider' => $this->settings['provider_type'] === 'lmstudio' ? 'lmstudio' : 'google',
             'api_url' => $this->settings['api_url'] ?? '',
+            'api_key' => $this->settings['api_key'] ?? '',
             'model' => $this->settings['model_name'],
             'temperature' => (float) $this->settings['temperature'],
             'max_tokens' => (int) $this->settings['max_tokens'],
             'system_prompt' => $systemPrompt,
             'context' => $context,
             'has_fallback' => $this->fallbackProvider !== null,
+            'fallback_api_key' => $this->settings['fallback_api_key'] ?? '',
         ];
     }
 

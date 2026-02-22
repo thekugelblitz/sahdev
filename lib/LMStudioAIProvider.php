@@ -9,14 +9,16 @@ namespace Sahdev\Lib;
 class LMStudioAIProvider implements AIProviderInterface
 {
     private $apiUrl;
+    private $apiKey;
     private $lastTokenUsage = 0;
     private $lastTokenDetails = ['input' => 0, 'output' => 0];
     private $maxRetries = 1;
     private $timeout = 120; // local models can take longer
 
-    public function __construct(string $apiUrl)
+    public function __construct(string $apiUrl, string $apiKey = '')
     {
         $this->apiUrl = rtrim($apiUrl, '/');
+        $this->apiKey = $apiKey;
         // If they just put http://localhost:1234, append /v1/chat/completions
         if (substr($this->apiUrl, -1) !== 's' && substr($this->apiUrl, -4) !== 'chat' && strpos($this->apiUrl, 'v1') === false) {
             $this->apiUrl .= '/v1/chat/completions';
@@ -184,11 +186,15 @@ class LMStudioAIProvider implements AIProviderInterface
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_POST, true);
         curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        $headers = [
             'Content-Type: application/json',
-            // Some local apis require a bearer token even if just dummy
-            'Authorization: Bearer dummy_token'
-        ]);
+        ];
+
+        // Use the provided API key if available, otherwise fallback to 'local' for auth-less setups
+        $token = !empty($this->apiKey) ? $this->apiKey : 'local';
+        $headers[] = 'Authorization: Bearer ' . $token;
+
+        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
         curl_setopt($ch, CURLOPT_TIMEOUT, $this->timeout);
 
         $result = curl_exec($ch);
