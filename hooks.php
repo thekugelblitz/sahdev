@@ -403,7 +403,6 @@ HTML;
             if (customInstruction) {
                 prompt += "CUSTOM ADMIN INSTRUCTION (Follow strictly): " + customInstruction + "\n\n";
             }
-            // Remove the signature verbatim injection for markdown bodies
             prompt += "CRITICAL FOR CLIENT_REPLY: Generate ONLY the core body of the reply in Markdown format. Do NOT include any greetings (like 'Hi Name,') and do NOT include any sign-offs or signatures (like 'Regards, Support'). The admin will inject this between their existing greeting and signature.\n\n";
 
             prompt += "=== TICKET DATA ===\n";
@@ -417,14 +416,38 @@ HTML;
 
             prompt += "\n--- MESSAGES HISTORY ---\n";
             if (context.messages && context.messages.length > 0) {
-                context.messages.forEach(function(msg) {
+                // Budget: ~10,000 chars for messages (~2,500 tokens), cap each message at 1,500 chars.
+                // Fill from newest → oldest so the most recent context is always included.
+                var MSG_BUDGET = 10000;
+                var MSG_MAX_CHARS = 1500;
+                var used = 0;
+                var lines = [];
+                var msgs = context.messages.slice(); // copy
+                msgs.reverse(); // newest first
+                for (var mi = 0; mi < msgs.length; mi++) {
+                    var msg = msgs[mi];
                     var type = msg.admin ? 'ADMIN/SUPPORT' : 'CLIENT';
-                    prompt += "[" + type + "] " + msg.date + ":\n" + msg.message + "\n------------\n";
-                });
+                    var body = msg.message || '';
+                    if (body.length > MSG_MAX_CHARS) {
+                        body = body.substring(0, MSG_MAX_CHARS) + '...[truncated]';
+                    }
+                    var entry = '[' + type + '] ' + msg.date + ':\n' + body + '\n------------\n';
+                    if (used + entry.length > MSG_BUDGET) break;
+                    lines.push(entry);
+                    used += entry.length;
+                }
+                lines.reverse(); // restore chronological order
+                if (lines.length < context.messages.length) {
+                    prompt += '[Older messages omitted to fit context window]\n';
+                }
+                prompt += lines.join('');
             }
 
             if (context.attachments_text) {
-                prompt += "\n--- ATTACHMENT EXCERPTS ---\n" + context.attachments_text + "\n";
+                // Cap attachment excerpts at 2,000 chars
+                var attText = context.attachments_text;
+                if (attText.length > 2000) { attText = attText.substring(0, 2000) + '...[truncated]'; }
+                prompt += "\n--- ATTACHMENT EXCERPTS ---\n" + attText + "\n";
             }
 
             return prompt;

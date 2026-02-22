@@ -68,6 +68,8 @@ class AIController
             throw new \Exception("Primary AI Provider not found. Please check Sahdev settings.");
 
         $this->settings['model_name'] = $primaryData->model_name; // inject for hash logic
+        $this->settings['api_url'] = $primaryData->api_url ?? ''; // inject for getPayload() LMStudio routing
+        $this->settings['provider_type'] = $primaryData->provider_type; // inject provider type
         $this->provider = $this->initializeProvider($primaryData);
 
         // Load Fallback Provider (Optional)
@@ -286,7 +288,7 @@ class AIController
             'status' => 'success',
             'cached' => false,
             'hash_signature' => $hashSignature,
-            'provider' => $this->provider instanceof LMStudioAIProvider ? 'lmstudio' : 'google',
+            'provider' => $this->settings['provider_type'] === 'lmstudio' ? 'lmstudio' : 'google',
             'api_url' => $this->settings['api_url'] ?? '',
             'model' => $this->settings['model_name'],
             'temperature' => (float) $this->settings['temperature'],

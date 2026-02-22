@@ -126,12 +126,17 @@ class TicketDataExtractor
     private function extractMessages($ticket): array
     {
         $messages = [];
+        $maxMessageChars = 3000; // cap per message to avoid context overflow on small-context models
 
         // Let's add the original first
+        $body = strip_tags($ticket->message);
+        if (strlen($body) > $maxMessageChars) {
+            $body = substr($body, 0, $maxMessageChars) . '...[truncated]';
+        }
         $messages[] = [
-            'date' => $ticket->date,
-            'message' => strip_tags($ticket->message),
-            'admin' => false,
+            'date'    => $ticket->date,
+            'message' => $body,
+            'admin'   => false,
         ];
 
         // Fetch newest replies first, up to limit
@@ -145,10 +150,14 @@ class TicketDataExtractor
         $replies = $replies->reverse();
 
         foreach ($replies as $reply) {
+            $body = strip_tags($reply->message);
+            if (strlen($body) > $maxMessageChars) {
+                $body = substr($body, 0, $maxMessageChars) . '...[truncated]';
+            }
             $messages[] = [
-                'date' => $reply->date,
-                'message' => strip_tags($reply->message),
-                'admin' => !empty($reply->admin),
+                'date'    => $reply->date,
+                'message' => $body,
+                'admin'   => !empty($reply->admin),
             ];
         }
 
