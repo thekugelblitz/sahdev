@@ -29,6 +29,18 @@ function sahdev_inject_ticket_panel($vars)
     // Load Tone Defaults from DB
     $settings = Capsule::table('tblsahdev_settings')->first();
     $defaultTone = $settings ? $settings->tone_default : 'Professional';
+
+    // Inline migration: ensure auto_analyze_on_load column exists on older installs
+    try {
+        Capsule::table('tblsahdev_settings')->select('auto_analyze_on_load')->first();
+    } catch (\Exception $e) {
+        Capsule::schema()->table('tblsahdev_settings', function ($table) {
+            $table->boolean('auto_analyze_on_load')->default(0)->after('user_prompt_template');
+        });
+        // Re-fetch settings now column exists
+        $settings = Capsule::table('tblsahdev_settings')->first();
+    }
+
     $autoAnalyzeEnabled = $settings && !empty($settings->auto_analyze_on_load) ? 'true' : 'false';
 
     $isSel = function ($val, $current) {

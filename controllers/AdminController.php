@@ -20,6 +20,15 @@ class AdminController
      */
     public function settings()
     {
+        // Inline migration: ensure auto_analyze_on_load column exists on older installs
+        try {
+            Capsule::table('tblsahdev_settings')->select('auto_analyze_on_load')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                $table->boolean('auto_analyze_on_load')->default(0)->after('user_prompt_template');
+            });
+        }
+
         // Handle form submission
         if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_settings'])) {
             check_token("WHMCS.admin.default"); // Verify CSRF
