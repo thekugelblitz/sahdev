@@ -892,14 +892,38 @@ HTML;
                 return;
             }
             try {
+                var sysContent  = config.system_prompt || 'You are a helpful support specialist.';
+                var userContent = config.rewrite_prompt || '';
+
+                // Context window guard: 4 chars ≈ 1 token.
+                // Reserve output tokens, cap total input to remaining budget.
+                var outputReserve    = Math.max(config.max_tokens || 512, 256);
+                var ctxTokens        = 4096; // safe default for local models
+                var inputBudgetChars = Math.max(ctxTokens - outputReserve, 1024) * 4;
+
+                if (sysContent.length + userContent.length > inputBudgetChars) {
+                    // Strategy: keep rewrite_prompt mostly intact — trim system prompt first.
+                    // If the system prompt has a "RULES & KNOWLEDGEBASE" block, strip it first.
+                    var kbSeparator = '=== RULES & KNOWLEDGEBASE ===';
+                    var kbIdx = sysContent.indexOf(kbSeparator);
+                    if (kbIdx !== -1) {
+                        sysContent = sysContent.substring(0, kbIdx).trim() + '\n[Knowledgebase omitted to fit context window]';
+                    }
+                    // If still too long, hard-truncate system prompt to 40% of budget
+                    var maxSys  = Math.floor(inputBudgetChars * 0.40);
+                    var maxUser = inputBudgetChars - Math.min(sysContent.length, maxSys);
+                    if (sysContent.length  > maxSys)  sysContent  = sysContent.substring(0, maxSys)   + '\n...[truncated]';
+                    if (userContent.length > maxUser) userContent = userContent.substring(0, maxUser)  + '\n...[truncated]';
+                }
+
                 var llmPayload = {
                     model: config.model || 'local-model',
                     messages: [
-                        { role: 'system', content: config.system_prompt || 'You are a helpful support specialist.' },
-                        { role: 'user', content: config.rewrite_prompt }
+                        { role: 'system', content: sysContent },
+                        { role: 'user',   content: userContent }
                     ],
                     temperature: config.temperature || 0.7,
-                    max_tokens: config.max_tokens || 1024,
+                    max_tokens: outputReserve,
                     stream: false
                 };
 
