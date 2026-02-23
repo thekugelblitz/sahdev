@@ -71,8 +71,8 @@ function sahdev_activate()
                 Capsule::table('tblsahdev_settings')->select('primary_provider_id')->first();
             } catch (\Exception $e) {
                 Capsule::schema()->table('tblsahdev_settings', function ($table) {
-                    $table->integer('primary_provider_id')->nullable()->after('id');
-                    $table->integer('fallback_provider_id')->nullable()->after('primary_provider_id');
+                    $table->integer('primary_provider_id')->nullable();
+                    $table->integer('fallback_provider_id')->nullable();
                 });
             }
 
@@ -81,7 +81,7 @@ function sahdev_activate()
                 Capsule::table('tblsahdev_settings')->select('user_prompt_template')->first();
             } catch (\Exception $e) {
                 Capsule::schema()->table('tblsahdev_settings', function ($table) use ($defaultUserPromptTemplate) {
-                    $table->longText('user_prompt_template')->nullable()->after('system_prompt');
+                    $table->longText('user_prompt_template')->nullable();
                 });
                 Capsule::table('tblsahdev_settings')->where('id', 1)->update(['user_prompt_template' => $defaultUserPromptTemplate]);
             }
@@ -91,7 +91,7 @@ function sahdev_activate()
                 Capsule::table('tblsahdev_settings')->select('auto_analyze_on_load')->first();
             } catch (\Exception $e) {
                 Capsule::schema()->table('tblsahdev_settings', function ($table) {
-                    $table->boolean('auto_analyze_on_load')->default(0)->after('user_prompt_template');
+                    $table->boolean('auto_analyze_on_load')->default(0);
                 });
             }
         } catch (\Exception $e) {

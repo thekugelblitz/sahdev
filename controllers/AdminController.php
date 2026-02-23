@@ -25,7 +25,7 @@ class AdminController
             Capsule::table('tblsahdev_settings')->select('auto_analyze_on_load')->first();
         } catch (\Exception $e) {
             Capsule::schema()->table('tblsahdev_settings', function ($table) {
-                $table->boolean('auto_analyze_on_load')->default(0)->after('user_prompt_template');
+                $table->boolean('auto_analyze_on_load')->default(0);
             });
         }
 
