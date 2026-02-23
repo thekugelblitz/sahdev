@@ -807,7 +807,8 @@ HTML;
         }
 
         // =====================================================================
-        // FEATURE: Rewrite It — Expand Admin Draft Reply from TinyMCE
+        // FEATURE: ✍️ Rewrite It — Expand Admin Draft Reply
+        // Uses get_rewrite_payload → browser-side LM Studio fetch (or server-side for Google)
         // =====================================================================
         $(document).on('click', '#btn-sahdev-rewrite', function() {
             var draftText = '';
@@ -834,58 +835,161 @@ HTML;
             $('#sahdev-rewrite-status').text('');
             $('#btn-sahdev-rewrite').prop('disabled', true);
 
+            var rewriteBaseData = {
+                ticket_id: $('#sahdev_ticket_id').val(),
+                draft_text: draftText,
+                tone: $('#sahdev_tone').val() || 'Professional',
+                instruction: $('#sahdev_instruction').val() || '',
+                token: $('input[name="token"]').val()
+            };
+
+            // Step 1: Get payload from server (provider info + constructed prompt)
             $.ajax({
                 url: sahdevAjaxUrl,
                 type: 'POST',
-                data: {
-                    action: 'rewrite_reply',
-                    ticket_id: $('#sahdev_ticket_id').val(),
-                    draft_text: draftText,
-                    tone: $('#sahdev_tone').val() || 'Professional',
-                    instruction: $('#sahdev_instruction').val() || '',
-                    token: $('input[name="token"]').val()
-                },
+                data: Object.assign({ action: 'get_rewrite_payload' }, rewriteBaseData),
                 dataType: 'json',
                 success: function(res) {
-                    $('#sahdev-rewrite-loading').hide();
-                    $('#btn-sahdev-rewrite').prop('disabled', false);
+                    if (!res || res.status !== 'success') {
+                        showRewriteError((res && res.message) ? res.message : 'Failed to prepare rewrite request.');
+                        return;
+                    }
 
-                    if (res && res.status === 'success' && res.reply) {
-                        var polishedReply = res.reply;
-                        var polishedHtml  = polishedReply.replace(/\n/g, '<br>');
-
-                        // Insert back into TinyMCE or fallback textarea
-                        if (typeof tinymce !== 'undefined' && tinymce.activeEditor) {
-                            tinymce.activeEditor.setContent(polishedHtml);
-                        } else if ($('#replymessage').length) {
-                            $('#replymessage').val(polishedReply);
-                        }
-
-                        $('#sahdev-rewrite-status').html('<span style="color:#198754;"><i class="fas fa-check-circle"></i> Draft polished &amp; inserted into editor!</span>');
-
-                        // Scroll to reply box
-                        if ($('#replyticket').length) {
-                            $('html, body').animate({ scrollTop: $('#replyticket').offset().top - 60 }, 400);
-                        }
+                    if (res.provider === 'lmstudio') {
+                        // Step 2a: LM Studio — browser calls directly (same as main analyze flow)
+                        executeRewriteLMStudio(res, rewriteBaseData);
                     } else {
-                        var errMsg = (res && res.message) ? res.message : 'Sahdev could not rewrite the reply. Please try again.';
-                        $('#sahdev-rewrite-error').html('<i class="fas fa-exclamation-circle"></i> ' + errMsg).show();
+                        // Step 2b: Google — server handles it
+                        $.ajax({
+                            url: sahdevAjaxUrl,
+                            type: 'POST',
+                            data: Object.assign({ action: 'rewrite_reply' }, rewriteBaseData),
+                            dataType: 'json',
+                            success: function(r) {
+                                $('#sahdev-rewrite-loading').hide();
+                                $('#btn-sahdev-rewrite').prop('disabled', false);
+                                if (r && r.status === 'success' && r.reply) {
+                                    insertRewriteResult(r.reply);
+                                } else {
+                                    showRewriteError((r && r.message) ? r.message : 'Server rewrite failed.');
+                                }
+                            },
+                            error: function(xhr, s, e) {
+                                showRewriteError('Server error: ' + e + ' (HTTP ' + xhr.status + ')');
+                            }
+                        });
                     }
                 },
-                error: function(xhr, status, error) {
-                    $('#sahdev-rewrite-loading').hide();
-                    $('#btn-sahdev-rewrite').prop('disabled', false);
-                    var errDetail = (xhr.responseJSON && xhr.responseJSON.message)
-                        ? xhr.responseJSON.message
-                        : ('Server error: ' + error + ' (HTTP ' + xhr.status + ')');
-                    $('#sahdev-rewrite-error').html('<i class="fas fa-exclamation-circle"></i> ' + errDetail).show();
+                error: function(xhr, s, e) {
+                    showRewriteError('Server error: ' + e + ' (HTTP ' + xhr.status + ')');
                 }
             });
         });
 
+        async function executeRewriteLMStudio(config, baseData) {
+            if (!config.api_url) {
+                showRewriteError('LM Studio API URL not configured.');
+                return;
+            }
+            try {
+                var llmPayload = {
+                    model: config.model || 'local-model',
+                    messages: [
+                        { role: 'system', content: config.system_prompt || 'You are a helpful support specialist.' },
+                        { role: 'user', content: config.rewrite_prompt }
+                    ],
+                    temperature: config.temperature || 0.7,
+                    max_tokens: config.max_tokens || 1024,
+                    stream: false
+                };
+
+                var response = await fetch(config.api_url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (config.api_key || 'local') },
+                    body: JSON.stringify(llmPayload)
+                });
+
+                if (!response.ok) { throw new Error('HTTP ' + response.status + ' - ' + await response.text()); }
+
+                var data = await response.json();
+                var rawText = data.choices && data.choices[0] && data.choices[0].message
+                    ? data.choices[0].message.content : '';
+
+                // Strip <think> blocks (DeepSeek etc.), trim whitespace
+                rawText = rawText.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+
+                $('#sahdev-rewrite-loading').hide();
+                $('#btn-sahdev-rewrite').prop('disabled', false);
+
+                if (rawText) {
+                    insertRewriteResult(rawText);
+                } else {
+                    showRewriteError('LM Studio returned an empty response.');
+                }
+            } catch(err) {
+                var isOffline = err.message.toLowerCase().indexOf('failed to fetch') !== -1 || err.message.toLowerCase().indexOf('networkerror') !== -1;
+                if (isOffline && config.has_fallback) {
+                    // Try server-side fallback (Google)
+                    $.ajax({
+                        url: sahdevAjaxUrl,
+                        type: 'POST',
+                        data: Object.assign({ action: 'rewrite_reply', force_fallback: 'true' }, baseData),
+                        dataType: 'json',
+                        success: function(r) {
+                            $('#sahdev-rewrite-loading').hide();
+                            $('#btn-sahdev-rewrite').prop('disabled', false);
+                            if (r && r.status === 'success' && r.reply) { insertRewriteResult(r.reply); }
+                            else { showRewriteError((r && r.message) || 'Fallback rewrite failed.'); }
+                        },
+                        error: function(xhr, s, e) { showRewriteError('Fallback error: ' + e); }
+                    });
+                } else {
+                    showRewriteError('LM Studio Error: ' + err.message);
+                }
+            }
+        }
+
+        function insertRewriteResult(replyText) {
+            var polishedHtml = replyText.replace(/\n/g, '<br>');
+            if (typeof tinymce !== 'undefined' && tinymce.activeEditor) {
+                tinymce.activeEditor.setContent(polishedHtml);
+            } else if ($('#replymessage').length) {
+                $('#replymessage').val(replyText);
+            }
+            $('#sahdev-rewrite-status').html('<span style="color:#198754;"><i class="fas fa-check-circle"></i> Draft polished &amp; inserted into editor!</span>');
+            if ($('#replyticket').length) {
+                $('html, body').animate({ scrollTop: $('#replyticket').offset().top - 60 }, 400);
+            }
+        }
+
+        function showRewriteError(msg) {
+            $('#sahdev-rewrite-loading').hide();
+            $('#btn-sahdev-rewrite').prop('disabled', false);
+            $('#sahdev-rewrite-error').html('<i class="fas fa-exclamation-circle"></i> ' + msg).show();
+        }
+
         // =====================================================================
-        // FEATURE: Auto-Load AI Snapshot on Ticket Page Open
+        // FEATURE: ⚡ Auto-Load AI Snapshot — uses same get_payload flow as main button
         // =====================================================================
+        function renderSnapResults(data, tokensUsed, execTimeMs) {
+            $('#sahdev-snapshot-loading').hide();
+            $('#sahdev-snap-cause').text(data.ROOT_CAUSE || 'N/A');
+            $('#sahdev-snap-resp').text(data.RESPONSIBILITY || 'N/A');
+            $('#sahdev-snap-risk').text(data.RISK_LEVEL || 'N/A');
+            $('#sahdev-snap-plan').text(data.INTERNAL_ACTION_PLAN || 'N/A');
+            var snapReplyHtml = data.CLIENT_REPLY ? data.CLIENT_REPLY.replace(/\n/g, '<br>') : 'N/A';
+            $('#sahdev-snap-reply').html(snapReplyHtml);
+            var statsText = (tokensUsed === 'Cached') ? 'Cached result (instant)' : ('Tokens: ' + (tokensUsed || '?') + ' | Time: ' + (execTimeMs || 0) + 'ms');
+            $('#sahdev-snap-stats').text(statsText);
+            $('#sahdev-snapshot-results').fadeIn();
+        }
+
+        function showSnapSleeping(techMsg) {
+            $('#sahdev-snapshot-loading').hide();
+            if (techMsg) { $('#sahdev-snapshot-tech-error').text(techMsg).show(); }
+            $('#sahdev-snapshot-sleeping').show();
+        }
+
         function sahdevSnapInsertToEditor() {
             var replyHtml = $('#sahdev-snap-reply').html();
             if (typeof tinymce !== 'undefined' && tinymce.activeEditor) {
@@ -903,58 +1007,149 @@ HTML;
             $('#sahdev-snapshot-outer').show();
             $('#sahdev-snapshot-loading').show();
 
+            var snapBaseData = {
+                ticket_id: $('#sahdev_ticket_id').val(),
+                tone: $('#sahdev_tone').val() || 'Professional',
+                intensity: 3,
+                instruction: '',
+                intent: 'AUTO',
+                token: $('input[name="token"]').val(),
+                force_regenerate: 'false'
+            };
+
+            // Step 1: get_payload — same as main button (checks cache + gets provider info)
             $.ajax({
                 url: sahdevAjaxUrl,
                 type: 'POST',
-                data: {
-                    action: 'auto_analyze',
-                    ticket_id: $('#sahdev_ticket_id').val(),
-                    tone: $('#sahdev_tone').val() || 'Professional',
-                    intensity: 3,
-                    instruction: '',
-                    intent: 'AUTO',
-                    token: $('input[name="token"]').val(),
-                    force_regenerate: 'false'
-                },
+                data: Object.assign({ action: 'get_payload' }, snapBaseData),
                 dataType: 'json',
                 success: function(res) {
-                    $('#sahdev-snapshot-loading').hide();
+                    if (!res || res.status !== 'success') {
+                        showSnapSleeping('Status: ' + (res ? res.status : 'unknown') + '\nMessage: ' + (res ? res.message : 'No response'));
+                        return;
+                    }
 
-                    if (res && res.status === 'success' && res.data) {
-                        var d = res.data;
-                        $('#sahdev-snap-cause').text(d.ROOT_CAUSE || 'N/A');
-                        $('#sahdev-snap-resp').text(d.RESPONSIBILITY || 'N/A');
-                        $('#sahdev-snap-risk').text(d.RISK_LEVEL || 'N/A');
-                        $('#sahdev-snap-plan').text(d.INTERNAL_ACTION_PLAN || 'N/A');
+                    // Cache hit — render immediately
+                    if (res.cached) {
+                        renderSnapResults(res.data, 'Cached', 0);
+                        return;
+                    }
 
-                        var snapReplyHtml = d.CLIENT_REPLY ? d.CLIENT_REPLY.replace(/\n/g, '<br>') : 'N/A';
-                        $('#sahdev-snap-reply').html(snapReplyHtml);
-
-                        var statsText = res.cached
-                            ? 'Cached result (instant)'
-                            : ('Tokens: ' + (res.tokens_used || '?') + ' | Time: ' + (res.execution_time_ms || 0) + 'ms');
-                        $('#sahdev-snap-stats').text(statsText);
-
-                        $('#sahdev-snapshot-results').fadeIn();
+                    // No cache — need to call AI
+                    if (res.provider === 'lmstudio') {
+                        // Step 2a: browser calls LM Studio directly
+                        executeSnapLMStudio(res, snapBaseData);
                     } else {
-                        // AI responded but with an error status
-                        var errMsg = (res && res.message) ? res.message : 'AI returned an unexpected response.';
-                        $('#sahdev-snapshot-tech-error').text('Status: ' + (res ? res.status : 'unknown') + '\nMessage: ' + errMsg).show();
-                        $('#sahdev-snapshot-sleeping').show();
+                        // Step 2b: server-side Google call
+                        $.ajax({
+                            url: sahdevAjaxUrl,
+                            type: 'POST',
+                            data: Object.assign({ action: 'analyze_ticket' }, snapBaseData),
+                            dataType: 'json',
+                            success: function(r) {
+                                if (r && r.status === 'success' && r.data) {
+                                    renderSnapResults(r.data, r.tokens_used, r.execution_time_ms);
+                                } else {
+                                    showSnapSleeping('Status: ' + (r ? r.status : 'unknown') + '\nMessage: ' + (r ? r.message : 'empty'));
+                                }
+                            },
+                            error: function(xhr, s, e) {
+                                var techMsg = 'AJAX Error: ' + e + ' (HTTP ' + xhr.status + ')';
+                                if (xhr.responseJSON && xhr.responseJSON.message) techMsg += '\nServer: ' + xhr.responseJSON.message;
+                                showSnapSleeping(techMsg);
+                            }
+                        });
                     }
                 },
-                error: function(xhr, status, error) {
-                    $('#sahdev-snapshot-loading').hide();
-                    var techMsg = 'AJAX Error: ' + error + ' (HTTP ' + xhr.status + ')';
-                    if (xhr.responseJSON && xhr.responseJSON.message) {
-                        techMsg += '\nServer: ' + xhr.responseJSON.message;
-                    } else if (xhr.responseText && xhr.responseText.length < 600) {
-                        techMsg += '\nRaw: ' + xhr.responseText;
-                    }
-                    $('#sahdev-snapshot-tech-error').text(techMsg).show();
-                    $('#sahdev-snapshot-sleeping').show();
+                error: function(xhr, s, e) {
+                    var techMsg = 'AJAX Error: ' + e + ' (HTTP ' + xhr.status + ')';
+                    if (xhr.responseJSON && xhr.responseJSON.message) techMsg += '\nServer: ' + xhr.responseJSON.message;
+                    showSnapSleeping(techMsg);
                 }
             });
+        }
+
+        async function executeSnapLMStudio(config, snapBaseData) {
+            if (!config.api_url) {
+                showSnapSleeping('LM Studio API URL not configured in Sahdev settings.');
+                return;
+            }
+            var promptText = buildPromptText(config.context, config.tone, config.custom_instruction, config.user_prompt_template);
+            var systemMessage = config.system_prompt || 'You are a helpful Senior Technical Support Engineer.';
+
+            // Context window guard (same logic as main button)
+            var outputReserve = (config.max_tokens > 0 ? config.max_tokens : 512);
+            var inputBudgetChars = Math.max(4096 - outputReserve, 1024) * 4;
+            if (systemMessage.length + promptText.length > inputBudgetChars) {
+                var maxSys = Math.floor(inputBudgetChars * 0.40);
+                var maxUser = inputBudgetChars - Math.min(systemMessage.length, maxSys);
+                if (systemMessage.length > maxSys) systemMessage = systemMessage.substring(0, maxSys) + '\n...[truncated]';
+                if (promptText.length > maxUser) promptText = promptText.substring(0, maxUser) + '\n...[truncated]';
+            }
+
+            var llmPayload = {
+                model: config.model || 'local-model',
+                messages: [
+                    { role: 'system', content: systemMessage },
+                    { role: 'user', content: promptText }
+                ],
+                temperature: config.temperature || 0.7,
+                stream: false
+            };
+
+            var startTime = performance.now();
+            try {
+                var response = await fetch(config.api_url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (config.api_key || 'local') },
+                    body: JSON.stringify(llmPayload)
+                });
+                if (!response.ok) { throw new Error('HTTP ' + response.status + ' - ' + await response.text()); }
+
+                var data = await response.json();
+                var rawContent = data.choices && data.choices[0] && data.choices[0].message ? data.choices[0].message.content : '';
+                rawContent = rawContent.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+                var firstBrace = rawContent.indexOf('{'), lastBrace = rawContent.lastIndexOf('}');
+                if (firstBrace !== -1 && lastBrace !== -1) rawContent = rawContent.substring(firstBrace, lastBrace + 1);
+
+                var parsedResponse;
+                try { parsedResponse = robustJsonParse(rawContent); }
+                catch(e) { throw new Error('JSON parse failed: ' + rawContent.substring(0, 200)); }
+
+                var tokenDetails = { input: 0, output: 0 };
+                var totalTokens = 0;
+                if (data.usage) {
+                    tokenDetails.input = data.usage.prompt_tokens || 0;
+                    tokenDetails.output = data.usage.completion_tokens || 0;
+                    totalTokens = data.usage.total_tokens || (tokenDetails.input + tokenDetails.output);
+                }
+                var execTimeMs = Math.round(performance.now() - startTime);
+
+                // Save to backend cache (same as main flow save_response)
+                var base64Json = btoa(unescape(encodeURIComponent(JSON.stringify(parsedResponse))));
+                $.ajax({
+                    url: sahdevAjaxUrl,
+                    type: 'POST',
+                    data: Object.assign({
+                        action: 'save_response',
+                        hash_signature: config.hash_signature,
+                        ai_response: base64Json,
+                        token_usage: totalTokens,
+                        exec_time: execTimeMs,
+                        token_details: JSON.stringify(tokenDetails)
+                    }, snapBaseData),
+                    dataType: 'json'
+                });
+
+                renderSnapResults(parsedResponse, totalTokens, execTimeMs);
+
+            } catch(err) {
+                var isOffline = err.message.toLowerCase().indexOf('failed to fetch') !== -1 || err.message.toLowerCase().indexOf('networkerror') !== -1;
+                var errMsg = isOffline
+                    ? 'Could not connect to LM Studio at ' + config.api_url + '. Ensure LM Studio is running, Local Server is started, and CORS is enabled.'
+                    : err.message;
+                showSnapSleeping(errMsg);
+            }
         }
 
         // Expose globally for inline onclick handlers

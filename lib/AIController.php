@@ -376,13 +376,73 @@ class AIController
     }
 
     /**
-     * Rewrites / expands a short admin draft into a complete, polished client reply.
-     *
-     * @param string $draftText    The rough draft typed by the admin in the editor.
-     * @param string $tone         Reply tone (Professional, Technical, etc.)
-     * @param string $instruction  Optional extra instruction.
-     * @return array               ['status' => 'success', 'reply' => '...'] or error array.
+     * Returns provider info + the constructed rewrite prompt so the browser
+     * can call LM Studio directly (same pattern as getPayload() for analysis).
+     * For Google providers the browser should fall back to server-side rewrite_reply.
      */
+    public function getRewritePayload(string $draftText, string $tone = 'Professional', string $instruction = ''): array
+    {
+        if (empty(trim($draftText))) {
+            return ['status' => 'error', 'message' => 'Draft text is empty. Please write a draft in the editor first.'];
+        }
+
+        $extractor = new TicketDataExtractor($this->ticketId, $this->adminId);
+        $context = $extractor->getContext();
+
+        $systemPrompt = $this->settings['system_prompt'] ?? "You are a professional technical support specialist.";
+
+        // Append knowledgebase rules to system prompt (same as getPayload)
+        $kbPath = dirname(__DIR__) . '/knowledgebase';
+        if (is_dir($kbPath)) {
+            $kbRules = "";
+            $dir = new \DirectoryIterator($kbPath);
+            foreach ($dir as $fileinfo) {
+                if (!$fileinfo->isDot() && $fileinfo->getExtension() === 'txt') {
+                    $content = @file_get_contents($fileinfo->getPathname());
+                    if ($content) $kbRules .= "\n--- Rule: {$fileinfo->getFilename()} ---\n" . trim($content) . "\n";
+                }
+            }
+            if (!empty($kbRules)) {
+                $systemPrompt .= "\n\n=== RULES & KNOWLEDGEBASE ===\n" . $kbRules;
+            }
+        }
+
+        $extraInstruction = !empty(trim($instruction)) ? "\n\nPriority admin instruction: " . trim($instruction) : '';
+
+        $rewritePrompt  = "=== TASK ===\n";
+        $rewritePrompt .= "The admin has written a short rough draft reply for the following support ticket. EXPAND and POLISH it into a complete, fluent, professional client-facing reply.\n\n";
+        $rewritePrompt .= "RULES:\n";
+        $rewritePrompt .= "- Preserve the original intent and any specific instructions in the draft.\n";
+        $rewritePrompt .= "- Do NOT add a greeting (e.g. 'Dear Client') or a sign-off — the signature is handled separately.\n";
+        $rewritePrompt .= "- Write in a **{$tone}** tone.\n";
+        $rewritePrompt .= "- Output ONLY the final reply body. No extra commentary, no JSON, no prefixes.\n";
+        $rewritePrompt .= $extraInstruction . "\n\n";
+        $rewritePrompt .= "=== TICKET CONTEXT ===\n";
+        $rewritePrompt .= "Subject: " . ($context['subject'] ?? 'Support Ticket') . "\n";
+        $rewritePrompt .= "Client: " . ($context['client_name'] ?? 'Client') . "\n\n";
+        $rewritePrompt .= "=== ADMIN DRAFT ===\n";
+        $rewritePrompt .= trim($draftText) . "\n\n";
+        $rewritePrompt .= "=== POLISHED REPLY (output only) ===\n";
+
+        return [
+            'status'       => 'success',
+            'provider'     => $this->settings['provider_type'] === 'lmstudio' ? 'lmstudio' : 'google',
+            'api_url'      => $this->settings['api_url'] ?? '',
+            'api_key'      => $this->settings['api_key'] ?? '',
+            'model'        => $this->settings['model_name'],
+            'temperature'  => (float) $this->settings['temperature'],
+            'max_tokens'   => (int) $this->settings['max_tokens'],
+            'system_prompt'=> $systemPrompt,
+            'rewrite_prompt'=> $rewritePrompt,
+            'has_fallback' => $this->fallbackProvider !== null,
+        ];
+    }
+
+    /**
+     * Rewrites / expands a short admin draft into a complete, polished client reply.
+     * Used server-side only for non-LM Studio (Google) providers.
+     */
+
     public function rewriteReply(string $draftText, string $tone = 'Professional', string $instruction = ''): array
     {
         if (empty(trim($draftText))) {

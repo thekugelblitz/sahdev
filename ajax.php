@@ -104,8 +104,12 @@ try {
         }
 
         $response = $controller->saveResponse($hashSignature, $aiResponse, $tokenUsage, $execTime, $tokenDetails);
+    } elseif ($action === 'get_rewrite_payload') {
+        // Returns provider info + rewrite prompt so browser can call LM Studio directly
+        $draftText = $_POST['draft_text'] ?? '';
+        $response = $controller->getRewritePayload($draftText, $tone ?: 'Professional', $instruction);
     } elseif ($action === 'rewrite_reply') {
-        // Feature: "Rewrite It" — expand admin draft from TinyMCE into a polished reply
+        // Server-side rewrite — used for Google providers only
         $draftText = $_POST['draft_text'] ?? '';
         $response = $controller->rewriteReply($draftText, $tone ?: 'Professional', $instruction);
     } elseif ($action === 'auto_analyze') {
