@@ -30,6 +30,7 @@ class AdminController
             $maxTokens = (int) ($_POST['max_tokens'] ?? 2048);
             $toneDefault = $_POST['tone_default'] ?? 'Professional';
             $systemPrompt = $_POST['system_prompt'] ?? '';
+            $autoAnalyzeOnLoad = !empty($_POST['auto_analyze_on_load']) ? 1 : 0;
 
             // Ensure valid bounds
             if ($temperature < 0 || $temperature > 1) {
@@ -45,6 +46,7 @@ class AdminController
                     'max_tokens' => $maxTokens,
                     'tone_default' => $toneDefault,
                     'system_prompt' => $systemPrompt,
+                    'auto_analyze_on_load' => $autoAnalyzeOnLoad,
                     'updated_at' => \Carbon\Carbon::now(),
                 ]
             );
@@ -62,6 +64,7 @@ class AdminController
                 'max_tokens' => 2048,
                 'tone_default' => 'Professional',
                 'system_prompt' => '',
+                'auto_analyze_on_load' => 0,
             ];
         }
 
@@ -193,6 +196,26 @@ class AdminController
                         style="width: 100%; resize: vertical;"><?php echo htmlspecialchars($settings->system_prompt); ?></textarea>
                     <small class="text-muted">Instructions for the AI on how to interpret support tickets and format its
                         response.</small>
+                </div>
+
+                <!-- AI Snapshot Feature Toggle -->
+                <div class="panel panel-default" style="margin-bottom: 25px; border-left: 4px solid #0d6efd;">
+                    <div class="panel-heading" style="background: #f0f5ff;">
+                        <h4 style="margin: 0; font-size: 15px;"><i class="fas fa-bolt"></i> AI Snapshot on Page Load <span class="label label-primary" style="font-size: 11px; vertical-align: middle; margin-left: 6px;">Feature Toggle</span></h4>
+                    </div>
+                    <div class="panel-body">
+                        <div class="checkbox" style="margin-top: 0;">
+                            <label style="font-weight: 600; font-size: 14px;">
+                                <input type="checkbox" name="auto_analyze_on_load" value="1" <?php echo !empty($settings->auto_analyze_on_load) ? 'checked' : ''; ?>>
+                                &nbsp;Enable automatic AI analysis when a ticket page loads
+                            </label>
+                        </div>
+                        <p class="text-muted" style="margin-top: 8px; margin-bottom: 0;">
+                            When <strong>ON</strong>: Sahdev will silently fetch the AI-generated <strong>Summary, Root Cause, Responsibility, Risk Level, and Action Plan</strong> as soon as a ticket page opens — before the admin clicks any button. Results appear in a dedicated "AI Snapshot" panel below the main Sahdev panel.<br>
+                            When <strong>OFF</strong>: Normal behaviour — analysis only runs when the admin clicks "Analyze &amp; Generate Reply".<br>
+                            <em class="text-warning"><i class="fas fa-exclamation-triangle"></i> Note: This uses one AI call per ticket page load. Uses cache when available so repeat views are free.</em>
+                        </p>
+                    </div>
                 </div>
 
                 <button type="submit" class="btn btn-primary" style="padding: 10px 20px; font-weight: 600;">

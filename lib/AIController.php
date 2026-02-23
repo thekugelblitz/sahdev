@@ -376,6 +376,110 @@ class AIController
     }
 
     /**
+     * Rewrites / expands a short admin draft into a complete, polished client reply.
+     *
+     * @param string $draftText    The rough draft typed by the admin in the editor.
+     * @param string $tone         Reply tone (Professional, Technical, etc.)
+     * @param string $instruction  Optional extra instruction.
+     * @return array               ['status' => 'success', 'reply' => '...'] or error array.
+     */
+    public function rewriteReply(string $draftText, string $tone = 'Professional', string $instruction = ''): array
+    {
+        if (empty(trim($draftText))) {
+            return ['status' => 'error', 'message' => 'Draft text is empty. Please write a short draft in the editor first.'];
+        }
+
+        // Build a ticket context snippet for extra grounding
+        $extractor = new TicketDataExtractor($this->ticketId, $this->adminId);
+        $context = $extractor->getContext();
+
+        $systemPrompt = $this->settings['system_prompt'] ?? "You are a professional technical support specialist.";
+
+        $extraInstruction = !empty(trim($instruction)) ? "\n\nPriority admin instruction: " . trim($instruction) : '';
+
+        $promptText  = "=== TASK ===\n";
+        $promptText .= "The admin has written a short rough draft reply for the following ticket. Your job is to EXPAND and POLISH it into a complete, fluent, professional client-facing reply.\n\n";
+        $promptText .= "RULES:\n";
+        $promptText .= "- Preserve the original intent and any specific instructions in the draft.\n";
+        $promptText .= "- Do NOT add a greeting (e.g. 'Dear Client') or a sign-off — the signature is handled separately.\n";
+        $promptText .= "- Write in a **{$tone}** tone.\n";
+        $promptText .= "- Output ONLY the final reply body. No extra commentary, no JSON, no prefixes.\n";
+        $promptText .= $extraInstruction . "\n\n";
+        $promptText .= "=== TICKET CONTEXT ===\n";
+        $promptText .= "Subject: " . ($context['subject'] ?? 'Support Ticket') . "\n";
+        $promptText .= "Client: " . ($context['client_name'] ?? 'Client') . "\n\n";
+        $promptText .= "=== ADMIN DRAFT ===\n";
+        $promptText .= trim($draftText) . "\n\n";
+        $promptText .= "=== POLISHED REPLY (output only) ===\n";
+
+        // Use the primary AI provider in free-text mode (no JSON schema)
+        $startTime = microtime(true);
+        try {
+            // We call generateResponse but override the prompt using a special "freeform" approach.
+            // Since GoogleAIProvider / LMStudioAIProvider both accept raw context+settings,
+            // we build a minimal context that carries our custom prompt as the sole message.
+            $fakeContext = [
+                'subject'          => $context['subject'] ?? '',
+                'client_name'      => $context['client_name'] ?? '',
+                'department'       => '',
+                'services_summary' => '',
+                'attachments_text' => '',
+                'messages'         => [['admin' => false, 'date' => '', 'message' => $promptText]],
+            ];
+
+            $fakeSettings = $this->settings;
+            $fakeSettings['user_prompt_template'] = '{{MESSAGES}}'; // pass our custom prompt straight through
+            $fakeSettings['system_prompt'] = $systemPrompt;
+
+            $rawResponse = $this->provider->generateResponse($fakeContext, $fakeSettings, $tone, '');
+            $execTimeMs  = round((microtime(true) - $startTime) * 1000);
+
+            // generateResponse returns a parsed JSON array; for rewrite we prefer CLIENT_REPLY if present,
+            // else check if the entire response is a plain string (some providers wrap everything).
+            if (is_array($rawResponse) && isset($rawResponse['CLIENT_REPLY'])) {
+                $reply = $rawResponse['CLIENT_REPLY'];
+            } elseif (is_array($rawResponse) && isset($rawResponse['reply'])) {
+                $reply = $rawResponse['reply'];
+            } elseif (is_string($rawResponse)) {
+                $reply = $rawResponse;
+            } else {
+                // The whole array might be the result — stringify it best we can
+                $reply = implode("\n\n", array_filter(array_values($rawResponse), 'is_string'));
+            }
+
+            return [
+                'status'           => 'success',
+                'reply'            => $reply,
+                'execution_time_ms'=> $execTimeMs,
+                'tokens_used'      => $this->provider->getLastTokenUsage(),
+            ];
+        } catch (\Exception $e) {
+            // Try fallback if available
+            if ($this->fallbackProvider) {
+                try {
+                    $fakeContext = [
+                        'subject' => $context['subject'] ?? '', 'client_name' => $context['client_name'] ?? '',
+                        'department' => '', 'services_summary' => '', 'attachments_text' => '',
+                        'messages' => [['admin' => false, 'date' => '', 'message' => $promptText]],
+                    ];
+                    $fakeSettings = $this->settings;
+                    $fakeSettings['model_name'] = $this->settings['fallback_model_name'] ?? $this->settings['model_name'];
+                    $fakeSettings['user_prompt_template'] = '{{MESSAGES}}';
+                    $fakeSettings['system_prompt'] = $systemPrompt;
+                    $rawResponse = $this->fallbackProvider->generateResponse($fakeContext, $fakeSettings, $tone, '');
+                    $reply = is_array($rawResponse) && isset($rawResponse['CLIENT_REPLY'])
+                        ? $rawResponse['CLIENT_REPLY']
+                        : (is_string($rawResponse) ? $rawResponse : implode("\n\n", array_filter(array_values($rawResponse), 'is_string')));
+                    return ['status' => 'success', 'reply' => $reply, 'execution_time_ms' => round((microtime(true) - $startTime) * 1000), 'tokens_used' => $this->fallbackProvider->getLastTokenUsage()];
+                } catch (\Exception $fe) {
+                    throw new \Exception("Both providers failed to rewrite the reply. Last error: " . $fe->getMessage());
+                }
+            }
+            throw $e;
+        }
+    }
+
+    /**
      * Returns a focused intent directive string that gets prepended to customInstruction
      * before being passed to the AI prompt. Returns empty string for AUTO intent.
      */

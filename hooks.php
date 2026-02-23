@@ -29,6 +29,7 @@ function sahdev_inject_ticket_panel($vars)
     // Load Tone Defaults from DB
     $settings = Capsule::table('tblsahdev_settings')->first();
     $defaultTone = $settings ? $settings->tone_default : 'Professional';
+    $autoAnalyzeEnabled = $settings && !empty($settings->auto_analyze_on_load) ? 'true' : 'false';
 
     $isSel = function ($val, $current) {
         return $val === $current ? 'selected' : '';
@@ -103,6 +104,22 @@ function sahdev_inject_ticket_panel($vars)
             </div>
         </form>
 
+        <!-- Rewrite It: Expand Admin Draft from Editor -->
+        <div style="border-top: 2px dashed #c0d9f5; margin-top: 12px; padding-top: 12px;">
+            <label style="font-weight: 700; font-size: 13px; margin-bottom: 6px; display: block;"><i class="fas fa-pen-nib" style="color:#17a2b8;"></i> ✍️ Expand &amp; Polish My Draft Reply</label>
+            <p class="text-muted" style="font-size: 12px; margin-bottom: 8px;">Write a short rough reply in the editor below first, then click <strong>Rewrite It</strong> — Sahdev will expand it into a complete, professional reply and put it right back in the editor.</p>
+            <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                <button type="button" id="btn-sahdev-rewrite" class="btn btn-info btn-sm" style="font-weight: 600;">
+                    <i class="fas fa-pen-nib"></i> Rewrite It
+                </button>
+                <span id="sahdev-rewrite-status" style="font-size: 12px; color: #666;"></span>
+            </div>
+            <div id="sahdev-rewrite-loading" style="display: none; margin-top: 8px; font-size: 13px; color: #17a2b8;">
+                <i class="fas fa-spinner fa-spin"></i> Sahdev is polishing your draft...
+            </div>
+            <div id="sahdev-rewrite-error" class="alert alert-danger" style="display: none; margin-top: 8px; font-size: 13px; padding: 8px 12px;"></div>
+        </div>
+
         <!-- Loading Indicator -->
         <div id="sahdev-loading" style="display: none; text-align: center; padding: 20px;">
             <i class="fas fa-spinner fa-spin fa-2x"></i>
@@ -168,6 +185,79 @@ function sahdev_inject_ticket_panel($vars)
 
     </div>
 </div>
+
+<!-- AI Snapshot Panel: Auto-loads analysis on page open (controlled by backend setting) -->
+<div id="sahdev-snapshot-outer" style="margin-top: 15px; display: none;">
+    <div class="panel panel-default" id="sahdev-snapshot-panel" style="border-color: #17a2b8;">
+        <div class="panel-heading" style="background: #e8f7fa; color: #0d7490; display: flex; justify-content: space-between; align-items: center; cursor: pointer;" onclick="$('#sahdev-snapshot-body').slideToggle();">
+            <h4 class="panel-title" style="margin: 0; font-size: 14px; font-weight: 700;">
+                <i class="fas fa-bolt" style="margin-right: 6px;"></i>AI Snapshot <span class="label label-info" style="font-size: 10px; vertical-align: middle; margin-left: 6px;">Auto-loaded</span>
+            </h4>
+            <i class="fas fa-chevron-down" style="font-size: 12px;"></i>
+        </div>
+        <div class="panel-body" id="sahdev-snapshot-body" style="background: #f8feff; padding: 15px;">
+
+            <!-- Sleeping / Error state -->
+            <div id="sahdev-snapshot-sleeping" style="display: none; text-align: center; padding: 20px 10px;">
+                <div style="font-size: 48px; margin-bottom: 8px;">😴</div>
+                <h4 style="color: #5a6875; margin-bottom: 4px;">Sahdev is sleeping right now! 😂 Sorry dear!</h4>
+                <p style="color: #7a8895; font-size: 13px; margin-bottom: 12px;">The AI provider couldn't be reached at the moment. Don't worry, you can still use the panel above manually.</p>
+                <div id="sahdev-snapshot-tech-error" style="background: #f8d7da; border: 1px solid #f5c6cb; border-radius: 4px; padding: 10px 14px; text-align: left; font-size: 12px; font-family: monospace; color: #721c24; display: none; white-space: pre-wrap; word-break: break-word;"></div>
+            </div>
+
+            <!-- Loading skeleton -->
+            <div id="sahdev-snapshot-loading" style="display: none; text-align: center; padding: 15px;">
+                <i class="fas fa-spinner fa-spin fa-lg" style="color: #17a2b8;"></i>
+                <p style="margin-top: 8px; font-size: 13px; color: #555;">Sahdev is sneaking a peek at this ticket...</p>
+            </div>
+
+            <!-- Results -->
+            <div id="sahdev-snapshot-results" style="display: none;">
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="well well-sm" style="background:#fff; border-left:4px solid #d9534f; margin-bottom:10px;">
+                            <strong><i class="fas fa-search"></i> Root Cause:</strong>
+                            <p id="sahdev-snap-cause" class="text-danger" style="margin-bottom:0; margin-top:4px;"></p>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="well well-sm" style="background:#fff; border-left:4px solid #f0ad4e; margin-bottom:10px;">
+                                    <strong><i class="fas fa-users"></i> Responsibility:</strong>
+                                    <p id="sahdev-snap-resp" class="text-warning" style="margin-bottom:0; margin-top:4px;"></p>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="well well-sm" style="background:#fff; border-left:4px solid #5bc0de; margin-bottom:10px;">
+                                    <strong><i class="fas fa-exclamation-triangle"></i> Risk Level:</strong>
+                                    <p id="sahdev-snap-risk" class="text-info" style="margin-bottom:0; margin-top:4px;"></p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="well well-sm" style="background:#fff; border-left:4px solid #5cb85c; margin-bottom:10px;">
+                            <strong><i class="fas fa-clipboard-list"></i> Action Plan:</strong>
+                            <p id="sahdev-snap-plan" class="text-success" style="margin-bottom:0; margin-top:4px; white-space: pre-wrap;"></p>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="panel panel-default" style="margin-bottom: 10px;">
+                            <div class="panel-heading" style="display:flex; justify-content:space-between; align-items:center; padding: 8px 12px;">
+                                <strong style="font-size:13px;">Proposed Reply Preview</strong>
+                                <button type="button" class="btn btn-xs btn-success" onclick="sahdevSnapInsertToEditor()"><i class="fas fa-arrow-down"></i> Use This Reply</button>
+                            </div>
+                            <div class="panel-body" style="max-height: 220px; overflow-y: auto; font-size: 13px;">
+                                <div id="sahdev-snap-reply"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="text-muted small text-right" style="margin-top: 4px;">
+                    <i class="fas fa-bolt"></i> Auto-loaded &nbsp;|&nbsp; <span id="sahdev-snap-stats"></span>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
 HTML;
 
     // Output the HTML first
@@ -177,7 +267,8 @@ HTML;
     $jsContentStart = <<<HTML
 <script>
     var sahdevAjaxUrl = "{$ajaxUrl}";
-    console.log("Sahdev AI initialized with AJAX URL:", sahdevAjaxUrl);
+    var sahdevAutoAnalyze = {$autoAnalyzeEnabled};
+    console.log("Sahdev AI initialized with AJAX URL:", sahdevAjaxUrl, "| Auto-analyze:", sahdevAutoAnalyze);
 HTML;
 
     $jsContentMain = <<<'EOT'
@@ -702,6 +793,161 @@ HTML;
             }
             showSahdevError(msg);
         }
+
+        // =====================================================================
+        // FEATURE: Rewrite It — Expand Admin Draft Reply from TinyMCE
+        // =====================================================================
+        $(document).on('click', '#btn-sahdev-rewrite', function() {
+            var draftText = '';
+
+            // Try TinyMCE first
+            if (typeof tinymce !== 'undefined' && tinymce.activeEditor) {
+                draftText = tinymce.activeEditor.getContent({ format: 'text' }).trim();
+                if (!draftText) {
+                    draftText = tinymce.activeEditor.getContent().replace(/<[^>]*>/g, '').trim();
+                }
+            }
+            // Fallback to raw textarea
+            if (!draftText && $('#replymessage').length) {
+                draftText = $('#replymessage').val().trim();
+            }
+
+            if (!draftText) {
+                $('#sahdev-rewrite-error').html('<i class="fas fa-exclamation-circle"></i> Please write a short draft reply in the editor first, then click Rewrite It.').show();
+                return;
+            }
+
+            $('#sahdev-rewrite-error').hide();
+            $('#sahdev-rewrite-loading').show();
+            $('#sahdev-rewrite-status').text('');
+            $('#btn-sahdev-rewrite').prop('disabled', true);
+
+            $.ajax({
+                url: sahdevAjaxUrl,
+                type: 'POST',
+                data: {
+                    action: 'rewrite_reply',
+                    ticket_id: $('#sahdev_ticket_id').val(),
+                    draft_text: draftText,
+                    tone: $('#sahdev_tone').val() || 'Professional',
+                    instruction: $('#sahdev_instruction').val() || '',
+                    token: $('input[name="token"]').val()
+                },
+                dataType: 'json',
+                success: function(res) {
+                    $('#sahdev-rewrite-loading').hide();
+                    $('#btn-sahdev-rewrite').prop('disabled', false);
+
+                    if (res && res.status === 'success' && res.reply) {
+                        var polishedReply = res.reply;
+                        var polishedHtml  = polishedReply.replace(/\n/g, '<br>');
+
+                        // Insert back into TinyMCE or fallback textarea
+                        if (typeof tinymce !== 'undefined' && tinymce.activeEditor) {
+                            tinymce.activeEditor.setContent(polishedHtml);
+                        } else if ($('#replymessage').length) {
+                            $('#replymessage').val(polishedReply);
+                        }
+
+                        $('#sahdev-rewrite-status').html('<span style="color:#198754;"><i class="fas fa-check-circle"></i> Draft polished &amp; inserted into editor!</span>');
+
+                        // Scroll to reply box
+                        if ($('#replyticket').length) {
+                            $('html, body').animate({ scrollTop: $('#replyticket').offset().top - 60 }, 400);
+                        }
+                    } else {
+                        var errMsg = (res && res.message) ? res.message : 'Sahdev could not rewrite the reply. Please try again.';
+                        $('#sahdev-rewrite-error').html('<i class="fas fa-exclamation-circle"></i> ' + errMsg).show();
+                    }
+                },
+                error: function(xhr, status, error) {
+                    $('#sahdev-rewrite-loading').hide();
+                    $('#btn-sahdev-rewrite').prop('disabled', false);
+                    var errDetail = (xhr.responseJSON && xhr.responseJSON.message)
+                        ? xhr.responseJSON.message
+                        : ('Server error: ' + error + ' (HTTP ' + xhr.status + ')');
+                    $('#sahdev-rewrite-error').html('<i class="fas fa-exclamation-circle"></i> ' + errDetail).show();
+                }
+            });
+        });
+
+        // =====================================================================
+        // FEATURE: Auto-Load AI Snapshot on Ticket Page Open
+        // =====================================================================
+        function sahdevSnapInsertToEditor() {
+            var replyHtml = $('#sahdev-snap-reply').html();
+            if (typeof tinymce !== 'undefined' && tinymce.activeEditor) {
+                tinymce.activeEditor.execCommand('mceInsertContent', false, replyHtml);
+            } else if ($('#replymessage').length) {
+                var plain = replyHtml.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/gi, '');
+                $('#replymessage').val(plain);
+            }
+            if ($('#replyticket').length) {
+                $('html, body').animate({ scrollTop: $('#replyticket').offset().top - 60 }, 400);
+            }
+        }
+
+        if (typeof sahdevAutoAnalyze !== 'undefined' && sahdevAutoAnalyze === true) {
+            $('#sahdev-snapshot-outer').show();
+            $('#sahdev-snapshot-loading').show();
+
+            $.ajax({
+                url: sahdevAjaxUrl,
+                type: 'POST',
+                data: {
+                    action: 'auto_analyze',
+                    ticket_id: $('#sahdev_ticket_id').val(),
+                    tone: $('#sahdev_tone').val() || 'Professional',
+                    intensity: 3,
+                    instruction: '',
+                    intent: 'AUTO',
+                    token: $('input[name="token"]').val(),
+                    force_regenerate: 'false'
+                },
+                dataType: 'json',
+                success: function(res) {
+                    $('#sahdev-snapshot-loading').hide();
+
+                    if (res && res.status === 'success' && res.data) {
+                        var d = res.data;
+                        $('#sahdev-snap-cause').text(d.ROOT_CAUSE || 'N/A');
+                        $('#sahdev-snap-resp').text(d.RESPONSIBILITY || 'N/A');
+                        $('#sahdev-snap-risk').text(d.RISK_LEVEL || 'N/A');
+                        $('#sahdev-snap-plan').text(d.INTERNAL_ACTION_PLAN || 'N/A');
+
+                        var snapReplyHtml = d.CLIENT_REPLY ? d.CLIENT_REPLY.replace(/\n/g, '<br>') : 'N/A';
+                        $('#sahdev-snap-reply').html(snapReplyHtml);
+
+                        var statsText = res.cached
+                            ? 'Cached result (instant)'
+                            : ('Tokens: ' + (res.tokens_used || '?') + ' | Time: ' + (res.execution_time_ms || 0) + 'ms');
+                        $('#sahdev-snap-stats').text(statsText);
+
+                        $('#sahdev-snapshot-results').fadeIn();
+                    } else {
+                        // AI responded but with an error status
+                        var errMsg = (res && res.message) ? res.message : 'AI returned an unexpected response.';
+                        $('#sahdev-snapshot-tech-error').text('Status: ' + (res ? res.status : 'unknown') + '\nMessage: ' + errMsg).show();
+                        $('#sahdev-snapshot-sleeping').show();
+                    }
+                },
+                error: function(xhr, status, error) {
+                    $('#sahdev-snapshot-loading').hide();
+                    var techMsg = 'AJAX Error: ' + error + ' (HTTP ' + xhr.status + ')';
+                    if (xhr.responseJSON && xhr.responseJSON.message) {
+                        techMsg += '\nServer: ' + xhr.responseJSON.message;
+                    } else if (xhr.responseText && xhr.responseText.length < 600) {
+                        techMsg += '\nRaw: ' + xhr.responseText;
+                    }
+                    $('#sahdev-snapshot-tech-error').text(techMsg).show();
+                    $('#sahdev-snapshot-sleeping').show();
+                }
+            });
+        }
+
+        // Expose globally for inline onclick handlers
+        window.sahdevSnapInsertToEditor = sahdevSnapInsertToEditor;
+
     });
 
 EOT;

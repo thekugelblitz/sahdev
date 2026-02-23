@@ -104,6 +104,13 @@ try {
         }
 
         $response = $controller->saveResponse($hashSignature, $aiResponse, $tokenUsage, $execTime, $tokenDetails);
+    } elseif ($action === 'rewrite_reply') {
+        // Feature: "Rewrite It" — expand admin draft from TinyMCE into a polished reply
+        $draftText = $_POST['draft_text'] ?? '';
+        $response = $controller->rewriteReply($draftText, $tone ?: 'Professional', $instruction);
+    } elseif ($action === 'auto_analyze') {
+        // Feature: Auto-load AI Snapshot on ticket page load (always cached-first, no rate limit penalty on hit)
+        $response = $controller->getAnalysis($tone, $instruction, false, false, $intent);
     } else {
         // Default analyze_ticket (server-side generation)
         $response = $controller->getAnalysis($tone, $instruction, $forceRegenerate, $forceFallback, $intent);

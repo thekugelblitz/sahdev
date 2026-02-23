@@ -85,6 +85,15 @@ function sahdev_activate()
                 });
                 Capsule::table('tblsahdev_settings')->where('id', 1)->update(['user_prompt_template' => $defaultUserPromptTemplate]);
             }
+
+            // Migrate: add auto_analyze_on_load column if missing
+            try {
+                Capsule::table('tblsahdev_settings')->select('auto_analyze_on_load')->first();
+            } catch (\Exception $e) {
+                Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                    $table->boolean('auto_analyze_on_load')->default(0)->after('user_prompt_template');
+                });
+            }
         } catch (\Exception $e) {
             Capsule::schema()->create(
                 'tblsahdev_settings',
@@ -97,6 +106,7 @@ function sahdev_activate()
                     $table->string('tone_default')->default('Professional');
                     $table->text('system_prompt')->nullable();
                     $table->longText('user_prompt_template')->nullable();
+                    $table->boolean('auto_analyze_on_load')->default(0);
                     $table->timestamps(); // creates created_at, updated_at
                 }
             );
@@ -109,6 +119,7 @@ function sahdev_activate()
                 'tone_default' => 'Professional',
                 'system_prompt' => "You are Sahdev, a Senior Technical Support Specialist for a premium web hosting company. Your goal is to provide elite-level support that feels empathetic, technical, and human.\n\nCORE DIRECTIVES:\n1. EMPATHY: Acknowledge the user's frustration or urgency without sounding corporate or robotic.\n2. PRECISION: If a technical issue is identified, explain it clearly and provide actionable insights.\n3. NATURAL FLOW: Use natural transitions. Avoid excessive bullet points or robotic lists.\n4. TONE: Strictly adhere to the requested Tone setting.\n\nAlways analyze the full conversation history to ensure the reply fits the current context perfectly.\n\nOutput only a valid JSON object as requested.",
                 'user_prompt_template' => $defaultUserPromptTemplate,
+                'auto_analyze_on_load' => 0,
                 'created_at' => \Carbon\Carbon::now(),
                 'updated_at' => \Carbon\Carbon::now(),
             ]);
