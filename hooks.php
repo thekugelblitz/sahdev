@@ -974,12 +974,100 @@ HTML;
         }
 
         function insertRewriteResult(replyText) {
-            var polishedHtml = replyText.replace(/\n/g, '<br>');
-            if (typeof tinymce !== 'undefined' && tinymce.activeEditor) {
-                tinymce.activeEditor.setContent(polishedHtml);
-            } else if ($('#replymessage').length) {
-                $('#replymessage').val(replyText);
+            // --- Step 1: Unwrap if the model returned JSON instead of plain text ---
+            var text = replyText ? replyText.trim() : '';
+
+            // Strip <think> blocks (DeepSeek etc.)
+            text = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+
+            // Try JSON parse — handle {"body":"..."}, {"reply":"..."}, {"CLIENT_REPLY":"..."}, {"content":"..."}
+            if (text.charAt(0) === '{' || text.charAt(0) === '[') {
+                try {
+                    var parsed = JSON.parse(text);
+                    text = parsed.body || parsed.reply || parsed.CLIENT_REPLY || parsed.content || parsed.text || text;
+                    if (typeof text !== 'string') text = JSON.stringify(text);
+                } catch(e) {
+                    // Not valid JSON — use as-is
+                }
             }
+            text = text.trim();
+
+            // --- Step 2: Convert Markdown → HTML for TinyMCE ---
+            function markdownToHtml(md) {
+                var html = md;
+
+                // Escape HTML special chars that aren't already HTML
+                // (light touch — don't escape if it's already HTML from a previous pass)
+                // Normalise line endings
+                html = html.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+                // Headers: ### → <h3>
+                html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+                html = html.replace(/^## (.+)$/gm,  '<h3>$1</h3>');
+
+                // Bold: **text** or __text__
+                html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+                html = html.replace(/__(.+?)__/g,     '<strong>$1</strong>');
+
+                // Italic: *text* or _text_ (but not ** already processed)
+                html = html.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, '<em>$1</em>');
+                html = html.replace(/(?<!_)_(?!_)(.+?)(?<!_)_(?!_)/g,      '<em>$1</em>');
+
+                // Inline code: `code`
+                html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+                // Horizontal rule: --- or ***
+                html = html.replace(/^[-*]{3,}\s*$/gm, '<hr>');
+
+                // Bullet lists: lines starting with * or - or •
+                // Collect consecutive bullet lines and wrap in <ul>
+                html = html.replace(/((?:^[ \t]*[-*•] .+\n?)+)/gm, function(block) {
+                    var items = block.split('\n').filter(function(l){ return l.trim(); });
+                    return '<ul>' + items.map(function(l) {
+                        return '<li>' + l.replace(/^[ \t]*[-*•] /, '').trim() + '</li>';
+                    }).join('') + '</ul>\n';
+                });
+
+                // Numbered lists: lines starting with 1. 2. etc.
+                html = html.replace(/((?:^[ \t]*\d+\. .+\n?)+)/gm, function(block) {
+                    var items = block.split('\n').filter(function(l){ return l.trim(); });
+                    return '<ol>' + items.map(function(l) {
+                        return '<li>' + l.replace(/^[ \t]*\d+\. /, '').trim() + '</li>';
+                    }).join('') + '</ol>\n';
+                });
+
+                // Paragraphs: double newline → </p><p>, single newline → <br>
+                // Split on double newlines to make paragraphs
+                var blocks = html.split(/\n\n+/);
+                html = blocks.map(function(block) {
+                    block = block.trim();
+                    if (!block) return '';
+                    // Already block-level HTML — don't wrap in <p>
+                    if (/^<(ul|ol|li|h[1-6]|hr|blockquote)/i.test(block)) return block;
+                    // Single newlines inside a paragraph → <br>
+                    return '<p>' + block.replace(/\n/g, '<br>') + '</p>';
+                }).join('\n');
+
+                return html;
+            }
+
+            var finalHtml = markdownToHtml(text);
+
+            // --- Step 3: Insert into TinyMCE or fallback textarea ---
+            if (typeof tinymce !== 'undefined' && tinymce.activeEditor) {
+                tinymce.activeEditor.setContent(finalHtml);
+            } else if ($('#replymessage').length) {
+                // Textarea fallback: strip HTML tags, convert <br>/<p> to newlines
+                var plainText = finalHtml
+                    .replace(/<br\s*\/?>/gi, '\n')
+                    .replace(/<\/p>/gi, '\n')
+                    .replace(/<\/li>/gi, '\n')
+                    .replace(/<[^>]+>/g, '')
+                    .replace(/\n{3,}/g, '\n\n')
+                    .trim();
+                $('#replymessage').val(plainText);
+            }
+
             $('#sahdev-rewrite-status').html('<span style="color:#198754;"><i class="fas fa-check-circle"></i> Draft polished &amp; inserted into editor!</span>');
             if ($('#replyticket').length) {
                 $('html, body').animate({ scrollTop: $('#replyticket').offset().top - 60 }, 400);
