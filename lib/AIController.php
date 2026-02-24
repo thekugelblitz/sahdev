@@ -37,6 +37,14 @@ class AIController
             require_once __DIR__ . '/LMStudioAIProvider.php';
             $apiKey = !empty($providerData->api_key) ? decrypt($providerData->api_key) : '';
             return new LMStudioAIProvider($providerData->api_url, $apiKey);
+        } elseif ($providerData->provider_type === 'replicate') {
+            if (empty($providerData->api_url))
+                throw new \Exception("Replicate Provider '{$providerData->name}' lacks an API URL.");
+            $apiKey = !empty($providerData->api_key) ? decrypt($providerData->api_key) : '';
+            if (empty($apiKey))
+                throw new \Exception("Replicate Provider '{$providerData->name}' lacks an API Key.");
+            require_once __DIR__ . '/ReplicateAIProvider.php';
+            return new ReplicateAIProvider($providerData->api_url, $apiKey);
         }
         throw new \Exception("Unsupported AI Provider Type: " . $providerData->provider_type);
     }
@@ -309,7 +317,7 @@ class AIController
             'status' => 'success',
             'cached' => false,
             'hash_signature' => $hashSignature,
-            'provider' => $this->settings['provider_type'] === 'lmstudio' ? 'lmstudio' : 'google',
+            'provider' => $this->settings['provider_type'] === 'lmstudio' ? 'lmstudio' : ($this->settings['provider_type'] === 'replicate' ? 'replicate' : 'google'),
             'api_url' => $this->settings['api_url'] ?? '',
             'api_key' => $this->settings['api_key'] ?? '',
             'model' => $this->settings['model_name'],
@@ -399,7 +407,8 @@ class AIController
             foreach ($dir as $fileinfo) {
                 if (!$fileinfo->isDot() && $fileinfo->getExtension() === 'txt') {
                     $content = @file_get_contents($fileinfo->getPathname());
-                    if ($content) $kbRules .= "\n--- Rule: {$fileinfo->getFilename()} ---\n" . trim($content) . "\n";
+                    if ($content)
+                        $kbRules .= "\n--- Rule: {$fileinfo->getFilename()} ---\n" . trim($content) . "\n";
                 }
             }
             if (!empty($kbRules)) {
@@ -409,7 +418,7 @@ class AIController
 
         $extraInstruction = !empty(trim($instruction)) ? "\n\nPriority admin instruction: " . trim($instruction) : '';
 
-        $rewritePrompt  = "=== TASK ===\n";
+        $rewritePrompt = "=== TASK ===\n";
         $rewritePrompt .= "The admin has written a short rough draft reply for the following support ticket. EXPAND and POLISH it into a complete, fluent, professional client-facing reply.\n\n";
         $rewritePrompt .= "RULES:\n";
         $rewritePrompt .= "- Preserve the original intent and any specific instructions in the draft.\n";
@@ -425,15 +434,15 @@ class AIController
         $rewritePrompt .= "=== POLISHED REPLY (output only) ===\n";
 
         return [
-            'status'       => 'success',
-            'provider'     => $this->settings['provider_type'] === 'lmstudio' ? 'lmstudio' : 'google',
-            'api_url'      => $this->settings['api_url'] ?? '',
-            'api_key'      => $this->settings['api_key'] ?? '',
-            'model'        => $this->settings['model_name'],
-            'temperature'  => (float) $this->settings['temperature'],
-            'max_tokens'   => (int) $this->settings['max_tokens'],
-            'system_prompt'=> $systemPrompt,
-            'rewrite_prompt'=> $rewritePrompt,
+            'status' => 'success',
+            'provider' => $this->settings['provider_type'] === 'lmstudio' ? 'lmstudio' : ($this->settings['provider_type'] === 'replicate' ? 'replicate' : 'google'),
+            'api_url' => $this->settings['api_url'] ?? '',
+            'api_key' => $this->settings['api_key'] ?? '',
+            'model' => $this->settings['model_name'],
+            'temperature' => (float) $this->settings['temperature'],
+            'max_tokens' => (int) $this->settings['max_tokens'],
+            'system_prompt' => $systemPrompt,
+            'rewrite_prompt' => $rewritePrompt,
             'has_fallback' => $this->fallbackProvider !== null,
         ];
     }
@@ -457,7 +466,7 @@ class AIController
 
         $extraInstruction = !empty(trim($instruction)) ? "\n\nPriority admin instruction: " . trim($instruction) : '';
 
-        $promptText  = "=== TASK ===\n";
+        $promptText = "=== TASK ===\n";
         $promptText .= "The admin has written a short rough draft reply for the following ticket. Your job is to EXPAND and POLISH it into a complete, fluent, professional client-facing reply.\n\n";
         $promptText .= "RULES:\n";
         $promptText .= "- Preserve the original intent and any specific instructions in the draft.\n";
@@ -479,12 +488,12 @@ class AIController
             // Since GoogleAIProvider / LMStudioAIProvider both accept raw context+settings,
             // we build a minimal context that carries our custom prompt as the sole message.
             $fakeContext = [
-                'subject'          => $context['subject'] ?? '',
-                'client_name'      => $context['client_name'] ?? '',
-                'department'       => '',
+                'subject' => $context['subject'] ?? '',
+                'client_name' => $context['client_name'] ?? '',
+                'department' => '',
                 'services_summary' => '',
                 'attachments_text' => '',
-                'messages'         => [['admin' => false, 'date' => '', 'message' => $promptText]],
+                'messages' => [['admin' => false, 'date' => '', 'message' => $promptText]],
             ];
 
             $fakeSettings = $this->settings;
@@ -492,7 +501,7 @@ class AIController
             $fakeSettings['system_prompt'] = $systemPrompt;
 
             $rawResponse = $this->provider->generateResponse($fakeContext, $fakeSettings, $tone, '');
-            $execTimeMs  = round((microtime(true) - $startTime) * 1000);
+            $execTimeMs = round((microtime(true) - $startTime) * 1000);
 
             // generateResponse returns a parsed JSON array; for rewrite we prefer CLIENT_REPLY if present,
             // else check if the entire response is a plain string (some providers wrap everything).
@@ -508,18 +517,21 @@ class AIController
             }
 
             return [
-                'status'           => 'success',
-                'reply'            => $reply,
-                'execution_time_ms'=> $execTimeMs,
-                'tokens_used'      => $this->provider->getLastTokenUsage(),
+                'status' => 'success',
+                'reply' => $reply,
+                'execution_time_ms' => $execTimeMs,
+                'tokens_used' => $this->provider->getLastTokenUsage(),
             ];
         } catch (\Exception $e) {
             // Try fallback if available
             if ($this->fallbackProvider) {
                 try {
                     $fakeContext = [
-                        'subject' => $context['subject'] ?? '', 'client_name' => $context['client_name'] ?? '',
-                        'department' => '', 'services_summary' => '', 'attachments_text' => '',
+                        'subject' => $context['subject'] ?? '',
+                        'client_name' => $context['client_name'] ?? '',
+                        'department' => '',
+                        'services_summary' => '',
+                        'attachments_text' => '',
                         'messages' => [['admin' => false, 'date' => '', 'message' => $promptText]],
                     ];
                     $fakeSettings = $this->settings;
@@ -546,12 +558,12 @@ class AIController
     private function buildIntentDirective(string $intent): string
     {
         $directives = [
-            'RESOLVE'      => "REPLY INTENT — RESOLVED: The admin confirms this issue has been resolved. Write CLIENT_REPLY as a confident closing message. Acknowledge what was fixed, thank the client for their patience, and advise them to reopen the ticket if the issue recurs. Do NOT ask further questions.",
-            'INVESTIGATE'  => "REPLY INTENT — INVESTIGATING: The admin is still actively investigating this issue. Write CLIENT_REPLY to acknowledge the issue empathetically, confirm the support team is actively working on it, and set realistic expectations without making firm time commitments. Keep the client reassured.",
-            'MORE_INFO'    => "REPLY INTENT — NEED MORE INFORMATION: The admin needs additional details before proceeding. Write CLIENT_REPLY to clearly and politely list exactly what specific information, logs, screenshots, credentials, or steps are required from the client. Be precise — avoid vague requests.",
-            'GUIDE'        => "REPLY INTENT — GUIDE TO SOLUTION: The admin wants to guide the client to self-resolve. Write CLIENT_REPLY as a clear, step-by-step guide in simple language the client can follow independently. Use numbered steps. Anticipate likely stumbling points and address them proactively.",
+            'RESOLVE' => "REPLY INTENT — RESOLVED: The admin confirms this issue has been resolved. Write CLIENT_REPLY as a confident closing message. Acknowledge what was fixed, thank the client for their patience, and advise them to reopen the ticket if the issue recurs. Do NOT ask further questions.",
+            'INVESTIGATE' => "REPLY INTENT — INVESTIGATING: The admin is still actively investigating this issue. Write CLIENT_REPLY to acknowledge the issue empathetically, confirm the support team is actively working on it, and set realistic expectations without making firm time commitments. Keep the client reassured.",
+            'MORE_INFO' => "REPLY INTENT — NEED MORE INFORMATION: The admin needs additional details before proceeding. Write CLIENT_REPLY to clearly and politely list exactly what specific information, logs, screenshots, credentials, or steps are required from the client. Be precise — avoid vague requests.",
+            'GUIDE' => "REPLY INTENT — GUIDE TO SOLUTION: The admin wants to guide the client to self-resolve. Write CLIENT_REPLY as a clear, step-by-step guide in simple language the client can follow independently. Use numbered steps. Anticipate likely stumbling points and address them proactively.",
             'OUT_OF_SCOPE' => "REPLY INTENT — OUT OF SUPPORT SCOPE: This issue falls outside the support boundaries. Write CLIENT_REPLY to clearly but respectfully explain that this specific issue is not covered under the current support scope or plan. Where applicable, point to relevant resources, documentation, or upgrade options. Be firm yet courteous — avoid leaving the client feeling dismissed.",
-            'DUPLICATE'    => "REPLY INTENT — DUPLICATE TICKET: This is a duplicate of an existing ticket. Write CLIENT_REPLY to politely inform the client that this appears to be a duplicate of an existing ticket they have already submitted. Instruct them to continue communication on the original ticket to avoid confusion and ensure continuity of support. Close this ticket gracefully.",
+            'DUPLICATE' => "REPLY INTENT — DUPLICATE TICKET: This is a duplicate of an existing ticket. Write CLIENT_REPLY to politely inform the client that this appears to be a duplicate of an existing ticket they have already submitted. Instruct them to continue communication on the original ticket to avoid confusion and ensure continuity of support. Close this ticket gracefully.",
         ];
 
         $key = strtoupper(trim($intent));

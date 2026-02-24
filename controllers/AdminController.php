@@ -134,7 +134,8 @@ class AdminController
                     Manager</a>
                 <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=knowledgebase">Knowledgebase
                     Engine</a>
-                <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=prompt_manager">Prompt Manager 🔬</a>
+                <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=prompt_manager">Prompt Manager
+                    🔬</a>
             </div>
 
             <h2 style="border-bottom: 1px solid #eee; padding-bottom: 15px; margin-bottom: 20px;">Sahdev AI Intelligence -
@@ -210,7 +211,9 @@ class AdminController
                 <!-- AI Snapshot Feature Toggle -->
                 <div class="panel panel-default" style="margin-bottom: 25px; border-left: 4px solid #0d6efd;">
                     <div class="panel-heading" style="background: #f0f5ff;">
-                        <h4 style="margin: 0; font-size: 15px;"><i class="fas fa-bolt"></i> AI Snapshot on Page Load <span class="label label-primary" style="font-size: 11px; vertical-align: middle; margin-left: 6px;">Feature Toggle</span></h4>
+                        <h4 style="margin: 0; font-size: 15px;"><i class="fas fa-bolt"></i> AI Snapshot on Page Load <span
+                                class="label label-primary"
+                                style="font-size: 11px; vertical-align: middle; margin-left: 6px;">Feature Toggle</span></h4>
                     </div>
                     <div class="panel-body">
                         <div class="checkbox" style="margin-top: 0;">
@@ -220,9 +223,14 @@ class AdminController
                             </label>
                         </div>
                         <p class="text-muted" style="margin-top: 8px; margin-bottom: 0;">
-                            When <strong>ON</strong>: Sahdev will silently fetch the AI-generated <strong>Summary, Root Cause, Responsibility, Risk Level, and Action Plan</strong> as soon as a ticket page opens — before the admin clicks any button. Results appear in a dedicated "AI Snapshot" panel below the main Sahdev panel.<br>
-                            When <strong>OFF</strong>: Normal behaviour — analysis only runs when the admin clicks "Analyze &amp; Generate Reply".<br>
-                            <em class="text-warning"><i class="fas fa-exclamation-triangle"></i> Note: This uses one AI call per ticket page load. Uses cache when available so repeat views are free.</em>
+                            When <strong>ON</strong>: Sahdev will silently fetch the AI-generated <strong>Summary, Root Cause,
+                                Responsibility, Risk Level, and Action Plan</strong> as soon as a ticket page opens — before the
+                            admin clicks any button. Results appear in a dedicated "AI Snapshot" panel below the main Sahdev
+                            panel.<br>
+                            When <strong>OFF</strong>: Normal behaviour — analysis only runs when the admin clicks "Analyze
+                            &amp; Generate Reply".<br>
+                            <em class="text-warning"><i class="fas fa-exclamation-triangle"></i> Note: This uses one AI call per
+                                ticket page load. Uses cache when available so repeat views are free.</em>
                         </p>
                     </div>
                 </div>
@@ -363,12 +371,14 @@ class AdminController
                 <a href="<?php echo $settingsUrl; ?>">General Settings</a>
                 <a href="<?php echo $actionUrl; ?>" class="active">AI Providers Manager</a>
                 <a href="<?php echo $kbUrl; ?>">Knowledgebase Engine</a>
-                <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=prompt_manager">Prompt Manager 🔬</a>
+                <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=prompt_manager">Prompt Manager
+                    🔬</a>
             </div>
 
             <h2 style="margin-bottom: 10px;">AI Providers Manager</h2>
             <p class="text-muted" style="margin-bottom: 25px;">Create and manage connections to various LLM APIs (OpenAI, Local
-                LM Studio, Ollama, Google GenAI). You can assign these as Primary or Fallback in General Settings.</p>
+                LM Studio, Ollama, Google GenAI, Replicate). You can assign these as Primary or Fallback in General Settings.
+            </p>
 
             <?php if (!empty($successMessage)): ?>
                 <div class="alert alert-success"><i class="fas fa-check-circle"></i>
@@ -399,6 +409,7 @@ class AdminController
                             <select name="provider_type" class="form-control">
                                 <option value="lmstudio">OpenAI Compatible (LM Studio / Ollama / OpenAI)</option>
                                 <option value="google">Google GenAI (Gemini)</option>
+                                <option value="replicate">Replicate</option>
                             </select>
                         </div>
                     </div>
@@ -449,6 +460,8 @@ class AdminController
                                         Compatible</option>
                                     <option value="google" <?php echo ($p->provider_type == 'google') ? 'selected' : ''; ?>>Google
                                         GenAI</option>
+                                    <option value="replicate" <?php echo ($p->provider_type == 'replicate') ? 'selected' : ''; ?>>
+                                        Replicate</option>
                                 </select>
                             </div>
                         </div>
@@ -724,13 +737,57 @@ class AdminController
         ob_start();
         ?>
         <style>
-            .sahdev-container { max-width: 1100px; padding: 20px; background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,.1); }
-            .sahdev-nav { margin-bottom: 20px; border-bottom: 1px solid #eee; padding-bottom: 10px; }
-            .sahdev-nav a { margin-right: 15px; font-weight: 600; text-decoration: none; padding: 5px 10px; border-radius: 4px; }
-            .sahdev-nav a.active { background: #0d6efd; color: white; }
-            .sahdev-nav a:not(.active) { color: #0d6efd; background: #f8f9fa; }
-            .prompt-template-area { font-family: 'SFMono-Regular', Consolas, monospace; font-size: 13px; background: #1e1e2e; color: #cdd6f4; border: 1px solid #444; border-radius: 6px; }
-            .placeholder-tag { display: inline-block; background: #313244; color: #89dceb; padding: 2px 7px; border-radius: 4px; font-size: 12px; font-family: monospace; margin: 2px; }
+            .sahdev-container {
+                max-width: 1100px;
+                padding: 20px;
+                background: #fff;
+                border-radius: 8px;
+                box-shadow: 0 1px 3px rgba(0, 0, 0, .1);
+            }
+
+            .sahdev-nav {
+                margin-bottom: 20px;
+                border-bottom: 1px solid #eee;
+                padding-bottom: 10px;
+            }
+
+            .sahdev-nav a {
+                margin-right: 15px;
+                font-weight: 600;
+                text-decoration: none;
+                padding: 5px 10px;
+                border-radius: 4px;
+            }
+
+            .sahdev-nav a.active {
+                background: #0d6efd;
+                color: white;
+            }
+
+            .sahdev-nav a:not(.active) {
+                color: #0d6efd;
+                background: #f8f9fa;
+            }
+
+            .prompt-template-area {
+                font-family: 'SFMono-Regular', Consolas, monospace;
+                font-size: 13px;
+                background: #1e1e2e;
+                color: #cdd6f4;
+                border: 1px solid #444;
+                border-radius: 6px;
+            }
+
+            .placeholder-tag {
+                display: inline-block;
+                background: #313244;
+                color: #89dceb;
+                padding: 2px 7px;
+                border-radius: 4px;
+                font-size: 12px;
+                font-family: monospace;
+                margin: 2px;
+            }
         </style>
         <div class="sahdev-container">
             <div class="sahdev-nav">
@@ -741,18 +798,23 @@ class AdminController
             </div>
 
             <h2 style="margin-bottom:5px;">🔬 Prompt Manager</h2>
-            <p class="text-muted" style="margin-bottom:20px;">Edit the exact <strong>user-prompt template</strong> sent to the AI on every ticket analysis. The <strong>System Prompt</strong> (AI persona / identity) is still managed in <a href="<?php echo $settingsUrl; ?>">General Settings</a>.</p>
+            <p class="text-muted" style="margin-bottom:20px;">Edit the exact <strong>user-prompt template</strong> sent to the
+                AI on every ticket analysis. The <strong>System Prompt</strong> (AI persona / identity) is still managed in <a
+                    href="<?php echo $settingsUrl; ?>">General Settings</a>.</p>
 
             <?php if (!empty($successMessage)): ?>
-                <div class="alert alert-success"><i class="fas fa-check-circle"></i> <?php echo htmlspecialchars($successMessage); ?></div>
+                <div class="alert alert-success"><i class="fas fa-check-circle"></i>
+                    <?php echo htmlspecialchars($successMessage); ?></div>
             <?php endif; ?>
             <?php if (!empty($errorMessage)): ?>
-                <div class="alert alert-danger"><i class="fas fa-exclamation-circle"></i> <?php echo htmlspecialchars($errorMessage); ?></div>
+                <div class="alert alert-danger"><i class="fas fa-exclamation-circle"></i>
+                    <?php echo htmlspecialchars($errorMessage); ?></div>
             <?php endif; ?>
 
             <div class="alert alert-info" style="margin-bottom:20px;">
                 <strong>Available Placeholders:</strong><br>
-                <span class="placeholder-tag">{{CUSTOM_INSTRUCTION_BLOCK}}</span> Auto-injected admin instruction (supreme priority) — keep at the very top<br>
+                <span class="placeholder-tag">{{CUSTOM_INSTRUCTION_BLOCK}}</span> Auto-injected admin instruction (supreme
+                priority) — keep at the very top<br>
                 <span class="placeholder-tag">{{TONE}}</span> Tone selected in ticket panel &nbsp;
                 <span class="placeholder-tag">{{CLIENT_NAME}}</span> &nbsp;
                 <span class="placeholder-tag">{{DEPARTMENT}}</span> &nbsp;
@@ -768,7 +830,8 @@ class AdminController
                     <label style="font-weight:600; margin-bottom:5px; display:block;">User Prompt Template</label>
                     <textarea name="user_prompt_template" class="form-control prompt-template-area" rows="28"
                         style="width:100%; resize:vertical;"><?php echo htmlspecialchars($currentTemplate); ?></textarea>
-                    <small class="text-muted">This is the full prompt body sent to the AI (not the system persona). Placeholders are replaced with live ticket data at runtime.</small>
+                    <small class="text-muted">This is the full prompt body sent to the AI (not the system persona). Placeholders
+                        are replaced with live ticket data at runtime.</small>
                 </div>
                 <div style="display:flex; gap:10px; justify-content:flex-end;">
                     <button type="submit" name="prompt_action" value="reset" class="btn btn-default"
