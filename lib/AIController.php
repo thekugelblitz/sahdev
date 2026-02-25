@@ -129,13 +129,14 @@ class AIController
         }
 
         // Summarizer injection: replace full message history with condensed summary if toggle is checked
+        // We prioritize the toggle if a summary exists, ensuring it works as long as the user can see the panel.
         $summarizerEnabled = !empty($this->settings['summarizer_enabled']);
-        if ($summarizerEnabled && $useSummaryToggle) {
+        if ($useSummaryToggle) {
             $existingSummary = $this->getSummary();
             if ($existingSummary) {
                 $context['messages'] = [[
                     'admin'   => false,
-                    'date'    => '',
+                    'date'    => Carbon::now()->toDateTimeString(),
                     'message' => "[AI SUMMARY — Full history condensed for efficiency]\n" . $existingSummary,
                 ]];
                 $context['_summary_used'] = true;
@@ -326,12 +327,12 @@ class AIController
         // Summarizer injection: replace full message history with condensed summary if toggle is checked
         $summarizerEnabled = !empty($this->settings['summarizer_enabled']);
         $summaryUsed = false;
-        if ($summarizerEnabled && $useSummaryToggle) {
+        if ($useSummaryToggle) {
             $existingSummary = $this->getSummary();
             if ($existingSummary) {
                 $context['messages'] = [[
                     'admin'   => false,
-                    'date'    => '',
+                    'date'    => Carbon::now()->toDateTimeString(),
                     'message' => "[AI SUMMARY — Full history condensed for efficiency]\n" . $existingSummary,
                 ]];
                 $summaryUsed = true;
@@ -409,7 +410,7 @@ class AIController
             'fallback_api_key'     => $this->settings['fallback_api_key'] ?? '',
             'summary_used'         => $summaryUsed,
             'summary_available'    => $this->getSummary() !== null,
-            'message_count'        => count($extractor->getContext()['messages'] ?? []),
+            'message_count'        => count($context['messages'] ?? []),
             'summarizer_threshold' => $summarizerThreshold,
         ];
     }

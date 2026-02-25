@@ -62,7 +62,8 @@ try {
     $action = $_POST['action'] ?? '';
     $forceRegenerate = !empty($_POST['force_regenerate']) && $_POST['force_regenerate'] === 'true';
     $forceFallback = !empty($_POST['force_fallback']) && $_POST['force_fallback'] === 'true';
-    $useSummary = !isset($_POST['use_summary']) || $_POST['use_summary'] == '1';
+    $useSummaryRaw = $_POST['use_summary'] ?? '1';
+    $useSummary = ($useSummaryRaw === '1' || $useSummaryRaw === 'true' || $useSummaryRaw === 'on' || $useSummaryRaw === true);
 
     // Auto-migration for overwrites without reactivation, specifically for AJAX calls
     try {

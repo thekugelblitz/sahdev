@@ -1359,6 +1359,7 @@ HTML;
                 intensity: 3,
                 instruction: '',
                 intent: 'AUTO',
+                use_summary: 1, // Snapshot always uses summary if available
                 token: $('input[name="token"]').val(),
                 force_regenerate: 'false'
             };
