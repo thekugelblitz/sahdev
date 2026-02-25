@@ -130,7 +130,7 @@ function sahdev_inject_ticket_panel($vars)
                     <i class="fas fa-pen-nib"></i> Rewrite It
                 </button>
                 <button type="button" id="btn-sahdev-score-draft" class="btn btn-default btn-sm" style="font-weight: 600;" title="Get AI feedback on your manual draft before sending">
-                    <i class="fas fa-tachometer-alt"></i> Score This Reply
+                    <i class="fas fa-tachometer-alt"></i> Score Admin Draft
                 </button>
                 <span id="sahdev-rewrite-status" style="font-size: 12px; color: #666;"></span>
             </div>
