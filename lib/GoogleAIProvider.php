@@ -128,6 +128,14 @@ class GoogleAIProvider implements AIProviderInterface
     /**
      * @inheritDoc
      */
+    public function getName(): string
+    {
+        return 'Google Gemini';
+    }
+
+    /**
+     * @inheritDoc
+     */
     public function getApiUrl(): string
     {
         return "https://generativelanguage.googleapis.com";

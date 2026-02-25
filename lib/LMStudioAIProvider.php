@@ -136,6 +136,14 @@ class LMStudioAIProvider implements AIProviderInterface
     /**
      * @inheritDoc
      */
+    public function getName(): string
+    {
+        return 'LM Studio (Local)';
+    }
+
+    /**
+     * @inheritDoc
+     */
     public function getApiUrl(): string
     {
         return $this->apiUrl;

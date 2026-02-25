@@ -42,6 +42,13 @@ interface AIProviderInterface
     public function getProviderType(): string;
 
     /**
+     * Get the provider name (for audit logging).
+     *
+     * @return string
+     */
+    public function getName(): string;
+
+    /**
      * Get the API URL endpoint.
      * 
      * @return string

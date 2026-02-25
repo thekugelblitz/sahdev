@@ -173,6 +173,14 @@ class ReplicateAIProvider implements AIProviderInterface
     /**
      * @inheritDoc
      */
+    public function getName(): string
+    {
+        return 'Replicate AI';
+    }
+
+    /**
+     * @inheritDoc
+     */
     public function getApiUrl(): string
     {
         return $this->apiUrl;
