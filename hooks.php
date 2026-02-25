@@ -48,6 +48,8 @@ function sahdev_inject_ticket_panel($vars)
         return $val === $current ? 'selected' : '';
     };
 
+    $scoreBtnStyle = $qualityScorerEnabled === 'true' ? '' : 'display: none;';
+
     $htmlPanel = <<<HTML
 <div class="panel panel-info" id="sahdev-ai-panel" style="margin-top: 20px; border-color: #0d6efd;">
     <div class="panel-heading" style="background-color: #0d6efd; color: white; display: flex; justify-content: space-between; align-items: center; cursor: pointer;" onclick="$('#sahdev-ai-body').slideToggle();">
@@ -130,11 +132,9 @@ function sahdev_inject_ticket_panel($vars)
                 <button type="button" id="btn-sahdev-rewrite" class="btn btn-info btn-sm" style="font-weight: 600;">
                     <i class="fas fa-pen-nib"></i> Rewrite It
                 </button>
-                <?php if ($qualityScorerEnabled === 'true'): ?>
-                <button type="button" id="btn-sahdev-score-draft" class="btn btn-default btn-sm" style="font-weight: 600;" title="Get AI feedback on your manual draft before sending">
+                <button type="button" id="btn-sahdev-score-draft" class="btn btn-default btn-sm" style="font-weight: 600; {$scoreBtnStyle}" title="Get AI feedback on your manual draft before sending">
                     <i class="fas fa-tachometer-alt"></i> Score Admin Draft
                 </button>
-                <?php endif; ?>
                 <span id="sahdev-rewrite-status" style="font-size: 12px; color: #666;"></span>
             </div>
             <div id="sahdev-rewrite-loading" style="display: none; margin-top: 8px; font-size: 13px; color: #17a2b8;">
