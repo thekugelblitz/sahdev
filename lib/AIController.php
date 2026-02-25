@@ -97,7 +97,7 @@ class AIController
         }
     }
 
-    public function getAnalysis(string $tone = null, string $customInstruction = null, bool $forceRegenerate = false, bool $forceFallback = false, string $intent = 'AUTO'): array
+    public function getAnalysis(string $tone = null, string $customInstruction = null, bool $forceRegenerate = false, bool $forceFallback = false, string $intent = 'AUTO', bool $useSummaryToggle = true): array
     {
         // 1. Rate Limit Check
         $this->checkRateLimit();
@@ -119,10 +119,9 @@ class AIController
                 : $intentDirective . "\n\n" . $customInstruction;
         }
 
-        // Summarizer injection: replace full message history with condensed summary if threshold met
+        // Summarizer injection: replace full message history with condensed summary if toggle is checked
         $summarizerEnabled = !empty($this->settings['summarizer_enabled']);
-        $summarizerThreshold = (int) ($this->settings['summarizer_threshold'] ?? 20);
-        if ($summarizerEnabled && count($context['messages'] ?? []) >= $summarizerThreshold) {
+        if ($summarizerEnabled && $useSummaryToggle) {
             $existingSummary = $this->getSummary();
             if ($existingSummary) {
                 $context['messages'] = [[
@@ -269,7 +268,7 @@ class AIController
         );
     }
 
-    public function getPayload(string $tone = null, string $customInstruction = null, bool $forceRegenerate = false, string $intent = 'AUTO'): array
+    public function getPayload(string $tone = null, string $customInstruction = null, bool $forceRegenerate = false, string $intent = 'AUTO', bool $useSummaryToggle = true): array
     {
         // 1. Rate Limit Check
         $this->checkRateLimit();
@@ -291,11 +290,10 @@ class AIController
                 : $intentDirective . "\n\n" . $customInstruction;
         }
 
-        // Summarizer injection: replace full message history with condensed summary if threshold met
+        // Summarizer injection: replace full message history with condensed summary if toggle is checked
         $summarizerEnabled = !empty($this->settings['summarizer_enabled']);
-        $summarizerThreshold = (int) ($this->settings['summarizer_threshold'] ?? 20);
         $summaryUsed = false;
-        if ($summarizerEnabled && count($context['messages'] ?? []) >= $summarizerThreshold) {
+        if ($summarizerEnabled && $useSummaryToggle) {
             $existingSummary = $this->getSummary();
             if ($existingSummary) {
                 $context['messages'] = [[

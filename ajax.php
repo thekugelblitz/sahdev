@@ -62,6 +62,7 @@ try {
     $action = $_POST['action'] ?? '';
     $forceRegenerate = !empty($_POST['force_regenerate']) && $_POST['force_regenerate'] === 'true';
     $forceFallback = !empty($_POST['force_fallback']) && $_POST['force_fallback'] === 'true';
+    $useSummary = !isset($_POST['use_summary']) || $_POST['use_summary'] == '1';
 
     // Auto-migration for overwrites without reactivation, specifically for AJAX calls
     try {
@@ -77,7 +78,7 @@ try {
     $controller = new \Sahdev\Lib\AIController($ticketId, $adminId);
 
     if ($action === 'get_payload') {
-        $response = $controller->getPayload($tone, $instruction, $forceRegenerate, $intent);
+        $response = $controller->getPayload($tone, $instruction, $forceRegenerate, $intent, $useSummary);
     } elseif ($action === 'save_response') {
         $hashSignature = $_POST['hash_signature'] ?? '';
         $aiResponseRaw = $_POST['ai_response'] ?? '{}';
@@ -114,7 +115,7 @@ try {
         $response = $controller->rewriteReply($draftText, $tone ?: 'Professional', $instruction);
     } elseif ($action === 'auto_analyze') {
         // Feature: Auto-load AI Snapshot on ticket page load (always cached-first, no rate limit penalty on hit)
-        $response = $controller->getAnalysis($tone, $instruction, false, false, $intent);
+        $response = $controller->getAnalysis($tone, $instruction, false, false, $intent, $useSummary);
     } elseif ($action === 'generate_summary') {
         // Feature: AI Ticket Summarizer — generate and save a condensed summary
         $response = $controller->generateSummary();
@@ -141,7 +142,7 @@ try {
         }
     } else {
         // Default analyze_ticket (server-side generation)
-        $response = $controller->getAnalysis($tone, $instruction, $forceRegenerate, $forceFallback, $intent);
+        $response = $controller->getAnalysis($tone, $instruction, $forceRegenerate, $forceFallback, $intent, $useSummary);
     }
 
     // Clean any prior output to prevent malformed JSON

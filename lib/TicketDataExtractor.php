@@ -255,18 +255,28 @@ class TicketDataExtractor
     {
         if (empty($text)) return $text;
 
+        $settings = Capsule::table('tblsahdev_settings')->first();
+        if (!$settings) return $text;
+
         // 1. Scrub Credit Cards (basic 13-16 digit matching)
-        $text = preg_replace('/\b(?:\d[ -]*?){13,16}\b/', '[REDACTED_CC]', $text);
+        if (!isset($settings->scrub_cc) || !empty($settings->scrub_cc)) {
+            $text = preg_replace('/\b(?:\d[ -]*?){13,16}\b/', '[REDACTED_CC]', $text);
+        }
 
         // 2. Scrub Emails
-        $text = preg_replace('/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/', '[REDACTED_EMAIL]', $text);
+        if (!isset($settings->scrub_emails) || !empty($settings->scrub_emails)) {
+            $text = preg_replace('/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/', '[REDACTED_EMAIL]', $text);
+        }
 
         // 3. Scrub IPv4 Addresses (naive but effective for logs)
-        $text = preg_replace('/\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b/', '[REDACTED_IP]', $text);
+        if (!isset($settings->scrub_ips) || !empty($settings->scrub_ips)) {
+            $text = preg_replace('/\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b/', '[REDACTED_IP]', $text);
+        }
 
         // 4. Scrub passwords (heuristic: "password: xxx", "pass: xxx")
-        // Looks for password/pass followed by symbols like : or = and then captures the string until space/newline
-        $text = preg_replace('/(?i)(?:password|pass|pwd)\s*[:=]\s*([^\s\n\r]+)/', '$0 [REDACTED_PASSWORD]', $text);
+        if (!isset($settings->scrub_passwords) || !empty($settings->scrub_passwords)) {
+            $text = preg_replace('/(?i)(?:password|pass|pwd)\s*[:=]\s*([^\s\n\r]+)/', '$0 [REDACTED_PASSWORD]', $text);
+        }
 
         return $text;
     }

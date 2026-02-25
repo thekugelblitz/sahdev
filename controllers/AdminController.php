@@ -106,6 +106,22 @@ class AdminController
         } catch (\Exception $e) {
             Capsule::schema()->table('tblsahdev_settings', function ($table) {
                 $table->boolean('compliance_mode')->default(0);
+                $table->boolean('scrub_emails')->default(1);
+                $table->boolean('scrub_cc')->default(1);
+                $table->boolean('scrub_ips')->default(1);
+                $table->boolean('scrub_passwords')->default(1);
+            });
+        }
+
+        // Granular columns inline check for existing installs
+        try {
+            Capsule::table('tblsahdev_settings')->select('scrub_emails')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                $table->boolean('scrub_emails')->default(1);
+                $table->boolean('scrub_cc')->default(1);
+                $table->boolean('scrub_ips')->default(1);
+                $table->boolean('scrub_passwords')->default(1);
             });
         }
 
@@ -126,6 +142,10 @@ class AdminController
             if ($summarizerThreshold < 3) $summarizerThreshold = 3; 
             
             $complianceMode = !empty($_POST['compliance_mode']) ? 1 : 0;
+            $scrubEmails = !empty($_POST['scrub_emails']) ? 1 : 0;
+            $scrubCc = !empty($_POST['scrub_cc']) ? 1 : 0;
+            $scrubIps = !empty($_POST['scrub_ips']) ? 1 : 0;
+            $scrubPasswords = !empty($_POST['scrub_passwords']) ? 1 : 0;
 
             // Ensure valid bounds
             if ($temperature < 0 || $temperature > 1) {
@@ -145,6 +165,10 @@ class AdminController
                     'summarizer_enabled' => $summarizerEnabled,
                     'summarizer_threshold' => $summarizerThreshold,
                     'compliance_mode' => $complianceMode,
+                    'scrub_emails' => $scrubEmails,
+                    'scrub_cc' => $scrubCc,
+                    'scrub_ips' => $scrubIps,
+                    'scrub_passwords' => $scrubPasswords,
                     'updated_at' => \Carbon\Carbon::now(),
                 ]
             );
@@ -166,6 +190,10 @@ class AdminController
                 'summarizer_enabled' => 0,
                 'summarizer_threshold' => 15,
                 'compliance_mode' => 0,
+                'scrub_emails' => 1,
+                'scrub_cc' => 1,
+                'scrub_ips' => 1,
+                'scrub_passwords' => 1,
             ];
         }
 
@@ -350,8 +378,14 @@ class AdminController
                                 &nbsp;Enable PII Scrubber
                             </label>
                         </div>
+                        <div style="margin-top: 10px; display:flex; gap:15px; flex-wrap: wrap;">
+                            <label><input type="checkbox" name="scrub_emails" value="1" <?php echo (!isset($settings->scrub_emails) || !empty($settings->scrub_emails)) ? 'checked' : ''; ?>> <i class="fas fa-envelope text-muted"></i> Emails</label>
+                            <label><input type="checkbox" name="scrub_cc" value="1" <?php echo (!isset($settings->scrub_cc) || !empty($settings->scrub_cc)) ? 'checked' : ''; ?>> <i class="fas fa-credit-card text-muted"></i> Credit Cards</label>
+                            <label><input type="checkbox" name="scrub_ips" value="1" <?php echo (!isset($settings->scrub_ips) || !empty($settings->scrub_ips)) ? 'checked' : ''; ?>> <i class="fas fa-network-wired text-muted"></i> IPv4</label>
+                            <label><input type="checkbox" name="scrub_passwords" value="1" <?php echo (!isset($settings->scrub_passwords) || !empty($settings->scrub_passwords)) ? 'checked' : ''; ?>> <i class="fas fa-key text-muted"></i> Passwords</label>
+                        </div>
                         <p class="text-muted" style="margin-top: 8px; margin-bottom: 0; font-size:13px;">
-                            When enabled, Sahdev will automatically use regex to strip out Credit Card numbers, IPv4 addresses, Emails, and common structural passwords before sending the ticket context to the AI model. Essential context structure remains intact.
+                            When enabled, Sahdev will automatically use regex to strip out selected sensitive information before sending the ticket context to the AI model. Essential context structure remains intact.
                         </p>
                     </div>
                 </div>

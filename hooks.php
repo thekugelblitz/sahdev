@@ -106,13 +106,18 @@ function sahdev_inject_ticket_panel($vars)
                 </div>
             </div>
 
-            <div class="form-group text-right" style="margin-top: 10px;">
-                <button type="button" id="btn-sahdev-analyze" class="btn btn-primary" style="font-weight: 600;">
-                    <i class="fas fa-magic"></i> Analyze & Generate Reply
-                </button>
-                <button type="button" id="btn-sahdev-regenerate" class="btn btn-warning" style="font-weight: 600; display: none; margin-left: 5px;" data-force="true">
-                    <i class="fas fa-sync"></i> Regenerate Reply
-                </button>
+            <div class="form-group text-right" style="margin-top: 10px; display: flex; justify-content: flex-end; align-items: center; gap: 15px;">
+                <label style="font-weight: 600; font-size: 13px; margin: 0; cursor: pointer; color: #6f42c1;" title="If checked, the AI will use the condensed ticket summary instead of reading the full message history (if a summary exists).">
+                    <input type="checkbox" id="sahdev_use_summary" value="1" checked style="vertical-align: middle; margin: 0 4px 0 0;"> Feed Summary (if available)
+                </label>
+                <div>
+                    <button type="button" id="btn-sahdev-analyze" class="btn btn-primary" style="font-weight: 600;">
+                        <i class="fas fa-magic"></i> Analyze & Generate Reply
+                    </button>
+                    <button type="button" id="btn-sahdev-regenerate" class="btn btn-warning" style="font-weight: 600; display: none; margin-left: 5px;" data-force="true">
+                        <i class="fas fa-sync"></i> Regenerate Reply
+                    </button>
+                </div>
             </div>
         </form>
 
@@ -392,6 +397,7 @@ HTML;
                 intensity: $('#sahdev_intensity').val(),
                 instruction: $('#sahdev_instruction').val(),
                 intent: $('#sahdev_intent').val(),
+                use_summary: $('#sahdev_use_summary').length && !$('#sahdev_use_summary').is(':checked') ? 0 : 1,
                 token: $('input[name="token"]').val(),
                 force_regenerate: isRegenerate ? 'true' : 'false'
             };
