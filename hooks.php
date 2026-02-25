@@ -135,7 +135,7 @@ function sahdev_inject_ticket_panel($vars)
                 <button type="button" id="btn-sahdev-score-draft" class="btn btn-default btn-sm" style="font-weight: 600; {$scoreBtnStyle}" title="Get AI feedback on your manual draft before sending">
                     <i class="fas fa-tachometer-alt"></i> Score Admin Draft
                 </button>
-                <span id="sahdev-rewrite-status" style="font-size: 12px; color: #666;"></span>
+                <span id="sahdev-rewrite-status" class="label label-default" style="display: none; font-size: 12px; cursor: help; padding: 5px 8px;"></span>
             </div>
             <div id="sahdev-rewrite-loading" style="display: none; margin-top: 8px; font-size: 13px; color: #17a2b8;">
                 <i class="fas fa-spinner fa-spin"></i> Sahdev is polishing your draft...
@@ -883,7 +883,7 @@ HTML;
         // FEATURE: Response Quality Scorer
         // =====================================================================
         function triggerReplyScoring(replyText, isAiGenerated, $badgeElement) {
-            $badgeElement.removeClass('label-success label-warning label-danger').addClass('label-default').html('<i class="fas fa-spinner fa-spin"></i> Scoring...').show();
+            $badgeElement.removeClass('label-success label-warning label-danger label-info').addClass('label-default').html('<i class="fas fa-spinner fa-spin"></i> Scoring...').show();
             
             $.ajax({
                 url: sahdevAjaxUrl,
@@ -901,13 +901,13 @@ HTML;
                         var score = parseInt(res.data.score) || 0;
                         var colorClass = score >= 85 ? 'label-success' : (score >= 70 ? 'label-warning' : 'label-danger');
                         var title = "Clarity: " + (res.data.clarity||0) + "% | Tone: " + (res.data.tone_score||0) + "% | Completeness: " + (res.data.completeness||0) + "%\nNote: " + (res.data.notes||'');
-                        $badgeElement.removeClass('label-default label-success label-warning label-danger').addClass(colorClass).html('<i class="fas fa-bullseye"></i> Admin Draft Score: ' + score + '/100').attr('title', title);
+                        $badgeElement.removeClass('label-default label-success label-warning label-danger label-info').addClass(colorClass).html('<i class="fas fa-bullseye"></i> Admin Draft Score: ' + score + '/100').attr('title', title);
                     } else {
-                        $badgeElement.hide();
+                        $badgeElement.removeClass('label-default label-success label-warning label-danger label-info').addClass('label-danger').html('<i class="fas fa-exclamation-triangle"></i> Scoring Failed').removeAttr('title');
                     }
                 },
                 error: function() {
-                    $badgeElement.hide();
+                    $badgeElement.removeClass('label-default label-success label-warning label-danger label-info').addClass('label-danger').html('<i class="fas fa-exclamation-triangle"></i> Scoring Error').removeAttr('title');
                 }
             });
         }
@@ -1203,7 +1203,7 @@ HTML;
                 $('#replymessage').val(plainText);
             }
 
-            $('#sahdev-rewrite-status').html('<span style="color:#198754;"><i class="fas fa-check-circle"></i> Draft polished &amp; inserted into editor!</span>');
+            $('#sahdev-rewrite-status').removeClass('label-default label-success label-warning label-danger label-info').addClass('label-success').html('<i class="fas fa-check-circle"></i> Draft polished!').removeAttr('title').show();
             if ($('#replyticket').length) {
                 $('html, body').animate({ scrollTop: $('#replyticket').offset().top - 60 }, 400);
             }
