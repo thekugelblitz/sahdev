@@ -993,12 +993,14 @@ class AdminController
                         onclick="return confirm('Reset the prompt template to the built-in default?');">
                         <i class="fas fa-undo"></i> Reset to Default
                     </button>
-                    <button type="submit" name="prompt_action" value="save" class="btn btn-primary">
-                        <i class="fas fa-save"></i> Save Prompt Template
                     </button>
                 </div>
             </form>
         </div>
+        <?php
+        return ob_get_clean();
+    }
+
     /**
      * Ticket Summaries Manager View
      */
