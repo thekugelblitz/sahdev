@@ -898,9 +898,9 @@ HTML;
                 dataType: 'json',
                 success: function(res) {
                     if (res && res.status === 'success' && res.data) {
-                        var score = parseInt(res.data.score) || 0;
+                        var score = parseInt(res.data.SCORE) || 0;
                         var colorClass = score >= 85 ? 'label-success' : (score >= 70 ? 'label-warning' : 'label-danger');
-                        var title = "Clarity: " + (res.data.clarity||0) + "% | Tone: " + (res.data.tone_score||0) + "% | Completeness: " + (res.data.completeness||0) + "%\nNote: " + (res.data.notes||'');
+                        var title = "Clarity: " + (res.data.CLARITY||0) + "% | Tone: " + (res.data.TONE_SCORE||0) + "% | Completeness: " + (res.data.COMPLETENESS||0) + "%\nNote: " + (res.data.REPLY_NOTES||'');
                         $badgeElement.removeClass('label-default label-success label-warning label-danger label-info').addClass(colorClass).html('<i class="fas fa-bullseye"></i> Admin Draft Score: ' + score + '/100').attr('title', title);
                     } else {
                         $badgeElement.removeClass('label-default label-success label-warning label-danger label-info').addClass('label-danger').html('<i class="fas fa-exclamation-triangle"></i> Scoring Failed').removeAttr('title');

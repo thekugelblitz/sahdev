@@ -848,7 +848,7 @@ SUMMARY RULES:
         
         $fakeSettings = $this->settings;
         $fakeSettings['user_prompt_template'] = '{{MESSAGES}}'; 
-        $fakeSettings['system_prompt'] = "You are an expert QA Manager scoring support replies.\nCRITICAL RULE: DO NOT use markdown headers (e.g. ### Evaluation). Output strictly a single raw JSON object EXACTLY matching this schema:\n{\"score\": 85, \"clarity\": 90, \"tone_score\": 85, \"completeness\": 80, \"notes\": \"Brief feedback here\"}\nFailure to output raw JSON will result in system failure.";
+        $fakeSettings['system_prompt'] = "You are an expert QA Manager scoring support replies.\nCRITICAL RULE: DO NOT use markdown headers (e.g. ### Evaluation). Output strictly a single raw JSON object EXACTLY matching this schema:\n{\"SCORE\": 85, \"CLARITY\": 90, \"TONE_SCORE\": 85, \"COMPLETENESS\": 80, \"REPLY_NOTES\": \"Brief feedback here\"}\nFailure to output raw JSON will result in system failure.";
 
         $fakeContext = [
             'subject' => '',
@@ -864,7 +864,7 @@ SUMMARY RULES:
             $rawResponse = $this->provider->generateResponse($fakeContext, $fakeSettings, 'Professional', '');
             $execTimeMs = round((microtime(true) - $startTime) * 1000);
             
-            $scoreData = ['score' => 0, 'clarity' => 0, 'tone_score' => 0, 'completeness' => 0, 'notes' => 'Parse failed'];
+            $scoreData = ['SCORE' => 0, 'CLARITY' => 0, 'TONE_SCORE' => 0, 'COMPLETENESS' => 0, 'REPLY_NOTES' => 'Parse failed'];
             
             if (is_array($rawResponse)) {
                 $scoreData = array_merge($scoreData, $rawResponse);
@@ -876,15 +876,22 @@ SUMMARY RULES:
                 }
             }
 
+            // Unify keys in case AI outputs lowercase (for robustness)
+            if (isset($scoreData['score'])) { $scoreData['SCORE'] = $scoreData['score']; }
+            if (isset($scoreData['clarity'])) { $scoreData['CLARITY'] = $scoreData['clarity']; }
+            if (isset($scoreData['tone_score'])) { $scoreData['TONE_SCORE'] = $scoreData['tone_score']; }
+            if (isset($scoreData['completeness'])) { $scoreData['COMPLETENESS'] = $scoreData['completeness']; }
+            if (isset($scoreData['notes'])) { $scoreData['REPLY_NOTES'] = $scoreData['notes']; }
+
             // Save to DB
             Capsule::table('tblsahdev_quality_scores')->insert([
                 'ticket_id' => $this->ticketId,
                 'admin_id' => $this->adminId,
-                'score' => (int)($scoreData['score'] ?? 0),
-                'clarity' => (int)($scoreData['clarity'] ?? 0),
-                'tone_score' => (int)($scoreData['tone_score'] ?? 0),
-                'completeness' => (int)($scoreData['completeness'] ?? 0),
-                'notes' => substr($scoreData['notes'] ?? '', 0, 500),
+                'score' => (int)($scoreData['SCORE'] ?? 0),
+                'clarity' => (int)($scoreData['CLARITY'] ?? 0),
+                'tone_score' => (int)($scoreData['TONE_SCORE'] ?? 0),
+                'completeness' => (int)($scoreData['COMPLETENESS'] ?? 0),
+                'notes' => substr($scoreData['REPLY_NOTES'] ?? '', 0, 500),
                 'is_ai_generated' => $isAiGenerated ? 1 : 0,
                 'created_at' => Carbon::now(),
                 'updated_at' => Carbon::now()
