@@ -143,6 +143,15 @@ class AdminController
             });
         }
 
+        // Inline migration: ensure quality_scorer_enabled column exists
+        try {
+            Capsule::table('tblsahdev_settings')->select('quality_scorer_enabled')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                $table->boolean('quality_scorer_enabled')->default(1);
+            });
+        }
+
         // Handle form submission
         if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_settings'])) {
             check_token("WHMCS.admin.default"); // Verify CSRF
