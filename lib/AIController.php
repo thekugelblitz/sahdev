@@ -503,10 +503,12 @@ class AIController
             $rawResponse = $this->provider->generateResponse($fakeContext, $fakeSettings, $tone, '');
             $execTimeMs = round((microtime(true) - $startTime) * 1000);
 
-            // generateResponse returns a parsed JSON array; for rewrite we prefer CLIENT_REPLY if present,
-            // else check if the entire response is a plain string (some providers wrap everything).
+            // generateResponse returns a parsed JSON array; for rewrite we prefer CLIENT_REPLY if present.
+            // Replicate freeform responses come back as ['__raw_text__' => '...'].
             if (is_array($rawResponse) && isset($rawResponse['CLIENT_REPLY'])) {
                 $reply = $rawResponse['CLIENT_REPLY'];
+            } elseif (is_array($rawResponse) && isset($rawResponse['__raw_text__'])) {
+                $reply = $rawResponse['__raw_text__'];
             } elseif (is_array($rawResponse) && isset($rawResponse['reply'])) {
                 $reply = $rawResponse['reply'];
             } elseif (is_string($rawResponse)) {
@@ -539,9 +541,17 @@ class AIController
                     $fakeSettings['user_prompt_template'] = '{{MESSAGES}}';
                     $fakeSettings['system_prompt'] = $systemPrompt;
                     $rawResponse = $this->fallbackProvider->generateResponse($fakeContext, $fakeSettings, $tone, '');
-                    $reply = is_array($rawResponse) && isset($rawResponse['CLIENT_REPLY'])
-                        ? $rawResponse['CLIENT_REPLY']
-                        : (is_string($rawResponse) ? $rawResponse : implode("\n\n", array_filter(array_values($rawResponse), 'is_string')));
+                    if (is_array($rawResponse) && isset($rawResponse['CLIENT_REPLY'])) {
+                        $reply = $rawResponse['CLIENT_REPLY'];
+                    } elseif (is_array($rawResponse) && isset($rawResponse['__raw_text__'])) {
+                        $reply = $rawResponse['__raw_text__'];
+                    } elseif (is_array($rawResponse) && isset($rawResponse['reply'])) {
+                        $reply = $rawResponse['reply'];
+                    } elseif (is_string($rawResponse)) {
+                        $reply = $rawResponse;
+                    } else {
+                        $reply = implode("\n\n", array_filter(array_values($rawResponse), 'is_string'));
+                    }
                     return ['status' => 'success', 'reply' => $reply, 'execution_time_ms' => round((microtime(true) - $startTime) * 1000), 'tokens_used' => $this->fallbackProvider->getLastTokenUsage()];
                 } catch (\Exception $fe) {
                     throw new \Exception("Both providers failed to rewrite the reply. Last error: " . $fe->getMessage());

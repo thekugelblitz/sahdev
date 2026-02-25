@@ -875,7 +875,10 @@ HTML;
                                 }
                             },
                             error: function(xhr, s, e) {
-                                showRewriteError('Server error: ' + e + ' (HTTP ' + xhr.status + ')');
+                                var msg = (xhr.responseJSON && xhr.responseJSON.message)
+                                    ? xhr.responseJSON.message
+                                    : ('Server error: ' + (e || 'HTTP ' + xhr.status));
+                                showRewriteError(msg);
                             }
                         });
                     }
@@ -965,7 +968,12 @@ HTML;
                             if (r && r.status === 'success' && r.reply) { insertRewriteResult(r.reply); }
                             else { showRewriteError((r && r.message) || 'Fallback rewrite failed.'); }
                         },
-                        error: function(xhr, s, e) { showRewriteError('Fallback error: ' + e); }
+                        error: function(xhr, s, e) {
+                            var msg = (xhr.responseJSON && xhr.responseJSON.message)
+                                ? xhr.responseJSON.message
+                                : ('Fallback error: ' + (e || 'HTTP ' + xhr.status));
+                            showRewriteError(msg);
+                        }
                     });
                 } else {
                     showRewriteError('LM Studio Error: ' + err.message);

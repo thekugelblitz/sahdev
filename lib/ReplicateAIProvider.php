@@ -125,24 +125,25 @@ class ReplicateAIProvider implements AIProviderInterface
         $responseText = preg_replace('/<think>.*?<\/think>/s', '', $responseText);
         $responseText = trim($responseText);
 
-        // Extract JSON object if embedded in other text
-        $firstBrace = strpos($responseText, '{');
-        $lastBrace = strrpos($responseText, '}');
-        if ($firstBrace !== false && $lastBrace !== false && $firstBrace < $lastBrace) {
-            $responseText = substr($responseText, $firstBrace, $lastBrace - $firstBrace + 1);
-        }
-
-        $parsed = json_decode($responseText, true);
-        if (json_last_error() !== JSON_ERROR_NONE) {
-            throw new \Exception("Failed to decode JSON from Replicate response: " . json_last_error_msg() . "\nRaw Output: " . substr($responseText, 0, 200));
-        }
-
         // Estimate token usage (Replicate doesn't always provide token counts)
         $this->lastTokenDetails['input'] = (int) ceil(strlen($prompt . $systemMessage) / 4);
         $this->lastTokenDetails['output'] = (int) ceil(strlen($responseText) / 4);
         $this->lastTokenUsage = $this->lastTokenDetails['input'] + $this->lastTokenDetails['output'];
 
-        return $this->validateStructure($parsed);
+        // Try to extract and decode JSON object from within the response
+        $firstBrace = strpos($responseText, '{');
+        $lastBrace  = strrpos($responseText, '}');
+        if ($firstBrace !== false && $lastBrace !== false && $firstBrace < $lastBrace) {
+            $candidate = substr($responseText, $firstBrace, $lastBrace - $firstBrace + 1);
+            $parsed    = json_decode($candidate, true);
+            if (json_last_error() === JSON_ERROR_NONE && is_array($parsed)) {
+                return $this->validateStructure($parsed);
+            }
+        }
+
+        // Response is plain text (e.g. freeform rewrite mode — JSON was not requested).
+        // Return it wrapped so callers can detect it via isset($response['__raw_text__']).
+        return ['__raw_text__' => $responseText];
     }
 
     /**
