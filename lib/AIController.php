@@ -55,6 +55,8 @@ class AIController
         try {
             Capsule::table('tblsahdev_providers')->first();
             Capsule::table('tblsahdev_settings')->select('primary_provider_id')->first();
+            Capsule::table('tblsahdev_summaries')->first();
+            Capsule::table('tblsahdev_audit_trail')->first();
         } catch (\Exception $e) {
             require_once dirname(__DIR__) . '/sahdev.php';
             if (function_exists('sahdev_activate')) {
