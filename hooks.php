@@ -42,6 +42,7 @@ function sahdev_inject_ticket_panel($vars)
     }
 
     $autoAnalyzeEnabled = $settings && !empty($settings->auto_analyze_on_load) ? 'true' : 'false';
+    $qualityScorerEnabled = $settings && !empty($settings->quality_scorer_enabled) ? 'true' : 'false';
 
     $isSel = function ($val, $current) {
         return $val === $current ? 'selected' : '';
@@ -129,9 +130,11 @@ function sahdev_inject_ticket_panel($vars)
                 <button type="button" id="btn-sahdev-rewrite" class="btn btn-info btn-sm" style="font-weight: 600;">
                     <i class="fas fa-pen-nib"></i> Rewrite It
                 </button>
+                <?php if ($qualityScorerEnabled === 'true'): ?>
                 <button type="button" id="btn-sahdev-score-draft" class="btn btn-default btn-sm" style="font-weight: 600;" title="Get AI feedback on your manual draft before sending">
                     <i class="fas fa-tachometer-alt"></i> Score Admin Draft
                 </button>
+                <?php endif; ?>
                 <span id="sahdev-rewrite-status" style="font-size: 12px; color: #666;"></span>
             </div>
             <div id="sahdev-rewrite-loading" style="display: none; margin-top: 8px; font-size: 13px; color: #17a2b8;">
@@ -264,7 +267,10 @@ function sahdev_inject_ticket_panel($vars)
                     <div class="col-md-6">
                         <div class="panel panel-default" style="margin-bottom: 10px;">
                             <div class="panel-heading" style="display:flex; justify-content:space-between; align-items:center; padding: 8px 12px;">
-                                <strong style="font-size:13px;">Proposed Reply Preview</strong>
+                                <div>
+                                    <strong style="font-size:13px;">Proposed Reply Preview</strong>
+                                    <span id="sahdev-snap-reply-score-badge" class="label" style="display:none; margin-left:8px; font-size: 11px; cursor: help;"></span>
+                                </div>
                                 <button type="button" class="btn btn-xs btn-success" onclick="sahdevSnapInsertToEditor()"><i class="fas fa-arrow-down"></i> Use This Reply</button>
                             </div>
                             <div class="panel-body" style="max-height: 220px; overflow-y: auto; font-size: 13px;">
@@ -334,6 +340,7 @@ HTML;
 <script>
     var sahdevAjaxUrl = "{$ajaxUrl}";
     var sahdevAutoAnalyze = {$autoAnalyzeEnabled};
+    var sahdevQualityScorer = {$qualityScorerEnabled};
     console.log("Sahdev AI initialized with AJAX URL:", sahdevAjaxUrl, "| Auto-analyze:", sahdevAutoAnalyze);
 HTML;
 
@@ -844,7 +851,7 @@ HTML;
 
             // Display embedded Quality Score if enabled and present
             var $aiBadge = $('#sahdev-reply-score-badge');
-            if (data.hasOwnProperty('SCORE')) {
+            if (sahdevQualityScorer && data.hasOwnProperty('SCORE')) {
                 var score = parseInt(data.SCORE) || 0;
                 var colorClass = score >= 85 ? 'label-success' : (score >= 70 ? 'label-warning' : 'label-danger');
                 var title = "Clarity: " + (data.CLARITY||0) + "% | Tone: " + (data.TONE_SCORE||0) + "% | Completeness: " + (data.COMPLETENESS||0) + "%\nNote: " + (data.REPLY_NOTES||'');
@@ -1309,6 +1316,17 @@ HTML;
             $('#sahdev-snap-reply').html(snapReplyHtml);
             var statsText = (tokensUsed === 'Cached') ? 'Cached result (instant)' : ('Tokens: ' + (tokensUsed || '?') + ' | Time: ' + (execTimeMs || 0) + 'ms');
             $('#sahdev-snap-stats').text(statsText);
+            
+            var $aiBadge = $('#sahdev-snap-reply-score-badge');
+            if (sahdevQualityScorer && data.hasOwnProperty('SCORE')) {
+                var score = parseInt(data.SCORE) || 0;
+                var colorClass = score >= 85 ? 'label-success' : (score >= 70 ? 'label-warning' : 'label-danger');
+                var title = "Clarity: " + (data.CLARITY||0) + "% | Tone: " + (data.TONE_SCORE||0) + "% | Completeness: " + (data.COMPLETENESS||0) + "%\nNote: " + (data.REPLY_NOTES||'');
+                $aiBadge.removeClass('label-default label-success label-warning label-danger').addClass(colorClass).html('<i class="fas fa-robot"></i> AI Score: ' + score + '/100').attr('title', title).show();
+            } else {
+                $aiBadge.hide();
+            }
+
             $('#sahdev-snapshot-results').fadeIn();
         }
 
