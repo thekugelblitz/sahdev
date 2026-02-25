@@ -11,6 +11,67 @@ class AdminController
     public function __construct($vars)
     {
         $this->moduleVars = $vars;
+        $this->ensureSchemaIntegrity();
+    }
+
+    /**
+     * Hot-fixes schema for users updating the module without deactivating/reactivating.
+     */
+    private function ensureSchemaIntegrity()
+    {
+        // 1. Ensure Summaries Table Exists
+        try {
+            Capsule::table('tblsahdev_summaries')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->create('tblsahdev_summaries', function ($table) {
+                $table->increments('id');
+                $table->integer('ticket_id')->unsigned()->index();
+                $table->integer('admin_id')->unsigned()->index();
+                $table->mediumText('summary');
+                $table->timestamps();
+            });
+        }
+
+        // 2. Ensure Audit Trail Table Exists with corrected schema
+        try {
+            Capsule::table('tblsahdev_audit_trail')->first();
+        } catch (\Exception $e) {
+            $errMessage = $e->getMessage();
+            if (strpos($errMessage, 'Base table or view not found') !== false || strpos($errMessage, 'doesn\'t exist') !== false) {
+                Capsule::schema()->create('tblsahdev_audit_trail', function ($table) {
+                    $table->increments('id');
+                    $table->integer('ticket_id')->unsigned()->index();
+                    $table->integer('admin_id')->unsigned()->index();
+                    $table->string('action_type', 64)->nullable();
+                    $table->string('provider_used', 64)->nullable();
+                    $table->longText('prompt_text')->nullable();
+                    $table->longText('response_text')->nullable();
+                    $table->integer('tokens_used')->nullable();
+                    $table->integer('execution_time_ms')->nullable();
+                    $table->timestamp('created_at')->useCurrent();
+                });
+            }
+        }
+        
+        // Ensure execution_time_ms exists in case of an older schema
+        try {
+            Capsule::table('tblsahdev_audit_trail')->select('execution_time_ms')->first();
+        } catch (\Exception $e) {
+            if (strpos($e->getMessage(), 'Unknown column') !== false) {
+                Capsule::schema()->table('tblsahdev_audit_trail', function ($table) {
+                    $table->integer('execution_time_ms')->nullable();
+                });
+                
+                // Safe raw-SQL renames for WHMCS environments lacking Doctrine/DBAL
+                try {
+                    Capsule::statement("ALTER TABLE tblsahdev_audit_trail CHANGE `action` `action_type` VARCHAR(64) NULL");
+                    Capsule::statement("ALTER TABLE tblsahdev_audit_trail CHANGE `prompt` `prompt_text` LONGTEXT NULL");
+                    Capsule::statement("ALTER TABLE tblsahdev_audit_trail CHANGE `response` `response_text` LONGTEXT NULL");
+                } catch (\Exception $renameEx) {
+                    // Ignore if already renamed or other constraint
+                }
+            }
+        }
     }
 
     /**
