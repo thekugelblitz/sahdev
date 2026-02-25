@@ -115,6 +115,30 @@ try {
     } elseif ($action === 'auto_analyze') {
         // Feature: Auto-load AI Snapshot on ticket page load (always cached-first, no rate limit penalty on hit)
         $response = $controller->getAnalysis($tone, $instruction, false, false, $intent);
+    } elseif ($action === 'generate_summary') {
+        // Feature: AI Ticket Summarizer — generate and save a condensed summary
+        $response = $controller->generateSummary();
+    } elseif ($action === 'get_summary') {
+        // Feature: AI Ticket Summarizer — fetch existing summary for a ticket
+        $summary = $controller->getSummary();
+        $response = $summary
+            ? ['status' => 'success', 'summary' => $summary]
+            : ['status' => 'not_found', 'summary' => null];
+    } elseif ($action === 'delete_summary') {
+        // Feature: AI Ticket Summarizer — delete saved summary
+        $response = $controller->deleteSummary();
+    } elseif ($action === 'delete_audit_entries') {
+        // Feature: AI Audit Trail — delete entries older than X days via AJAX
+        $days = (int) ($_POST['days'] ?? 30);
+        if ($days > 0) {
+            $cutoffDate = \Carbon\Carbon::now()->subDays($days);
+            $deleted = Capsule::table('tblsahdev_audit_trail')
+                ->where('created_at', '<', $cutoffDate)
+                ->delete();
+            $response = ['status' => 'success', 'message' => "Deleted {$deleted} audit entries.", 'deleted_count' => $deleted];
+        } else {
+            $response = ['status' => 'error', 'message' => 'Invalid days parameter.'];
+        }
     } else {
         // Default analyze_ticket (server-side generation)
         $response = $controller->getAnalysis($tone, $instruction, $forceRegenerate, $forceFallback, $intent);

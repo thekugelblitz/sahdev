@@ -270,10 +270,53 @@ function sahdev_inject_ticket_panel($vars)
         </div>
     </div>
 </div>
+
+<!-- AI Ticket Summarizer Panel -->
+<div id="sahdev-summarizer-outer" style="margin-top: 15px;">
+    <div class="panel panel-default" id="sahdev-summarizer-panel" style="border-color: #6f42c1;">
+        <div class="panel-heading" style="background: #f3f0fc; color: #4b2d8a; display: flex; justify-content: space-between; align-items: center; cursor: pointer;" onclick="$('#sahdev-summarizer-body').slideToggle();">
+            <h4 class="panel-title" style="margin: 0; font-size: 14px; font-weight: 700;">
+                <i class="fas fa-compress-alt" style="margin-right: 6px;"></i>AI Ticket Summarizer
+                <span id="sahdev-summary-active-badge" style="display:none;" class="label label-success" style="font-size: 10px; vertical-align: middle; margin-left: 6px;">&#9889; In Use — Saving Tokens</span>
+            </h4>
+            <div style="display:flex; gap:6px; align-items:center;">
+                <span id="sahdev-summary-exists-badge" style="display:none;" class="label label-purple" style="background:#6f42c1; font-size:10px;">Summary Saved</span>
+                <i class="fas fa-chevron-down" style="font-size: 12px;"></i>
+            </div>
+        </div>
+        <div class="panel-body" id="sahdev-summarizer-body" style="background: #fbf9ff; padding: 14px;">
+            <p class="text-muted" style="font-size: 12px; margin-bottom: 10px;">
+                <i class="fas fa-info-circle"></i>
+                Condense this ticket's full conversation into a smart AI summary. Once saved, it replaces the raw message history in all AI prompts — <strong>cutting input token usage significantly</strong> for long threads.
+            </p>
+            <!-- Summary display -->
+            <div id="sahdev-summary-display" style="display:none; background:#fff; border:1px solid #d8caff; border-radius:6px; padding:12px; margin-bottom:10px; font-size:13px; white-space:pre-wrap; color:#333; max-height:200px; overflow-y:auto;"></div>
+            <!-- Loading -->
+            <div id="sahdev-summary-loading" style="display:none; font-size:13px; color:#6f42c1; margin-bottom:8px;">
+                <i class="fas fa-spinner fa-spin"></i> Sahdev is summarizing the conversation...
+            </div>
+            <!-- Error -->
+            <div id="sahdev-summary-error" class="alert alert-danger" style="display:none; font-size:13px; padding:8px 12px; margin-bottom:8px;"></div>
+            <!-- Buttons -->
+            <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+                <button type="button" id="btn-sahdev-generate-summary" class="btn btn-sm" style="background:#6f42c1; color:#fff; font-weight:600;">
+                    <i class="fas fa-magic"></i> Generate Summary
+                </button>
+                <button type="button" id="btn-sahdev-delete-summary" class="btn btn-sm btn-danger" style="display:none; font-weight:600;">
+                    <i class="fas fa-trash"></i> Delete
+                </button>
+                <span id="sahdev-summary-meta" style="font-size:11px; color:#888; margin-left:4px;"></span>
+            </div>
+        </div>
+    </div>
+</div>
+
+
 HTML;
 
     // Output the HTML first
     $output = $htmlPanel;
+
 
     // Use string concatenation instead of output buffering to prevent WHMCS from dropping the buffer
     $jsContentStart = <<<HTML
@@ -1089,7 +1132,95 @@ HTML;
         }
 
         // =====================================================================
-        // FEATURE: ⚡ Auto-Load AI Snapshot — uses same get_payload flow as main button
+        // FEATURE: 📋 AI Ticket Summarizer
+        // =====================================================================
+        function sahdevSummaryUpdateUI(summary) {
+            if (summary) {
+                $('#sahdev-summary-display').text(summary).show();
+                $('#sahdev-summary-exists-badge').show();
+                $('#btn-sahdev-generate-summary').html('<i class="fas fa-sync"></i> Regenerate Summary');
+                $('#btn-sahdev-delete-summary').show();
+            } else {
+                $('#sahdev-summary-display').hide().text('');
+                $('#sahdev-summary-exists-badge').hide();
+                $('#btn-sahdev-generate-summary').html('<i class="fas fa-magic"></i> Generate Summary');
+                $('#btn-sahdev-delete-summary').hide();
+            }
+        }
+
+        // Auto-load existing summary on page ready
+        $(document).ready(function() {
+            var ticketIdForSummary = $('#sahdev_ticket_id').val();
+            if (ticketIdForSummary) {
+                $.ajax({
+                    url: sahdevAjaxUrl,
+                    type: 'POST',
+                    data: { action: 'get_summary', ticket_id: ticketIdForSummary, token: $('input[name="token"]').val() },
+                    dataType: 'json',
+                    success: function(r) {
+                        if (r && r.status === 'success' && r.summary) {
+                            sahdevSummaryUpdateUI(r.summary);
+                            $('#sahdev-summary-meta').text('Auto-loaded from saved summary.');
+                        }
+                    }
+                });
+            }
+        });
+
+        // Generate / Regenerate
+        $(document).on('click', '#btn-sahdev-generate-summary', function() {
+            var $btn = $(this);
+            $btn.prop('disabled', true);
+            $('#sahdev-summary-error').hide();
+            $('#sahdev-summary-loading').show();
+            $('#sahdev-summary-meta').text('');
+
+            $.ajax({
+                url: sahdevAjaxUrl,
+                type: 'POST',
+                data: { action: 'generate_summary', ticket_id: $('#sahdev_ticket_id').val(), token: $('input[name="token"]').val() },
+                dataType: 'json',
+                success: function(r) {
+                    $('#sahdev-summary-loading').hide();
+                    $btn.prop('disabled', false);
+                    if (r && r.status === 'success') {
+                        sahdevSummaryUpdateUI(r.summary);
+                        $('#sahdev-summary-meta').text('Generated in ' + (r.execution_time_ms || 0) + 'ms · ' + (r.message_count || '?') + ' messages condensed.');
+                        $('#sahdev-summary-active-badge').show();
+                    } else {
+                        $('#sahdev-summary-error').html('<i class="fas fa-exclamation-circle"></i> ' + (r.message || 'Summary generation failed.')).show();
+                    }
+                },
+                error: function(xhr, s, e) {
+                    $('#sahdev-summary-loading').hide();
+                    $btn.prop('disabled', false);
+                    var msg = (xhr.responseJSON && xhr.responseJSON.message) ? xhr.responseJSON.message : ('Error: ' + (e || 'HTTP ' + xhr.status));
+                    $('#sahdev-summary-error').html('<i class="fas fa-exclamation-circle"></i> ' + msg).show();
+                }
+            });
+        });
+
+        // Delete summary
+        $(document).on('click', '#btn-sahdev-delete-summary', function() {
+            if (!confirm('Delete this ticket summary? The next AI generation will use the full message history again.')) return;
+            var $btn = $(this);
+            $btn.prop('disabled', true);
+            $.ajax({
+                url: sahdevAjaxUrl,
+                type: 'POST',
+                data: { action: 'delete_summary', ticket_id: $('#sahdev_ticket_id').val(), token: $('input[name="token"]').val() },
+                dataType: 'json',
+                success: function(r) {
+                    $btn.prop('disabled', false);
+                    sahdevSummaryUpdateUI(null);
+                    $('#sahdev-summary-active-badge').hide();
+                    $('#sahdev-summary-meta').text('Summary deleted.');
+                },
+                error: function() { $btn.prop('disabled', false); }
+            });
+        });
+
+
         // =====================================================================
         function renderSnapResults(data, tokensUsed, execTimeMs) {
             $('#sahdev-snapshot-loading').hide();

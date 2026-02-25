@@ -94,6 +94,32 @@ function sahdev_activate()
                     $table->boolean('auto_analyze_on_load')->default(0);
                 });
             }
+
+            // Migrate: add v2 settings columns if missing
+            try {
+                Capsule::table('tblsahdev_settings')->select('summarizer_enabled')->first();
+            } catch (\Exception $e) {
+                Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                    $table->boolean('summarizer_enabled')->default(1);
+                    $table->integer('summarizer_threshold')->default(20);
+                    $table->boolean('compliance_mode')->default(0);
+                    $table->boolean('pii_scrub_enabled')->default(0);
+                    $table->boolean('translation_enabled')->default(0);
+                    $table->boolean('auto_sentiment')->default(0);
+                    $table->boolean('auto_tagging')->default(0);
+                });
+            }
+
+            // Migrate: add v2 columns to tblsahdev_logs if missing
+            try {
+                Capsule::table('tblsahdev_logs')->select('provider_used')->first();
+            } catch (\Exception $e) {
+                Capsule::schema()->table('tblsahdev_logs', function ($table) {
+                    $table->string('provider_used', 32)->nullable();
+                    $table->boolean('used_fallback')->default(0);
+                    $table->boolean('is_cached')->default(0);
+                });
+            }
         } catch (\Exception $e) {
             Capsule::schema()->create(
                 'tblsahdev_settings',
@@ -107,6 +133,13 @@ function sahdev_activate()
                     $table->text('system_prompt')->nullable();
                     $table->longText('user_prompt_template')->nullable();
                     $table->boolean('auto_analyze_on_load')->default(0);
+                    $table->boolean('summarizer_enabled')->default(1);
+                    $table->integer('summarizer_threshold')->default(20);
+                    $table->boolean('compliance_mode')->default(0);
+                    $table->boolean('pii_scrub_enabled')->default(0);
+                    $table->boolean('translation_enabled')->default(0);
+                    $table->boolean('auto_sentiment')->default(0);
+                    $table->boolean('auto_tagging')->default(0);
                     $table->timestamps(); // creates created_at, updated_at
                 }
             );
@@ -120,6 +153,13 @@ function sahdev_activate()
                 'system_prompt' => "You are Sahdev, a Senior Technical Support Specialist for a premium web hosting company. Your goal is to provide elite-level support that feels empathetic, technical, and human.\n\nCORE DIRECTIVES:\n1. EMPATHY: Acknowledge the user's frustration or urgency without sounding corporate or robotic.\n2. PRECISION: If a technical issue is identified, explain it clearly and provide actionable insights.\n3. NATURAL FLOW: Use natural transitions. Avoid excessive bullet points or robotic lists.\n4. TONE: Strictly adhere to the requested Tone setting.\n\nAlways analyze the full conversation history to ensure the reply fits the current context perfectly.\n\nOutput only a valid JSON object as requested.",
                 'user_prompt_template' => $defaultUserPromptTemplate,
                 'auto_analyze_on_load' => 0,
+                'summarizer_enabled' => 1,
+                'summarizer_threshold' => 20,
+                'compliance_mode' => 0,
+                'pii_scrub_enabled' => 0,
+                'translation_enabled' => 0,
+                'auto_sentiment' => 0,
+                'auto_tagging' => 0,
                 'created_at' => \Carbon\Carbon::now(),
                 'updated_at' => \Carbon\Carbon::now(),
             ]);
@@ -180,6 +220,9 @@ function sahdev_activate()
                     $table->mediumText('response_payload')->nullable();
                     $table->integer('token_usage')->nullable();
                     $table->integer('execution_time_ms')->nullable();
+                    $table->string('provider_used', 32)->nullable();
+                    $table->boolean('used_fallback')->default(0);
+                    $table->boolean('is_cached')->default(0);
                     $table->timestamp('created_at')->useCurrent();
                 }
             );
@@ -214,6 +257,126 @@ function sahdev_activate()
                     $table->timestamp('last_request_at')->nullable();
                 }
             );
+        }
+
+        // Create tblsahdev_summaries
+        try {
+            Capsule::table('tblsahdev_summaries')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->create('tblsahdev_summaries', function ($table) {
+                $table->increments('id');
+                $table->integer('ticket_id')->unsigned()->index();
+                $table->integer('admin_id')->unsigned()->index();
+                $table->mediumText('summary');
+                $table->timestamps();
+            });
+        }
+
+        // Create tblsahdev_quality_scores
+        try {
+            Capsule::table('tblsahdev_quality_scores')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->create('tblsahdev_quality_scores', function ($table) {
+                $table->increments('id');
+                $table->integer('ticket_id')->unsigned()->index();
+                $table->integer('admin_id')->unsigned()->index();
+                $table->tinyInteger('score')->unsigned()->default(0);
+                $table->tinyInteger('clarity')->unsigned()->nullable();
+                $table->tinyInteger('tone_score')->unsigned()->nullable();
+                $table->tinyInteger('completeness')->unsigned()->nullable();
+                $table->text('notes')->nullable();
+                $table->boolean('is_ai_generated')->default(1);
+                $table->timestamps();
+            });
+        }
+
+        // Create tblsahdev_audit_trail
+        try {
+            Capsule::table('tblsahdev_audit_trail')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->create('tblsahdev_audit_trail', function ($table) {
+                $table->increments('id');
+                $table->integer('ticket_id')->unsigned()->index();
+                $table->integer('admin_id')->unsigned()->index();
+                $table->string('action', 64)->nullable()->comment('generate_analysis, rewrite_reply, generate_summary, etc.');
+                $table->string('provider_used', 64)->nullable();
+                $table->longText('prompt')->nullable();
+                $table->longText('response')->nullable();
+                $table->integer('tokens_used')->nullable();
+                $table->timestamp('created_at')->useCurrent();
+            });
+        }
+
+        // Create tblsahdev_canned_responses
+        try {
+            Capsule::table('tblsahdev_canned_responses')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->create('tblsahdev_canned_responses', function ($table) {
+                $table->increments('id');
+                $table->string('title');
+                $table->text('content');
+                $table->string('tags')->nullable();
+                $table->string('category')->nullable();
+                $table->boolean('is_ai_generated')->default(1);
+                $table->integer('used_count')->default(0);
+                $table->timestamps();
+            });
+        }
+
+        // Create tblsahdev_topic_clusters
+        try {
+            Capsule::table('tblsahdev_topic_clusters')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->create('tblsahdev_topic_clusters', function ($table) {
+                $table->increments('id');
+                $table->integer('ticket_id')->unsigned()->index();
+                $table->string('cluster_label', 128);
+                $table->decimal('confidence', 4, 2)->nullable();
+                $table->timestamps();
+            });
+        }
+
+        // Create tblsahdev_sentiment
+        try {
+            Capsule::table('tblsahdev_sentiment')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->create('tblsahdev_sentiment', function ($table) {
+                $table->increments('id');
+                $table->integer('ticket_id')->unsigned()->index();
+                $table->tinyInteger('score')->unsigned()->nullable()->comment('1-10 frustration score');
+                $table->string('label', 32)->nullable()->comment('Frustrated, Neutral, Satisfied');
+                $table->string('urgency', 16)->nullable()->comment('Low, Medium, High');
+                $table->timestamps();
+            });
+        }
+
+        // Create tblsahdev_personas
+        try {
+            Capsule::table('tblsahdev_personas')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->create('tblsahdev_personas', function ($table) {
+                $table->increments('id');
+                $table->string('name', 128);
+                $table->text('system_prompt');
+                $table->string('tone', 64)->default('Professional');
+                $table->text('description')->nullable();
+                $table->boolean('is_active')->default(1);
+                $table->boolean('is_default')->default(0);
+                $table->timestamps();
+            });
+        }
+
+        // Create tblsahdev_admin_providers (per-admin provider overrides)
+        try {
+            Capsule::table('tblsahdev_admin_providers')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->create('tblsahdev_admin_providers', function ($table) {
+                $table->increments('id');
+                $table->integer('admin_id')->unsigned()->unique();
+                $table->integer('primary_provider_id')->nullable();
+                $table->integer('fallback_provider_id')->nullable();
+                $table->timestamps();
+            });
         }
 
         return [

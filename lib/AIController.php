@@ -101,8 +101,9 @@ class AIController
         $this->checkRateLimit();
 
         // 2. Extract Data
+        $scrubPII = !empty($this->settings['compliance_mode']) || !empty($this->settings['pii_scrub_enabled']);
         $extractor = new TicketDataExtractor($this->ticketId, $this->adminId);
-        $context = $extractor->getContext();
+        $context = $extractor->getContext($scrubPII);
 
         if (!$tone) {
             $tone = $this->settings['tone_default'];
@@ -114,6 +115,21 @@ class AIController
             $customInstruction = empty($customInstruction)
                 ? $intentDirective
                 : $intentDirective . "\n\n" . $customInstruction;
+        }
+
+        // Summarizer injection: replace full message history with condensed summary if threshold met
+        $summarizerEnabled = !empty($this->settings['summarizer_enabled']);
+        $summarizerThreshold = (int) ($this->settings['summarizer_threshold'] ?? 20);
+        if ($summarizerEnabled && count($context['messages'] ?? []) >= $summarizerThreshold) {
+            $existingSummary = $this->getSummary();
+            if ($existingSummary) {
+                $context['messages'] = [[
+                    'admin'   => false,
+                    'date'    => '',
+                    'message' => "[AI SUMMARY — Full history condensed for efficiency]\n" . $existingSummary,
+                ]];
+                $context['_summary_used'] = true;
+            }
         }
 
         // 3. Hash Generation for Cache
@@ -199,6 +215,11 @@ class AIController
             'created_at' => Carbon::now()
         ]);
 
+        // 6b. Log Audit Trail
+        $providerName = $activeProvider instanceof AIProviderInterface ? $activeProvider->getName() : 'Unknown';
+        $fullPrompt = $this->buildPromptText($context, $tone, $customInstruction, $this->settings['user_prompt_template'] ?? null);
+        $this->logAuditEntry('analysis', $fullPrompt, json_encode($response), $tokenUsage, $executionTimeMs, $providerName);
+
         // 7. Log the Request
         $this->logRequest($context, $response, $tokenUsage, $executionTimeMs);
 
@@ -247,8 +268,9 @@ class AIController
         $this->checkRateLimit();
 
         // 2. Extract Data
+        $scrubPII = !empty($this->settings['compliance_mode']) || !empty($this->settings['pii_scrub_enabled']);
         $extractor = new TicketDataExtractor($this->ticketId, $this->adminId);
-        $context = $extractor->getContext();
+        $context = $extractor->getContext($scrubPII);
 
         if (!$tone) {
             $tone = $this->settings['tone_default'];
@@ -260,6 +282,22 @@ class AIController
             $customInstruction = empty($customInstruction)
                 ? $intentDirective
                 : $intentDirective . "\n\n" . $customInstruction;
+        }
+
+        // Summarizer injection: replace full message history with condensed summary if threshold met
+        $summarizerEnabled = !empty($this->settings['summarizer_enabled']);
+        $summarizerThreshold = (int) ($this->settings['summarizer_threshold'] ?? 20);
+        $summaryUsed = false;
+        if ($summarizerEnabled && count($context['messages'] ?? []) >= $summarizerThreshold) {
+            $existingSummary = $this->getSummary();
+            if ($existingSummary) {
+                $context['messages'] = [[
+                    'admin'   => false,
+                    'date'    => '',
+                    'message' => "[AI SUMMARY — Full history condensed for efficiency]\n" . $existingSummary,
+                ]];
+                $summaryUsed = true;
+            }
         }
 
         $systemPrompt = $this->settings['system_prompt'];
@@ -314,23 +352,27 @@ class AIController
 
         // Return the payload data needed for the browser to make the request
         return [
-            'status' => 'success',
-            'cached' => false,
-            'hash_signature' => $hashSignature,
-            'provider' => $this->settings['provider_type'] === 'lmstudio' ? 'lmstudio' : ($this->settings['provider_type'] === 'replicate' ? 'replicate' : 'google'),
-            'api_url' => $this->settings['api_url'] ?? '',
-            'api_key' => $this->settings['api_key'] ?? '',
-            'model' => $this->settings['model_name'],
-            'temperature' => (float) $this->settings['temperature'],
-            'max_tokens' => (int) $this->settings['max_tokens'],
-            'system_prompt' => $systemPrompt,
+            'status'               => 'success',
+            'cached'               => false,
+            'hash_signature'       => $hashSignature,
+            'provider'             => $this->settings['provider_type'] === 'lmstudio' ? 'lmstudio' : ($this->settings['provider_type'] === 'replicate' ? 'replicate' : 'google'),
+            'api_url'              => $this->settings['api_url'] ?? '',
+            'api_key'              => $this->settings['api_key'] ?? '',
+            'model'                => $this->settings['model_name'],
+            'temperature'          => (float) $this->settings['temperature'],
+            'max_tokens'           => (int) $this->settings['max_tokens'],
+            'system_prompt'        => $systemPrompt,
             'user_prompt_template' => $this->settings['user_prompt_template'] ?? null,
-            'context' => $context,
-            'tone' => $tone,
-            'custom_instruction' => $customInstruction,
-            'intent' => $intent,
-            'has_fallback' => $this->fallbackProvider !== null,
-            'fallback_api_key' => $this->settings['fallback_api_key'] ?? '',
+            'context'              => $context,
+            'tone'                 => $tone,
+            'custom_instruction'   => $customInstruction,
+            'intent'               => $intent,
+            'has_fallback'         => $this->fallbackProvider !== null,
+            'fallback_api_key'     => $this->settings['fallback_api_key'] ?? '',
+            'summary_used'         => $summaryUsed,
+            'summary_available'    => $this->getSummary() !== null,
+            'message_count'        => count($extractor->getContext()['messages'] ?? []),
+            'summarizer_threshold' => $summarizerThreshold,
         ];
     }
 
@@ -343,6 +385,12 @@ class AIController
             'ai_response' => json_encode($response),
             'created_at' => Carbon::now()
         ]);
+
+        // Log Audit Trail for frontend-generated responses
+        // We reconstruct the prompt vaguely since we don't have the exact frontend string, but close enough.
+        $extractor = new TicketDataExtractor($this->ticketId, $this->adminId);
+        $context = $extractor->getContext();
+        $this->logAuditEntry('frontend_analysis', "Frontend Generated. Context Hash: " . $hashSignature, json_encode($response), $tokenUsage, $executionTimeMs, 'frontend_client');
 
         // Minimal context for logging
         $extractor = new TicketDataExtractor($this->ticketId);
@@ -381,6 +429,139 @@ class AIController
             'execution_time_ms' => $executionTimeMs,
             'created_at' => Carbon::now()
         ]);
+    }
+
+    /**
+     * Generate an AI-powered summary of the full ticket conversation.
+     * Saves result to tblsahdev_summaries. If a summary already exists, it is replaced.
+     */
+    public function generateSummary(): array
+    {
+        $scrubPII = !empty($this->settings['compliance_mode']) || !empty($this->settings['pii_scrub_enabled']);
+        $extractor = new TicketDataExtractor($this->ticketId, $this->adminId);
+        $context   = $extractor->getContext($scrubPII);
+        $messages  = $context['messages'] ?? [];
+
+        if (empty($messages)) {
+            return ['status' => 'error', 'message' => 'No messages found in this ticket to summarize.'];
+        }
+
+        $msgCount = count($messages);
+
+        // Build raw conversation text (oldest → newest, capped at 15k chars to fit context)
+        $conversationText = '';
+        $budget = 15000;
+        $used = 0;
+        foreach ($messages as $msg) {
+            $role  = $msg['admin'] ? 'ADMIN' : 'CLIENT';
+            $entry = "[{$role}] ({$msg['date']}):\n" . strip_tags($msg['message'] ?? '') . "\n\n";
+            if ($used + strlen($entry) > $budget) break;
+            $conversationText .= $entry;
+            $used += strlen($entry);
+        }
+
+        $systemPrompt = "You are a senior technical support analyst. Your job is to create concise, accurate ticket summaries that capture the essential context: root issue, actions taken, client sentiment, and current status.
+
+SUMMARY RULES:
+- Length: adapt dynamically based on ticket complexity (short tickets → 3-5 lines; complex tickets → 8-12 lines)
+- Include: the original problem, key technical details exchanged, any steps already tried, current status
+- Do NOT include greetings, small talk, or formatting metadata
+- Write in past-tense, third-person, concise prose
+- Output ONLY the summary text. No labels, no JSON, no prefixes.";
+
+        $promptText  = "=== TICKET TO SUMMARIZE ===\n";
+        $promptText .= "Subject: " . ($context['subject'] ?? 'Support Ticket') . "\n";
+        $promptText .= "Client: " . ($context['client_name'] ?? 'Client') . "\n";
+        $promptText .= "Total Messages: {$msgCount}\n\n";
+        $promptText .= "=== CONVERSATION ===\n" . $conversationText;
+        $promptText .= "=== WRITE SUMMARY BELOW ===\n";
+
+        $fakeContext = [
+            'subject'          => $context['subject'] ?? '',
+            'client_name'      => $context['client_name'] ?? '',
+            'department'       => '',
+            'services_summary' => '',
+            'attachments_text' => '',
+            'messages'         => [['admin' => false, 'date' => '', 'message' => $promptText]],
+        ];
+        $fakeSettings = $this->settings;
+        $fakeSettings['user_prompt_template'] = '{{MESSAGES}}';
+        $fakeSettings['system_prompt']        = $systemPrompt;
+        $fakeSettings['max_tokens']           = 512; // summaries are short
+
+        $startTime = microtime(true);
+        try {
+            $rawResponse = $this->provider->generateResponse($fakeContext, $fakeSettings, 'Professional', '');
+        } catch (\Exception $e) {
+            if ($this->fallbackProvider) {
+                try {
+                    $fakeSettings['model_name'] = $this->settings['fallback_model_name'] ?? $this->settings['model_name'];
+                    $rawResponse = $this->fallbackProvider->generateResponse($fakeContext, $fakeSettings, 'Professional', '');
+                } catch (\Exception $fe) {
+                    return ['status' => 'error', 'message' => 'Summary generation failed. ' . $fe->getMessage()];
+                }
+            } else {
+                return ['status' => 'error', 'message' => 'Summary generation failed. ' . $e->getMessage()];
+            }
+        }
+
+        $execMs = round((microtime(true) - $startTime) * 1000);
+
+        // Extract plain text from response
+        if (is_array($rawResponse) && isset($rawResponse['__raw_text__'])) {
+            $summaryText = $rawResponse['__raw_text__'];
+        } elseif (is_array($rawResponse) && isset($rawResponse['CLIENT_REPLY'])) {
+            $summaryText = $rawResponse['CLIENT_REPLY'];
+        } elseif (is_string($rawResponse)) {
+            $summaryText = $rawResponse;
+        } else {
+            $summaryText = implode("\n", array_filter(array_values($rawResponse), 'is_string'));
+        }
+        $summaryText = trim($summaryText);
+
+        if (empty($summaryText)) {
+            return ['status' => 'error', 'message' => 'AI returned an empty summary.'];
+        }
+
+        $this->logAuditEntry('summary', $promptText, $summaryText, $this->provider->getLastTokenUsage() ?? 0, $execMs, $this->provider->getName());
+
+        // Upsert: delete any existing summary for this ticket, then insert fresh
+        Capsule::table('tblsahdev_summaries')->where('ticket_id', $this->ticketId)->delete();
+        Capsule::table('tblsahdev_summaries')->insert([
+            'ticket_id'  => $this->ticketId,
+            'admin_id'   => $this->adminId,
+            'summary'    => $summaryText,
+            'created_at' => Carbon::now(),
+            'updated_at' => Carbon::now(),
+        ]);
+
+        return [
+            'status'           => 'success',
+            'summary'          => $summaryText,
+            'message_count'    => $msgCount,
+            'execution_time_ms'=> $execMs,
+        ];
+    }
+
+    /**
+     * Retrieve the latest saved summary for this ticket, or null if none exists.
+     */
+    public function getSummary(): ?string
+    {
+        $row = Capsule::table('tblsahdev_summaries')
+            ->where('ticket_id', $this->ticketId)
+            ->orderBy('id', 'desc')
+            ->first();
+        return $row ? $row->summary : null;
+    }
+
+    /**
+     * Delete the saved summary for this ticket.
+     */
+    public function deleteSummary(): array
+    {
+        $deleted = Capsule::table('tblsahdev_summaries')->where('ticket_id', $this->ticketId)->delete();
+        return ['status' => 'success', 'deleted' => (bool) $deleted];
     }
 
     /**
@@ -459,8 +640,9 @@ class AIController
         }
 
         // Build a ticket context snippet for extra grounding
+        $scrubPII = !empty($this->settings['compliance_mode']) || !empty($this->settings['pii_scrub_enabled']);
         $extractor = new TicketDataExtractor($this->ticketId, $this->adminId);
-        $context = $extractor->getContext();
+        $context = $extractor->getContext($scrubPII);
 
         $systemPrompt = $this->settings['system_prompt'] ?? "You are a professional technical support specialist.";
 
@@ -518,11 +700,15 @@ class AIController
                 $reply = implode("\n\n", array_filter(array_values($rawResponse), 'is_string'));
             }
 
+            $tokensUsed = $this->provider->getLastTokenUsage() ?? 0;
+            $providerName = $this->provider->getName() ?? 'Primary';
+            $this->logAuditEntry('rewrite', $promptText, $reply, $tokensUsed, $execTimeMs, $providerName);
+
             return [
                 'status' => 'success',
                 'reply' => $reply,
                 'execution_time_ms' => $execTimeMs,
-                'tokens_used' => $this->provider->getLastTokenUsage(),
+                'tokens_used' => $tokensUsed,
             ];
         } catch (\Exception $e) {
             // Try fallback if available
@@ -552,7 +738,13 @@ class AIController
                     } else {
                         $reply = implode("\n\n", array_filter(array_values($rawResponse), 'is_string'));
                     }
-                    return ['status' => 'success', 'reply' => $reply, 'execution_time_ms' => round((microtime(true) - $startTime) * 1000), 'tokens_used' => $this->fallbackProvider->getLastTokenUsage()];
+                    
+                    $execTimeMsFallback = round((microtime(true) - $startTime) * 1000);
+                    $tokensUsedFallback = $this->fallbackProvider->getLastTokenUsage() ?? 0;
+                    $providerNameFallback = $this->fallbackProvider->getName() ?? 'Fallback';
+                    $this->logAuditEntry('rewrite_fallback', $promptText, $reply, $tokensUsedFallback, $execTimeMsFallback, $providerNameFallback);
+
+                    return ['status' => 'success', 'reply' => $reply, 'execution_time_ms' => $execTimeMsFallback, 'tokens_used' => $tokensUsedFallback];
                 } catch (\Exception $fe) {
                     throw new \Exception("Both providers failed to rewrite the reply. Last error: " . $fe->getMessage());
                 }

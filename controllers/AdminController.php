@@ -28,6 +28,25 @@ class AdminController
                 $table->boolean('auto_analyze_on_load')->default(0);
             });
         }
+        
+        // Inline migration: ensure summarizer columns exist
+        try {
+            Capsule::table('tblsahdev_settings')->select('summarizer_enabled')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                $table->boolean('summarizer_enabled')->default(0);
+                $table->integer('summarizer_threshold')->default(15);
+            });
+        }
+        
+        // Inline migration: ensure compliance_mode column exists
+        try {
+            Capsule::table('tblsahdev_settings')->select('compliance_mode')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                $table->boolean('compliance_mode')->default(0);
+            });
+        }
 
         // Handle form submission
         if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_settings'])) {
@@ -40,6 +59,12 @@ class AdminController
             $toneDefault = $_POST['tone_default'] ?? 'Professional';
             $systemPrompt = $_POST['system_prompt'] ?? '';
             $autoAnalyzeOnLoad = !empty($_POST['auto_analyze_on_load']) ? 1 : 0;
+            
+            $summarizerEnabled = !empty($_POST['summarizer_enabled']) ? 1 : 0;
+            $summarizerThreshold = (int) ($_POST['summarizer_threshold'] ?? 15);
+            if ($summarizerThreshold < 3) $summarizerThreshold = 3; 
+            
+            $complianceMode = !empty($_POST['compliance_mode']) ? 1 : 0;
 
             // Ensure valid bounds
             if ($temperature < 0 || $temperature > 1) {
@@ -56,6 +81,9 @@ class AdminController
                     'tone_default' => $toneDefault,
                     'system_prompt' => $systemPrompt,
                     'auto_analyze_on_load' => $autoAnalyzeOnLoad,
+                    'summarizer_enabled' => $summarizerEnabled,
+                    'summarizer_threshold' => $summarizerThreshold,
+                    'compliance_mode' => $complianceMode,
                     'updated_at' => \Carbon\Carbon::now(),
                 ]
             );
@@ -74,6 +102,9 @@ class AdminController
                 'tone_default' => 'Professional',
                 'system_prompt' => '',
                 'auto_analyze_on_load' => 0,
+                'summarizer_enabled' => 0,
+                'summarizer_threshold' => 15,
+                'compliance_mode' => 0,
             ];
         }
 
@@ -130,16 +161,13 @@ class AdminController
 
             <div class="sahdev-nav">
                 <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>" class="active">General Settings</a>
-                <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=providers">AI Providers
-                    Manager</a>
-                <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=knowledgebase">Knowledgebase
-                    Engine</a>
-                <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=prompt_manager">Prompt Manager
-                    🔬</a>
+                <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=providers">AI Providers Manager</a>
+                <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=knowledgebase">Knowledgebase Engine</a>
+                <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=prompt_manager">Prompt Manager 🔬</a>
+                <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=summaries">Ticket Summaries ✨</a>
             </div>
 
-            <h2 style="border-bottom: 1px solid #eee; padding-bottom: 15px; margin-bottom: 20px;">Sahdev AI Intelligence -
-                Settings</h2>
+            <h2 style="border-bottom: 1px solid #eee; padding-bottom: 15px; margin-bottom: 20px;">Sahdev AI Intelligence - Settings</h2>
 
             <form method="post" action="<?php echo $actionUrl; ?>">
                 <?php echo $csrfToken; ?>
@@ -211,9 +239,7 @@ class AdminController
                 <!-- AI Snapshot Feature Toggle -->
                 <div class="panel panel-default" style="margin-bottom: 25px; border-left: 4px solid #0d6efd;">
                     <div class="panel-heading" style="background: #f0f5ff;">
-                        <h4 style="margin: 0; font-size: 15px;"><i class="fas fa-bolt"></i> AI Snapshot on Page Load <span
-                                class="label label-primary"
-                                style="font-size: 11px; vertical-align: middle; margin-left: 6px;">Feature Toggle</span></h4>
+                        <h4 style="margin: 0; font-size: 15px;"><i class="fas fa-bolt"></i> AI Snapshot on Page Load <span class="label label-primary" style="font-size: 11px; vertical-align: middle; margin-left: 6px;">Feature Toggle</span></h4>
                     </div>
                     <div class="panel-body">
                         <div class="checkbox" style="margin-top: 0;">
@@ -223,14 +249,48 @@ class AdminController
                             </label>
                         </div>
                         <p class="text-muted" style="margin-top: 8px; margin-bottom: 0;">
-                            When <strong>ON</strong>: Sahdev will silently fetch the AI-generated <strong>Summary, Root Cause,
-                                Responsibility, Risk Level, and Action Plan</strong> as soon as a ticket page opens — before the
-                            admin clicks any button. Results appear in a dedicated "AI Snapshot" panel below the main Sahdev
-                            panel.<br>
-                            When <strong>OFF</strong>: Normal behaviour — analysis only runs when the admin clicks "Analyze
-                            &amp; Generate Reply".<br>
-                            <em class="text-warning"><i class="fas fa-exclamation-triangle"></i> Note: This uses one AI call per
-                                ticket page load. Uses cache when available so repeat views are free.</em>
+                            When <strong>ON</strong>: Sahdev will silently fetch the AI-generated <strong>Summary, Root Cause, Responsibility, Risk Level, and Action Plan</strong> as soon as a ticket page opens.<br>
+                            <em class="text-warning"><i class="fas fa-exclamation-triangle"></i> Note: This uses one AI call per ticket page load. Uses cache when available so repeat views are free.</em>
+                        </p>
+                    </div>
+                </div>
+
+                <!-- AI Summarizer Feature Toggle -->
+                <div class="panel panel-default" style="margin-bottom: 25px; border-left: 4px solid #6f42c1;">
+                    <div class="panel-heading" style="background: #fdfbff;">
+                        <h4 style="margin: 0; font-size: 15px; color:#4b2d8a;"><i class="fas fa-compress-alt"></i> Adaptive Ticket Summarizer <span class="label label-success" style="font-size: 11px; vertical-align: middle; margin-left: 6px; background:#6f42c1;">Saves Tokens</span></h4>
+                    </div>
+                    <div class="panel-body">
+                        <div class="checkbox" style="margin-top: 0;">
+                            <label style="font-weight: 600; font-size: 14px;">
+                                <input type="checkbox" name="summarizer_enabled" value="1" <?php echo !empty($settings->summarizer_enabled) ? 'checked' : ''; ?>>
+                                &nbsp;Enable Adaptive Ticket Summarizer
+                            </label>
+                        </div>
+                        <div style="margin-top: 10px; display:flex; align-items:center; gap:10px;">
+                            <label style="margin:0; font-weight:600;">Message Threshold:</label>
+                            <input type="number" name="summarizer_threshold" value="<?php echo htmlspecialchars($settings->summarizer_threshold ?? 15); ?>" class="form-control" style="width: 80px; display:inline-block;" min="3">
+                        </div>
+                        <p class="text-muted" style="margin-top: 8px; margin-bottom: 0; font-size:13px;">
+                            When a ticket reaches the threshold number of replies, the AI will use the generated summary of the conversation instead of the full raw message history. This drastically reduces input token usage for long tickets. Admins can manage these in the ticket sidebar.
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Compliance Mode Toggle -->
+                <div class="panel panel-default" style="margin-bottom: 25px; border-left: 4px solid #198754;">
+                    <div class="panel-heading" style="background: #f8fff9;">
+                        <h4 style="margin: 0; font-size: 15px; color:#146c43;"><i class="fas fa-user-shield"></i> Compliance Mode (PII Scrubber) <span class="label label-success" style="font-size: 11px; vertical-align: middle; margin-left: 6px; background:#198754;">Privacy</span></h4>
+                    </div>
+                    <div class="panel-body">
+                        <div class="checkbox" style="margin-top: 0;">
+                            <label style="font-weight: 600; font-size: 14px;">
+                                <input type="checkbox" name="compliance_mode" value="1" <?php echo !empty($settings->compliance_mode) ? 'checked' : ''; ?>>
+                                &nbsp;Enable PII Scrubber
+                            </label>
+                        </div>
+                        <p class="text-muted" style="margin-top: 8px; margin-bottom: 0; font-size:13px;">
+                            When enabled, Sahdev will automatically use regex to strip out Credit Card numbers, IPv4 addresses, Emails, and common structural passwords before sending the ticket context to the AI model. Essential context structure remains intact.
                         </p>
                     </div>
                 </div>
@@ -843,6 +903,260 @@ class AdminController
                     </button>
                 </div>
             </form>
+        </div>
+    /**
+     * Ticket Summaries Manager View
+     */
+    public function summaries()
+    {
+        $successMessage = '';
+        $errorMessage = '';
+
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            check_token("WHMCS.admin.default");
+            $action = $_POST['summary_action'] ?? '';
+
+            if ($action === 'delete') {
+                $id = (int) $_POST['summary_id'];
+                Capsule::table('tblsahdev_summaries')->where('id', $id)->delete();
+                $successMessage = "Summary deleted successfully.";
+            }
+        }
+
+        // Fetch summaries with ticket and admin info
+        $summaries = Capsule::table('tblsahdev_summaries')
+            ->leftJoin('tbltickets', 'tblsahdev_summaries.ticket_id', '=', 'tbltickets.id')
+            ->leftJoin('tbladmins', 'tblsahdev_summaries.admin_id', '=', 'tbladmins.id')
+            ->select(
+                'tblsahdev_summaries.*',
+                'tbltickets.tid as ticket_mask',
+                'tbltickets.title as ticket_title',
+                'tbladmins.username as admin_username'
+            )
+            ->orderBy('tblsahdev_summaries.id', 'desc')
+            ->get();
+
+        $csrfToken = generate_token("form");
+        $actionUrl = htmlspecialchars($this->moduleVars['modulelink']) . '&action=summaries';
+        $settingsUrl = htmlspecialchars($this->moduleVars['modulelink']);
+
+        ob_start();
+        ?>
+        <style>
+            .sahdev-container { max-width: 1200px; padding: 20px; background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0, 0, 0, .1); }
+            .sahdev-nav { margin-bottom: 20px; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+            .sahdev-nav a { margin-right: 15px; font-weight: 600; text-decoration: none; padding: 5px 10px; border-radius: 4px; }
+            .sahdev-nav a.active { background: #0d6efd; color: white; }
+            .sahdev-nav a:not(.active) { color: #0d6efd; background: #f8f9fa; }
+        </style>
+        <div class="sahdev-container">
+            <div class="sahdev-nav">
+                <a href="<?php echo $settingsUrl; ?>">General Settings</a>
+                <a href="<?php echo $settingsUrl; ?>&action=providers">AI Providers Manager</a>
+                <a href="<?php echo $settingsUrl; ?>&action=knowledgebase">Knowledgebase Engine</a>
+                <a href="<?php echo $settingsUrl; ?>&action=prompt_manager">Prompt Manager 🔬</a>
+                <a href="<?php echo $actionUrl; ?>" class="active">Ticket Summaries ✨</a>
+            </div>
+
+            <h2 style="margin-bottom:5px;">✨ Adaptive Ticket Summaries</h2>
+            <p class="text-muted" style="margin-bottom:20px;">Manage AI-generated conversation summaries. These summaries replace the full message history in AI prompts for long tickets, saving massive amounts of input tokens.</p>
+
+            <?php if (!empty($successMessage)): ?>
+                <div class="alert alert-success"><i class="fas fa-check-circle"></i> <?php echo htmlspecialchars($successMessage); ?></div>
+            <?php endif; ?>
+            
+            <table class="table table-striped table-bordered text-center" style="font-size:13px;">
+                <thead style="background:#f8f9fa;">
+                    <tr>
+                        <th width="80" class="text-center">ID</th>
+                        <th width="120" class="text-center">Ticket</th>
+                        <th>AI Condensed Summary</th>
+                        <th width="150" class="text-center">Generated By</th>
+                        <th width="150" class="text-center">Date Date</th>
+                        <th width="100" class="text-center">Manage</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if ($summaries->isEmpty()): ?>
+                        <tr><td colspan="6" class="text-muted py-4">No AI summaries have been generated yet.</td></tr>
+                    <?php else: ?>
+                        <?php foreach ($summaries as $s): ?>
+                            <tr>
+                                <td><?php echo $s->id; ?></td>
+                                <td>
+                                    <a href="supporttickets.php?action=view&id=<?php echo $s->ticket_id; ?>" target="_blank">
+                                        #<?php echo htmlspecialchars($s->ticket_mask ?? $s->ticket_id); ?>
+                                    </a>
+                                </td>
+                                <td class="text-left">
+                                    <div style="max-height:80px; overflow-y:auto; font-size:12px; white-space:pre-wrap; color:#333;"><?php echo htmlspecialchars($s->summary); ?></div>
+                                </td>
+                                <td><?php echo htmlspecialchars($s->admin_username ?? 'System'); ?></td>
+                                <td><span class="text-muted" style="font-size:11px;"><?php echo $s->updated_at; ?></span></td>
+                                <td>
+                                    <form method="post" action="<?php echo $actionUrl; ?>" style="display:inline;">
+                                        <?php echo $csrfToken; ?>
+                                        <input type="hidden" name="summary_action" value="delete">
+                                        <input type="hidden" name="summary_id" value="<?php echo $s->id; ?>">
+                                        <button type="submit" class="btn btn-xs btn-danger" onclick="return confirm('Delete this summary?');"><i class="fas fa-trash"></i></button>
+                                    </form>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                </tbody>
+            </table>
+        </div>
+        <?php
+        return ob_get_clean();
+    }
+
+    /**
+     * AI Audit Trail Manager View
+     */
+    public function audit_trail()
+    {
+        $successMessage = '';
+        $errorMessage = '';
+
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            check_token("WHMCS.admin.default");
+            $action = $_POST['audit_action'] ?? '';
+
+            if ($action === 'delete_range') {
+                $days = (int) $_POST['delete_days'];
+                if ($days > 0) {
+                    $cutoffDate = \Carbon\Carbon::now()->subDays($days);
+                    $deleted = Capsule::table('tblsahdev_audit_trail')
+                        ->where('created_at', '<', $cutoffDate)
+                        ->delete();
+                    $successMessage = "Successfully deleted {$deleted} audit log entries older than {$days} days.";
+                }
+            } elseif ($action === 'delete_single') {
+                $id = (int) $_POST['log_id'];
+                Capsule::table('tblsahdev_audit_trail')->where('id', $id)->delete();
+                $successMessage = "Audit log entry deleted.";
+            }
+        }
+
+        // Fetch recent audit logs
+        $logs = Capsule::table('tblsahdev_audit_trail')
+            ->leftJoin('tbltickets', 'tblsahdev_audit_trail.ticket_id', '=', 'tbltickets.id')
+            ->leftJoin('tbladmins', 'tblsahdev_audit_trail.admin_id', '=', 'tbladmins.id')
+            ->select(
+                'tblsahdev_audit_trail.*',
+                'tbltickets.tid as ticket_mask',
+                'tbltickets.title as ticket_title',
+                'tbladmins.username as admin_username'
+            )
+            ->orderBy('tblsahdev_audit_trail.id', 'desc')
+            ->limit(500) // Hard limit to prevent memory exhaustion, should implement real pagination later
+            ->get();
+
+        $csrfToken = generate_token("form");
+        $actionUrl = htmlspecialchars($this->moduleVars['modulelink']) . '&action=audit_trail';
+        $settingsUrl = htmlspecialchars($this->moduleVars['modulelink']);
+
+        ob_start();
+        ?>
+        <style>
+            .sahdev-container { max-width: 1400px; padding: 20px; background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0, 0, 0, .1); }
+            .sahdev-nav { margin-bottom: 20px; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+            .sahdev-nav a { margin-right: 15px; font-weight: 600; text-decoration: none; padding: 5px 10px; border-radius: 4px; }
+            .sahdev-nav a.active { background: #0d6efd; color: white; }
+            .sahdev-nav a:not(.active) { color: #0d6efd; background: #f8f9fa; }
+            .audit-code-block { background: #1e1e2e; color: #cdd6f4; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 11px; max-height: 200px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; margin: 0; }
+        </style>
+        <div class="sahdev-container">
+            <div class="sahdev-nav">
+                <a href="<?php echo $settingsUrl; ?>">General Settings</a>
+                <a href="<?php echo $settingsUrl; ?>&action=providers">AI Providers Manager</a>
+                <a href="<?php echo $settingsUrl; ?>&action=knowledgebase">Knowledgebase Engine</a>
+                <a href="<?php echo $settingsUrl; ?>&action=prompt_manager">Prompt Manager 🔬</a>
+                <a href="<?php echo $settingsUrl; ?>&action=summaries">Ticket Summaries ✨</a>
+                <a href="<?php echo $actionUrl; ?>" class="active">AI Audit Trail 🕵️</a>
+            </div>
+
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px;">
+                <div>
+                    <h2 style="margin-bottom:5px; margin-top:0;">🕵️ AI Audit Trail</h2>
+                    <p class="text-muted" style="margin-bottom:0px;">Complete record of what is sent to and received from the AI models. Showing last 500 entries.</p>
+                </div>
+                <div style="background:#f8d7da; padding:10px 15px; border-radius:6px; border:1px solid #f5c6cb;">
+                    <form method="post" action="<?php echo $actionUrl; ?>" class="form-inline" style="margin:0;" onsubmit="return confirm('WARNING: This will permanently delete old audit logs. Proceed?');">
+                        <?php echo $csrfToken; ?>
+                        <input type="hidden" name="audit_action" value="delete_range">
+                        <label style="color:#721c24; margin-right:10px; font-weight:600;"><i class="fas fa-trash-alt"></i> Auto-Prune Logs:</label>
+                        <select name="delete_days" class="form-control input-sm" style="margin-right:10px;">
+                            <option value="7">Older than 7 days</option>
+                            <option value="15">Older than 15 days</option>
+                            <option value="30" selected>Older than 30 days</option>
+                            <option value="90">Older than 90 days</option>
+                        </select>
+                        <button type="submit" class="btn btn-sm btn-danger">Prune Now</button>
+                    </form>
+                </div>
+            </div>
+
+            <?php if (!empty($successMessage)): ?>
+                <div class="alert alert-success"><i class="fas fa-check-circle"></i> <?php echo htmlspecialchars($successMessage); ?></div>
+            <?php endif; ?>
+            
+            <table class="table table-bordered table-striped" style="font-size:12px; table-layout: fixed;">
+                <thead style="background:#f8f9fa;">
+                    <tr>
+                        <th width="80" class="text-center">ID / Date</th>
+                        <th width="120" class="text-center">Context</th>
+                        <th width="35%">Raw Prompt Sent to AI</th>
+                        <th width="35%">Raw AI Response</th>
+                        <th width="120" class="text-center">Action / Metrics</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if ($logs->isEmpty()): ?>
+                        <tr><td colspan="5" class="text-center py-4 text-muted">No audit trail logs found.</td></tr>
+                    <?php else: ?>
+                        <?php foreach ($logs as $log): ?>
+                            <tr>
+                                <td class="text-center">
+                                    <strong>#<?php echo $log->id; ?></strong><br>
+                                    <span class="text-muted" style="font-size:10px;"><?php echo $log->created_at; ?></span>
+                                </td>
+                                <td>
+                                    <?php if ($log->ticket_id): ?>
+                                        <a href="supporttickets.php?action=view&id=<?php echo $log->ticket_id; ?>" target="_blank" style="font-weight:600;">
+                                            Ticket #<?php echo htmlspecialchars($log->ticket_mask ?? $log->ticket_id); ?>
+                                        </a><br>
+                                    <?php else: ?>
+                                        <span class="text-muted">No Ticket</span><br>
+                                    <?php endif; ?>
+                                    <span style="font-size:11px;">Admin: <?php echo htmlspecialchars($log->admin_username ?? 'System'); ?></span>
+                                </td>
+                                <td>
+                                    <pre class="audit-code-block"><?php echo htmlspecialchars($log->prompt_text ?? ''); ?></pre>
+                                </td>
+                                <td>
+                                    <pre class="audit-code-block" style="background:#1e3a2e;"><?php echo htmlspecialchars($log->response_text ?? ''); ?></pre>
+                                </td>
+                                <td class="text-center">
+                                    <span class="label label-primary" style="display:block; margin-bottom:4px;"><?php echo strtoupper($log->action_type); ?></span>
+                                    <span class="label label-info" style="display:block; margin-bottom:4px;"><?php echo htmlspecialchars($log->provider_used ?? 'Unknown'); ?></span>
+                                    <div style="font-size:10px; margin-top:6px; color:#555;">
+                                        Tokens: <?php echo number_format($log->tokens_used); ?><br>
+                                        Time: <?php echo number_format($log->execution_time_ms); ?>ms
+                                    </div>
+                                    <form method="post" action="<?php echo $actionUrl; ?>" style="margin-top:8px;">
+                                        <?php echo $csrfToken; ?>
+                                        <input type="hidden" name="audit_action" value="delete_single">
+                                        <input type="hidden" name="log_id" value="<?php echo $log->id; ?>">
+                                        <button type="submit" class="btn btn-xs btn-default" onclick="return confirm('Delete this specific log entry?');"><i class="fas fa-trash text-danger"></i> Remove</button>
+                                    </form>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                </tbody>
+            </table>
         </div>
         <?php
         return ob_get_clean();

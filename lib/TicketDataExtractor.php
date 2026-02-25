@@ -22,10 +22,11 @@ class TicketDataExtractor
      * Extracts full context securely for a specific ticket.
      * Uses query builder entirely (no raw SQL).
      *
+     * @param bool $scrubPII Whether to run the compliance PII scrubber over the context data.
      * @return array
      * @throws \Exception
      */
-    public function getContext(): array
+    public function getContext(bool $scrubPII = false): array
     {
         $context = [];
 
@@ -55,6 +56,23 @@ class TicketDataExtractor
 
         // 5. Extract active admin's signature
         $context['admin_signature'] = $this->extractAdminSignature();
+
+        // 6. Apply Compliance Mode (PII Scrubber) if requested
+        if ($scrubPII) {
+            $context['subject'] = $this->scrubPII($context['subject']);
+            $context['client_name'] = $this->scrubPII($context['client_name']);
+            // Scrub all messages
+            if (isset($context['messages']) && is_array($context['messages'])) {
+                foreach ($context['messages'] as &$msg) {
+                    if (isset($msg['message'])) {
+                        $msg['message'] = $this->scrubPII($msg['message']);
+                    }
+                }
+            }
+            if (isset($context['attachments_text'])) {
+                $context['attachments_text'] = $this->scrubPII($context['attachments_text']);
+            }
+        }
 
         return $context;
     }
@@ -225,6 +243,30 @@ class TicketDataExtractor
                 }
             }
         }
+
+        return $text;
+    }
+
+    /**
+     * Compliance Mode PII Scrubber
+     * Redacts emails, credit cards, IPs, and common password patterns.
+     */
+    private function scrubPII(string $text): string
+    {
+        if (empty($text)) return $text;
+
+        // 1. Scrub Credit Cards (basic 13-16 digit matching)
+        $text = preg_replace('/\b(?:\d[ -]*?){13,16}\b/', '[REDACTED_CC]', $text);
+
+        // 2. Scrub Emails
+        $text = preg_replace('/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/', '[REDACTED_EMAIL]', $text);
+
+        // 3. Scrub IPv4 Addresses (naive but effective for logs)
+        $text = preg_replace('/\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b/', '[REDACTED_IP]', $text);
+
+        // 4. Scrub passwords (heuristic: "password: xxx", "pass: xxx")
+        // Looks for password/pass followed by symbols like : or = and then captures the string until space/newline
+        $text = preg_replace('/(?i)(?:password|pass|pwd)\s*[:=]\s*([^\s\n\r]+)/', '$0 [REDACTED_PASSWORD]', $text);
 
         return $text;
     }
