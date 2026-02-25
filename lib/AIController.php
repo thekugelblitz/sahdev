@@ -57,6 +57,7 @@ class AIController
             Capsule::table('tblsahdev_settings')->select('primary_provider_id')->first();
             Capsule::table('tblsahdev_summaries')->first();
             Capsule::table('tblsahdev_audit_trail')->first();
+            Capsule::table('tblsahdev_quality_scores')->first();
         } catch (\Exception $e) {
             require_once dirname(__DIR__) . '/sahdev.php';
             if (function_exists('sahdev_activate')) {
@@ -759,6 +760,91 @@ SUMMARY RULES:
                 }
             }
             throw $e;
+        }
+    }
+
+    /**
+     * Evaluates a generated or drafted reply using the AI and stores the score.
+     */
+    public function scoreReply(string $replyText, bool $isAiGenerated = true): array
+    {
+        if (empty(trim($replyText))) {
+            return ['status' => 'error', 'message' => 'Reply text is empty.'];
+        }
+
+        $extractor = new TicketDataExtractor($this->ticketId, $this->adminId);
+        $context = $extractor->getContext();
+
+        $promptText = "=== TASK ===\n";
+        $promptText .= "Evaluate the following support ticket reply based on Clarity, Tone, and Completeness.\n";
+        $promptText .= "Provide a score from 0 to 100 for each, an overall score, and brief constructive feedback.\n\n";
+        $promptText .= "=== TICKET CONTEXT ===\n";
+        $promptText .= "Subject: " . ($context['subject'] ?? '') . "\n";
+        
+        // Add the last client message or summary to give context
+        $lastMessage = '';
+        if (!empty($context['messages'])) {
+            $lastIndex = count($context['messages']) - 1;
+            // Find the last non-admin message or the summary
+            for ($i = $lastIndex; $i >= 0; $i--) {
+                if ($context['messages'][$i]['admin'] == false) {
+                    $lastMessage = $context['messages'][$i]['message'];
+                    break;
+                }
+            }
+        }
+        $promptText .= "Latest Client Message: " . $lastMessage . "\n\n";
+
+        $promptText .= "=== REPLY TO EVALUATE ===\n";
+        $promptText .= trim($replyText) . "\n\n";
+        
+        $fakeSettings = $this->settings;
+        $fakeSettings['user_prompt_template'] = '{{MESSAGES}}'; 
+        $fakeSettings['system_prompt'] = "You are an expert QA Manager scoring support replies. Output strictly valid JSON matching this schema:\n{\"score\": 85, \"clarity\": 90, \"tone_score\": 85, \"completeness\": 80, \"notes\": \"Brief feedback here\"}";
+
+        $fakeContext = [
+            'subject' => '',
+            'client_name' => '',
+            'department' => '',
+            'services_summary' => '',
+            'attachments_text' => '',
+            'messages' => [['admin' => false, 'date' => '', 'message' => $promptText]],
+        ];
+
+        try {
+            $startTime = microtime(true);
+            $rawResponse = $this->provider->generateResponse($fakeContext, $fakeSettings, 'Professional', '');
+            $execTimeMs = round((microtime(true) - $startTime) * 1000);
+            
+            $scoreData = ['score' => 0, 'clarity' => 0, 'tone_score' => 0, 'completeness' => 0, 'notes' => 'Parse failed'];
+            
+            if (is_array($rawResponse)) {
+                $scoreData = array_merge($scoreData, $rawResponse);
+            } elseif (is_string($rawResponse)) {
+                $cleanStr = preg_replace('/```json|```/', '', $rawResponse);
+                $decoded = json_decode(trim($cleanStr), true);
+                if ($decoded && is_array($decoded)) {
+                    $scoreData = array_merge($scoreData, $decoded);
+                }
+            }
+
+            // Save to DB
+            Capsule::table('tblsahdev_quality_scores')->insert([
+                'ticket_id' => $this->ticketId,
+                'admin_id' => $this->adminId,
+                'score' => (int)($scoreData['score'] ?? 0),
+                'clarity' => (int)($scoreData['clarity'] ?? 0),
+                'tone_score' => (int)($scoreData['tone_score'] ?? 0),
+                'completeness' => (int)($scoreData['completeness'] ?? 0),
+                'notes' => substr($scoreData['notes'] ?? '', 0, 500),
+                'is_ai_generated' => $isAiGenerated ? 1 : 0,
+                'created_at' => Carbon::now(),
+                'updated_at' => Carbon::now()
+            ]);
+
+            return ['status' => 'success', 'data' => $scoreData, 'execution_time_ms' => $execTimeMs];
+        } catch (\Exception $e) {
+            return ['status' => 'error', 'message' => 'Scoring failed: ' . $e->getMessage()];
         }
     }
 

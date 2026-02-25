@@ -52,6 +52,24 @@ class AdminController
                 });
             }
         }
+
+        // 3. Ensure Quality Scores Table Exists
+        try {
+            Capsule::table('tblsahdev_quality_scores')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->create('tblsahdev_quality_scores', function ($table) {
+                $table->increments('id');
+                $table->integer('ticket_id')->unsigned()->index();
+                $table->integer('admin_id')->unsigned()->index();
+                $table->tinyInteger('score')->unsigned()->default(0);
+                $table->tinyInteger('clarity')->unsigned()->nullable();
+                $table->tinyInteger('tone_score')->unsigned()->nullable();
+                $table->tinyInteger('completeness')->unsigned()->nullable();
+                $table->text('notes')->nullable();
+                $table->boolean('is_ai_generated')->default(1);
+                $table->timestamps();
+            });
+        }
         
         // Ensure execution_time_ms exists in case of an older schema
         try {

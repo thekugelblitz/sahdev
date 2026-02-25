@@ -128,6 +128,11 @@ try {
     } elseif ($action === 'delete_summary') {
         // Feature: AI Ticket Summarizer — delete saved summary
         $response = $controller->deleteSummary();
+    } elseif ($action === 'score_reply') {
+        // Feature: Response Quality Scorer
+        $replyText = $_POST['reply_text'] ?? '';
+        $isAiGenerated = !empty($_POST['is_ai_generated']) && $_POST['is_ai_generated'] === 'true';
+        $response = $controller->scoreReply($replyText, $isAiGenerated);
     } elseif ($action === 'delete_audit_entries') {
         // Feature: AI Audit Trail — delete entries older than X days via AJAX
         $days = (int) ($_POST['days'] ?? 30);

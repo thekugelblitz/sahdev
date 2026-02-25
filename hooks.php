@@ -129,6 +129,9 @@ function sahdev_inject_ticket_panel($vars)
                 <button type="button" id="btn-sahdev-rewrite" class="btn btn-info btn-sm" style="font-weight: 600;">
                     <i class="fas fa-pen-nib"></i> Rewrite It
                 </button>
+                <button type="button" id="btn-sahdev-score-draft" class="btn btn-default btn-sm" style="font-weight: 600;" title="Get AI feedback on your manual draft before sending">
+                    <i class="fas fa-tachometer-alt"></i> Score This Reply
+                </button>
                 <span id="sahdev-rewrite-status" style="font-size: 12px; color: #666;"></span>
             </div>
             <div id="sahdev-rewrite-loading" style="display: none; margin-top: 8px; font-size: 13px; color: #17a2b8;">
@@ -178,11 +181,14 @@ function sahdev_inject_ticket_panel($vars)
                 <!-- Right Column: Proposed Client Reply -->
                 <div class="col-md-6">
                     <div class="panel panel-default">
-                        <div class="panel-heading" style="display: flex; justify-content: space-between;">
-                            <strong>Proposed Client Reply</strong>
+                        <div class="panel-heading" style="display: flex; justify-content: space-between; align-items: center;">
                             <div>
+                                <strong>Proposed Client Reply</strong>
+                                <span id="sahdev-reply-score-badge" class="label" style="display:none; margin-left:8px; font-size: 11px; cursor: help;"></span>
+                            </div>
+                            <div style="display: flex; gap: 5px;">
                                 <button type="button" class="btn btn-xs btn-default" onclick="copySahdevReply()"><i class="fas fa-copy"></i> Copy</button>
-                                <button type="button" class="btn btn-xs btn-success" onclick="insertSahdevToTinyMce()"><i class="fas fa-arrow-down"></i> Insert to Editor</button>
+                                <button type="button" class="btn btn-xs btn-success" onclick="insertSahdevToTinyMce()"><i class="fas fa-arrow-down"></i> Insert</button>
                             </div>
                         </div>
                         <div class="panel-body" style="max-height: 250px; overflow-y: auto;">
@@ -835,6 +841,12 @@ HTML;
 
             $('#sahdev-results').fadeIn();
             $('#btn-sahdev-regenerate').show();
+
+            // Auto-trigger scoring on successful AI reply generation
+            var pureReplyText = data.CLIENT_REPLY || '';
+            if (pureReplyText) {
+                triggerReplyScoring(pureReplyText, true, $('#sahdev-reply-score-badge'));
+            }
         }
 
         function showSahdevError(msg) {
@@ -854,6 +866,60 @@ HTML;
             }
             showSahdevError(msg);
         }
+
+        // =====================================================================
+        // FEATURE: Response Quality Scorer
+        // =====================================================================
+        function triggerReplyScoring(replyText, isAiGenerated, $badgeElement) {
+            $badgeElement.removeClass('label-success label-warning label-danger').addClass('label-default').html('<i class="fas fa-spinner fa-spin"></i> Scoring...').show();
+            
+            $.ajax({
+                url: sahdevAjaxUrl,
+                type: 'POST',
+                data: {
+                    action: 'score_reply',
+                    ticket_id: $('#sahdev_ticket_id').val(),
+                    reply_text: replyText,
+                    is_ai_generated: isAiGenerated ? 'true' : 'false',
+                    token: $('input[name="token"]').val()
+                },
+                dataType: 'json',
+                success: function(res) {
+                    if (res && res.status === 'success' && res.data) {
+                        var score = parseInt(res.data.score) || 0;
+                        var colorClass = score >= 85 ? 'label-success' : (score >= 70 ? 'label-warning' : 'label-danger');
+                        var title = "Clarity: " + (res.data.clarity||0) + "% | Tone: " + (res.data.tone_score||0) + "% | Completeness: " + (res.data.completeness||0) + "%\nNote: " + (res.data.notes||'');
+                        $badgeElement.removeClass('label-default').addClass(colorClass).html('<i class="fas fa-bullseye"></i> Score: ' + score + '/100').attr('title', title);
+                    } else {
+                        $badgeElement.hide();
+                    }
+                },
+                error: function() {
+                    $badgeElement.hide();
+                }
+            });
+        }
+
+        $(document).on('click', '#btn-sahdev-score-draft', function() {
+            var draftText = '';
+            if (typeof tinymce !== 'undefined' && tinymce.activeEditor) {
+                draftText = tinymce.activeEditor.getContent({ format: 'text' }).trim();
+                if (!draftText) {
+                    draftText = tinymce.activeEditor.getContent().replace(/<[^>]*>/g, '').trim();
+                }
+            }
+            if (!draftText && $('#replymessage').length) {
+                draftText = $('#replymessage').val().trim();
+            }
+
+            if (!draftText) {
+                $('#sahdev-rewrite-error').html('<i class="fas fa-exclamation-circle"></i> Please write a draft reply in the editor first before scoring.').show();
+                return;
+            }
+
+            $('#sahdev-rewrite-error').hide();
+            triggerReplyScoring(draftText, false, $('#sahdev-rewrite-status'));
+        });
 
         // =====================================================================
         // FEATURE: ✍️ Rewrite It — Expand Admin Draft Reply
