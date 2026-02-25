@@ -107,6 +107,7 @@ function sahdev_activate()
                     $table->boolean('translation_enabled')->default(0);
                     $table->boolean('auto_sentiment')->default(0);
                     $table->boolean('auto_tagging')->default(0);
+                    $table->boolean('quality_scorer_enabled')->default(1);
                 });
             }
 
@@ -140,6 +141,7 @@ function sahdev_activate()
                     $table->boolean('translation_enabled')->default(0);
                     $table->boolean('auto_sentiment')->default(0);
                     $table->boolean('auto_tagging')->default(0);
+                    $table->boolean('quality_scorer_enabled')->default(1);
                     $table->timestamps(); // creates created_at, updated_at
                 }
             );

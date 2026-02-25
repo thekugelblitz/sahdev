@@ -164,6 +164,7 @@ class AdminController
             $scrubCc = !empty($_POST['scrub_cc']) ? 1 : 0;
             $scrubIps = !empty($_POST['scrub_ips']) ? 1 : 0;
             $scrubPasswords = !empty($_POST['scrub_passwords']) ? 1 : 0;
+            $qualityScorerEnabled = !empty($_POST['quality_scorer_enabled']) ? 1 : 0;
 
             // Ensure valid bounds
             if ($temperature < 0 || $temperature > 1) {
@@ -187,6 +188,7 @@ class AdminController
                     'scrub_cc' => $scrubCc,
                     'scrub_ips' => $scrubIps,
                     'scrub_passwords' => $scrubPasswords,
+                    'quality_scorer_enabled' => $qualityScorerEnabled,
                     'updated_at' => \Carbon\Carbon::now(),
                 ]
             );
@@ -212,6 +214,7 @@ class AdminController
                 'scrub_cc' => 1,
                 'scrub_ips' => 1,
                 'scrub_passwords' => 1,
+                'quality_scorer_enabled' => 1,
             ];
         }
 
@@ -380,6 +383,24 @@ class AdminController
                         </div>
                         <p class="text-muted" style="margin-top: 8px; margin-bottom: 0; font-size:13px;">
                             When a ticket reaches the threshold number of replies, the AI will use the generated summary of the conversation instead of the full raw message history. This drastically reduces input token usage for long tickets. Admins can manage these in the ticket sidebar.
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Response Quality Scorer Feature Toggle -->
+                <div class="panel panel-default" style="margin-bottom: 25px; border-left: 4px solid #fd7e14;">
+                    <div class="panel-heading" style="background: #fff8f3;">
+                        <h4 style="margin: 0; font-size: 15px; color:#d35400;"><i class="fas fa-bullseye"></i> AI Response Quality Scorer <span class="label label-success" style="font-size: 11px; vertical-align: middle; margin-left: 6px; background:#fd7e14;">New</span></h4>
+                    </div>
+                    <div class="panel-body">
+                        <div class="checkbox" style="margin-top: 0;">
+                            <label style="font-weight: 600; font-size: 14px;">
+                                <input type="checkbox" name="quality_scorer_enabled" value="1" <?php echo !empty($settings->quality_scorer_enabled) ? 'checked' : ''; ?>>
+                                &nbsp;Enable Auto-Scoring for AI Generated Replies
+                            </label>
+                        </div>
+                        <p class="text-muted" style="margin-top: 8px; margin-bottom: 0; font-size:13px;">
+                            When enabled, Sahdev will automatically evaluate the clarity, tone, and completeness of its own generated replies and display a confidence score badge in the ticket panel in a single combined AI call. Manual draft scoring remains available regardless of this setting.
                         </p>
                     </div>
                 </div>

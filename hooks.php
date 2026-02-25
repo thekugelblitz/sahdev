@@ -842,10 +842,15 @@ HTML;
             $('#sahdev-results').fadeIn();
             $('#btn-sahdev-regenerate').show();
 
-            // Auto-trigger scoring on successful AI reply generation
-            var pureReplyText = data.CLIENT_REPLY || '';
-            if (pureReplyText) {
-                triggerReplyScoring(pureReplyText, true, $('#sahdev-reply-score-badge'));
+            // Display embedded Quality Score if enabled and present
+            var $aiBadge = $('#sahdev-reply-score-badge');
+            if (data.hasOwnProperty('SCORE')) {
+                var score = parseInt(data.SCORE) || 0;
+                var colorClass = score >= 85 ? 'label-success' : (score >= 70 ? 'label-warning' : 'label-danger');
+                var title = "Clarity: " + (data.CLARITY||0) + "% | Tone: " + (data.TONE_SCORE||0) + "% | Completeness: " + (data.COMPLETENESS||0) + "%\nNote: " + (data.REPLY_NOTES||'');
+                $aiBadge.removeClass('label-default label-success label-warning label-danger').addClass(colorClass).html('<i class="fas fa-robot"></i> AI Score: ' + score + '/100').attr('title', title).show();
+            } else {
+                $aiBadge.hide();
             }
         }
 
@@ -889,7 +894,7 @@ HTML;
                         var score = parseInt(res.data.score) || 0;
                         var colorClass = score >= 85 ? 'label-success' : (score >= 70 ? 'label-warning' : 'label-danger');
                         var title = "Clarity: " + (res.data.clarity||0) + "% | Tone: " + (res.data.tone_score||0) + "% | Completeness: " + (res.data.completeness||0) + "%\nNote: " + (res.data.notes||'');
-                        $badgeElement.removeClass('label-default').addClass(colorClass).html('<i class="fas fa-bullseye"></i> Score: ' + score + '/100').attr('title', title);
+                        $badgeElement.removeClass('label-default label-success label-warning label-danger').addClass(colorClass).html('<i class="fas fa-bullseye"></i> Admin Draft Score: ' + score + '/100').attr('title', title);
                     } else {
                         $badgeElement.hide();
                     }

@@ -120,6 +120,14 @@ class AIController
                 : $intentDirective . "\n\n" . $customInstruction;
         }
 
+        // Inject Quality Scorer Schema if enabled
+        if (!empty($this->settings['quality_scorer_enabled'])) {
+            $scorerInstruction = "=== QUALITY SCORER REQUIREMENT ===\nYou MUST evaluate the overall quality of the CLIENT_REPLY and output the precise fields in your JSON root:\n\"SCORE\": int (0-100 overall rating)\n\"CLARITY\": int (0-100)\n\"TONE_SCORE\": int (0-100)\n\"COMPLETENESS\": int (0-100)\n\"REPLY_NOTES\": \"string (brief explanation of the scores)\"\nMake sure the response is strict JSON.";
+            $customInstruction = empty($customInstruction)
+                ? $scorerInstruction
+                : $customInstruction . "\n\n" . $scorerInstruction;
+        }
+
         // Summarizer injection: replace full message history with condensed summary if toggle is checked
         $summarizerEnabled = !empty($this->settings['summarizer_enabled']);
         if ($summarizerEnabled && $useSummaryToggle) {
@@ -217,6 +225,22 @@ class AIController
             'created_at' => Carbon::now()
         ]);
 
+        // 6a. Process Quality Score if enabled
+        if (!empty($this->settings['quality_scorer_enabled']) && isset($response['SCORE'])) {
+            Capsule::table('tblsahdev_quality_scores')->insert([
+                'ticket_id' => $this->ticketId,
+                'admin_id' => $this->adminId,
+                'score' => (int)($response['SCORE'] ?? 0),
+                'clarity' => (int)($response['CLARITY'] ?? 0),
+                'tone_score' => (int)($response['TONE_SCORE'] ?? 0),
+                'completeness' => (int)($response['COMPLETENESS'] ?? 0),
+                'notes' => substr($response['REPLY_NOTES'] ?? '', 0, 500),
+                'is_ai_generated' => 1,
+                'created_at' => Carbon::now(),
+                'updated_at' => Carbon::now()
+            ]);
+        }
+
         // 6b. Log Audit Trail
         $providerName = $activeProvider instanceof AIProviderInterface ? $activeProvider->getName() : 'Unknown';
         $fullPrompt = json_encode([
@@ -289,6 +313,14 @@ class AIController
             $customInstruction = empty($customInstruction)
                 ? $intentDirective
                 : $intentDirective . "\n\n" . $customInstruction;
+        }
+
+        // Inject Quality Scorer Schema if enabled
+        if (!empty($this->settings['quality_scorer_enabled'])) {
+            $scorerInstruction = "=== QUALITY SCORER REQUIREMENT ===\nYou MUST evaluate the overall quality of the CLIENT_REPLY and output the precise fields in your JSON root:\n\"SCORE\": int (0-100 overall rating)\n\"CLARITY\": int (0-100)\n\"TONE_SCORE\": int (0-100)\n\"COMPLETENESS\": int (0-100)\n\"REPLY_NOTES\": \"string (brief explanation of the scores)\"\nMake sure the response is strict JSON.";
+            $customInstruction = empty($customInstruction)
+                ? $scorerInstruction
+                : $customInstruction . "\n\n" . $scorerInstruction;
         }
 
         // Summarizer injection: replace full message history with condensed summary if toggle is checked
@@ -391,6 +423,22 @@ class AIController
             'ai_response' => json_encode($response),
             'created_at' => Carbon::now()
         ]);
+
+        // Process Quality Score if enabled
+        if (!empty($this->settings['quality_scorer_enabled']) && isset($response['SCORE'])) {
+            Capsule::table('tblsahdev_quality_scores')->insert([
+                'ticket_id' => $this->ticketId,
+                'admin_id' => $this->adminId,
+                'score' => (int)($response['SCORE'] ?? 0),
+                'clarity' => (int)($response['CLARITY'] ?? 0),
+                'tone_score' => (int)($response['TONE_SCORE'] ?? 0),
+                'completeness' => (int)($response['COMPLETENESS'] ?? 0),
+                'notes' => substr($response['REPLY_NOTES'] ?? '', 0, 500),
+                'is_ai_generated' => 1,
+                'created_at' => Carbon::now(),
+                'updated_at' => Carbon::now()
+            ]);
+        }
 
         // Log Audit Trail for frontend-generated responses
         // We reconstruct the prompt vaguely since we don't have the exact frontend string, but close enough.
@@ -800,7 +848,7 @@ SUMMARY RULES:
         
         $fakeSettings = $this->settings;
         $fakeSettings['user_prompt_template'] = '{{MESSAGES}}'; 
-        $fakeSettings['system_prompt'] = "You are an expert QA Manager scoring support replies. Output strictly valid JSON matching this schema:\n{\"score\": 85, \"clarity\": 90, \"tone_score\": 85, \"completeness\": 80, \"notes\": \"Brief feedback here\"}";
+        $fakeSettings['system_prompt'] = "You are an expert QA Manager scoring support replies.\nCRITICAL RULE: DO NOT use markdown headers (e.g. ### Evaluation). Output strictly a single raw JSON object EXACTLY matching this schema:\n{\"score\": 85, \"clarity\": 90, \"tone_score\": 85, \"completeness\": 80, \"notes\": \"Brief feedback here\"}\nFailure to output raw JSON will result in system failure.";
 
         $fakeContext = [
             'subject' => '',

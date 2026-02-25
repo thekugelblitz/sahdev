@@ -270,7 +270,12 @@ class GoogleAIProvider implements AIProviderInterface
         $prompt .= "  \"RESPONSIBILITY\": \"string (Client, Host, or 3rd Party)\",\n";
         $prompt .= "  \"RISK_LEVEL\": \"string (Low, Medium, High, or Critical)\",\n";
         $prompt .= "  \"INTERNAL_ACTION_PLAN\": \"string (detailed steps for the support team)\",\n";
-        $prompt .= "  \"CLIENT_REPLY\": \"string (reply to client in Markdown \u2014 body only, no greeting or sign-off)\"\n}\n\n";
+        $prompt .= "  \"CLIENT_REPLY\": \"string (reply to client in Markdown \u2014 body only, no greeting or sign-off)\",\n";
+        $prompt .= "  \"SCORE\": \"int (Optional 0-100 rating)\",\n";
+        $prompt .= "  \"CLARITY\": \"int (Optional 0-100)\",\n";
+        $prompt .= "  \"TONE_SCORE\": \"int (Optional 0-100)\",\n";
+        $prompt .= "  \"COMPLETENESS\": \"int (Optional 0-100)\",\n";
+        $prompt .= "  \"REPLY_NOTES\": \"string (Optional brief explanation of the score)\"\n}\n\n";
         $prompt .= "=== TONE ===\nWrite CLIENT_REPLY in a {$tone} tone.\n\n";
         $prompt .= "=== TICKET DATA ===\n";
         $prompt .= "Client: " . ($context['client_name'] ?? 'Unknown Client') . "\n";
