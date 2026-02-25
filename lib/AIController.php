@@ -219,7 +219,12 @@ class AIController
 
         // 6b. Log Audit Trail
         $providerName = $activeProvider instanceof AIProviderInterface ? $activeProvider->getName() : 'Unknown';
-        $fullPrompt = $this->buildPromptText($context, $tone, $customInstruction, $this->settings['user_prompt_template'] ?? null);
+        $fullPrompt = json_encode([
+            'system' => $this->settings['system_prompt'],
+            'tone' => $tone,
+            'instruction' => $customInstruction,
+            'context' => $context
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
         $this->logAuditEntry('analysis', $fullPrompt, json_encode($response), $tokenUsage, $executionTimeMs, $providerName);
 
         // 7. Log the Request
@@ -492,6 +497,8 @@ SUMMARY RULES:
         $fakeSettings['max_tokens']           = 512; // summaries are short
 
         $startTime = microtime(true);
+        $activeProvider = $this->provider;
+        
         try {
             $rawResponse = $this->provider->generateResponse($fakeContext, $fakeSettings, 'Professional', '');
         } catch (\Exception $e) {
@@ -499,6 +506,7 @@ SUMMARY RULES:
                 try {
                     $fakeSettings['model_name'] = $this->settings['fallback_model_name'] ?? $this->settings['model_name'];
                     $rawResponse = $this->fallbackProvider->generateResponse($fakeContext, $fakeSettings, 'Professional', '');
+                    $activeProvider = $this->fallbackProvider;
                 } catch (\Exception $fe) {
                     return ['status' => 'error', 'message' => 'Summary generation failed. ' . $fe->getMessage()];
                 }
@@ -525,7 +533,8 @@ SUMMARY RULES:
             return ['status' => 'error', 'message' => 'AI returned an empty summary.'];
         }
 
-        $this->logAuditEntry('summary', $promptText, $summaryText, $this->provider->getLastTokenUsage() ?? 0, $execMs, $this->provider->getName());
+        $providerName = $activeProvider instanceof AIProviderInterface ? $activeProvider->getName() : 'Unknown';
+        $this->logAuditEntry('summary', $promptText, $summaryText, $activeProvider->getLastTokenUsage() ?? 0, $execMs, $providerName);
 
         // Upsert: delete any existing summary for this ticket, then insert fresh
         Capsule::table('tblsahdev_summaries')->where('ticket_id', $this->ticketId)->delete();
