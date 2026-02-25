@@ -782,4 +782,27 @@ SUMMARY RULES:
         $key = strtoupper(trim($intent));
         return $directives[$key] ?? ''; // Returns '' for 'AUTO' or unknown values
     }
+
+    /**
+     * Log an AI interaction to the audit trail database table.
+     */
+    private function logAuditEntry(string $actionType, string $prompt, string $response, int $tokensUsed, int $execTimeMs, string $providerName)
+    {
+        try {
+            Capsule::table('tblsahdev_audit_trail')->insert([
+                'ticket_id' => $this->ticketId,
+                'admin_id' => $this->adminId,
+                'action_type' => $actionType,
+                'prompt_text' => $prompt,
+                'response_text' => $response,
+                'provider_used' => $providerName,
+                'tokens_used' => $tokensUsed,
+                'execution_time_ms' => $execTimeMs,
+                'created_at' => Carbon::now()
+            ]);
+        } catch (\Exception $e) {
+            // Silently fail audit logging rather than breaking the user flow
+            error_log("Sahdev Audit Log Error: " . $e->getMessage());
+        }
+    }
 }
