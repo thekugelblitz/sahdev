@@ -825,7 +825,9 @@ SUMMARY RULES:
 
         $promptText = "=== TASK ===\n";
         $promptText .= "Evaluate the following support ticket reply based on Clarity, Tone, and Completeness.\n";
-        $promptText .= "Provide a score from 0 to 100 for each, an overall score, and brief constructive feedback.\n\n";
+        $promptText .= "CRITICAL RULE: Output strictly a single raw JSON object. NO extra text, NO markdown headers, NO preamble.\n\n";
+        $promptText .= "=== JSON SCHEMA ===\n";
+        $promptText .= "{\"SCORE\": 85, \"CLARITY\": 90, \"TONE_SCORE\": 85, \"COMPLETENESS\": 80, \"REPLY_NOTES\": \"Brief feedback here\"}\n\n";
         $promptText .= "=== TICKET CONTEXT ===\n";
         $promptText .= "Subject: " . ($context['subject'] ?? '') . "\n";
         
@@ -848,7 +850,7 @@ SUMMARY RULES:
         
         $fakeSettings = $this->settings;
         $fakeSettings['user_prompt_template'] = '{{MESSAGES}}'; 
-        $fakeSettings['system_prompt'] = "You are an expert QA Manager scoring support replies.\nCRITICAL RULE: DO NOT use markdown headers (e.g. ### Evaluation). Output strictly a single raw JSON object EXACTLY matching this schema:\n{\"SCORE\": 85, \"CLARITY\": 90, \"TONE_SCORE\": 85, \"COMPLETENESS\": 80, \"REPLY_NOTES\": \"Brief feedback here\"}\nFailure to output raw JSON will result in system failure.";
+        $fakeSettings['system_prompt'] = "You are an expert QA Manager scoring support replies. Output strictly a single raw JSON object matching the requested schema.";
 
         $fakeContext = [
             'subject' => '',
@@ -869,10 +871,14 @@ SUMMARY RULES:
             if (is_array($rawResponse)) {
                 $scoreData = array_merge($scoreData, $rawResponse);
             } elseif (is_string($rawResponse)) {
-                $cleanStr = preg_replace('/```json|```/', '', $rawResponse);
-                $decoded = json_decode(trim($cleanStr), true);
-                if ($decoded && is_array($decoded)) {
-                    $scoreData = array_merge($scoreData, $decoded);
+                $cleanStr = trim($rawResponse);
+                // Be more aggressive — look for { ... } block
+                if (preg_match('/\{[\s\S]*\}/', $cleanStr, $matches)) {
+                    $jsonBlock = $matches[0];
+                    $decoded = json_decode($jsonBlock, true);
+                    if ($decoded && is_array($decoded)) {
+                        $scoreData = array_merge($scoreData, $decoded);
+                    }
                 }
             }
 
@@ -882,6 +888,7 @@ SUMMARY RULES:
             if (isset($scoreData['tone_score'])) { $scoreData['TONE_SCORE'] = $scoreData['tone_score']; }
             if (isset($scoreData['completeness'])) { $scoreData['COMPLETENESS'] = $scoreData['completeness']; }
             if (isset($scoreData['notes'])) { $scoreData['REPLY_NOTES'] = $scoreData['notes']; }
+            if (isset($scoreData['REPLY_NOTES'])) { $scoreData['notes'] = $scoreData['REPLY_NOTES']; } // Back-compatibility for DB if needed
 
             // Save to DB
             Capsule::table('tblsahdev_quality_scores')->insert([
