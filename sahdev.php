@@ -161,7 +161,6 @@ function sahdev_activate()
                 'pii_scrub_enabled' => 0,
                 'translation_enabled' => 0,
                 'auto_sentiment' => 0,
-                'auto_tagging' => 0,
                 'created_at' => \Carbon\Carbon::now(),
                 'updated_at' => \Carbon\Carbon::now(),
             ]);
@@ -357,19 +356,6 @@ function sahdev_activate()
                     'updated_at' => \Carbon\Carbon::now(),
                 ]
             ]);
-        }
-
-        // Create tblsahdev_topic_clusters
-        try {
-            Capsule::table('tblsahdev_topic_clusters')->first();
-        } catch (\Exception $e) {
-            Capsule::schema()->create('tblsahdev_topic_clusters', function ($table) {
-                $table->increments('id');
-                $table->integer('ticket_id')->unsigned()->index();
-                $table->string('cluster_label', 128);
-                $table->decimal('confidence', 4, 2)->nullable();
-                $table->timestamps();
-            });
         }
 
         // Create tblsahdev_sentiment

@@ -93,6 +93,84 @@ class AdminController
     }
 
     /**
+     * Generates a standardized, beautifully styled navigation menu for the Admin UI.
+     * 
+     * @param string $activeTab The key of the currently active tab.
+     * @return string
+     */
+    private function getNavigationMarkup(string $activeTab = 'settings'): string
+    {
+        $base = htmlspecialchars($this->moduleVars['modulelink']);
+        $tabs = [
+            'settings' => ['label' => '<i class="fas fa-cog"></i> General Settings', 'url' => $base],
+            'providers' => ['label' => '<i class="fas fa-microchip"></i> AI Providers', 'url' => $base . '&action=providers'],
+            'knowledgebase' => ['label' => '<i class="fas fa-book"></i> Knowledgebase', 'url' => $base . '&action=knowledgebase'],
+            'prompt_manager' => ['label' => '<i class="fas fa-magic"></i> Prompt Manager', 'url' => $base . '&action=prompt_manager'],
+            'summaries' => ['label' => '<i class="fas fa-file-alt"></i> Ticket Summaries', 'url' => $base . '&action=summaries'],
+            'canned_responses' => ['label' => '<i class="fas fa-save"></i> Canned Responses', 'url' => $base . '&action=canned_responses'],
+            'analytics' => ['label' => '<i class="fas fa-chart-line"></i> Analytics', 'url' => $base . '&action=analytics'],
+            'audit_trail' => ['label' => '<i class="fas fa-history"></i> Audit Trail', 'url' => $base . '&action=audit_trail'],
+        ];
+
+        $html = '<style>
+            .sahdev-nav-wrapper { 
+                background: #fff; 
+                padding: 15px 20px; 
+                border-radius: 8px; 
+                box-shadow: 0 2px 8px rgba(0,0,0,0.04); 
+                margin-bottom: 25px; 
+                display: flex;
+                flex-wrap: wrap;
+                gap: 10px;
+                align-items: center;
+                border-left: 4px solid #0d6efd;
+            }
+            .sahdev-nav-btn {
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+                padding: 8px 16px;
+                font-size: 14px;
+                font-weight: 500;
+                color: #495057;
+                background: #f8f9fa;
+                border: 1px solid #e9ecef;
+                border-radius: 6px;
+                text-decoration: none !important;
+                transition: all 0.2s ease-in-out;
+            }
+            .sahdev-nav-btn:hover {
+                background: #e9ecef;
+                color: #0d6efd;
+                transform: translateY(-1px);
+            }
+            .sahdev-nav-btn.active {
+                background: #0d6efd;
+                color: #fff;
+                border-color: #0d6efd;
+                box-shadow: 0 4px 10px rgba(13, 110, 253, 0.2);
+            }
+            .sahdev-nav-btn i { font-size: 13px; }
+            .sahdev-page-container {
+                max-width: 1100px;
+                padding: 25px;
+                background: #fff;
+                border-radius: 8px;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            }
+        </style>';
+
+        $html .= '<div class="sahdev-nav-wrapper">';
+        foreach ($tabs as $key => $tab) {
+            $activeClass = ($key === $activeTab) ? ' active' : '';
+            $html .= sprintf('<a href="%s" class="sahdev-nav-btn%s">%s</a>', $tab['url'], $activeClass, $tab['label']);
+        }
+        $html .= '</div>';
+
+        return $html;
+    }
+
+    /**
      * Default view for the Addon settings.
      *
      * @return string
@@ -242,50 +320,10 @@ class AdminController
                 <?php echo htmlspecialchars($successMessage); ?>
             </div>
         <?php endif; ?>
-        <style>
-            .sahdev-container {
-                max-width: 900px;
-                padding: 20px;
-                background: #fff;
-                border-radius: 8px;
-                box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-            }
+        
 
-            .sahdev-nav {
-                margin-bottom: 20px;
-                border-bottom: 1px solid #eee;
-                padding-bottom: 10px;
-            }
-
-            .sahdev-nav a {
-                margin-right: 15px;
-                font-weight: 600;
-                text-decoration: none;
-                padding: 5px 10px;
-                border-radius: 4px;
-            }
-
-            .sahdev-nav a.active {
-                background: #0d6efd;
-                color: white;
-            }
-
-            .sahdev-nav a:not(.active) {
-                color: #0d6efd;
-                background: #f8f9fa;
-            }
-        </style>
-
-        <div class="sahdev-container">
-
-            <div class="sahdev-nav">
-                <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>" class="active">General Settings</a>
-                <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=providers">AI Providers Manager</a>
-                <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=knowledgebase">Knowledgebase Engine</a>
-                <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=prompt_manager">Prompt Manager 🔬</a>
-                <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=summaries">Ticket Summaries ✨</a>
-                <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=canned_responses">Canned Responses 💾</a>
-            </div>
+        <?php echo $this->getNavigationMarkup('settings'); ?>
+        <div class="sahdev-page-container">
 
             <h2 style="border-bottom: 1px solid #eee; padding-bottom: 15px; margin-bottom: 20px;">Sahdev AI Intelligence - Settings</h2>
 
@@ -523,37 +561,6 @@ class AdminController
         ob_start();
         ?>
         <style>
-            .sahdev-container {
-                max-width: 1000px;
-                padding: 20px;
-                background: #fff;
-                border-radius: 8px;
-                box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-            }
-
-            .sahdev-nav {
-                margin-bottom: 20px;
-                border-bottom: 1px solid #eee;
-                padding-bottom: 10px;
-            }
-
-            .sahdev-nav a {
-                margin-right: 15px;
-                font-weight: 600;
-                text-decoration: none;
-                padding: 5px 10px;
-                border-radius: 4px;
-            }
-
-            .sahdev-nav a.active {
-                background: #0d6efd;
-                color: white;
-            }
-
-            .sahdev-nav a:not(.active) {
-                color: #0d6efd;
-                background: #f8f9fa;
-            }
 
             .provider-card {
                 border: 1px solid #ddd;
@@ -570,15 +577,8 @@ class AdminController
             }
         </style>
 
-        <div class="sahdev-container">
-            <div class="sahdev-nav">
-                <a href="<?php echo $settingsUrl; ?>">General Settings</a>
-                <a href="<?php echo $actionUrl; ?>" class="active">AI Providers Manager</a>
-                <a href="<?php echo $kbUrl; ?>">Knowledgebase Engine</a>
-                <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=prompt_manager">Prompt Manager 🔬</a>
-                <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=summaries">Ticket Summaries ✨</a>
-                <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=canned_responses">Canned Responses 💾</a>
-            </div>
+        <?php echo $this->getNavigationMarkup('providers'); ?>
+        <div class="sahdev-page-container">
 
             <h2 style="margin-bottom: 10px;">AI Providers Manager</h2>
             <p class="text-muted" style="margin-bottom: 25px;">Create and manage connections to various LLM APIs (OpenAI, Local
@@ -770,37 +770,6 @@ class AdminController
         ob_start();
         ?>
         <style>
-            .sahdev-container {
-                max-width: 1000px;
-                padding: 20px;
-                background: #fff;
-                border-radius: 8px;
-                box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-            }
-
-            .sahdev-nav {
-                margin-bottom: 20px;
-                border-bottom: 1px solid #eee;
-                padding-bottom: 10px;
-            }
-
-            .sahdev-nav a {
-                margin-right: 15px;
-                font-weight: 600;
-                text-decoration: none;
-                padding: 5px 10px;
-                border-radius: 4px;
-            }
-
-            .sahdev-nav a.active {
-                background: #0d6efd;
-                color: white;
-            }
-
-            .sahdev-nav a:not(.active) {
-                color: #0d6efd;
-                background: #f8f9fa;
-            }
 
             .kb-file-card {
                 border: 1px solid #ddd;
@@ -818,16 +787,8 @@ class AdminController
             }
         </style>
 
-        <div class="sahdev-container">
-            <div class="sahdev-nav">
-                <a href="<?php echo $settingsUrl; ?>">General Settings</a>
-                <a href="<?php echo $settingsUrl; ?>&action=providers">AI Providers Manager</a>
-                <a href="<?php echo $actionUrl; ?>" class="active">Knowledgebase Engine Rules</a>
-                <a href="<?php echo $settingsUrl; ?>&action=prompt_manager">Prompt Manager 🔬</a>
-                <a href="<?php echo $settingsUrl; ?>&action=summaries">Ticket Summaries ✨</a>
-                <a href="<?php echo $settingsUrl; ?>&action=canned_responses">Canned Responses 💾</a>
-                <a href="<?php echo $settingsUrl; ?>&action=audit_trail">AI Audit Trail 🕵️</a>
-            </div>
+        <?php echo $this->getNavigationMarkup('knowledgebase'); ?>
+        <div class="sahdev-page-container">
 
             <h2 style="margin-bottom: 10px;">Knowledgebase & AI Rules</h2>
             <p class="text-muted" style="margin-bottom: 25px;">Create text files below containing context, rules, and facts you
@@ -947,37 +908,6 @@ class AdminController
         ob_start();
         ?>
         <style>
-            .sahdev-container {
-                max-width: 1100px;
-                padding: 20px;
-                background: #fff;
-                border-radius: 8px;
-                box-shadow: 0 1px 3px rgba(0, 0, 0, .1);
-            }
-
-            .sahdev-nav {
-                margin-bottom: 20px;
-                border-bottom: 1px solid #eee;
-                padding-bottom: 10px;
-            }
-
-            .sahdev-nav a {
-                margin-right: 15px;
-                font-weight: 600;
-                text-decoration: none;
-                padding: 5px 10px;
-                border-radius: 4px;
-            }
-
-            .sahdev-nav a.active {
-                background: #0d6efd;
-                color: white;
-            }
-
-            .sahdev-nav a:not(.active) {
-                color: #0d6efd;
-                background: #f8f9fa;
-            }
 
             .prompt-template-area {
                 font-family: 'SFMono-Regular', Consolas, monospace;
@@ -999,13 +929,8 @@ class AdminController
                 margin: 2px;
             }
         </style>
-        <div class="sahdev-container">
-            <div class="sahdev-nav">
-                <a href="<?php echo $settingsUrl; ?>">General Settings</a>
-                <a href="<?php echo $settingsUrl; ?>&action=providers">AI Providers Manager</a>
-                <a href="<?php echo $settingsUrl; ?>&action=knowledgebase">Knowledgebase Engine</a>
-                <a href="<?php echo $actionUrl; ?>" class="active">Prompt Manager 🔬</a>
-            </div>
+        <?php echo $this->getNavigationMarkup('prompt_manager'); ?>
+        <div class="sahdev-page-container">
 
             <h2 style="margin-bottom:5px;">🔬 Prompt Manager</h2>
             <p class="text-muted" style="margin-bottom:20px;">Edit the exact <strong>user-prompt template</strong> sent to the
@@ -1094,22 +1019,9 @@ class AdminController
 
         ob_start();
         ?>
-        <style>
-            .sahdev-container { max-width: 1200px; padding: 20px; background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0, 0, 0, .1); }
-            .sahdev-nav { margin-bottom: 20px; border-bottom: 1px solid #eee; padding-bottom: 10px; }
-            .sahdev-nav a { margin-right: 15px; font-weight: 600; text-decoration: none; padding: 5px 10px; border-radius: 4px; }
-            .sahdev-nav a.active { background: #0d6efd; color: white; }
-            .sahdev-nav a:not(.active) { color: #0d6efd; background: #f8f9fa; }
-        </style>
-        <div class="sahdev-container">
-            <div class="sahdev-nav">
-                <a href="<?php echo $settingsUrl; ?>">General Settings</a>
-                <a href="<?php echo $settingsUrl; ?>&action=providers">AI Providers Manager</a>
-                <a href="<?php echo $settingsUrl; ?>&action=knowledgebase">Knowledgebase Engine</a>
-                <a href="<?php echo $settingsUrl; ?>&action=prompt_manager">Prompt Manager 🔬</a>
-                <a href="<?php echo $actionUrl; ?>" class="active">Ticket Summaries ✨</a>
-                <a href="<?php echo $settingsUrl; ?>&action=canned_responses">Canned Responses 💾</a>
-            </div>
+        
+        <?php echo $this->getNavigationMarkup('summaries'); ?>
+        <div class="sahdev-page-container">
 
             <h2 style="margin-bottom:5px;">✨ Adaptive Ticket Summaries</h2>
             <p class="text-muted" style="margin-bottom:20px;">Manage AI-generated conversation summaries. These summaries replace the full message history in AI prompts for long tickets, saving massive amounts of input tokens.</p>
@@ -1213,23 +1125,10 @@ class AdminController
         ob_start();
         ?>
         <style>
-            .sahdev-container { max-width: 1400px; padding: 20px; background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0, 0, 0, .1); }
-            .sahdev-nav { margin-bottom: 20px; border-bottom: 1px solid #eee; padding-bottom: 10px; }
-            .sahdev-nav a { margin-right: 15px; font-weight: 600; text-decoration: none; padding: 5px 10px; border-radius: 4px; }
-            .sahdev-nav a.active { background: #0d6efd; color: white; }
-            .sahdev-nav a:not(.active) { color: #0d6efd; background: #f8f9fa; }
             .audit-code-block { background: #1e1e2e; color: #cdd6f4; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 11px; max-height: 200px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; margin: 0; }
         </style>
-        <div class="sahdev-container">
-            <div class="sahdev-nav">
-                <a href="<?php echo $settingsUrl; ?>">General Settings</a>
-                <a href="<?php echo $settingsUrl; ?>&action=providers">AI Providers Manager</a>
-                <a href="<?php echo $settingsUrl; ?>&action=knowledgebase">Knowledgebase Engine</a>
-                <a href="<?php echo $settingsUrl; ?>&action=prompt_manager">Prompt Manager 🔬</a>
-                <a href="<?php echo $settingsUrl; ?>&action=summaries">Ticket Summaries ✨</a>
-                <a href="<?php echo $settingsUrl; ?>&action=canned_responses">Canned Responses 💾</a>
-                <a href="<?php echo $actionUrl; ?>" class="active">AI Audit Trail 🕵️</a>
-            </div>
+        <?php echo $this->getNavigationMarkup('audit_trail'); ?>
+        <div class="sahdev-page-container">
 
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px;">
                 <div>
@@ -1378,24 +1277,11 @@ class AdminController
         ob_start();
         ?>
         <style>
-            .sahdev-container { max-width: 1000px; padding: 20px; background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1); }
-            .sahdev-nav { margin-bottom: 20px; border-bottom: 1px solid #eee; padding-bottom: 10px; }
-            .sahdev-nav a { margin-right: 15px; font-weight: 600; text-decoration: none; padding: 5px 10px; border-radius: 4px; display: inline-block; margin-bottom: 8px; }
-            .sahdev-nav a.active { background: #0d6efd; color: white; }
-            .sahdev-nav a:not(.active) { color: #0d6efd; background: #f8f9fa; }
             .canned-card { border: 1px solid #ddd; border-radius: 6px; padding: 15px; margin-bottom: 15px; background: #fafafa; }
             .canned-header { margin-bottom: 15px; border-bottom: 1px solid #eee; padding-bottom: 10px; }
         </style>
-        <div class="sahdev-container">
-            <div class="sahdev-nav">
-                <a href="<?php echo $settingsUrl; ?>">General Settings</a>
-                <a href="<?php echo $settingsUrl; ?>&action=providers">AI Providers</a>
-                <a href="<?php echo $settingsUrl; ?>&action=knowledgebase">Knowledgebase</a>
-                <a href="<?php echo $settingsUrl; ?>&action=prompt_manager">Prompt Manager</a>
-                <a href="<?php echo $settingsUrl; ?>&action=summaries">Ticket Summaries</a>
-                <a href="<?php echo $actionUrl; ?>" class="active">Canned Responses 💾</a>
-                <a href="<?php echo $settingsUrl; ?>&action=audit_trail">AI Audit Trail 🕵️</a>
-            </div>
+        <?php echo $this->getNavigationMarkup('canned_responses'); ?>
+        <div class="sahdev-page-container">
 
             <h2 style="margin-bottom:10px;">💾 Canned Responses Manager</h2>
             <p class="text-muted" style="margin-bottom:25px;">Manage AI-generated or manual canned response templates. These are immediately searchable in the ticket view panel.</p>
@@ -1491,5 +1377,93 @@ class AdminController
         <?php
         return ob_get_clean();
     }
-}
 
+    /**
+     * Dashboard view for AI Performance Analytics (Feature 8).
+     *
+     * @return string
+     */
+    public function analytics()
+    {
+        ob_start();
+        
+        // Fetch real analytics data
+        $aiController = new \Sahdev\Lib\AIController(0, $_SESSION['adminid'] ?? 1);
+        $analytics = $aiController->getAnalyticsData();
+        
+        $totalActions = $analytics['total_actions'] ?? 0;
+        $totalTokens = $analytics['total_tokens'] ?? 0;
+        $avgExecMs = $analytics['avg_exec_time'] ?? 0;
+        
+        $actionsByType = $analytics['action_breakdown'] ?? [];
+        $scores = $analytics['average_scores'] ?? [];
+        ?>
+        <?php echo $this->getNavigationMarkup('analytics'); ?>
+        <div class="sahdev-page-container">
+
+            <h2 style="margin-bottom:10px;">📊 AI Performance Analytics</h2>
+            <p class="text-muted" style="margin-bottom:25px;">
+                Review the performance, ROI, and quality metrics of your AI deployment.
+            </p>
+
+            <div class="row" style="display: flex; gap: 20px; flex-wrap: wrap;">
+                <div class="col-md-4" style="flex: 1; min-width: 250px;">
+                    <div style="background: #eef2ff; border-left: 4px solid #4f46e5; padding: 20px; border-radius: 8px;">
+                        <span style="display:block; font-size: 13px; font-weight: 600; color: #4338ca; text-transform: uppercase;">Total Actions</span>
+                        <div style="font-size: 32px; font-weight: 700; color: #1e1b4b; margin-top: 5px;"><?php echo number_format($totalActions); ?></div>
+                    </div>
+                </div>
+                
+                <div class="col-md-4" style="flex: 1; min-width: 250px;">
+                    <div style="background: #fdf4ff; border-left: 4px solid #c026d3; padding: 20px; border-radius: 8px;">
+                        <span style="display:block; font-size: 13px; font-weight: 600; color: #a21caf; text-transform: uppercase;">Tokens Used</span>
+                        <div style="font-size: 32px; font-weight: 700; color: #4a044e; margin-top: 5px;"><?php echo number_format($totalTokens); ?></div>
+                    </div>
+                </div>
+
+                <div class="col-md-4" style="flex: 1; min-width: 250px;">
+                    <div style="background: #f0fdf4; border-left: 4px solid #16a34a; padding: 20px; border-radius: 8px;">
+                        <span style="display:block; font-size: 13px; font-weight: 600; color: #15803d; text-transform: uppercase;">Avg Generation Speed</span>
+                        <div style="font-size: 32px; font-weight: 700; color: #14532d; margin-top: 5px;"><?php echo number_format($avgExecMs); ?> ms</div>
+                    </div>
+                </div>
+            </div>
+
+            <hr style="margin: 30px 0;">
+            
+            <h4 style="margin-bottom: 20px;">AI Action Breakdown</h4>
+            <div style="display:flex; gap:10px; flex-wrap: wrap;">
+                <?php foreach ($actionsByType as $type => $count): ?>
+                    <span style="background: #f1f5f9; padding: 8px 16px; border-radius: 20px; font-weight: 500; color: #334155;">
+                        <strong style="color: #0f172a; margin-right: 5px;"><?php echo ucwords(str_replace('_', ' ', $type)); ?>:</strong> <?php echo number_format($count); ?>
+                    </span>
+                <?php endforeach; ?>
+            </div>
+
+            <hr style="margin: 30px 0;">
+
+            <div class="row">
+                <div class="col-md-6">
+                    <h4 style="margin-bottom: 20px;">Quality Bar Chart</h4>
+                    <?php foreach ($scores as $cat => $val): 
+                        if ($cat == 'total_scored') continue;
+                        $pct = ($val / 10) * 100;
+                    ?>
+                        <div style="margin-bottom: 15px;">
+                            <div style="display:flex; justify-content: space-between; margin-bottom: 5px; font-size: 13px; font-weight: 600;">
+                                <span><?php echo ucwords(str_replace('_', ' ', $cat)); ?></span>
+                                <span><?php echo number_format($val, 1); ?>/10</span>
+                            </div>
+                            <div style="background: #e2e8f0; height: 10px; border-radius: 5px; overflow: hidden;">
+                                <div style="background: <?php echo $pct >= 80 ? '#22c55e' : ($pct >= 60 ? '#f59e0b' : '#ef4444'); ?>; width: <?php echo $pct; ?>%; height: 100%;"></div>
+                            </div>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+
+        </div>
+        <?php
+        return ob_get_clean();
+    }
+}

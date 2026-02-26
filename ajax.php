@@ -47,7 +47,10 @@ if ($intensity > 3) {
     $instruction = empty($instruction) ? $intensityContext : $instruction . "\n\n" . $intensityContext;
 }
 
-$ticketNotRequiredActions = ['search_canned_responses', 'generate_canned_template', 'save_canned_response', 'save_kb_article', 'delete_audit_entries'];
+$ticketNotRequiredActions = [
+    'search_canned_responses', 'generate_canned_template', 'save_canned_response', 'save_kb_article', 'delete_audit_entries',
+    'get_analytics'
+];
 if (!$ticketId && !in_array($action, $ticketNotRequiredActions)) {
     header('HTTP/1.1 400 Bad Request');
     echo json_encode(['status' => 'error', 'message' => 'Missing Ticket ID.']);
@@ -165,6 +168,9 @@ try {
         $title = $_POST['title'] ?? '';
         $templateText = $_POST['template_text'] ?? '';
         $response = $controller->saveKbArticle($title, $templateText);
+    } elseif ($action === 'get_analytics') {
+        // Feature 8: AI Performance Analytics
+        $response = $controller->getAnalyticsData();
     } else {
         // Default analyze_ticket (server-side generation)
         $response = $controller->getAnalysis($tone, $instruction, $forceRegenerate, $forceFallback, $intent, $useSummary);

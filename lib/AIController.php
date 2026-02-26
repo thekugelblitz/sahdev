@@ -1213,4 +1213,77 @@ SUMMARY RULES:
             return ['status' => 'error', 'message' => 'Failed to save KB article: ' . $e->getMessage()];
         }
     }
+
+
+
+    /**
+     * Retrieve global Analytics for the Sahdev AI Dashboard.
+     * Feature 8: AI Performance Analytics
+     */
+    public function getAnalyticsData(): array
+    {
+        try {
+            // 1. Basic usage stats from Audit Trail
+            $totalActions = Capsule::table('tblsahdev_audit_trail')->count();
+            $totalTokens = Capsule::table('tblsahdev_audit_trail')->sum('tokens_used');
+            $avgExecTime = Capsule::table('tblsahdev_audit_trail')->avg('execution_time_ms');
+
+            // 2. Breakdown by Action Type
+            $actionBreakdownRaw = Capsule::table('tblsahdev_audit_trail')
+                ->select(Capsule::raw('action_type, COUNT(*) as count'))
+                ->groupBy('action_type')
+                ->get();
+            $actionBreakdown = [];
+            foreach ($actionBreakdownRaw as $res) {
+                $actionBreakdown[$res->action_type] = $res->count;
+            }
+
+            // 3. Quality Scores
+            $avgScore = Capsule::table('tblsahdev_quality_scores')->avg('score') ?? 0;
+            $avgClarity = Capsule::table('tblsahdev_quality_scores')->avg('clarity') ?? 0;
+            $avgTone = Capsule::table('tblsahdev_quality_scores')->avg('tone_score') ?? 0;
+            $avgCompleteness = Capsule::table('tblsahdev_quality_scores')->avg('completeness') ?? 0;
+
+            // 4. Comparison: AI vs Manual Scores
+            $aiScoreRaw = Capsule::table('tblsahdev_quality_scores')->where('is_ai_generated', 1)->avg('score') ?? 0;
+            $manualScoreRaw = Capsule::table('tblsahdev_quality_scores')->where('is_ai_generated', 0)->avg('score') ?? 0;
+
+            // 5. Calculate Time Saved
+            // Let's assume on average, an AI rewrite/generation saves 3 minutes of admin typing time.
+            $timeSavedMinutes = $totalActions * 3;
+            $timeSavedHours = floor($timeSavedMinutes / 60);
+            $timeSavedMins = $timeSavedMinutes % 60;
+            $timeSavedString = "{$timeSavedHours}h {$timeSavedMins}m";
+
+            // Estimated Cost (assuming an average mixed cost, say $0.50 per 1M tokens)
+            // This is just a rough estimate to show ROI on the dashboard.
+            $costPerMillionTokens = 0.50; 
+            $estimatedCost = ($totalTokens / 1000000) * $costPerMillionTokens;
+
+            return [
+                'status' => 'success',
+                'data' => [
+                    'total_actions' => $totalActions,
+                    'total_tokens' => $totalTokens,
+                    'avg_exec_time_ms' => round($avgExecTime),
+                    'action_breakdown' => $actionBreakdown,
+                    'quality' => [
+                        'overall' => round($avgScore, 1),
+                        'clarity' => round($avgClarity, 1),
+                        'tone' => round($avgTone, 1),
+                        'completeness' => round($avgCompleteness, 1),
+                        'ai_avg' => round($aiScoreRaw, 1),
+                        'manual_avg' => round($manualScoreRaw, 1)
+                    ],
+                    'roi' => [
+                        'time_saved_minutes' => $timeSavedMinutes,
+                        'time_saved_string' => $timeSavedString,
+                        'estimated_cost_usd' => round($estimatedCost, 4)
+                    ]
+                ]
+            ];
+        } catch (\Exception $e) {
+            return ['status' => 'error', 'message' => 'Failed to load analytics: ' . $e->getMessage()];
+        }
+    }
 }
