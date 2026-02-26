@@ -29,6 +29,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
+$action = $_POST['action'] ?? '';
 $ticketId = (int) ($_POST['ticket_id'] ?? 0);
 $tone = strip_tags($_POST['tone'] ?? '');
 $instruction = strip_tags($_POST['instruction'] ?? '');
@@ -46,7 +47,8 @@ if ($intensity > 3) {
     $instruction = empty($instruction) ? $intensityContext : $instruction . "\n\n" . $intensityContext;
 }
 
-if (!$ticketId) {
+$ticketNotRequiredActions = ['search_canned_responses', 'generate_canned_template', 'save_canned_response', 'delete_audit_entries'];
+if (!$ticketId && !in_array($action, $ticketNotRequiredActions)) {
     header('HTTP/1.1 400 Bad Request');
     echo json_encode(['status' => 'error', 'message' => 'Missing Ticket ID.']);
     exit;
@@ -59,7 +61,6 @@ try {
     require_once __DIR__ . '/lib/TicketDataExtractor.php';
     require_once __DIR__ . '/lib/AIController.php';
 
-    $action = $_POST['action'] ?? '';
     $forceRegenerate = !empty($_POST['force_regenerate']) && $_POST['force_regenerate'] === 'true';
     $forceFallback = !empty($_POST['force_fallback']) && $_POST['force_fallback'] === 'true';
     $useSummaryRaw = $_POST['use_summary'] ?? '1';
