@@ -1393,13 +1393,15 @@ class AdminController
         }
         $aiController = new \Sahdev\Lib\AIController(0, $_SESSION['adminid'] ?? 1);
         $analytics = $aiController->getAnalyticsData();
+        $analyticsData = $analytics['data'] ?? [];
         
-        $totalActions = $analytics['total_actions'] ?? 0;
-        $totalTokens = $analytics['total_tokens'] ?? 0;
-        $avgExecMs = $analytics['avg_exec_time'] ?? 0;
+        $totalActions = $analyticsData['total_actions'] ?? 0;
+        $totalTokens = $analyticsData['total_tokens'] ?? 0;
+        $avgExecMs = $analyticsData['avg_exec_time_ms'] ?? 0;
         
-        $actionsByType = $analytics['action_breakdown'] ?? [];
-        $scores = $analytics['average_scores'] ?? [];
+        $actionsByType = $analyticsData['action_breakdown'] ?? [];
+        $scores = $analyticsData['quality'] ?? [];
+        $roi = $analyticsData['roi'] ?? ['time_saved_string' => '0h 0m', 'estimated_cost_usd' => 0.00];
         ?>
         <?php echo $this->getNavigationMarkup('analytics'); ?>
         <div class="sahdev-page-container">
@@ -1432,36 +1434,71 @@ class AdminController
                 </div>
             </div>
 
+            <div class="row" style="display: flex; gap: 20px; flex-wrap: wrap; margin-top: 20px;">
+                <div class="col-md-6" style="flex: 1; min-width: 300px;">
+                    <div style="background: #fffbeb; border-left: 4px solid #d97706; padding: 20px; border-radius: 8px;">
+                        <span style="display:block; font-size: 13px; font-weight: 600; color: #b45309; text-transform: uppercase;">Time Saved (ROI)</span>
+                        <div style="font-size: 32px; font-weight: 700; color: #78350f; margin-top: 5px;"><?php echo htmlspecialchars($roi['time_saved_string']); ?></div>
+                        <p style="margin:0; font-size:12px; color: #92400e; margin-top: 5px;">Estimated based on avg. response drafting time.</p>
+                    </div>
+                </div>
+                <div class="col-md-6" style="flex: 1; min-width: 300px;">
+                    <div style="background: #fef2f2; border-left: 4px solid #ef4444; padding: 20px; border-radius: 8px;">
+                        <span style="display:block; font-size: 13px; font-weight: 600; color: #b91c1c; text-transform: uppercase;">Estimated AI Cost</span>
+                        <div style="font-size: 32px; font-weight: 700; color: #7f1d1d; margin-top: 5px;">$<?php echo number_format($roi['estimated_cost_usd'], 4); ?></div>
+                        <p style="margin:0; font-size:12px; color: #991b1b; margin-top: 5px;">Based on blended cost of $0.50 / 1M tokens.</p>
+                    </div>
+                </div>
+            </div>
+
             <hr style="margin: 30px 0;">
             
             <h4 style="margin-bottom: 20px;">AI Action Breakdown</h4>
             <div style="display:flex; gap:10px; flex-wrap: wrap;">
-                <?php foreach ($actionsByType as $type => $count): ?>
-                    <span style="background: #f1f5f9; padding: 8px 16px; border-radius: 20px; font-weight: 500; color: #334155;">
-                        <strong style="color: #0f172a; margin-right: 5px;"><?php echo ucwords(str_replace('_', ' ', $type)); ?>:</strong> <?php echo number_format($count); ?>
-                    </span>
-                <?php endforeach; ?>
+                <?php if (empty($actionsByType)): ?>
+                    <span class="text-muted">No actions recorded yet. Generate an AI response to see data.</span>
+                <?php else: ?>
+                    <?php foreach ($actionsByType as $type => $count): ?>
+                        <span style="background: #f1f5f9; padding: 8px 16px; border-radius: 20px; font-weight: 500; color: #334155;">
+                            <strong style="color: #0f172a; margin-right: 5px;"><?php echo ucwords(str_replace('_', ' ', $type)); ?>:</strong> <?php echo number_format($count); ?>
+                        </span>
+                    <?php endforeach; ?>
+                <?php endif; ?>
             </div>
 
             <hr style="margin: 30px 0;">
 
             <div class="row">
                 <div class="col-md-6">
-                    <h4 style="margin-bottom: 20px;">Quality Bar Chart</h4>
-                    <?php foreach ($scores as $cat => $val): 
-                        if ($cat == 'total_scored') continue;
-                        $pct = ($val / 10) * 100;
+                    <h4 style="margin-bottom: 20px;">Quality Metrics</h4>
+                    <?php 
+                    $metricsToGraph = ['overall', 'clarity', 'tone', 'completeness', 'ai_avg', 'manual_avg'];
+                    $hasMetrics = false;
+                    
+                    foreach ($metricsToGraph as $metricKey) {
+                        if (isset($scores[$metricKey]) && $scores[$metricKey] > 0) {
+                            $hasMetrics = true;
+                            $val = $scores[$metricKey];
+                            $pct = ($val / 10) * 100;
+                            // Change name for display
+                            $displayName = str_replace('_', ' ', $metricKey);
+                            if ($metricKey == 'ai_avg') $displayName = 'AI Answers Avg Score';
+                            if ($metricKey == 'manual_avg') $displayName = 'Human Answers Avg Score';
+                            ?>
+                            <div style="margin-bottom: 15px;">
+                                <div style="display:flex; justify-content: space-between; margin-bottom: 5px; font-size: 13px; font-weight: 600;">
+                                    <span><?php echo ucwords($displayName); ?></span>
+                                    <span><?php echo number_format($val, 1); ?>/10</span>
+                                </div>
+                                <div style="background: #e2e8f0; height: 10px; border-radius: 5px; overflow: hidden;">
+                                    <div style="background: <?php echo $pct >= 80 ? '#22c55e' : ($pct >= 60 ? '#f59e0b' : '#ef4444'); ?>; width: <?php echo $pct; ?>%; height: 100%;"></div>
+                                </div>
+                            </div>
+                            <?php
+                        }
+                    }
+                    if (!$hasMetrics) echo '<span class="text-muted">No quality scores recorded yet. Have users rate AI responses to see data.</span>';
                     ?>
-                        <div style="margin-bottom: 15px;">
-                            <div style="display:flex; justify-content: space-between; margin-bottom: 5px; font-size: 13px; font-weight: 600;">
-                                <span><?php echo ucwords(str_replace('_', ' ', $cat)); ?></span>
-                                <span><?php echo number_format($val, 1); ?>/10</span>
-                            </div>
-                            <div style="background: #e2e8f0; height: 10px; border-radius: 5px; overflow: hidden;">
-                                <div style="background: <?php echo $pct >= 80 ? '#22c55e' : ($pct >= 60 ? '#f59e0b' : '#ef4444'); ?>; width: <?php echo $pct; ?>%; height: 100%;"></div>
-                            </div>
-                        </div>
-                    <?php endforeach; ?>
                 </div>
             </div>
 
