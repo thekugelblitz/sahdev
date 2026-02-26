@@ -5,6 +5,12 @@ namespace Sahdev\Lib;
 use WHMCS\Database\Capsule;
 use Carbon\Carbon;
 
+require_once __DIR__ . '/AIProviderInterface.php';
+require_once __DIR__ . '/GoogleAIProvider.php';
+require_once __DIR__ . '/LMStudioAIProvider.php';
+require_once __DIR__ . '/ReplicateAIProvider.php';
+require_once __DIR__ . '/TicketDataExtractor.php';
+
 class AIController
 {
     private $ticketId;
