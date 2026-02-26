@@ -1335,6 +1335,8 @@ class AdminController
                 $id = (int) ($_POST['canned_id'] ?? 0);
                 $title = trim($_POST['title'] ?? '');
                 $templateText = trim($_POST['template_text'] ?? '');
+                $category = trim($_POST['category'] ?? '');
+                $tags = trim($_POST['tags'] ?? '');
                 $adminId = $_SESSION['adminid'] ?? 1;
 
                 if (empty($title) || empty($templateText)) {
@@ -1343,6 +1345,8 @@ class AdminController
                     $data = [
                         'title' => $title,
                         'template_text' => $templateText,
+                        'category' => $category,
+                        'tags' => $tags,
                         'updated_at' => \Carbon\Carbon::now(),
                     ];
 
@@ -1412,9 +1416,25 @@ class AdminController
                     <?php echo $csrfToken; ?>
                     <input type="hidden" name="canned_action" value="create">
                     
-                    <div class="form-group mb-2">
-                        <label>Title</label>
-                        <input type="text" name="title" class="form-control" placeholder="e.g. Server Restart Instructions" required>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="form-group mb-2">
+                                <label>Title</label>
+                                <input type="text" name="title" class="form-control" placeholder="e.g. Server Restart Instructions" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-group mb-2">
+                                <label>Category</label>
+                                <input type="text" name="category" class="form-control" placeholder="e.g. Sales, Technical, Billing">
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-group mb-2">
+                                <label>Tags (Comma separated)</label>
+                                <input type="text" name="tags" class="form-control" placeholder="e.g. restart, down, emergency">
+                            </div>
+                        </div>
                     </div>
                     <div class="form-group mb-2">
                         <label>Template Text / HTML</label>
@@ -1435,9 +1455,25 @@ class AdminController
                         <?php echo $csrfToken; ?>
                         <input type="hidden" name="canned_id" value="<?php echo $r->id; ?>">
                         
-                        <div class="form-group mb-2">
-                            <label>Title</label>
-                            <input type="text" name="title" class="form-control" value="<?php echo htmlspecialchars($r->title); ?>" required>
+                        <div class="row">
+                            <div class="col-md-4">
+                                <div class="form-group mb-2">
+                                    <label>Title</label>
+                                    <input type="text" name="title" class="form-control" value="<?php echo htmlspecialchars($r->title); ?>" required>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="form-group mb-2">
+                                    <label>Category</label>
+                                    <input type="text" name="category" class="form-control" value="<?php echo htmlspecialchars($r->category ?? ''); ?>">
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="form-group mb-2">
+                                    <label>Tags (Comma separated)</label>
+                                    <input type="text" name="tags" class="form-control" value="<?php echo htmlspecialchars($r->tags ?? ''); ?>">
+                                </div>
+                            </div>
                         </div>
                         <div class="form-group mb-2">
                             <label>Template Text / HTML</label>

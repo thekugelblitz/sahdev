@@ -58,6 +58,7 @@ class AIController
             Capsule::table('tblsahdev_summaries')->first();
             Capsule::table('tblsahdev_audit_trail')->first();
             Capsule::table('tblsahdev_quality_scores')->first();
+            Capsule::table('tblsahdev_canned_responses')->first();
         } catch (\Exception $e) {
             require_once dirname(__DIR__) . '/sahdev.php';
             if (function_exists('sahdev_activate')) {

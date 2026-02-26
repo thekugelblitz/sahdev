@@ -315,14 +315,48 @@ function sahdev_activate()
         } catch (\Exception $e) {
             Capsule::schema()->create('tblsahdev_canned_responses', function ($table) {
                 $table->increments('id');
+                $table->integer('admin_id')->unsigned()->default(1);
                 $table->string('title');
-                $table->text('content');
+                $table->text('template_text');
                 $table->string('tags')->nullable();
                 $table->string('category')->nullable();
                 $table->boolean('is_ai_generated')->default(1);
-                $table->integer('used_count')->default(0);
                 $table->timestamps();
             });
+
+            // Insert matching dummy templates
+            Capsule::table('tblsahdev_canned_responses')->insert([
+                [
+                    'admin_id' => 1,
+                    'title' => 'Server Migration Delay',
+                    'template_text' => 'We sincerely apologize for the delay. The migration for [Domain] is currently in progress, but we encountered an unexpected issue with the database transfer. Our senior technicians are actively resolving this to ensure no data loss occurs. We anticipate completion within the next [Timeframe]. Thank you for your continued patience.',
+                    'tags' => 'migration, delay, database',
+                    'category' => 'Migrations',
+                    'is_ai_generated' => 1,
+                    'created_at' => \Carbon\Carbon::now(),
+                    'updated_at' => \Carbon\Carbon::now(),
+                ],
+                [
+                    'admin_id' => 1,
+                    'title' => 'SSL Certificate Provisioning',
+                    'template_text' => 'We are pleased to inform you that the SSL certificate for [Domain] has been successfully provisioned and installed. You may need to clear your local browser cache or flush your DNS to see the immediate changes. Please let us know if you continue to experience any insecure warnings.',
+                    'tags' => 'ssl, https, provisioning',
+                    'category' => 'SSL/Security',
+                    'is_ai_generated' => 1,
+                    'created_at' => \Carbon\Carbon::now(),
+                    'updated_at' => \Carbon\Carbon::now(),
+                ],
+                [
+                    'admin_id' => 1,
+                    'title' => 'High Resource Usage Warning',
+                    'template_text' => 'Our monitoring systems indicate that your hosting account for [Domain] has been frequently hitting its allocated resource limits (specifically [Resource Type]). This can cause slow loading times or intermittent 503 errors. We recommend reviewing your recent traffic logs or considering an upgrade to a VPS for dedicated resources.',
+                    'tags' => 'abuse, resources, limits',
+                    'category' => 'Abuse/Compliance',
+                    'is_ai_generated' => 1,
+                    'created_at' => \Carbon\Carbon::now(),
+                    'updated_at' => \Carbon\Carbon::now(),
+                ]
+            ]);
         }
 
         // Create tblsahdev_topic_clusters
@@ -458,6 +492,7 @@ function sahdev_output($vars)
         try {
             \WHMCS\Database\Capsule::table('tblsahdev_providers')->first();
             \WHMCS\Database\Capsule::table('tblsahdev_settings')->select('primary_provider_id')->first();
+            \WHMCS\Database\Capsule::table('tblsahdev_canned_responses')->first();
         } catch (\Exception $e) {
             sahdev_activate();
         }
