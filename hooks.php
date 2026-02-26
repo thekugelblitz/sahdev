@@ -135,10 +135,16 @@ function sahdev_inject_ticket_panel($vars)
                 <button type="button" id="btn-sahdev-score-draft" class="btn btn-default btn-sm" style="font-weight: 600; {$scoreBtnStyle}" title="Get AI feedback on your manual draft before sending">
                     <i class="fas fa-tachometer-alt"></i> Score Admin Draft
                 </button>
+                <button type="button" id="btn-sahdev-save-canned" class="btn btn-warning btn-sm" style="font-weight: 600; margin-left: auto;" title="Save your draft as a reusable Canned Response">
+                    <i class="fas fa-save"></i> Save as Canned
+                </button>
                 <span id="sahdev-rewrite-status" class="label label-default" style="display: none; font-size: 12px; cursor: help; padding: 5px 8px;"></span>
             </div>
             <div id="sahdev-rewrite-loading" style="display: none; margin-top: 8px; font-size: 13px; color: #17a2b8;">
                 <i class="fas fa-spinner fa-spin"></i> Sahdev is polishing your draft...
+            </div>
+            <div id="sahdev-canned-loading" style="display: none; margin-top: 8px; font-size: 13px; color: #f0ad4e;">
+                <i class="fas fa-spinner fa-spin"></i> Sahdev is generalizing your draft into a template...
             </div>
             <div id="sahdev-rewrite-error" class="alert alert-danger" style="display: none; margin-top: 8px; font-size: 13px; padding: 8px 12px;"></div>
         </div>
@@ -323,6 +329,27 @@ function sahdev_inject_ticket_panel($vars)
                     <i class="fas fa-trash"></i> Delete
                 </button>
                 <span id="sahdev-summary-meta" style="font-size:11px; color:#888; margin-left:4px;"></span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Canned Responses & KB Search Panel -->
+<div id="sahdev-canned-outer" style="margin-top: 15px;">
+    <div class="panel panel-default" id="sahdev-canned-panel" style="border-color: #f0ad4e;">
+        <div class="panel-heading" style="background: #fff8eb; color: #d35400; display: flex; justify-content: space-between; align-items: center; cursor: pointer;" onclick="$('#sahdev-canned-body').slideToggle();">
+            <h4 class="panel-title" style="margin: 0; font-size: 14px; font-weight: 700;">
+                <i class="fas fa-book" style="margin-right: 6px;"></i>Canned Responses & KB Search
+            </h4>
+            <i class="fas fa-chevron-down" style="font-size: 12px;"></i>
+        </div>
+        <div class="panel-body" id="sahdev-canned-body" style="background: #fffdfa; padding: 14px; display: none;">
+            <div class="input-group" style="margin-bottom: 10px;">
+                <span class="input-group-addon"><i class="fas fa-search"></i></span>
+                <input type="text" id="sahdev-canned-search" class="form-control" placeholder="Search Templates, Predefined Replies, or Knowledgebase...">
+            </div>
+            <div id="sahdev-canned-results" style="max-height: 250px; overflow-y: auto;">
+                <p class="text-muted" style="font-size:12px; margin: 10px 0;">Type at least 3 characters to search.</p>
             </div>
         </div>
     </div>
@@ -1498,6 +1525,160 @@ HTML;
                 showSnapSleeping(errMsg);
             }
         }
+
+        // =====================================================================
+        // FEATURE: 📚 Canned Responses & KB Search
+        // =====================================================================
+        var sahdevCannedSearchTimer;
+        $(document).on('keyup', '#sahdev-canned-search', function() {
+            var query = $(this).val().trim();
+            var $resultsContainer = $('#sahdev-canned-results');
+            
+            clearTimeout(sahdevCannedSearchTimer);
+            
+            if (query.length < 3) {
+                $resultsContainer.html('<p class="text-muted" style="font-size:12px; margin: 10px 0;">Type at least 3 characters to search.</p>');
+                return;
+            }
+            
+            $resultsContainer.html('<div style="text-align:center; padding: 10px;"><i class="fas fa-spinner fa-spin"></i> Searching...</div>');
+            
+            sahdevCannedSearchTimer = setTimeout(function() {
+                $.ajax({
+                    url: sahdevAjaxUrl,
+                    type: 'POST',
+                    data: { action: 'search_canned_responses', query: query, token: $('input[name="token"]').val() },
+                    dataType: 'json',
+                    success: function(r) {
+                        if (r && r.status === 'success') {
+                            if (r.results.length === 0) {
+                                $resultsContainer.html('<p class="text-muted" style="font-size:12px; margin: 10px 0;">No matching templates or KB articles found.</p>');
+                                return;
+                            }
+                            
+                            var html = '<ul class="list-group" style="margin-bottom:0; font-size:12px;">';
+                            $.each(r.results, function(i, item) {
+                                var badge = '';
+                                if (item.source === 'sahdev') badge = '<span class="label label-warning pull-right">AI Template</span>';
+                                else if (item.source === 'whmcs_predef') badge = '<span class="label label-default pull-right">Predefined</span>';
+                                else if (item.source === 'whmcs_kb') badge = '<span class="label label-info pull-right">KB Article</span>';
+                                
+                                html += '<li class="list-group-item" style="padding: 8px 10px;">';
+                                html += '<strong>' + escapeHtml(item.title) + '</strong> ' + badge + '<br>';
+                                html += '<div style="max-height:40px; overflow:hidden; text-overflow:ellipsis; color:#666; margin:4px 0;">' + escapeHtml(item.content).substring(0, 150) + '...</div>';
+                                html += '<button type="button" class="btn btn-xs btn-default sahdev-insert-canned" style="margin-top:4px;" data-content="' + btoa(unescape(encodeURIComponent(item.content))) + '"><i class="fas fa-arrow-down"></i> Insert</button>';
+                                html += '</li>';
+                            });
+                            html += '</ul>';
+                            $resultsContainer.html(html);
+                        } else {
+                            $resultsContainer.html('<p class="text-danger" style="font-size:12px; margin: 10px 0;">' + escapeHtml(r.message || 'Search failed.') + '</p>');
+                        }
+                    },
+                    error: function() {
+                        $resultsContainer.html('<p class="text-danger" style="font-size:12px; margin: 10px 0;">Error connecting to server.</p>');
+                    }
+                });
+            }, 400);
+        });
+
+        // Helper to escape HTML tags in search results
+        function escapeHtml(unsafe) {
+            return (unsafe || '').toString()
+                 .replace(/&/g, "&amp;")
+                 .replace(/</g, "&lt;")
+                 .replace(/>/g, "&gt;")
+                 .replace(/"/g, "&quot;")
+                 .replace(/'/g, "&#039;");
+        }
+
+        $(document).on('click', '.sahdev-insert-canned', function() {
+            var rawContent = $(this).data('content');
+            var content = decodeURIComponent(escape(atob(rawContent)));
+            
+            if (typeof tinymce !== "undefined" && tinymce.activeEditor) {
+                // Determine if content has HTML or needs conversion
+                var insertHtml = content;
+                if(insertHtml.indexOf('<p>') === -1 && insertHtml.indexOf('<br') === -1) {
+                    insertHtml = '<p>' + insertHtml.replace(/\n/g, '<br>') + '</p>';
+                }
+                tinymce.activeEditor.execCommand('mceInsertContent', false, insertHtml);
+            } else if ($('#replymessage').length) {
+                var el = $('#replymessage').get(0);
+                var plain = content.replace(/<br\s*\/?>/gi, "\n").replace(/(<([^>]+)>)/gi, "");
+                
+                if (el.selectionStart || el.selectionStart == '0') {
+                    var startPos = el.selectionStart;
+                    var endPos = el.selectionEnd;
+                    el.value = el.value.substring(0, startPos) + plain + el.value.substring(endPos, el.value.length);
+                    el.selectionStart = startPos + plain.length;
+                    el.selectionEnd = startPos + plain.length;
+                    el.focus();
+                } else {
+                    el.value += "\n" + plain;
+                    el.focus();
+                }
+            }
+        });
+
+        // Save as Canned Response logic
+        $(document).on('click', '#btn-sahdev-save-canned', function() {
+            var draftText = '';
+            if (typeof tinymce !== "undefined" && tinymce.activeEditor) {
+                draftText = tinymce.activeEditor.getContent({format: 'text'});
+            } else if ($('#replymessage').length) {
+                draftText = $('#replymessage').val();
+            }
+
+            draftText = draftText.trim();
+            if (!draftText) {
+                alert('Your reply draft is empty. Please write a reply first to build a reusable Canned Response Template from it.');
+                return;
+            }
+
+            var $btn = $(this);
+            $btn.prop('disabled', true);
+            $('#sahdev-canned-loading').show();
+            $('#sahdev-rewrite-error').hide();
+
+            $.ajax({
+                url: sahdevAjaxUrl,
+                type: 'POST',
+                data: { action: 'generate_canned_template', draft_text: draftText, token: $('input[name="token"]').val() },
+                dataType: 'json',
+                success: function(r) {
+                    $('#sahdev-canned-loading').hide();
+                    $btn.prop('disabled', false);
+
+                    if (r && r.status === 'success' && r.template) {
+                        var title = prompt("AI generated a reusable template. Please enter a Title for this Canned Response:\n\nTemplate Preview:\n" + r.template.substring(0, 150) + "...");
+                        if (title && title.trim().length > 0) {
+                            $.ajax({
+                                url: sahdevAjaxUrl,
+                                type: 'POST',
+                                data: { action: 'save_canned_response', title: title.trim(), template_text: r.template, token: $('input[name="token"]').val() },
+                                dataType: 'json',
+                                success: function(saveRes) {
+                                    if(saveRes && saveRes.status === 'success') {
+                                        alert('Successfully saved Canned Response! You can now search it in the Canned Responses panel.');
+                                    } else {
+                                        alert('Error saving: ' + (saveRes.message || 'Unknown error.'));
+                                    }
+                                }
+                            });
+                        }
+                    } else {
+                        $('#sahdev-rewrite-error').html('<i class="fas fa-exclamation-circle"></i> ' + (r.message || 'Template generation failed.')).show();
+                    }
+                },
+                error: function(xhr, s, e) {
+                    $('#sahdev-canned-loading').hide();
+                    $btn.prop('disabled', false);
+                    var msg = (xhr.responseJSON && xhr.responseJSON.message) ? xhr.responseJSON.message : ('Error: ' + (e || 'HTTP ' + xhr.status));
+                    $('#sahdev-rewrite-error').html('<i class="fas fa-exclamation-circle"></i> ' + msg).show();
+                }
+            });
+        });
 
         // Expose globally for inline onclick handlers
         window.sahdevSnapInsertToEditor = sahdevSnapInsertToEditor;

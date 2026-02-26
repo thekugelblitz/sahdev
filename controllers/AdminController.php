@@ -284,6 +284,7 @@ class AdminController
                 <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=knowledgebase">Knowledgebase Engine</a>
                 <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=prompt_manager">Prompt Manager 🔬</a>
                 <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=summaries">Ticket Summaries ✨</a>
+                <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=canned_responses">Canned Responses 💾</a>
             </div>
 
             <h2 style="border-bottom: 1px solid #eee; padding-bottom: 15px; margin-bottom: 20px;">Sahdev AI Intelligence - Settings</h2>
@@ -574,8 +575,9 @@ class AdminController
                 <a href="<?php echo $settingsUrl; ?>">General Settings</a>
                 <a href="<?php echo $actionUrl; ?>" class="active">AI Providers Manager</a>
                 <a href="<?php echo $kbUrl; ?>">Knowledgebase Engine</a>
-                <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=prompt_manager">Prompt Manager
-                    🔬</a>
+                <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=prompt_manager">Prompt Manager 🔬</a>
+                <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=summaries">Ticket Summaries ✨</a>
+                <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=canned_responses">Canned Responses 💾</a>
             </div>
 
             <h2 style="margin-bottom: 10px;">AI Providers Manager</h2>
@@ -819,7 +821,12 @@ class AdminController
         <div class="sahdev-container">
             <div class="sahdev-nav">
                 <a href="<?php echo $settingsUrl; ?>">General Settings</a>
+                <a href="<?php echo $settingsUrl; ?>&action=providers">AI Providers Manager</a>
                 <a href="<?php echo $actionUrl; ?>" class="active">Knowledgebase Engine Rules</a>
+                <a href="<?php echo $settingsUrl; ?>&action=prompt_manager">Prompt Manager 🔬</a>
+                <a href="<?php echo $settingsUrl; ?>&action=summaries">Ticket Summaries ✨</a>
+                <a href="<?php echo $settingsUrl; ?>&action=canned_responses">Canned Responses 💾</a>
+                <a href="<?php echo $settingsUrl; ?>&action=audit_trail">AI Audit Trail 🕵️</a>
             </div>
 
             <h2 style="margin-bottom: 10px;">Knowledgebase & AI Rules</h2>
@@ -1101,6 +1108,7 @@ class AdminController
                 <a href="<?php echo $settingsUrl; ?>&action=knowledgebase">Knowledgebase Engine</a>
                 <a href="<?php echo $settingsUrl; ?>&action=prompt_manager">Prompt Manager 🔬</a>
                 <a href="<?php echo $actionUrl; ?>" class="active">Ticket Summaries ✨</a>
+                <a href="<?php echo $settingsUrl; ?>&action=canned_responses">Canned Responses 💾</a>
             </div>
 
             <h2 style="margin-bottom:5px;">✨ Adaptive Ticket Summaries</h2>
@@ -1219,6 +1227,7 @@ class AdminController
                 <a href="<?php echo $settingsUrl; ?>&action=knowledgebase">Knowledgebase Engine</a>
                 <a href="<?php echo $settingsUrl; ?>&action=prompt_manager">Prompt Manager 🔬</a>
                 <a href="<?php echo $settingsUrl; ?>&action=summaries">Ticket Summaries ✨</a>
+                <a href="<?php echo $settingsUrl; ?>&action=canned_responses">Canned Responses 💾</a>
                 <a href="<?php echo $actionUrl; ?>" class="active">AI Audit Trail 🕵️</a>
             </div>
 
@@ -1302,6 +1311,146 @@ class AdminController
                     <?php endif; ?>
                 </tbody>
             </table>
+        </div>
+        <?php
+        return ob_get_clean();
+    }
+
+    /**
+     * Canned Responses Manager View
+     *
+     * @return string
+     */
+    public function canned_responses()
+    {
+        $successMessage = '';
+        $errorMessage = '';
+
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            check_token("WHMCS.admin.default");
+
+            $action = $_POST['canned_action'] ?? '';
+
+            if ($action === 'create' || $action === 'update') {
+                $id = (int) ($_POST['canned_id'] ?? 0);
+                $title = trim($_POST['title'] ?? '');
+                $templateText = trim($_POST['template_text'] ?? '');
+                $adminId = $_SESSION['adminid'] ?? 1;
+
+                if (empty($title) || empty($templateText)) {
+                    $errorMessage = "Title and Template text are required.";
+                } else {
+                    $data = [
+                        'title' => $title,
+                        'template_text' => $templateText,
+                        'updated_at' => \Carbon\Carbon::now(),
+                    ];
+
+                    if ($action === 'create') {
+                        $data['admin_id'] = $adminId;
+                        $data['created_at'] = \Carbon\Carbon::now();
+                        Capsule::table('tblsahdev_canned_responses')->insert($data);
+                        $successMessage = "Canned response created successfully.";
+                    } else {
+                        Capsule::table('tblsahdev_canned_responses')->where('id', $id)->update($data);
+                        $successMessage = "Canned response updated successfully.";
+                    }
+                }
+            } elseif ($action === 'delete') {
+                $id = (int) $_POST['canned_id'];
+                Capsule::table('tblsahdev_canned_responses')->where('id', $id)->delete();
+                $successMessage = "Canned response deleted.";
+            }
+        }
+
+        $responses = Capsule::table('tblsahdev_canned_responses')
+            ->orderBy('id', 'desc')
+            ->get();
+
+        $csrfToken = generate_token("form");
+        $actionUrl = htmlspecialchars($this->moduleVars['modulelink']) . '&action=canned_responses';
+        $settingsUrl = htmlspecialchars($this->moduleVars['modulelink']);
+
+        ob_start();
+        ?>
+        <style>
+            .sahdev-container { max-width: 1000px; padding: 20px; background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1); }
+            .sahdev-nav { margin-bottom: 20px; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+            .sahdev-nav a { margin-right: 15px; font-weight: 600; text-decoration: none; padding: 5px 10px; border-radius: 4px; display: inline-block; margin-bottom: 8px; }
+            .sahdev-nav a.active { background: #0d6efd; color: white; }
+            .sahdev-nav a:not(.active) { color: #0d6efd; background: #f8f9fa; }
+            .canned-card { border: 1px solid #ddd; border-radius: 6px; padding: 15px; margin-bottom: 15px; background: #fafafa; }
+            .canned-header { margin-bottom: 15px; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+        </style>
+        <div class="sahdev-container">
+            <div class="sahdev-nav">
+                <a href="<?php echo $settingsUrl; ?>">General Settings</a>
+                <a href="<?php echo $settingsUrl; ?>&action=providers">AI Providers</a>
+                <a href="<?php echo $settingsUrl; ?>&action=knowledgebase">Knowledgebase</a>
+                <a href="<?php echo $settingsUrl; ?>&action=prompt_manager">Prompt Manager</a>
+                <a href="<?php echo $settingsUrl; ?>&action=summaries">Ticket Summaries</a>
+                <a href="<?php echo $actionUrl; ?>" class="active">Canned Responses 💾</a>
+                <a href="<?php echo $settingsUrl; ?>&action=audit_trail">AI Audit Trail 🕵️</a>
+            </div>
+
+            <h2 style="margin-bottom:10px;">💾 Canned Responses Manager</h2>
+            <p class="text-muted" style="margin-bottom:25px;">Manage AI-generated or manual canned response templates. These are immediately searchable in the ticket view panel.</p>
+
+            <?php if (!empty($successMessage)): ?>
+                <div class="alert alert-success"><i class="fas fa-check-circle"></i> <?php echo htmlspecialchars($successMessage); ?></div>
+            <?php endif; ?>
+            <?php if (!empty($errorMessage)): ?>
+                <div class="alert alert-danger"><i class="fas fa-exclamation-circle"></i> <?php echo htmlspecialchars($errorMessage); ?></div>
+            <?php endif; ?>
+
+            <!-- Add New Form -->
+            <div class="canned-card" style="border-left: 4px solid #f0ad4e; background: #fffdfa;">
+                <div class="canned-header">
+                    <h4 style="margin:0;"><i class="fas fa-plus-circle"></i> Add New Response</h4>
+                </div>
+                <form method="post" action="<?php echo $actionUrl; ?>">
+                    <?php echo $csrfToken; ?>
+                    <input type="hidden" name="canned_action" value="create">
+                    
+                    <div class="form-group mb-2">
+                        <label>Title</label>
+                        <input type="text" name="title" class="form-control" placeholder="e.g. Server Restart Instructions" required>
+                    </div>
+                    <div class="form-group mb-2">
+                        <label>Template Text / HTML</label>
+                        <textarea name="template_text" class="form-control" rows="5" placeholder="Insert your generalized response here... HTML is allowed." required></textarea>
+                    </div>
+                    <div style="text-align: right;">
+                        <button type="submit" class="btn btn-sm btn-warning"><i class="fas fa-save"></i> Save Template</button>
+                    </div>
+                </form>
+            </div>
+
+            <hr style="margin:30px 0;">
+            <h4 style="margin-bottom:15px;">Existing Responses</h4>
+
+            <?php foreach ($responses as $r): ?>
+                <div class="canned-card">
+                    <form method="post" action="<?php echo $actionUrl; ?>">
+                        <?php echo $csrfToken; ?>
+                        <input type="hidden" name="canned_id" value="<?php echo $r->id; ?>">
+                        
+                        <div class="form-group mb-2">
+                            <label>Title</label>
+                            <input type="text" name="title" class="form-control" value="<?php echo htmlspecialchars($r->title); ?>" required>
+                        </div>
+                        <div class="form-group mb-2">
+                            <label>Template Text / HTML</label>
+                            <textarea name="template_text" class="form-control" rows="5" required><?php echo htmlspecialchars($r->template_text); ?></textarea>
+                        </div>
+                        
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 15px;">
+                            <button type="submit" name="canned_action" value="delete" class="btn btn-sm btn-danger" onclick="return confirm('Delete this canned response?');"><i class="fas fa-trash"></i> Delete</button>
+                            <button type="submit" name="canned_action" value="update" class="btn btn-sm btn-primary"><i class="fas fa-save"></i> Save Changes</button>
+                        </div>
+                    </form>
+                </div>
+            <?php endforeach; ?>
         </div>
         <?php
         return ob_get_clean();

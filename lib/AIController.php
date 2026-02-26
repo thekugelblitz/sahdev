@@ -952,4 +952,198 @@ SUMMARY RULES:
             error_log("Sahdev Audit Log Error: " . $e->getMessage());
         }
     }
+
+    /**
+     * Search for canned responses across Sahdev AI DB, WHMCS Predefined Replies, and WHMCS KB.
+     */
+    public function searchCannedResponses(string $query): array
+    {
+        $limit = 10;
+        $results = [];
+        $queryPattern = '%' . $query . '%';
+
+        try {
+            // 1. Sahdev AI Canned Responses
+            $aiCanned = Capsule::table('tblsahdev_canned_responses')
+                ->where('title', 'LIKE', $queryPattern)
+                ->orWhere('template_text', 'LIKE', $queryPattern)
+                ->limit($limit)
+                ->get();
+            
+            foreach ($aiCanned as $item) {
+                $results[] = [
+                    'source' => 'sahdev',
+                    'id' => $item->id,
+                    'title' => $item->title,
+                    'content' => $item->template_text
+                ];
+            }
+
+            // 2. WHMCS Predefined Replies
+            if (Capsule::schema()->hasTable('tblticketpredefinedreplies')) {
+                $whmcsPredef = Capsule::table('tblticketpredefinedreplies')
+                    ->where('name', 'LIKE', $queryPattern)
+                    ->orWhere('reply', 'LIKE', $queryPattern)
+                    ->limit($limit)
+                    ->get();
+
+                foreach ($whmcsPredef as $item) {
+                    $results[] = [
+                        'source' => 'whmcs_predef',
+                        'id' => $item->id,
+                        'title' => $item->name,
+                        'content' => $item->reply
+                    ];
+                }
+            }
+
+            // 3. WHMCS Knowledgebase (Articles)
+            if (Capsule::schema()->hasTable('tblknowledgebase')) {
+                $whmcsKb = Capsule::table('tblknowledgebase')
+                    ->where('title', 'LIKE', $queryPattern)
+                    ->orWhere('article', 'LIKE', $queryPattern)
+                    ->limit($limit)
+                    ->get();
+
+                foreach ($whmcsKb as $item) {
+                    $results[] = [
+                        'source' => 'whmcs_kb',
+                        'id' => $item->id,
+                        'title' => $item->title,
+                        'content' => $item->article
+                    ];
+                }
+            }
+
+            return ['status' => 'success', 'results' => $results];
+        } catch (\Exception $e) {
+            return ['status' => 'error', 'message' => 'Search failed: ' . $e->getMessage()];
+        }
+    }
+
+    /**
+     * Rewrite a specific draft reply into a generalized template using AI.
+     */
+    public function generateCannedTemplate(string $draftText): array
+    {
+        if (empty(trim($draftText))) {
+            return ['status' => 'error', 'message' => 'Draft text is empty.'];
+        }
+
+        $promptText = "Rewrite the following support ticket reply into a reusable, generalized canned response template.\n";
+        $promptText .= "- Remove any specific client names, domain names, IP addresses, or highly specific dates.\n";
+        $promptText .= "- Replace removed specifics with general placeholders like [Client Name], [Domain], [IP Address].\n";
+        $promptText .= "- Make the tone professional and helpful.\n";
+        $promptText .= "- DO NOT include any JSON wrapping or preamble, just the raw text template.\n\n";
+        $promptText .= "=== DRAFT TO GENERALIZE ===\n";
+        $promptText .= trim($draftText);
+
+        $fakeSettings = $this->settings;
+        $fakeSettings['user_prompt_template'] = '{{MESSAGES}}'; 
+        $fakeSettings['system_prompt'] = "You are an expert technical writer creating generalized canned response templates.";
+
+        $fakeContext = [
+            'subject' => '',
+            'client_name' => '',
+            'department' => '',
+            'services_summary' => '',
+            'attachments_text' => '',
+            'messages' => [['admin' => false, 'date' => '', 'message' => $promptText]],
+        ];
+
+        try {
+            $startTime = microtime(true);
+            $rawResponse = $this->provider->generateResponse($fakeContext, $fakeSettings, 'Professional', '');
+            $execTimeMs = round((microtime(true) - $startTime) * 1000);
+            $tokensUsed = $this->provider->getLastTokenUsage() ?? 0;
+            $providerName = $this->provider->getName() ?? 'Unknown';
+
+            // Ensure we handle arrays back from providers gracefully
+            $template = '';
+            if (is_string($rawResponse)) {
+                $template = trim($rawResponse);
+            } elseif (is_array($rawResponse) && isset($rawResponse['reply'])) {
+                $template = trim($rawResponse['reply']);
+            } elseif (is_array($rawResponse)) {
+                $template = implode("\n\n", array_filter(array_values($rawResponse), 'is_string'));
+            }
+
+            // Fallback provider attempt if template is empty
+            if (empty($template) && $this->fallbackProvider) {
+                 $rawResponseFallback = $this->fallbackProvider->generateResponse($fakeContext, $fakeSettings, 'Professional', '');
+                 if (is_string($rawResponseFallback)) {
+                     $template = trim($rawResponseFallback);
+                 } elseif (is_array($rawResponseFallback) && isset($rawResponseFallback['reply'])) {
+                     $template = trim($rawResponseFallback['reply']);
+                 } elseif (is_array($rawResponseFallback)) {
+                     $template = implode("\n\n", array_filter(array_values($rawResponseFallback), 'is_string'));
+                 }
+                 $tokensUsed = $this->fallbackProvider->getLastTokenUsage() ?? 0;
+                 $providerName = $this->fallbackProvider->getName() ?? 'Fallback';
+            }
+
+            if (empty($template)) {
+                 return ['status' => 'error', 'message' => 'AI returned an empty template.'];
+            }
+
+            $this->logAuditEntry('generate_canned_template', $promptText, $template, $tokensUsed, $execTimeMs, $providerName);
+
+            return ['status' => 'success', 'template' => $template, 'execution_time_ms' => $execTimeMs, 'tokens_used' => $tokensUsed];
+        } catch (\Exception $e) {
+            // Log fallback attempt on actual exception
+            if ($this->fallbackProvider) {
+                try {
+                    $startTimeFb = microtime(true);
+                    $rawResponseFallback = $this->fallbackProvider->generateResponse($fakeContext, $fakeSettings, 'Professional', '');
+                    $execTimeMsFb = round((microtime(true) - $startTimeFb) * 1000);
+                    $tokensUsedFb = $this->fallbackProvider->getLastTokenUsage() ?? 0;
+                    $providerNameFb = $this->fallbackProvider->getName() ?? 'Fallback';
+
+                    $template = '';
+                    if (is_string($rawResponseFallback)) {
+                        $template = trim($rawResponseFallback);
+                    } elseif (is_array($rawResponseFallback) && isset($rawResponseFallback['reply'])) {
+                        $template = trim($rawResponseFallback['reply']);
+                    } elseif (is_array($rawResponseFallback)) {
+                        $template = implode("\n\n", array_filter(array_values($rawResponseFallback), 'is_string'));
+                    }
+
+                    if (empty($template)) {
+                       throw new \Exception("Fallback AI returned an empty template.");
+                    }
+
+                    $this->logAuditEntry('generate_canned_template_fallback', $promptText, $template, $tokensUsedFb, $execTimeMsFb, $providerNameFb);
+
+                    return ['status' => 'success', 'template' => $template, 'execution_time_ms' => $execTimeMsFb, 'tokens_used' => $tokensUsedFb];
+                } catch (\Exception $fe) {
+                     return ['status' => 'error', 'message' => 'Primary and Fallback AI failed: ' . $fe->getMessage()];
+                }
+            }
+            return ['status' => 'error', 'message' => 'AI generation failed: ' . $e->getMessage()];
+        }
+    }
+
+    /**
+     * Save a generated template to the database.
+     */
+    public function saveCannedResponse(string $title, string $templateText): array
+    {
+        if (empty(trim($title)) || empty(trim($templateText))) {
+            return ['status' => 'error', 'message' => 'Title and Template Text are required.'];
+        }
+
+        try {
+            $id = Capsule::table('tblsahdev_canned_responses')->insertGetId([
+                'admin_id' => $this->adminId,
+                'title' => trim($title),
+                'template_text' => trim($templateText),
+                'created_at' => Carbon::now(),
+                'updated_at' => Carbon::now()
+            ]);
+
+            return ['status' => 'success', 'message' => 'Canned response saved successfully.', 'id' => $id];
+        } catch (\Exception $e) {
+            return ['status' => 'error', 'message' => 'Failed to save canned response: ' . $e->getMessage()];
+        }
+    }
 }

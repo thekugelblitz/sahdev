@@ -146,6 +146,19 @@ try {
         } else {
             $response = ['status' => 'error', 'message' => 'Invalid days parameter.'];
         }
+    } elseif ($action === 'search_canned_responses') {
+        // Feature: Canned Response Generator — search combinations of tables
+        $query = $_POST['query'] ?? '';
+        $response = $controller->searchCannedResponses($query);
+    } elseif ($action === 'generate_canned_template') {
+        // Feature: Canned Response Generator — turn a draft into a general template
+        $draftText = $_POST['draft_text'] ?? '';
+        $response = $controller->generateCannedTemplate($draftText);
+    } elseif ($action === 'save_canned_response') {
+        // Feature: Canned Response Generator — save generated template into the DB
+        $title = $_POST['title'] ?? '';
+        $templateText = $_POST['template_text'] ?? '';
+        $response = $controller->saveCannedResponse($title, $templateText);
     } else {
         // Default analyze_ticket (server-side generation)
         $response = $controller->getAnalysis($tone, $instruction, $forceRegenerate, $forceFallback, $intent, $useSummary);
