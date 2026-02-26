@@ -1388,6 +1388,9 @@ class AdminController
         ob_start();
         
         // Fetch real analytics data
+        if (!class_exists('\Sahdev\Lib\AIController')) {
+            require_once dirname(__DIR__) . '/lib/AIController.php';
+        }
         $aiController = new \Sahdev\Lib\AIController(0, $_SESSION['adminid'] ?? 1);
         $analytics = $aiController->getAnalyticsData();
         
