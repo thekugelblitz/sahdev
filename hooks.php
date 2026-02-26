@@ -138,6 +138,9 @@ function sahdev_inject_ticket_panel($vars)
                 <button type="button" id="btn-sahdev-save-canned" class="btn btn-warning btn-sm" style="font-weight: 600; margin-left: auto;" title="Save your draft as a reusable Canned Response">
                     <i class="fas fa-save"></i> Save as Canned
                 </button>
+                <button type="button" id="btn-sahdev-save-kb" class="btn btn-primary btn-sm" style="font-weight: 600;" title="Save your draft as a WHMCS Knowledgebase Article">
+                    <i class="fas fa-book"></i> Save to KB
+                </button>
                 <span id="sahdev-rewrite-status" class="label label-default" style="display: none; font-size: 12px; cursor: help; padding: 5px 8px;"></span>
             </div>
             <div id="sahdev-rewrite-loading" style="display: none; margin-top: 8px; font-size: 13px; color: #17a2b8;">
@@ -1669,6 +1672,65 @@ HTML;
                         }
                     } else {
                         $('#sahdev-rewrite-error').html('<i class="fas fa-exclamation-circle"></i> ' + (r.message || 'Template generation failed.')).show();
+                    }
+                },
+                error: function(xhr, s, e) {
+                    $('#sahdev-canned-loading').hide();
+                    $btn.prop('disabled', false);
+                    var msg = (xhr.responseJSON && xhr.responseJSON.message) ? xhr.responseJSON.message : ('Error: ' + (e || 'HTTP ' + xhr.status));
+                    $('#sahdev-rewrite-error').html('<i class="fas fa-exclamation-circle"></i> ' + msg).show();
+                }
+            });
+        });
+
+        // Save as KB Article logic
+        $(document).on('click', '#btn-sahdev-save-kb', function() {
+            var draftText = '';
+            if (typeof tinymce !== "undefined" && tinymce.activeEditor) {
+                draftText = tinymce.activeEditor.getContent({format: 'text'});
+            } else if ($('#replymessage').length) {
+                draftText = $('#replymessage').val();
+            }
+
+            draftText = draftText.trim();
+            if (!draftText) {
+                alert('Your reply draft is empty. Please write a reply first to build a Knowledgebase Article from it.');
+                return;
+            }
+
+            var $btn = $(this);
+            $btn.prop('disabled', true);
+            $('#sahdev-canned-loading').show();
+            $('#sahdev-rewrite-error').hide();
+
+            $.ajax({
+                url: sahdevAjaxUrl,
+                type: 'POST',
+                data: { action: 'generate_canned_template', draft_text: draftText, token: $('input[name="token"]').val() },
+                dataType: 'json',
+                success: function(r) {
+                    $('#sahdev-canned-loading').hide();
+                    $btn.prop('disabled', false);
+
+                    if (r && r.status === 'success' && r.template) {
+                        var title = prompt("AI generated a KB Article. Please enter a Title for this Article:\n\nArticle Preview:\n" + r.template.substring(0, 150) + "...");
+                        if (title && title.trim().length > 0) {
+                            $.ajax({
+                                url: sahdevAjaxUrl,
+                                type: 'POST',
+                                data: { action: 'save_kb_article', title: title.trim(), template_text: r.template, token: $('input[name="token"]').val() },
+                                dataType: 'json',
+                                success: function(saveRes) {
+                                    if(saveRes && saveRes.status === 'success') {
+                                        alert('Successfully saved to Knowledgebase! You can now search it in the Canned Responses panel or manage it in WHMCS KB.');
+                                    } else {
+                                        alert('Error saving: ' + (saveRes.message || 'Unknown error.'));
+                                    }
+                                }
+                            });
+                        }
+                    } else {
+                        $('#sahdev-rewrite-error').html('<i class="fas fa-exclamation-circle"></i> ' + (r.message || 'Article generation failed.')).show();
                     }
                 },
                 error: function(xhr, s, e) {
