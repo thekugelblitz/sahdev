@@ -37,11 +37,25 @@ class LMStudioAIProvider implements AIProviderInterface
 
         $prompt = $this->buildPrompt($context, $tone, $customInstruction, $userPromptTemplate);
 
+        $userContent = [];
+        $userContent[] = ['type' => 'text', 'text' => $prompt];
+
+        if (!empty($context['attachments_images'])) {
+            foreach ($context['attachments_images'] as $img) {
+                $userContent[] = [
+                    'type' => 'image_url',
+                    'image_url' => [
+                        'url' => $img['url']
+                    ]
+                ];
+            }
+        }
+
         $payload = [
             'model' => $model,
             'messages' => [
                 ['role' => 'system', 'content' => $systemMessage],
-                ['role' => 'user', 'content' => $prompt]
+                ['role' => 'user', 'content' => $userContent]
             ],
             'temperature' => (float) $settings['temperature'],
             'max_tokens' => (int) $settings['max_tokens'],

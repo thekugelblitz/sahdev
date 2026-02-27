@@ -31,12 +31,30 @@ class GoogleAIProvider implements AIProviderInterface
         $userPromptTemplate = $settings['user_prompt_template'] ?? null;
         $prompt = $this->buildPrompt($context, $tone, $customInstruction, $settings['system_prompt'], $userPromptTemplate);
 
+        $parts = [
+            ['text' => $prompt]
+        ];
+
+        if (!empty($context['attachments_images'])) {
+            foreach ($context['attachments_images'] as $img) {
+                $partsArray = explode(',', $img['url'], 2);
+                if (count($partsArray) === 2) {
+                    $mime = str_replace(['data:', ';base64'], '', $partsArray[0]);
+                    $base64 = $partsArray[1];
+                    $parts[] = [
+                        'inlineData' => [
+                            'mimeType' => $mime,
+                            'data' => $base64
+                        ]
+                    ];
+                }
+            }
+        }
+
         $payload = [
             'contents' => [
                 [
-                    'parts' => [
-                        ['text' => $prompt]
-                    ]
+                    'parts' => $parts
                 ]
             ],
             'generationConfig' => [

@@ -6,11 +6,13 @@ use WHMCS\Database\Capsule;
 
 class TicketDataExtractor
 {
+    private $ticketId;
     private $adminId;
 
     // Limits to prevent massive memory usage
     private $maxMessages = 10;
     private $maxAttachmentSize = 1048576; // 1 MB (extracted text threshold)
+    private $maxImages = 3; // Max number of images to process
 
     public function __construct(int $ticketId, int $adminId = null)
     {
@@ -53,6 +55,15 @@ class TicketDataExtractor
 
         // 4. Extract simple text from attachments (if any and if safe)
         $context['attachments_text'] = $this->extractAttachmentText($ticket);
+
+        // 4.5. Extract images and URLs
+        $context['attachments_images'] = $this->extractImageAttachments($ticket);
+        $context['attachments_images'] = array_merge($context['attachments_images'], $this->extractImageUrls($ticket));
+        
+        // Cap the total images to maxImages
+        if (count($context['attachments_images']) > $this->maxImages) {
+            $context['attachments_images'] = array_slice($context['attachments_images'], 0, $this->maxImages);
+        }
 
         // 5. Extract active admin's signature
         $context['admin_signature'] = $this->extractAdminSignature();
@@ -230,7 +241,7 @@ class TicketDataExtractor
                 continue;
 
             $extension = strtolower(pathinfo($file, PATHINFO_EXTENSION));
-            if (in_array($extension, ['txt', 'log', 'csv', 'json'])) {
+            if (in_array($extension, ['txt', 'log', 'csv', 'json', 'php', 'html', 'htm', 'js', 'css', 'sql', 'sh', 'py', 'xml', 'yml', 'yaml', 'ini', 'conf'])) {
                 $filePath = $whmcsAttachmentsDir . DIRECTORY_SEPARATOR . $file;
 
                 if (file_exists($filePath) && filesize($filePath) < $this->maxAttachmentSize) {
@@ -245,6 +256,144 @@ class TicketDataExtractor
         }
 
         return $text;
+    }
+
+    private function extractImageAttachments($ticket): array
+    {
+        $images = [];
+        global $attachments_dir;
+        $whmcsAttachmentsDir = $attachments_dir ?? '';
+
+        if (empty($whmcsAttachmentsDir)) {
+            $whmcsAttachmentsDir = \WHMCS\Database\Capsule::table('tblconfiguration')->where('setting', 'Attachments_Dir')->value('value');
+        }
+
+        $allAttachments = [];
+        
+        $originalAttachments = Capsule::table('tbltickets')->where('id', $ticket->id)->value('attachment');
+        if (!empty(trim($originalAttachments ?? ''))) {
+            $allAttachments = array_merge($allAttachments, explode('|', $originalAttachments));
+        }
+
+        $repliesAttachments = Capsule::table('tblticketreplies')
+            ->where('tid', $ticket->id)
+            ->orderBy('id', 'desc')
+            ->limit(3)
+            ->pluck('attachment');
+
+        foreach ($repliesAttachments as $attachmentString) {
+            if (!empty(trim($attachmentString ?? ''))) {
+                $allAttachments = array_merge($allAttachments, explode('|', $attachmentString));
+            }
+        }
+
+        foreach ($allAttachments as $file) {
+            if (empty($file) || count($images) >= $this->maxImages) {
+                continue;
+            }
+
+            $extension = strtolower(pathinfo($file, PATHINFO_EXTENSION));
+            if (in_array($extension, ['png', 'jpg', 'jpeg', 'gif', 'webp'])) {
+                $filePath = $whmcsAttachmentsDir . DIRECTORY_SEPARATOR . $file;
+                if (file_exists($filePath) && filesize($filePath) < 5242880) { // 5MB limit for images
+                    $content = @file_get_contents($filePath);
+                    if ($content !== false) {
+                        $finfo = new \finfo(FILEINFO_MIME_TYPE);
+                        $mimeType = $finfo->buffer($content);
+                        if ($mimeType) {
+                            $base64 = base64_encode($content);
+                            $images[] = [
+                                'url' => "data:{$mimeType};base64,{$base64}",
+                                'source' => 'attachment: ' . $file
+                            ];
+                        }
+                    }
+                }
+            }
+        }
+
+        return $images;
+    }
+
+    private function extractImageUrls($ticket): array
+    {
+        $images = [];
+        $messagesText = $ticket->message . " ";
+        
+        $replies = Capsule::table('tblticketreplies')
+            ->where('tid', $ticket->id)
+            ->orderBy('id', 'desc')
+            ->limit($this->maxMessages - 1)
+            ->pluck('message');
+            
+        foreach ($replies as $reply) {
+            $messagesText .= $reply . " ";
+        }
+
+        // Extract direct image URLs
+        if (preg_match_all('/https?:\/\/[^\s"\'<>]+?\.(?:png|jpg|jpeg|gif|webp)(?:\?[^\s"\'<>]+)?/i', $messagesText, $matches)) {
+            foreach (array_unique($matches[0]) as $url) {
+                if (count($images) >= $this->maxImages) break;
+                
+                $imgData = $this->fetchUrlAsBase64($url);
+                if ($imgData) {
+                    $images[] = [
+                        'url' => $imgData,
+                        'source' => 'url: ' . $url
+                    ];
+                }
+            }
+        }
+
+        // Extract prnt.sc links
+        if (preg_match_all('/https?:\/\/prnt\.sc\/[a-zA-Z0-9_-]+/i', $messagesText, $matches)) {
+            foreach (array_unique($matches[0]) as $prntScUrl) {
+                if (count($images) >= $this->maxImages) break;
+                
+                $html = @file_get_contents($prntScUrl);
+                if ($html && preg_match('/<img[^>]+(?:id="screenshot-image"|class="[^"]*screenshot-image[^"]*")[^>]+src="([^"]+)"/i', $html, $imgMatches)) {
+                    $actualUrl = $imgMatches[1];
+                    // Sometimes prnt.sc image URLs are relative to their own CDN or absolute imgur
+                    if (strpos($actualUrl, 'http') !== 0 && strpos($actualUrl, '//') === 0) {
+                        $actualUrl = 'https:' . $actualUrl;
+                    } elseif (strpos($actualUrl, 'http') !== 0) {
+                        continue; // Skip relative generic links not starting with //
+                    }
+                    $imgData = $this->fetchUrlAsBase64($actualUrl);
+                    if ($imgData) {
+                        $images[] = [
+                            'url' => $imgData,
+                            'source' => 'prnt.sc: ' . $prntScUrl
+                        ];
+                    }
+                }
+            }
+        }
+
+        return $images;
+    }
+
+    private function fetchUrlAsBase64(string $url): ?string
+    {
+        $ch = curl_init($url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        // Pretend to be a browser to prevent 403 blocks from CDNs
+        curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+        
+        $content = curl_exec($ch);
+        $contentType = curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        if ($content !== false && $httpCode === 200 && strpos($contentType, 'image/') !== false) {
+            $base64 = base64_encode($content);
+            return "data:{$contentType};base64,{$base64}";
+        }
+        
+        return null;
     }
 
     /**

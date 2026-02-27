@@ -56,6 +56,10 @@ class ReplicateAIProvider implements AIProviderInterface
             'max_tokens' => (int) $settings['max_tokens'],
         ];
 
+        if (!empty($context['attachments_images'])) {
+            $input['image'] = $context['attachments_images'][0]['url'];
+        }
+
         $payload = [
             'input' => $input,
         ];
