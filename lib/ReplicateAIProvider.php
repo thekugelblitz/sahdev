@@ -62,7 +62,12 @@ class ReplicateAIProvider implements AIProviderInterface
         // And they use 'images' array or 'media' string.
         if (strpos($modelName, 'google') !== false || strpos($modelName, 'gemini') !== false) {
             unset($input['system_prompt']);
-            unset($input['max_tokens']);
+            
+            // Map max_tokens to max_output_tokens
+            if (isset($input['max_tokens'])) {
+                $input['max_output_tokens'] = $input['max_tokens'];
+                unset($input['max_tokens']);
+            }
             
             // Re-inject system_prompt into prompt for Gemini on Replicate
             $input['prompt'] = "System Instruction: " . $systemMessage . "\n\n" . $prompt;
