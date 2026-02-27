@@ -56,8 +56,28 @@ class ReplicateAIProvider implements AIProviderInterface
             'max_tokens' => (int) $settings['max_tokens'],
         ];
 
+        $modelName = strtolower($settings['model_name'] ?? '');
+
+        // Gemini models on Replicate do not support 'system_prompt' or 'max_tokens' natively in the same way.
+        // And they use 'images' array or 'media' string.
+        if (strpos($modelName, 'google') !== false || strpos($modelName, 'gemini') !== false) {
+            unset($input['system_prompt']);
+            unset($input['max_tokens']);
+            
+            // Re-inject system_prompt into prompt for Gemini on Replicate
+            $input['prompt'] = "System Instruction: " . $systemMessage . "\n\n" . $prompt;
+        }
+
         if (!empty($context['attachments_images'])) {
-            $input['image'] = $context['attachments_images'][0]['url'];
+            $base64Image = $context['attachments_images'][0]['url'];
+            
+            if (strpos($modelName, 'google') !== false || strpos($modelName, 'gemini') !== false) {
+                // Gemini on Replicate typically expects 'images' (list) or 'media' (string)
+                $input['images'] = [$base64Image]; // Replicate Gemini 1.5 accepts list of images
+            } else {
+                // Standard default (LLaVA, MiniGPT-4, etc.)
+                $input['image'] = $base64Image;
+            }
         }
 
         $payload = [
