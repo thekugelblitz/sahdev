@@ -71,6 +71,19 @@ class AdminController
             });
         }
         
+        // 4. Ensure Client Context Cache Table Exists for AI Memory
+        try {
+            Capsule::table('tblsahdev_client_context_cache')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->create('tblsahdev_client_context_cache', function ($table) {
+                $table->increments('id');
+                $table->integer('ticket_id')->unsigned()->index();
+                $table->integer('client_id')->unsigned()->index();
+                $table->longText('historical_context');
+                $table->timestamps();
+            });
+        }
+        
         // Ensure execution_time_ms exists in case of an older schema
         try {
             Capsule::table('tblsahdev_audit_trail')->select('execution_time_ms')->first();

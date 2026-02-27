@@ -255,6 +255,22 @@ function sahdev_activate()
             );
         }
 
+        // Create tblsahdev_client_context_cache
+        try {
+            Capsule::table('tblsahdev_client_context_cache')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->create(
+                'tblsahdev_client_context_cache',
+                function ($table) {
+                    $table->increments('id');
+                    $table->integer('ticket_id')->unsigned()->index();
+                    $table->integer('client_id')->unsigned()->index();
+                    $table->longText('historical_context');
+                    $table->timestamps();
+                }
+            );
+        }
+
         // Create tblsahdev_rate_limit
         try {
             Capsule::table('tblsahdev_rate_limit')->first();

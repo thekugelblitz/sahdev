@@ -105,7 +105,7 @@ class AIController
         }
     }
 
-    public function getAnalysis(string $tone = null, string $customInstruction = null, bool $forceRegenerate = false, bool $forceFallback = false, string $intent = 'AUTO', bool $useSummaryToggle = true): array
+    public function getAnalysis(string $tone = null, string $customInstruction = null, bool $forceRegenerate = false, bool $forceFallback = false, string $intent = 'AUTO', bool $useSummaryToggle = true, bool $includeHistoricalContext = false): array
     {
         // 1. Rate Limit Check
         $this->checkRateLimit();
@@ -301,7 +301,7 @@ class AIController
         );
     }
 
-    public function getPayload(string $tone = null, string $customInstruction = null, bool $forceRegenerate = false, string $intent = 'AUTO', bool $useSummaryToggle = true): array
+    public function getPayload(string $tone = null, string $customInstruction = null, bool $forceRegenerate = false, string $intent = 'AUTO', bool $useSummaryToggle = true, bool $includeHistoricalContext = false): array
     {
         // 1. Rate Limit Check
         $this->checkRateLimit();
@@ -365,6 +365,16 @@ class AIController
                 $systemPrompt .= "\n\n=== RULES & KNOWLEDGEBASE ===\n" .
                     "The following facts, rules, and guidelines MUST be strictly adhered to when crafting the CLIENT_REPLY:\n" .
                     $kbRules;
+            }
+        }
+
+        // Feature: Inject Historical Client Context (Memory)
+        if ($includeHistoricalContext) {
+            $historicalContext = $this->getHistoricalContext();
+            if ($historicalContext) {
+                $systemPrompt .= "\n\n=== HISTORICAL CLIENT CONTEXT ===\n" .
+                    "The following is an AI-generated summary of the client's past tickets. Use this to understand their history and tailor your response if their past issues are related to the current ticket:\n" .
+                    $historicalContext;
             }
         }
 
@@ -631,6 +641,146 @@ SUMMARY RULES:
         $deleted = Capsule::table('tblsahdev_summaries')->where('ticket_id', $this->ticketId)->delete();
         return ['status' => 'success', 'deleted' => (bool) $deleted];
     }
+
+    /**
+     * Generate an AI Memory of the client's past tickets and cache it.
+     */
+    public function generateHistoricalContext(int $limit = 7): array
+    {
+        // 1. Fetch current ticket details
+        $currentTicket = Capsule::table('tbltickets')->where('id', $this->ticketId)->first();
+        if (!$currentTicket || empty($currentTicket->userid)) {
+            return ['status' => 'error', 'message' => 'Cannot generate context for a guest or missing ticket.'];
+        }
+        
+        $clientId = $currentTicket->userid;
+
+        // 2. Fetch past tickets for this client, excluding current ticket
+        $pastTickets = Capsule::table('tbltickets')
+            ->where('userid', $clientId)
+            ->where('id', '!=', $this->ticketId)
+            ->orderBy('date', 'desc')
+            ->limit($limit)
+            ->get();
+
+        if ($pastTickets->isEmpty()) {
+            return ['status' => 'error', 'message' => 'No previous tickets found for this client.'];
+        }
+
+        // 3. Build the prompt text for the AI
+        $contextText = "=== ACTIVE TICKET ISSUE ===\nSubject: {$currentTicket->title}\n\n";
+        $contextText .= "=== PAST PAST CONVERSATIONS (Last {$pastTickets->count()} tickets) ===\n";
+
+        foreach ($pastTickets as $pt) {
+            $firstMessage = Capsule::table('tblticketreplies')
+                ->where('tid', $pt->id)
+                ->orderBy('date', 'asc')
+                ->value('message') ?? (($pt->message) ? $pt->message : 'No message body recorded.');
+            
+            $cleanMsg = strip_tags($firstMessage);
+            $cleanMsg = substr($cleanMsg, 0, 500) . (strlen($cleanMsg) > 500 ? '...' : '');
+
+            $contextText .= "- Ticket #{$pt->id} [{$pt->date}] Status: {$pt->status}\n  Subject: {$pt->title}\n  Message: {$cleanMsg}\n\n";
+        }
+
+        $systemPrompt = "You are a customer support historian. Analyze the user's past tickets against their current active issue.
+YOUR TASK:
+1. explicitly highlight and summarize any past tickets that are related or similar to the current issue.
+2. briefly group and summarize unrelated tickets just to provide general context on their account health.
+Format your response purely in Markdown. Do not include JSON. Be concise but helpful for the support agent.";
+
+        $fakeContext = [
+            'subject'          => $currentTicket->title,
+            'client_name'      => '',
+            'department'       => '',
+            'services_summary' => '',
+            'attachments_text' => '',
+            'messages'         => [['admin' => false, 'date' => '', 'message' => $contextText]],
+        ];
+
+        $fakeSettings = $this->settings;
+        $fakeSettings['user_prompt_template'] = '{{MESSAGES}}';
+        $fakeSettings['system_prompt']        = $systemPrompt;
+        $fakeSettings['max_tokens']           = 1024; 
+
+        $startTime = microtime(true);
+        $activeProvider = $this->provider;
+        
+        try {
+            $rawResponse = $this->provider->generateResponse($fakeContext, $fakeSettings, 'Professional', '');
+        } catch (\Exception $e) {
+            if ($this->fallbackProvider) {
+                try {
+                    $fakeSettings['model_name'] = $this->settings['fallback_model_name'] ?? $this->settings['model_name'];
+                    $rawResponse = $this->fallbackProvider->generateResponse($fakeContext, $fakeSettings, 'Professional', '');
+                    $activeProvider = $this->fallbackProvider;
+                } catch (\Exception $fe) {
+                    return ['status' => 'error', 'message' => 'Context generation failed. ' . $fe->getMessage()];
+                }
+            } else {
+                return ['status' => 'error', 'message' => 'Context generation failed. ' . $e->getMessage()];
+            }
+        }
+
+        $execMs = round((microtime(true) - $startTime) * 1000);
+
+        // Extract plain text from response
+        if (is_array($rawResponse) && isset($rawResponse['__raw_text__'])) {
+            $summaryText = $rawResponse['__raw_text__'];
+        } elseif (is_array($rawResponse) && isset($rawResponse['CLIENT_REPLY'])) {
+            $summaryText = $rawResponse['CLIENT_REPLY'];
+        } elseif (is_string($rawResponse)) {
+            $summaryText = $rawResponse;
+        } else {
+            $summaryText = implode("\n", array_filter(array_values($rawResponse), 'is_string'));
+        }
+        $summaryText = trim($summaryText);
+
+        if (empty($summaryText)) {
+            return ['status' => 'error', 'message' => 'AI returned an empty context summary.'];
+        }
+
+        $providerName = $activeProvider instanceof AIProviderInterface ? $activeProvider->getName() : 'Unknown';
+        $this->logAuditEntry('historical_context', $contextText, $summaryText, $activeProvider->getLastTokenUsage() ?? 0, $execMs, $providerName);
+
+        // Upsert
+        Capsule::table('tblsahdev_client_context_cache')->where('ticket_id', $this->ticketId)->delete();
+        Capsule::table('tblsahdev_client_context_cache')->insert([
+            'ticket_id'          => $this->ticketId,
+            'client_id'          => $clientId,
+            'historical_context' => $summaryText,
+            'created_at'         => Carbon::now(),
+            'updated_at'         => Carbon::now(),
+        ]);
+
+        return [
+            'status'             => 'success',
+            'historical_context' => $summaryText,
+            'tickets_analyzed'   => $pastTickets->count(),
+            'execution_time_ms'  => $execMs,
+        ];
+    }
+
+    /**
+     * Retrieve the cached historical context.
+     */
+    public function getHistoricalContext(): ?string
+    {
+        $row = Capsule::table('tblsahdev_client_context_cache')
+            ->where('ticket_id', $this->ticketId)
+            ->first();
+        return $row ? $row->historical_context : null;
+    }
+
+    /**
+     * Delete the historical context (to force regeneration).
+     */
+    public function deleteHistoricalContext(): array
+    {
+        $deleted = Capsule::table('tblsahdev_client_context_cache')->where('ticket_id', $this->ticketId)->delete();
+        return ['status' => 'success', 'deleted' => (bool) $deleted];
+    }
+
 
     /**
      * Returns provider info + the constructed rewrite prompt so the browser

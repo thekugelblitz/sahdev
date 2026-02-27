@@ -68,6 +68,9 @@ try {
     $forceFallback = !empty($_POST['force_fallback']) && $_POST['force_fallback'] === 'true';
     $useSummaryRaw = $_POST['use_summary'] ?? '1';
     $useSummary = ($useSummaryRaw === '1' || $useSummaryRaw === 'true' || $useSummaryRaw === 'on' || $useSummaryRaw === true);
+    
+    $includeHistoryRaw = $_POST['include_historical_context'] ?? '0';
+    $includeHistory = ($includeHistoryRaw === '1' || $includeHistoryRaw === 'true' || $includeHistoryRaw === 'on' || $includeHistoryRaw === true);
 
     // Auto-migration for overwrites without reactivation, specifically for AJAX calls
     try {
@@ -83,7 +86,7 @@ try {
     $controller = new \Sahdev\Lib\AIController($ticketId, $adminId);
 
     if ($action === 'get_payload') {
-        $response = $controller->getPayload($tone, $instruction, $forceRegenerate, $intent, $useSummary);
+        $response = $controller->getPayload($tone, $instruction, $forceRegenerate, $intent, $useSummary, $includeHistory);
     } elseif ($action === 'save_response') {
         $hashSignature = $_POST['hash_signature'] ?? '';
         $aiResponseRaw = $_POST['ai_response'] ?? '{}';
@@ -120,7 +123,7 @@ try {
         $response = $controller->rewriteReply($draftText, $tone ?: 'Professional', $instruction);
     } elseif ($action === 'auto_analyze') {
         // Feature: Auto-load AI Snapshot on ticket page load (always cached-first, no rate limit penalty on hit)
-        $response = $controller->getAnalysis($tone, $instruction, false, false, $intent, $useSummary);
+        $response = $controller->getAnalysis($tone, $instruction, false, false, $intent, $useSummary, $includeHistory);
     } elseif ($action === 'generate_summary') {
         // Feature: AI Ticket Summarizer — generate and save a condensed summary
         $response = $controller->generateSummary();
@@ -133,6 +136,16 @@ try {
     } elseif ($action === 'delete_summary') {
         // Feature: AI Ticket Summarizer — delete saved summary
         $response = $controller->deleteSummary();
+    } elseif ($action === 'generate_historical_context') {
+        $limit = (int) ($_POST['limit'] ?? 7);
+        $response = $controller->generateHistoricalContext($limit);
+    } elseif ($action === 'get_historical_context') {
+        $context = $controller->getHistoricalContext();
+        $response = $context
+            ? ['status' => 'success', 'historical_context' => $context]
+            : ['status' => 'not_found', 'historical_context' => null];
+    } elseif ($action === 'delete_historical_context') {
+        $response = $controller->deleteHistoricalContext();
     } elseif ($action === 'score_reply') {
         // Feature: Response Quality Scorer
         $replyText = $_POST['reply_text'] ?? '';
@@ -173,7 +186,7 @@ try {
         $response = $controller->getAnalyticsData();
     } else {
         // Default analyze_ticket (server-side generation)
-        $response = $controller->getAnalysis($tone, $instruction, $forceRegenerate, $forceFallback, $intent, $useSummary);
+        $response = $controller->getAnalysis($tone, $instruction, $forceRegenerate, $forceFallback, $intent, $useSummary, $includeHistory);
     }
 
     // Clean any prior output to prevent malformed JSON

@@ -358,6 +358,62 @@ function sahdev_inject_ticket_panel($vars)
     </div>
 </div>
 
+<!-- Historical Client Context (Memory) Panel -->
+<div id="sahdev-history-outer" style="margin-top: 15px;">
+    <div class="panel panel-default" id="sahdev-history-panel" style="border-color: #e83e8c;">
+        <div class="panel-heading" style="background: #fce8f3; color: #a71d5d; display: flex; justify-content: space-between; align-items: center; cursor: pointer;" onclick="$('#sahdev-history-body').slideToggle();">
+            <h4 class="panel-title" style="margin: 0; font-size: 14px; font-weight: 700;">
+                <i class="fas fa-brain" style="margin-right: 6px;"></i>Historical Client Context (Memory)
+                <span id="sahdev-history-active-badge" style="display:none;" class="label label-success" style="font-size: 10px; vertical-align: middle; margin-left: 6px;">&#9889; Active</span>
+            </h4>
+            <div style="display:flex; gap:6px; align-items:center;">
+                <span id="sahdev-history-exists-badge" style="display:none;" class="label" style="background:#e83e8c; font-size:10px;">Memory Saved</span>
+                <i class="fas fa-chevron-down" style="font-size: 12px;"></i>
+            </div>
+        </div>
+        <div class="panel-body" id="sahdev-history-body" style="background: #fff5fa; padding: 14px; display: none;">
+            <p class="text-muted" style="font-size: 12px; margin-bottom: 10px;">
+                <i class="fas fa-info-circle"></i>
+                Analyze the client's past tickets to detect recurring problems and give the AI long-term context before generating a reply.
+            </p>
+            
+            <div class="form-group" style="margin-bottom: 10px;">
+                <label style="font-size:12px;">Analyze last X tickets:</label>
+                <input type="number" id="sahdev_history_limit" class="form-control input-sm" style="width: 80px; display:inline-block;" value="7" min="1" max="25">
+            </div>
+
+            <!-- Context display -->
+            <div id="sahdev-history-display" style="display:none; background:#fff; border:1px solid #ffb8d9; border-radius:6px; padding:12px; margin-bottom:10px; font-size:13px; white-space:pre-wrap; color:#333; max-height:200px; overflow-y:auto;"></div>
+            
+            <!-- Loading -->
+            <div id="sahdev-history-loading" style="display:none; font-size:13px; color:#a71d5d; margin-bottom:8px;">
+                <i class="fas fa-spinner fa-spin"></i> Digging through client history...
+            </div>
+            
+            <!-- Error -->
+            <div id="sahdev-history-error" class="alert alert-danger" style="display:none; font-size:13px; padding:8px 12px; margin-bottom:8px;"></div>
+            
+            <!-- Controls -->
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+                <div style="display:flex; gap:8px;">
+                    <button type="button" id="btn-sahdev-generate-history" class="btn btn-sm" style="background:#e83e8c; color:#fff; font-weight:600;">
+                        <i class="fas fa-search"></i> Generate Memory
+                    </button>
+                    <button type="button" id="btn-sahdev-delete-history" class="btn btn-sm btn-danger" style="display:none; font-weight:600;">
+                        <i class="fas fa-trash"></i> Delete
+                    </button>
+                </div>
+                
+                <label style="font-weight: 600; font-size: 12px; margin: 0; cursor: pointer; color: #a71d5d; display:flex; align-items:center; gap:5px;" title="Inject this memory into the Main Reply AI prompt.">
+                    <input type="checkbox" id="sahdev_include_history" value="1" disabled style="margin:0;">
+                    Include in Reply Generation
+                </label>
+            </div>
+            
+            <div id="sahdev-history-meta" style="font-size:11px; color:#888; margin-top:8px; display:none;"></div>
+        </div>
+    </div>
+</div>
 
 HTML;
 
@@ -441,6 +497,7 @@ HTML;
                 instruction: $('#sahdev_instruction').val(),
                 intent: $('#sahdev_intent').val(),
                 use_summary: $('#sahdev_use_summary').length && !$('#sahdev_use_summary').is(':checked') ? 0 : 1,
+                include_historical_context: $('#sahdev_include_history').is(':checked') ? 1 : 0,
                 token: $('input[name="token"]').val(),
                 force_regenerate: isRegenerate ? 'true' : 'false'
             };
@@ -1528,6 +1585,81 @@ HTML;
                 showSnapSleeping(errMsg);
             }
         }
+
+        // =====================================================================
+        // FEATURE: 🧠 Historical Client Context (Memory)
+        // =====================================================================
+        function loadSahdevHistory() {
+            var ticket_id = $('#sahdev_ticket_id').val();
+            var token = $('input[name="token"]').val();
+            $.post(sahdevAjaxUrl, { action: 'get_historical_context', ticket_id: ticket_id, token: token }, function(res) {
+                if (res && res.status === 'success' && res.historical_context) {
+                    $('#sahdev-history-display').text(res.historical_context).show();
+                    $('#sahdev-history-active-badge').show();
+                    $('#sahdev-history-exists-badge').show();
+                    $('#btn-sahdev-delete-history').show();
+                    $('#btn-sahdev-generate-history').html('<i class="fas fa-sync"></i> Refresh');
+                    $('#sahdev_include_history').prop('disabled', false).prop('checked', true);
+                } else {
+                    $('#sahdev-history-display').hide();
+                    $('#sahdev-history-active-badge').hide();
+                    $('#sahdev-history-exists-badge').hide();
+                    $('#btn-sahdev-delete-history').hide();
+                    $('#btn-sahdev-generate-history').html('<i class="fas fa-search"></i> Generate Memory');
+                    $('#sahdev_include_history').prop('disabled', true).prop('checked', false);
+                }
+            }, 'json');
+        }
+
+        // Auto-load history availability on document ready
+        loadSahdevHistory();
+
+        $(document).on('click', '#btn-sahdev-generate-history', function(e) {
+            e.preventDefault();
+            var limit = parseInt($('#sahdev_history_limit').val(), 10) || 7;
+            var ticket_id = $('#sahdev_ticket_id').val();
+            var token = $('input[name="token"]').val();
+            
+            $('#sahdev-history-loading').show();
+            $('#sahdev-history-error').hide();
+            $('#sahdev-history-display').hide();
+            $('#btn-sahdev-generate-history').prop('disabled', true);
+            
+            $.post(sahdevAjaxUrl, { 
+                action: 'generate_historical_context', 
+                ticket_id: ticket_id, 
+                limit: limit,
+                token: token
+            }, function(res) {
+                $('#sahdev-history-loading').hide();
+                $('#btn-sahdev-generate-history').prop('disabled', false);
+                if (res && res.status === 'success') {
+                    var ms = res.execution_time_ms || 0;
+                    var numTickets = res.tickets_analyzed || 0;
+                    $('#sahdev-history-meta').text('Analyzed ' + numTickets + ' tickets in ' + ms + 'ms').show();
+                    loadSahdevHistory();
+                } else {
+                    $('#sahdev-history-error').text(res.message || 'Error parsing client history.').show();
+                    loadSahdevHistory();
+                }
+            }, 'json').fail(function() {
+                $('#sahdev-history-loading').hide();
+                $('#btn-sahdev-generate-history').prop('disabled', false);
+                $('#sahdev-history-error').text('Fatal AJAX Error while generating memory.').show();
+            });
+        });
+
+        $(document).on('click', '#btn-sahdev-delete-history', function(e) {
+            e.preventDefault();
+            if (!confirm("Delete the cached memory for this client?")) return;
+            var ticket_id = $('#sahdev_ticket_id').val();
+            var token = $('input[name="token"]').val();
+            
+            $.post(sahdevAjaxUrl, { action: 'delete_historical_context', ticket_id: ticket_id, token: token }, function(res) {
+                loadSahdevHistory();
+                $('#sahdev-history-meta').hide();
+            }, 'json');
+        });
 
         // =====================================================================
         // FEATURE: 📚 Canned Responses & KB Search
