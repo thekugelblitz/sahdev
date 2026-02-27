@@ -76,6 +76,7 @@ try {
     try {
         \WHMCS\Database\Capsule::table('tblsahdev_providers')->first();
         \WHMCS\Database\Capsule::table('tblsahdev_settings')->select('primary_provider_id')->first();
+        \WHMCS\Database\Capsule::table('tblsahdev_client_context_cache')->first();
     } catch (\Exception $e) {
         require_once __DIR__ . '/sahdev.php';
         if (function_exists('sahdev_activate')) {
@@ -196,7 +197,7 @@ try {
 
     echo json_encode($response);
 
-} catch (\Exception $e) {
+} catch (\Throwable $e) {
     if (ob_get_length() !== false) {
         ob_clean();
     }
@@ -204,7 +205,7 @@ try {
     header('HTTP/1.1 500 Internal Server Error');
     echo json_encode([
         'status' => 'error',
-        'message' => 'Sahdev AI Error: ' . $e->getMessage()
+        'message' => 'Sahdev AI Error: ' . $e->getMessage() . ' in ' . basename($e->getFile()) . ':' . $e->getLine()
     ]);
 }
 

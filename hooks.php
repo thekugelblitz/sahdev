@@ -1642,10 +1642,16 @@ HTML;
                     $('#sahdev-history-error').text(res.message || 'Error parsing client history.').show();
                     loadSahdevHistory();
                 }
-            }, 'json').fail(function() {
+            }, 'json').fail(function(xhr) {
                 $('#sahdev-history-loading').hide();
                 $('#btn-sahdev-generate-history').prop('disabled', false);
-                $('#sahdev-history-error').text('Fatal AJAX Error while generating memory.').show();
+                
+                var techMsg = 'Fatal AJAX Error while generating memory.';
+                if (xhr && xhr.responseJSON && xhr.responseJSON.message) {
+                    techMsg = xhr.responseJSON.message;
+                }
+                
+                $('#sahdev-history-error').text(techMsg).show();
             });
         });
 

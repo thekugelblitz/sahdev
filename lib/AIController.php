@@ -701,7 +701,6 @@ Format your response purely in Markdown. Do not include JSON. Be concise but hel
         $fakeSettings = $this->settings;
         $fakeSettings['user_prompt_template'] = '{{MESSAGES}}';
         $fakeSettings['system_prompt']        = $systemPrompt;
-        $fakeSettings['max_tokens']           = 1024; 
 
         $startTime = microtime(true);
         $activeProvider = $this->provider;
