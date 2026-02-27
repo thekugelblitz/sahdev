@@ -230,8 +230,21 @@ class TicketDataExtractor
 
         // Grab standard WHMCS attachments directory
         global $attachments_dir;
-        $whmcsAttachmentsDir = $attachments_dir ?? '';
+        
+        $whmcsAttachmentsDir = '';
 
+        // 1. Check Custom Override from Settings First
+        $customDir = \WHMCS\Database\Capsule::table('tblsahdev_settings')->value('custom_attachments_dir');
+        if (!empty(trim($customDir ?? ''))) {
+            $whmcsAttachmentsDir = rtrim(trim($customDir), '/\\');
+        }
+
+        // 2. Check Global Variable
+        if (empty($whmcsAttachmentsDir)) {
+            $whmcsAttachmentsDir = $attachments_dir ?? '';
+        }
+
+        // 3. Check configuration.php
         if (empty($whmcsAttachmentsDir)) {
             $possibleConfig = dirname(__DIR__, 3) . DIRECTORY_SEPARATOR . 'configuration.php';
             if (file_exists($possibleConfig)) {
@@ -240,10 +253,12 @@ class TicketDataExtractor
             }
         }
 
+        // 4. Check tblconfiguration
         if (empty($whmcsAttachmentsDir)) {
             $whmcsAttachmentsDir = \WHMCS\Database\Capsule::table('tblconfiguration')->where('setting', 'Attachments_Dir')->value('value');
         }
 
+        // 5. Fallback generic path
         if (empty($whmcsAttachmentsDir)) {
             $whmcsAttachmentsDir = dirname(__DIR__, 3) . DIRECTORY_SEPARATOR . 'attachments';
         }
@@ -276,10 +291,21 @@ class TicketDataExtractor
         global $attachments_dir;
         
         // Try multiple ways to get the WHMCS attachments dir
-        $whmcsAttachmentsDir = $attachments_dir ?? '';
+        $whmcsAttachmentsDir = '';
 
+        // 1. Check Custom Override from Settings First
+        $customDir = \WHMCS\Database\Capsule::table('tblsahdev_settings')->value('custom_attachments_dir');
+        if (!empty(trim($customDir ?? ''))) {
+            $whmcsAttachmentsDir = rtrim(trim($customDir), '/\\');
+        }
+
+        // 2. Check Global Variable
         if (empty($whmcsAttachmentsDir)) {
-            // Check if configuration.php is in the root (assuming module is in modules/addons/sahdev or modules/admin/sahdev)
+            $whmcsAttachmentsDir = $attachments_dir ?? '';
+        }
+
+        // 3. Check configuration.php
+        if (empty($whmcsAttachmentsDir)) {
             $possibleConfig = dirname(__DIR__, 3) . DIRECTORY_SEPARATOR . 'configuration.php';
             if (file_exists($possibleConfig)) {
                 include $possibleConfig;
@@ -287,12 +313,13 @@ class TicketDataExtractor
             }
         }
 
+        // 4. Check tblconfiguration
         if (empty($whmcsAttachmentsDir)) {
             $whmcsAttachmentsDir = \WHMCS\Database\Capsule::table('tblconfiguration')->where('setting', 'Attachments_Dir')->value('value');
         }
 
+        // 5. Fallback generic path
         if (empty($whmcsAttachmentsDir)) {
-            // fallback generic path
             $whmcsAttachmentsDir = dirname(__DIR__, 3) . DIRECTORY_SEPARATOR . 'attachments';
         }
 

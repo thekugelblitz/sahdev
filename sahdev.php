@@ -111,6 +111,15 @@ function sahdev_activate()
                 });
             }
 
+            // Migrate: add custom_attachments_dir if missing
+            try {
+                Capsule::table('tblsahdev_settings')->select('custom_attachments_dir')->first();
+            } catch (\Exception $e) {
+                Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                    $table->string('custom_attachments_dir', 255)->nullable();
+                });
+            }
+
             // Migrate: add v2 columns to tblsahdev_logs if missing
             try {
                 Capsule::table('tblsahdev_logs')->select('provider_used')->first();
@@ -142,6 +151,7 @@ function sahdev_activate()
                     $table->boolean('auto_sentiment')->default(0);
                     $table->boolean('auto_tagging')->default(0);
                     $table->boolean('quality_scorer_enabled')->default(1);
+                    $table->string('custom_attachments_dir', 255)->nullable();
                     $table->timestamps(); // creates created_at, updated_at
                 }
             );

@@ -252,6 +252,7 @@ class AdminController
             $scrubIps = !empty($_POST['scrub_ips']) ? 1 : 0;
             $scrubPasswords = !empty($_POST['scrub_passwords']) ? 1 : 0;
             $qualityScorerEnabled = !empty($_POST['quality_scorer_enabled']) ? 1 : 0;
+            $customAttachmentsDir = trim($_POST['custom_attachments_dir'] ?? '');
 
             // Ensure valid bounds
             if ($temperature < 0 || $temperature > 1) {
@@ -276,6 +277,7 @@ class AdminController
                     'scrub_ips' => $scrubIps,
                     'scrub_passwords' => $scrubPasswords,
                     'quality_scorer_enabled' => $qualityScorerEnabled,
+                    'custom_attachments_dir' => $customAttachmentsDir,
                     'updated_at' => \Carbon\Carbon::now(),
                 ]
             );
@@ -474,6 +476,22 @@ class AdminController
                         <p class="text-muted" style="margin-top: 8px; margin-bottom: 0; font-size:13px;">
                             When enabled, Sahdev will automatically use regex to strip out selected sensitive information before sending the ticket context to the AI model. Essential context structure remains intact.
                         </p>
+                    </div>
+                </div>
+
+                <!-- Advanced Path Settings -->
+                <div class="panel panel-default" style="margin-bottom: 25px; border-left: 4px solid #6c757d;">
+                    <div class="panel-heading" style="background: #f8f9fa;">
+                        <h4 style="margin: 0; font-size: 15px; color:#495057;"><i class="fas fa-folder-open"></i> Advanced Path Settings</h4>
+                    </div>
+                    <div class="panel-body">
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label style="font-weight: 600; display: block; margin-bottom: 5px;">Custom Attachments Directory Path (Optional)</label>
+                            <input type="text" name="custom_attachments_dir" class="form-control" placeholder="e.g. /home/user/whmcsdata/attachments" value="<?php echo htmlspecialchars($settings->custom_attachments_dir ?? ''); ?>">
+                            <p class="text-muted" style="margin-top: 8px; margin-bottom: 0; font-size:13px;">
+                                Leave blank to automatically detect the WHMCS attachments folder from <code>configuration.php</code>. If images are failing to load for AI analysis, you can hardcode the absolute server path to your attachments folder here.
+                            </p>
+                        </div>
                     </div>
                 </div>
 
