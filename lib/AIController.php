@@ -543,13 +543,15 @@ SUMMARY RULES:
             'client_name'      => $context['client_name'] ?? '',
             'department'       => '',
             'services_summary' => '',
-            'attachments_text' => '',
+            'attachments_text' => $context['attachments_text'] ?? '',
+            'attachments_images' => $context['attachments_images'] ?? [],
             'messages'         => [['admin' => false, 'date' => '', 'message' => $promptText]],
         ];
         $fakeSettings = $this->settings;
-        $fakeSettings['user_prompt_template'] = '{{MESSAGES}}';
+        $fakeSettings['user_prompt_template'] = '{{MESSAGES}}
+{{ATTACHMENTS_BLOCK}}';
         $fakeSettings['system_prompt']        = $systemPrompt;
-        $fakeSettings['max_tokens']           = 512; // summaries are short
+        $fakeSettings['max_tokens']           = 1024; // summaries are short but might need room for file analysis
 
         $startTime = microtime(true);
         $activeProvider = $this->provider;
