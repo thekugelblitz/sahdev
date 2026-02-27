@@ -233,7 +233,19 @@ class TicketDataExtractor
         $whmcsAttachmentsDir = $attachments_dir ?? '';
 
         if (empty($whmcsAttachmentsDir)) {
+            $possibleConfig = dirname(__DIR__, 3) . DIRECTORY_SEPARATOR . 'configuration.php';
+            if (file_exists($possibleConfig)) {
+                include $possibleConfig;
+                $whmcsAttachmentsDir = $attachments_dir ?? '';
+            }
+        }
+
+        if (empty($whmcsAttachmentsDir)) {
             $whmcsAttachmentsDir = \WHMCS\Database\Capsule::table('tblconfiguration')->where('setting', 'Attachments_Dir')->value('value');
+        }
+
+        if (empty($whmcsAttachmentsDir)) {
+            $whmcsAttachmentsDir = dirname(__DIR__, 3) . DIRECTORY_SEPARATOR . 'attachments';
         }
 
         foreach ($files as $file) {
@@ -262,10 +274,26 @@ class TicketDataExtractor
     {
         $images = [];
         global $attachments_dir;
+        
+        // Try multiple ways to get the WHMCS attachments dir
         $whmcsAttachmentsDir = $attachments_dir ?? '';
 
         if (empty($whmcsAttachmentsDir)) {
+            // Check if configuration.php is in the root (assuming module is in modules/addons/sahdev or modules/admin/sahdev)
+            $possibleConfig = dirname(__DIR__, 3) . DIRECTORY_SEPARATOR . 'configuration.php';
+            if (file_exists($possibleConfig)) {
+                include $possibleConfig;
+                $whmcsAttachmentsDir = $attachments_dir ?? '';
+            }
+        }
+
+        if (empty($whmcsAttachmentsDir)) {
             $whmcsAttachmentsDir = \WHMCS\Database\Capsule::table('tblconfiguration')->where('setting', 'Attachments_Dir')->value('value');
+        }
+
+        if (empty($whmcsAttachmentsDir)) {
+            // fallback generic path
+            $whmcsAttachmentsDir = dirname(__DIR__, 3) . DIRECTORY_SEPARATOR . 'attachments';
         }
 
         $allAttachments = [];
@@ -294,7 +322,9 @@ class TicketDataExtractor
 
             $extension = strtolower(pathinfo($file, PATHINFO_EXTENSION));
             if (in_array($extension, ['png', 'jpg', 'jpeg', 'gif', 'webp'])) {
-                $filePath = $whmcsAttachmentsDir . DIRECTORY_SEPARATOR . $file;
+                $filePath = rtrim($whmcsAttachmentsDir, '/\\') . DIRECTORY_SEPARATOR . $file;
+                
+                // Track missing files by appending info to context if we want, but instead let's just make sure path is right
                 if (file_exists($filePath) && filesize($filePath) < 5242880) { // 5MB limit for images
                     $content = @file_get_contents($filePath);
                     if ($content !== false) {
