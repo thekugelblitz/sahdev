@@ -230,6 +230,15 @@ class AdminController
             });
         }
 
+        // Inline migration: ensure custom_attachments_dir column exists
+        try {
+            Capsule::table('tblsahdev_settings')->select('custom_attachments_dir')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                $table->string('custom_attachments_dir', 255)->nullable();
+            });
+        }
+
         // Handle form submission
         if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_settings'])) {
             check_token("WHMCS.admin.default"); // Verify CSRF
