@@ -19,7 +19,8 @@ namespace WHMCS\Database {
                 return (object)[
                     'id' => 123, 'tid' => '12345', 'did' => 1, 'userid' => 1, 'contactid' => 0, 
                     'name' => 'John Doe', 'email' => 'test@test.com', 'title' => 'Test', 
-                    'message' => 'Here is a screenshot: https://prnt.sc/MatFeFEuOUgz and a direct link: https://via.placeholder.com/150.png', 
+                    // This is the EXACT message from the user's issue
+                    'message' => "Hi Team,\n\nI have made full payment, stil account shows suspended. I have attached the confirmation payment receipt below.\n\nKind regards\nAbhishek\n\n", 
                     'status' => 'Open', 'urgency' => 'High', 'lastreply' => '', 'date' => '2023-01-01'
                 ];
             }
@@ -35,13 +36,21 @@ namespace WHMCS\Database {
         }
         
         public function pluck($col) { 
+            // Mock replies
+            if ($this->table === 'tblticketreplies' && $col === 'attachment') {
+                return collect([]);
+            }
+            if ($this->table === 'tblticketreplies' && $col === 'message') {
+                return collect([]);
+            }
             return collect([]); 
         }
         
+        // Mock attached images! The user says "The ticket we tested has two attached images"
         public function value($col) { 
             if ($this->table === 'tblticketdepartments' && $col === 'name') return 'Support';
-            if ($this->table === 'tbltickets' && $col === 'attachment') return '';
-            if ($this->table === 'tblconfiguration') return '/tmp';
+            if ($this->table === 'tbltickets' && $col === 'attachment') return 'receipt1.jpg|receipt2.png';
+            if ($this->table === 'tblconfiguration') return __DIR__;
             return null;
         }
     }
@@ -51,6 +60,10 @@ namespace {
     error_reporting(E_ALL);
     ini_set("display_errors", 1);
     
+    // Create fake files
+    file_put_contents('receipt1.jpg', 'fake image data');
+    file_put_contents('receipt2.png', 'fake image data');
+
     // Mock Laravel collect handler
     if (!function_exists('collect')) {
         function collect($items) {
@@ -66,6 +79,9 @@ namespace {
 
     require_once __DIR__ . '/lib/TicketDataExtractor.php';
 
+    // Fix a potential undefined variable in extractImageAttachments
+    $attachments_dir = __DIR__;
+    
     $extractor = new \Sahdev\Lib\TicketDataExtractor(123, 1);
     $context = $extractor->getContext();
 
@@ -74,4 +90,8 @@ namespace {
         echo "- Source: " . $img['source'] . "\n";
         echo "- Length of Base64: " . strlen($img['url']) . "\n";
     }
+    
+    // Cleanup
+    unlink('receipt1.jpg');
+    unlink('receipt2.png');
 }
