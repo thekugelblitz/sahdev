@@ -83,7 +83,7 @@ class AdminController
                 $table->timestamps();
             });
         }
-        
+
         // Ensure execution_time_ms exists in case of an older schema
         try {
             Capsule::table('tblsahdev_audit_trail')->select('execution_time_ms')->first();
@@ -102,6 +102,107 @@ class AdminController
                     // Ignore if already renamed or other constraint
                 }
             }
+        }
+
+        // 5. Ensure Prompt Templates Table Exists (Prompt Library)
+        try {
+            Capsule::table('tblsahdev_prompt_templates')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->create('tblsahdev_prompt_templates', function ($table) {
+                $table->increments('id');
+                $table->string('prompt_key', 64)->index();
+                $table->string('label', 128);
+                $table->text('description')->nullable();
+                $table->longText('default_content');
+                $table->longText('content');
+                $table->timestamps();
+            });
+            // Seed defaults
+            $this->seedDefaultPromptTemplates();
+        }
+
+        // 6. Ensure Prompt Presets Table Exists
+        try {
+            Capsule::table('tblsahdev_prompt_presets')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->create('tblsahdev_prompt_presets', function ($table) {
+                $table->increments('id');
+                $table->string('name', 128);
+                $table->longText('prompt_snapshots'); // JSON blob of all prompt keys
+                $table->timestamps();
+            });
+        }
+    }
+
+    /**
+     * Returns the hardcoded default prompt content for all managed prompt keys.
+     * Single source of truth used for seeding and reset operations.
+     */
+    private function getDefaultPromptDefinitions(): array
+    {
+        $settings = null;
+        try { $settings = Capsule::table('tblsahdev_settings')->first(); } catch(\Exception $e) {}
+
+        $systemDefault = $settings->system_prompt ?? "You are Sahdev, a Senior Technical Support Specialist for a premium web hosting company. Your goal is to provide elite-level support that feels empathetic, technical, and human.\n\nCORE DIRECTIVES:\n1. EMPATHY: Acknowledge the user's frustration or urgency without sounding corporate or robotic.\n2. PRECISION: If a technical issue is identified, explain it clearly and provide actionable insights.\n3. NATURAL FLOW: Use natural transitions. Avoid excessive bullet points or robotic lists.\n4. TONE: Strictly adhere to the requested Tone setting.\n\nAlways analyze the full conversation history to ensure the reply fits the current context perfectly.\n\nOutput only a valid JSON object as requested.";
+
+        $userPromptDefault = $settings->user_prompt_template ?? "{{CUSTOM_INSTRUCTION_BLOCK}}=== TASK ===\nAnalyze the provided technical support ticket and output ONLY a valid JSON object matching the schema below. No extra text.\n\n=== SCHEMA ===\n{\n  \"ROOT_CAUSE\": \"string (brief technical analysis)\",\n  \"RESPONSIBILITY\": \"string (Client, Host, or 3rd Party)\",\n  \"RISK_LEVEL\": \"string (Low, Medium, High, or Critical)\",\n  \"INTERNAL_ACTION_PLAN\": \"string (detailed steps for the support team)\",\n  \"CLIENT_REPLY\": \"string (reply to client in Markdown — body only, no greeting or sign-off)\"\n}\n\n=== TONE ===\nWrite CLIENT_REPLY in a {{TONE}} tone.\n\n=== TICKET DATA ===\nClient: {{CLIENT_NAME}}\nDepartment: {{DEPARTMENT}}\nSubject: {{SUBJECT}}\n{{SERVICES_BLOCK}}\n=== CONVERSATION ===\n{{MESSAGES}}\n{{ATTACHMENTS_BLOCK}}";
+
+        return [
+            'system_default' => [
+                'label'       => 'System Prompt (AI Persona)',
+                'description' => 'The AI identity and core behavioral rules injected as the system instruction on every request. Defines tone, empathy, directives, and output format expectations.',
+                'content'     => $systemDefault,
+            ],
+            'user_prompt_template' => [
+                'label'       => 'User Prompt Template (Main Reply)',
+                'description' => 'The structured user-turn prompt for ticket analysis. Supports placeholders: {{CUSTOM_INSTRUCTION_BLOCK}}, {{TONE}}, {{CLIENT_NAME}}, {{DEPARTMENT}}, {{SUBJECT}}, {{SERVICES_BLOCK}}, {{MESSAGES}}, {{ATTACHMENTS_BLOCK}}.',
+                'content'     => $userPromptDefault,
+            ],
+            'summarizer' => [
+                'label'       => 'Ticket Summarizer Prompt',
+                'description' => 'System prompt for the AI when condensing a long ticket conversation into a concise summary (used by the Adaptive Summarizer feature).',
+                'content'     => "You are a senior technical support analyst. Your job is to create concise, accurate ticket summaries that capture the essential context: root issue, actions taken, client sentiment, and current status.\n\nSUMMARY RULES:\n- Length: adapt dynamically based on ticket complexity (short tickets → 3-5 lines; complex tickets → 8-12 lines)\n- Include: the original problem, key technical details exchanged, any steps already tried, current status\n- Do NOT include greetings, small talk, or formatting metadata\n- Write in past-tense, third-person, concise prose\n- Output ONLY the summary text. No labels, no JSON, no prefixes.",
+            ],
+            'historical_context' => [
+                'label'       => 'Historical Context Analyst Prompt',
+                'description' => 'System prompt for the AI when generating a historical context summary of a client\'s past tickets (AI Memory feature).',
+                'content'     => "You are a customer support historian. Analyze the user's past tickets against their current active issue.\nYOUR TASK:\n1. explicitly highlight and summarize any past tickets that are related or similar to the current issue.\n2. briefly group and summarize unrelated tickets just to provide general context on their account health.\nFormat your response purely in Markdown. Do not include JSON. Be concise but helpful for the support agent.",
+            ],
+            'rewrite_reply' => [
+                'label'       => 'Reply Rewriter / Expander Prompt',
+                'description' => 'The prompt template used when an admin writes a rough draft and asks Sahdev to expand and polish it into a professional client reply. Supports {{TONE}}, {{SUBJECT}}, {{CLIENT_NAME}}, {{EXTRA_INSTRUCTION}}, {{DRAFT}}.',
+                'content'     => "=== TASK ===\nThe admin has written a short rough draft reply for the following support ticket. EXPAND and POLISH it into a complete, fluent, professional client-facing reply.\n\nRULES:\n- Preserve the original intent and any specific instructions in the draft.\n- Do NOT add a greeting (e.g. 'Dear Client') or a sign-off — the signature is handled separately.\n- Write in a **{{TONE}}** tone.\n- Output ONLY the final reply body. No extra commentary, no JSON, no prefixes.\n{{EXTRA_INSTRUCTION}}\n\n=== TICKET CONTEXT ===\nSubject: {{SUBJECT}}\nClient: {{CLIENT_NAME}}\n\n=== ADMIN DRAFT ===\n{{DRAFT}}\n\n=== POLISHED REPLY (output only) ===",
+            ],
+            'score_reply' => [
+                'label'       => 'Reply Quality Scorer System Prompt',
+                'description' => 'System prompt used when the AI evaluates a support reply for quality scoring (Clarity, Tone, Completeness).',
+                'content'     => "You are an expert QA Manager scoring support replies. Output strictly a single raw JSON object matching the requested schema.",
+            ],
+            'canned_template' => [
+                'label'       => 'Canned Response Generator Prompt',
+                'description' => 'Prompt used when converting a specific reply into a reusable, generalized canned response template.',
+                'content'     => "Rewrite the following support ticket reply into a reusable, generalized canned response template.\n- Remove any specific client names, domain names, IP addresses, or highly specific dates.\n- Replace removed specifics with general placeholders like [Client Name], [Domain], [IP Address].\n- Make the tone professional and helpful.\n- DO NOT include any JSON wrapping or preamble, just the raw text template.\n\n=== DRAFT TO GENERALIZE ===\n{{DRAFT}}",
+            ],
+        ];
+    }
+
+    /**
+     * Seeds the tblsahdev_prompt_templates table with default values.
+     * Called once when the table is first created.
+     */
+    private function seedDefaultPromptTemplates(): void
+    {
+        $now = \Carbon\Carbon::now();
+        foreach ($this->getDefaultPromptDefinitions() as $key => $def) {
+            Capsule::table('tblsahdev_prompt_templates')->insert([
+                'prompt_key'      => $key,
+                'label'           => $def['label'],
+                'description'     => $def['description'],
+                'default_content' => $def['content'],
+                'content'         => $def['content'],
+                'created_at'      => $now,
+                'updated_at'      => $now,
+            ]);
         }
     }
 
@@ -904,122 +1005,486 @@ class AdminController
         return ob_get_clean();
     }
     /**
-     * Prompt Manager View — allows admins to edit the user prompt template
-     * sent to the AI on every ticket analysis.
-     *
-     * @return string
+     * Prompt Manager View — Full Prompt Template Library
+     * Allows admins to view, edit, reset, create presets, and import/export all AI system prompts.
      */
     public function prompt_manager()
     {
-        $defaultTemplate = "{{CUSTOM_INSTRUCTION_BLOCK}}=== TASK ===\nAnalyze the provided technical support ticket and output ONLY a valid JSON object matching the schema below. No extra text.\n\n=== SCHEMA ===\n{\n  \"ROOT_CAUSE\": \"string (brief technical analysis)\",\n  \"RESPONSIBILITY\": \"string (Client, Host, or 3rd Party)\",\n  \"RISK_LEVEL\": \"string (Low, Medium, High, or Critical)\",\n  \"INTERNAL_ACTION_PLAN\": \"string (detailed steps for the support team)\",\n  \"CLIENT_REPLY\": \"string (reply to client in Markdown — body only, no greeting or sign-off)\"\n}\n\n=== TONE ===\nWrite CLIENT_REPLY in a {{TONE}} tone.\n\n=== TICKET DATA ===\nClient: {{CLIENT_NAME}}\nDepartment: {{DEPARTMENT}}\nSubject: {{SUBJECT}}\n{{SERVICES_BLOCK}}\n=== CONVERSATION ===\n{{MESSAGES}}\n{{ATTACHMENTS_BLOCK}}";
-
-        $settings = Capsule::table('tblsahdev_settings')->first();
-        $currentTemplate = $settings->user_prompt_template ?? $defaultTemplate;
+        // --- Ensure tables exist (inline migration) ---
+        try {
+            Capsule::table('tblsahdev_prompt_templates')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->create('tblsahdev_prompt_templates', function ($table) {
+                $table->increments('id');
+                $table->string('prompt_key', 64)->index();
+                $table->string('label', 128);
+                $table->text('description')->nullable();
+                $table->longText('default_content');
+                $table->longText('content');
+                $table->timestamps();
+            });
+            $this->seedDefaultPromptTemplates();
+        }
+        try {
+            Capsule::table('tblsahdev_prompt_presets')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->create('tblsahdev_prompt_presets', function ($table) {
+                $table->increments('id');
+                $table->string('name', 128);
+                $table->longText('prompt_snapshots');
+                $table->timestamps();
+            });
+        }
 
         $successMessage = '';
-        $errorMessage = '';
+        $errorMessage   = '';
 
+        // ---- Handle POST actions ----
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             check_token("WHMCS.admin.default");
-            $action = $_POST['prompt_action'] ?? '';
+            $action = $_POST['prompt_mgr_action'] ?? '';
 
-            if ($action === 'save') {
-                $newTemplate = $_POST['user_prompt_template'] ?? '';
+            // --- Export: stream JSON and exit ---
+            if ($action === 'export_prompts') {
+                $rows = Capsule::table('tblsahdev_prompt_templates')->get();
+                $export = [];
+                foreach ($rows as $row) {
+                    $export[$row->prompt_key] = $row->content;
+                }
+                header('Content-Type: application/json');
+                header('Content-Disposition: attachment; filename="sahdev_prompts_' . date('Ymd_His') . '.json"');
+                echo json_encode($export, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+                exit;
+            }
+
+            // --- Import from uploaded JSON ---
+            if ($action === 'import_prompts') {
+                if (!empty($_FILES['import_file']['tmp_name'])) {
+                    $raw  = file_get_contents($_FILES['import_file']['tmp_name']);
+                    $data = json_decode($raw, true);
+                    if (!is_array($data)) {
+                        $errorMessage = 'Invalid JSON file. Import aborted.';
+                    } else {
+                        $validKeys = array_keys($this->getDefaultPromptDefinitions());
+                        $imported  = 0;
+                        foreach ($data as $key => $text) {
+                            if (in_array($key, $validKeys, true)) {
+                                Capsule::table('tblsahdev_prompt_templates')
+                                    ->where('prompt_key', $key)
+                                    ->update(['content' => $text, 'updated_at' => \Carbon\Carbon::now()]);
+                                // Sync back to settings for the two legacy columns
+                                if ($key === 'system_default') {
+                                    Capsule::table('tblsahdev_settings')->where('id', 1)->update(['system_prompt' => $text]);
+                                } elseif ($key === 'user_prompt_template') {
+                                    Capsule::table('tblsahdev_settings')->where('id', 1)->update(['user_prompt_template' => $text]);
+                                }
+                                $imported++;
+                            }
+                        }
+                        $successMessage = "Imported {$imported} prompt(s) successfully.";
+                    }
+                } else {
+                    $errorMessage = 'No file uploaded.';
+                }
+            }
+
+            // --- Save single prompt ---
+            if ($action === 'save_prompt') {
+                $key  = $_POST['prompt_key'] ?? '';
+                $text = $_POST['prompt_content'] ?? '';
+                $validKeys = array_keys($this->getDefaultPromptDefinitions());
+                if (in_array($key, $validKeys, true)) {
+                    Capsule::table('tblsahdev_prompt_templates')
+                        ->where('prompt_key', $key)
+                        ->update(['content' => $text, 'updated_at' => \Carbon\Carbon::now()]);
+                    // Sync back to legacy columns in settings
+                    if ($key === 'system_default') {
+                        Capsule::table('tblsahdev_settings')->where('id', 1)->update(['system_prompt' => $text, 'updated_at' => \Carbon\Carbon::now()]);
+                    } elseif ($key === 'user_prompt_template') {
+                        Capsule::table('tblsahdev_settings')->where('id', 1)->update(['user_prompt_template' => $text, 'updated_at' => \Carbon\Carbon::now()]);
+                    }
+                    $successMessage = "Prompt saved successfully.";
+                } else {
+                    $errorMessage = "Invalid prompt key.";
+                }
+            }
+
+            // --- Reset single prompt to default ---
+            if ($action === 'reset_prompt') {
+                $key      = $_POST['prompt_key'] ?? '';
+                $defaults = $this->getDefaultPromptDefinitions();
+                if (isset($defaults[$key])) {
+                    $defaultText = $defaults[$key]['content'];
+                    Capsule::table('tblsahdev_prompt_templates')
+                        ->where('prompt_key', $key)
+                        ->update(['content' => $defaultText, 'updated_at' => \Carbon\Carbon::now()]);
+                    if ($key === 'system_default') {
+                        Capsule::table('tblsahdev_settings')->where('id', 1)->update(['system_prompt' => $defaultText, 'updated_at' => \Carbon\Carbon::now()]);
+                    } elseif ($key === 'user_prompt_template') {
+                        Capsule::table('tblsahdev_settings')->where('id', 1)->update(['user_prompt_template' => $defaultText, 'updated_at' => \Carbon\Carbon::now()]);
+                    }
+                    $successMessage = "Prompt reset to its factory default.";
+                } else {
+                    $errorMessage = "Invalid prompt key.";
+                }
+            }
+
+            // --- Reset ALL prompts to defaults ---
+            if ($action === 'reset_all') {
+                $defaults = $this->getDefaultPromptDefinitions();
+                $now = \Carbon\Carbon::now();
+                foreach ($defaults as $key => $def) {
+                    Capsule::table('tblsahdev_prompt_templates')
+                        ->where('prompt_key', $key)
+                        ->update(['content' => $def['content'], 'updated_at' => $now]);
+                }
                 Capsule::table('tblsahdev_settings')->where('id', 1)->update([
-                    'user_prompt_template' => $newTemplate,
-                    'updated_at' => \Carbon\Carbon::now(),
+                    'system_prompt'        => $defaults['system_default']['content'],
+                    'user_prompt_template' => $defaults['user_prompt_template']['content'],
+                    'updated_at'           => $now,
                 ]);
-                $currentTemplate = $newTemplate;
-                $successMessage = 'Prompt template saved successfully.';
-            } elseif ($action === 'reset') {
-                Capsule::table('tblsahdev_settings')->where('id', 1)->update([
-                    'user_prompt_template' => $defaultTemplate,
-                    'updated_at' => \Carbon\Carbon::now(),
-                ]);
-                $currentTemplate = $defaultTemplate;
-                $successMessage = 'Prompt template reset to default.';
+                $successMessage = "All prompts have been reset to their factory defaults.";
+            }
+
+            // --- Save current prompts as a named preset ---
+            if ($action === 'save_preset') {
+                $name = trim($_POST['preset_name'] ?? '');
+                if (empty($name)) {
+                    $errorMessage = "Preset name is required.";
+                } else {
+                    $rows = Capsule::table('tblsahdev_prompt_templates')->get();
+                    $snapshot = [];
+                    foreach ($rows as $row) {
+                        $snapshot[$row->prompt_key] = $row->content;
+                    }
+                    Capsule::table('tblsahdev_prompt_presets')->insert([
+                        'name'             => $name,
+                        'prompt_snapshots' => json_encode($snapshot, JSON_UNESCAPED_UNICODE),
+                        'created_at'       => \Carbon\Carbon::now(),
+                        'updated_at'       => \Carbon\Carbon::now(),
+                    ]);
+                    $successMessage = "Preset \"{$name}\" saved successfully.";
+                }
+            }
+
+            // --- Load a preset ---
+            if ($action === 'load_preset') {
+                $presetId = (int) ($_POST['preset_id'] ?? 0);
+                $preset   = Capsule::table('tblsahdev_prompt_presets')->where('id', $presetId)->first();
+                if (!$preset) {
+                    $errorMessage = "Preset not found.";
+                } else {
+                    $snapshot = json_decode($preset->prompt_snapshots, true);
+                    $validKeys = array_keys($this->getDefaultPromptDefinitions());
+                    $now = \Carbon\Carbon::now();
+                    foreach ($snapshot as $key => $text) {
+                        if (in_array($key, $validKeys, true)) {
+                            Capsule::table('tblsahdev_prompt_templates')
+                                ->where('prompt_key', $key)
+                                ->update(['content' => $text, 'updated_at' => $now]);
+                            if ($key === 'system_default') {
+                                Capsule::table('tblsahdev_settings')->where('id', 1)->update(['system_prompt' => $text]);
+                            } elseif ($key === 'user_prompt_template') {
+                                Capsule::table('tblsahdev_settings')->where('id', 1)->update(['user_prompt_template' => $text]);
+                            }
+                        }
+                    }
+                    $successMessage = "Preset \"{$preset->name}\" applied to all prompts.";
+                }
+            }
+
+            // --- Delete a preset ---
+            if ($action === 'delete_preset') {
+                $presetId = (int) ($_POST['preset_id'] ?? 0);
+                $preset   = Capsule::table('tblsahdev_prompt_presets')->where('id', $presetId)->first();
+                if ($preset) {
+                    Capsule::table('tblsahdev_prompt_presets')->where('id', $presetId)->delete();
+                    $successMessage = "Preset \"{$preset->name}\" deleted.";
+                } else {
+                    $errorMessage = "Preset not found.";
+                }
             }
         }
 
-        $csrfToken = generate_token("form");
-        $actionUrl = htmlspecialchars($this->moduleVars['modulelink']) . '&action=prompt_manager';
-        $settingsUrl = htmlspecialchars($this->moduleVars['modulelink']);
+        // ---- Load data for view ----
+        $templates = [];
+        $rows = Capsule::table('tblsahdev_prompt_templates')->get();
+        foreach ($rows as $row) {
+            $templates[$row->prompt_key] = $row;
+        }
+        // Ensure all defined keys exist in the table (in case new keys were added in an update)
+        $defaultDefs = $this->getDefaultPromptDefinitions();
+        $now = \Carbon\Carbon::now();
+        foreach ($defaultDefs as $key => $def) {
+            if (!isset($templates[$key])) {
+                $id = Capsule::table('tblsahdev_prompt_templates')->insertGetId([
+                    'prompt_key'      => $key,
+                    'label'           => $def['label'],
+                    'description'     => $def['description'],
+                    'default_content' => $def['content'],
+                    'content'         => $def['content'],
+                    'created_at'      => $now,
+                    'updated_at'      => $now,
+                ]);
+                $templates[$key] = Capsule::table('tblsahdev_prompt_templates')->where('id', $id)->first();
+            }
+        }
+
+        $presets    = Capsule::table('tblsahdev_prompt_presets')->orderBy('id', 'desc')->get();
+        $csrfToken  = generate_token("form");
+        $actionUrl  = htmlspecialchars($this->moduleVars['modulelink']) . '&action=prompt_manager';
 
         ob_start();
         ?>
         <style>
-
-            .prompt-template-area {
-                font-family: 'SFMono-Regular', Consolas, monospace;
-                font-size: 13px;
-                background: #1e1e2e;
-                color: #cdd6f4;
-                border: 1px solid #444;
-                border-radius: 6px;
+            .pm-card {
+                background: #fff;
+                border: 1px solid #e2e8f0;
+                border-radius: 8px;
+                margin-bottom: 18px;
+                overflow: hidden;
+                box-shadow: 0 1px 4px rgba(0,0,0,0.05);
             }
-
-            .placeholder-tag {
+            .pm-card-header {
+                background: #f8fafc;
+                border-bottom: 1px solid #e2e8f0;
+                padding: 14px 18px;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                cursor: pointer;
+                user-select: none;
+            }
+            .pm-card-header:hover { background: #f0f4f8; }
+            .pm-card-header h5 { margin:0; font-size:14px; font-weight:600; color:#2d3748; }
+            .pm-card-header .pm-desc { font-size:12px; color:#718096; margin-top:3px; }
+            .pm-card-header .pm-badge {
+                font-size:11px;
+                background:#e2e8f0;
+                color:#4a5568;
+                padding:3px 8px;
+                border-radius:20px;
+                white-space:nowrap;
+            }
+            .pm-card-body { padding: 16px 18px; display: none; }
+            .pm-card-body.open { display: block; }
+            .pm-textarea {
+                font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+                font-size: 12.5px;
+                background: #1a202c;
+                color: #e2e8f0;
+                border: 1px solid #4a5568;
+                border-radius: 6px;
+                width: 100%;
+                box-sizing: border-box;
+                padding: 12px;
+                resize: vertical;
+                line-height: 1.6;
+                min-height: 160px;
+            }
+            .pm-tag {
                 display: inline-block;
-                background: #313244;
-                color: #89dceb;
+                background: #2d3748;
+                color: #90cdf4;
                 padding: 2px 7px;
                 border-radius: 4px;
-                font-size: 12px;
+                font-size: 11px;
                 font-family: monospace;
-                margin: 2px;
+                margin: 1px;
             }
+            .pm-panel {
+                background: #fff;
+                border: 1px solid #e2e8f0;
+                border-radius: 8px;
+                padding: 18px;
+                margin-bottom: 20px;
+                box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+            }
+            .pm-panel h5 { margin: 0 0 14px; font-size: 14px; font-weight: 600; color: #2d3748; }
         </style>
-        <?php echo $this->getNavigationMarkup('prompt_manager'); ?>
-        <div class="sahdev-page-container">
 
-            <h2 style="margin-bottom:5px;">🔬 Prompt Manager</h2>
-            <p class="text-muted" style="margin-bottom:20px;">Edit the exact <strong>user-prompt template</strong> sent to the
-                AI on every ticket analysis. The <strong>System Prompt</strong> (AI persona / identity) is still managed in <a
-                    href="<?php echo $settingsUrl; ?>">General Settings</a>.</p>
+        <?php echo $this->getNavigationMarkup('prompt_manager'); ?>
+        <div class="sahdev-page-container" style="max-width:1200px;">
+
+            <h2 style="margin-bottom:5px;">🔬 Prompt Manager — Template Library</h2>
+            <p class="text-muted" style="margin-bottom:20px;">
+                Edit, reset, and manage all AI system prompts used across Sahdev. Create
+                <strong>presets</strong> to switch between prompt configurations instantly, and use
+                <strong>export/import</strong> to back up or share prompt sets.
+            </p>
 
             <?php if (!empty($successMessage)): ?>
-                <div class="alert alert-success"><i class="fas fa-check-circle"></i>
-                    <?php echo htmlspecialchars($successMessage); ?></div>
+                <div class="alert alert-success"><i class="fas fa-check-circle"></i> <?php echo htmlspecialchars($successMessage); ?></div>
             <?php endif; ?>
             <?php if (!empty($errorMessage)): ?>
-                <div class="alert alert-danger"><i class="fas fa-exclamation-circle"></i>
-                    <?php echo htmlspecialchars($errorMessage); ?></div>
+                <div class="alert alert-danger"><i class="fas fa-exclamation-circle"></i> <?php echo htmlspecialchars($errorMessage); ?></div>
             <?php endif; ?>
 
-            <div class="alert alert-info" style="margin-bottom:20px;">
-                <strong>Available Placeholders:</strong><br>
-                <span class="placeholder-tag">{{CUSTOM_INSTRUCTION_BLOCK}}</span> Auto-injected admin instruction (supreme
-                priority) — keep at the very top<br>
-                <span class="placeholder-tag">{{TONE}}</span> Tone selected in ticket panel &nbsp;
-                <span class="placeholder-tag">{{CLIENT_NAME}}</span> &nbsp;
-                <span class="placeholder-tag">{{DEPARTMENT}}</span> &nbsp;
-                <span class="placeholder-tag">{{SUBJECT}}</span><br>
-                <span class="placeholder-tag">{{SERVICES_BLOCK}}</span> Client active services &nbsp;
-                <span class="placeholder-tag">{{MESSAGES}}</span> Full conversation history &nbsp;
-                <span class="placeholder-tag">{{ATTACHMENTS_BLOCK}}</span>
+            <!-- Presets & Import/Export Panel -->
+            <div style="display:flex; gap:16px; flex-wrap:wrap; margin-bottom:24px;">
+
+                <!-- Presets Panel -->
+                <div class="pm-panel" style="flex:1; min-width:280px;">
+                    <h5><i class="fas fa-layer-group" style="color:#667eea;"></i> Presets</h5>
+                    <?php if ($presets->isEmpty()): ?>
+                        <p class="text-muted" style="font-size:13px; margin-bottom:12px;">No presets saved yet. Save the current configuration as a preset below.</p>
+                    <?php else: ?>
+                        <form method="post" action="<?php echo $actionUrl; ?>" style="margin-bottom:12px;">
+                            <?php echo $csrfToken; ?>
+                            <input type="hidden" name="prompt_mgr_action" value="load_preset">
+                            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                                <select name="preset_id" class="form-control" style="flex:1; min-width:160px;">
+                                    <?php foreach ($presets as $p): ?>
+                                        <option value="<?php echo $p->id; ?>"><?php echo htmlspecialchars($p->name); ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <button type="submit" class="btn btn-sm btn-primary" title="Apply Preset"><i class="fas fa-play"></i> Apply</button>
+                            </div>
+                        </form>
+                        <form method="post" action="<?php echo $actionUrl; ?>" style="margin-bottom:12px;">
+                            <?php echo $csrfToken; ?>
+                            <input type="hidden" name="prompt_mgr_action" value="delete_preset">
+                            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                                <select name="preset_id" class="form-control" style="flex:1; min-width:160px;">
+                                    <?php foreach ($presets as $p): ?>
+                                        <option value="<?php echo $p->id; ?>"><?php echo htmlspecialchars($p->name); ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Delete this preset?')" title="Delete Preset"><i class="fas fa-trash"></i> Delete</button>
+                            </div>
+                        </form>
+                    <?php endif; ?>
+                    <form method="post" action="<?php echo $actionUrl; ?>">
+                        <?php echo $csrfToken; ?>
+                        <input type="hidden" name="prompt_mgr_action" value="save_preset">
+                        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                            <input type="text" name="preset_name" class="form-control" placeholder="New preset name…" style="flex:1;">
+                            <button type="submit" class="btn btn-sm btn-success"><i class="fas fa-save"></i> Save Current</button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Import/Export Panel -->
+                <div class="pm-panel" style="flex:1; min-width:280px;">
+                    <h5><i class="fas fa-exchange-alt" style="color:#48bb78;"></i> Import / Export</h5>
+                    <form method="post" action="<?php echo $actionUrl; ?>" style="margin-bottom:12px;">
+                        <?php echo $csrfToken; ?>
+                        <input type="hidden" name="prompt_mgr_action" value="export_prompts">
+                        <button type="submit" class="btn btn-sm btn-default" style="width:100%;"><i class="fas fa-download"></i> Export All Prompts as JSON</button>
+                    </form>
+                    <form method="post" action="<?php echo $actionUrl; ?>" enctype="multipart/form-data">
+                        <?php echo $csrfToken; ?>
+                        <input type="hidden" name="prompt_mgr_action" value="import_prompts">
+                        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                            <input type="file" name="import_file" accept=".json" class="form-control" style="flex:1;">
+                            <button type="submit" class="btn btn-sm btn-warning" onclick="return confirm('This will overwrite all matching prompts. Continue?')"><i class="fas fa-upload"></i> Import</button>
+                        </div>
+                        <small class="text-muted" style="font-size:11px;">Upload a JSON file previously exported from Sahdev.</small>
+                    </form>
+                    <hr style="margin:12px 0;">
+                    <form method="post" action="<?php echo $actionUrl; ?>">
+                        <?php echo $csrfToken; ?>
+                        <input type="hidden" name="prompt_mgr_action" value="reset_all">
+                        <button type="submit" class="btn btn-sm btn-danger" style="width:100%;"
+                            onclick="return confirm('Reset ALL prompts to factory defaults? This cannot be undone unless you have a preset or export.')">
+                            <i class="fas fa-redo"></i> Reset All to Factory Defaults
+                        </button>
+                    </form>
+                </div>
             </div>
 
-            <form method="post" action="<?php echo $actionUrl; ?>">
-                <?php echo $csrfToken; ?>
-                <div class="form-group" style="margin-bottom:15px;">
-                    <label style="font-weight:600; margin-bottom:5px; display:block;">User Prompt Template</label>
-                    <textarea name="user_prompt_template" class="form-control prompt-template-area" rows="28"
-                        style="width:100%; resize:vertical;"><?php echo htmlspecialchars($currentTemplate); ?></textarea>
-                    <small class="text-muted">This is the full prompt body sent to the AI (not the system persona). Placeholders
-                        are replaced with live ticket data at runtime.</small>
+            <h4 style="margin-bottom:15px; font-size:15px; border-bottom:1px solid #e2e8f0; padding-bottom:10px;">
+                <i class="fas fa-magic"></i> Prompt Templates
+            </h4>
+
+            <?php
+            // Define placeholder hints for each key
+            $placeholderHints = [
+                'system_default'       => [],
+                'user_prompt_template' => ['{{CUSTOM_INSTRUCTION_BLOCK}}','{{TONE}}','{{CLIENT_NAME}}','{{DEPARTMENT}}','{{SUBJECT}}','{{SERVICES_BLOCK}}','{{MESSAGES}}','{{ATTACHMENTS_BLOCK}}'],
+                'summarizer'           => [],
+                'historical_context'   => [],
+                'rewrite_reply'        => ['{{TONE}}','{{SUBJECT}}','{{CLIENT_NAME}}','{{EXTRA_INSTRUCTION}}','{{DRAFT}}'],
+                'score_reply'          => [],
+                'canned_template'      => ['{{DRAFT}}'],
+            ];
+            $keyIcons = [
+                'system_default'       => 'fas fa-robot',
+                'user_prompt_template' => 'fas fa-file-code',
+                'summarizer'           => 'fas fa-compress-alt',
+                'historical_context'   => 'fas fa-history',
+                'rewrite_reply'        => 'fas fa-pen-fancy',
+                'score_reply'          => 'fas fa-star-half-alt',
+                'canned_template'      => 'fas fa-clone',
+            ];
+            $orderedKeys = ['system_default','user_prompt_template','summarizer','historical_context','rewrite_reply','score_reply','canned_template'];
+            foreach ($orderedKeys as $key):
+                if (!isset($templates[$key])) continue;
+                $tpl   = $templates[$key];
+                $hints = $placeholderHints[$key] ?? [];
+                $icon  = $keyIcons[$key] ?? 'fas fa-terminal';
+                $isModified = ($tpl->content !== $tpl->default_content);
+            ?>
+            <div class="pm-card">
+                <div class="pm-card-header" onclick="this.nextElementSibling.classList.toggle('open')">
+                    <div>
+                        <h5><i class="<?php echo $icon; ?>" style="margin-right:7px; color:#667eea;"></i><?php echo htmlspecialchars($tpl->label); ?></h5>
+                        <div class="pm-desc"><?php echo htmlspecialchars($tpl->description ?? ''); ?></div>
+                    </div>
+                    <div style="display:flex; gap:6px; align-items:center;">
+                        <?php if ($isModified): ?>
+                            <span class="pm-badge" style="background:#fef3c7; color:#92400e;"><i class="fas fa-pencil-alt"></i> Modified</span>
+                        <?php else: ?>
+                            <span class="pm-badge" style="background:#d1fae5; color:#065f46;"><i class="fas fa-check"></i> Default</span>
+                        <?php endif; ?>
+                        <span class="pm-badge"><code style="font-size:10px;"><?php echo htmlspecialchars($key); ?></code></span>
+                        <i class="fas fa-chevron-down" style="color:#a0aec0; font-size:12px;"></i>
+                    </div>
                 </div>
-                <div style="display:flex; gap:10px; justify-content:flex-end;">
-                    <button type="submit" name="prompt_action" value="reset" class="btn btn-default"
-                        onclick="return confirm('Reset the prompt template to the built-in default?');">
-                        <i class="fas fa-undo"></i> Reset to Default
-                    </button>
-                    </button>
+                <div class="pm-card-body">
+                    <?php if (!empty($hints)): ?>
+                        <div style="margin-bottom:10px; background:#2d3748; padding:8px 12px; border-radius:6px;">
+                            <small style="color:#a0aec0; font-size:11px;"><strong>Placeholders:</strong> </small>
+                            <?php foreach ($hints as $ph): ?>
+                                <span class="pm-tag"><?php echo htmlspecialchars($ph); ?></span>
+                            <?php endforeach; ?>
+                        </div>
+                    <?php endif; ?>
+                    <form method="post" action="<?php echo $actionUrl; ?>">
+                        <?php echo $csrfToken; ?>
+                        <input type="hidden" name="prompt_mgr_action" value="save_prompt">
+                        <input type="hidden" name="prompt_key" value="<?php echo htmlspecialchars($key); ?>">
+                        <textarea name="prompt_content" class="pm-textarea" rows="<?php echo ($key === 'user_prompt_template' ? 22 : 10); ?>"><?php echo htmlspecialchars($tpl->content); ?></textarea>
+                        <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:10px; flex-wrap:wrap;">
+                            <small class="text-muted" style="align-self:center; flex:1; font-size:11px;">Last updated: <?php echo $tpl->updated_at; ?></small>
+                            <button type="submit" name="prompt_mgr_action" value="reset_prompt" class="btn btn-xs btn-default"
+                                onclick="return confirm('Reset this prompt to its factory default?')">
+                                <i class="fas fa-undo"></i> Reset to Default
+                            </button>
+                            <button type="submit" name="prompt_mgr_action" value="save_prompt" class="btn btn-xs btn-primary">
+                                <i class="fas fa-save"></i> Save Changes
+                            </button>
+                        </div>
+                    </form>
                 </div>
-            </form>
+            </div>
+            <?php endforeach; ?>
+
         </div>
+        <script>
+        // Auto-open first card
+        (function(){
+            var first = document.querySelector('.pm-card-body');
+            if (first) first.classList.add('open');
+        })();
+        </script>
         <?php
         return ob_get_clean();
     }
+
+
+
+
 
     /**
      * Ticket Summaries Manager View

@@ -17,6 +17,7 @@ class AIController
     private $adminId;
     private $provider;
     private $settings;
+    private $promptTemplates = [];
 
     private $fallbackProvider = null;
 
@@ -79,6 +80,9 @@ class AIController
 
         // Convert to array for easier passing
         $this->settings = (array) $this->settings;
+
+        // Load all prompt templates from DB (Prompt Library)
+        $this->loadPromptTemplates();
 
         // Load Primary Provider
         $primaryId = $this->settings['primary_provider_id'] ?? 1;
@@ -273,6 +277,43 @@ class AIController
             'tokens_used' => $tokenUsage,
             'tokens_details' => $tokenDetails
         ];
+    }
+
+    /**
+     * Loads all prompt templates from the DB into $this->promptTemplates.
+     * Falls back gracefully to empty array if the table doesn't exist yet.
+     */
+    private function loadPromptTemplates(): void
+    {
+        $hardcodedDefaults = [
+            'system_default'       => $this->settings['system_prompt'] ?? '',
+            'user_prompt_template' => $this->settings['user_prompt_template'] ?? '',
+            'summarizer'           => "You are a senior technical support analyst. Your job is to create concise, accurate ticket summaries that capture the essential context: root issue, actions taken, client sentiment, and current status.\n\nSUMMARY RULES:\n- Length: adapt dynamically based on ticket complexity (short tickets -> 3-5 lines; complex tickets -> 8-12 lines)\n- Include: the original problem, key technical details exchanged, any steps already tried, current status\n- Do NOT include greetings, small talk, or formatting metadata\n- Write in past-tense, third-person, concise prose\n- Output ONLY the summary text. No labels, no JSON, no prefixes.",
+            'historical_context'   => "You are a customer support historian. Analyze the user's past tickets against their current active issue.\nYOUR TASK:\n1. explicitly highlight and summarize any past tickets that are related or similar to the current issue.\n2. briefly group and summarize unrelated tickets just to provide general context on their account health.\nFormat your response purely in Markdown. Do not include JSON. Be concise but helpful for the support agent.",
+            'rewrite_reply'        => '',  // built dynamically in rewriteReply
+            'score_reply'          => "You are an expert QA Manager scoring support replies. Output strictly a single raw JSON object matching the requested schema.",
+            'canned_template'      => "Rewrite the following support ticket reply into a reusable, generalized canned response template.\n- Remove any specific client names, domain names, IP addresses, or highly specific dates.\n- Replace removed specifics with general placeholders like [Client Name], [Domain], [IP Address].\n- Make the tone professional and helpful.\n- DO NOT include any JSON wrapping or preamble, just the raw text template.\n\n=== DRAFT TO GENERALIZE ===\n",
+        ];
+
+        // Merge with DB values (DB wins over hardcoded defaults)
+        $this->promptTemplates = $hardcodedDefaults;
+        try {
+            $rows = Capsule::table('tblsahdev_prompt_templates')->get();
+            foreach ($rows as $row) {
+                if (!empty(trim($row->content))) {
+                    $this->promptTemplates[$row->prompt_key] = $row->content;
+                }
+            }
+            // Keep settings in sync (system_default + user_prompt_template are read by providers directly via settings array)
+            if (!empty($this->promptTemplates['system_default'])) {
+                $this->settings['system_prompt'] = $this->promptTemplates['system_default'];
+            }
+            if (!empty($this->promptTemplates['user_prompt_template'])) {
+                $this->settings['user_prompt_template'] = $this->promptTemplates['user_prompt_template'];
+            }
+        } catch (\Exception $e) {
+            // Table likely doesn't exist yet — silently use hardcoded defaults
+        }
     }
 
     private function checkRateLimit()
@@ -532,14 +573,7 @@ class AIController
             $used += strlen($entry);
         }
 
-        $systemPrompt = "You are a senior technical support analyst. Your job is to create concise, accurate ticket summaries that capture the essential context: root issue, actions taken, client sentiment, and current status.
-
-SUMMARY RULES:
-- Length: adapt dynamically based on ticket complexity (short tickets → 3-5 lines; complex tickets → 8-12 lines)
-- Include: the original problem, key technical details exchanged, any steps already tried, current status
-- Do NOT include greetings, small talk, or formatting metadata
-- Write in past-tense, third-person, concise prose
-- Output ONLY the summary text. No labels, no JSON, no prefixes.";
+        $systemPrompt = $this->promptTemplates['summarizer'] ?? "You are a senior technical support analyst. Your job is to create concise, accurate ticket summaries that capture the essential context: root issue, actions taken, client sentiment, and current status.\n\nSUMMARY RULES:\n- Length: adapt dynamically based on ticket complexity\n- Include: the original problem, key technical details exchanged, any steps already tried, current status\n- Do NOT include greetings, small talk, or formatting metadata\n- Write in past-tense, third-person, concise prose\n- Output ONLY the summary text. No labels, no JSON, no prefixes.";
 
         $promptText  = "=== TICKET TO SUMMARIZE ===\n";
         $promptText .= "Subject: " . ($context['subject'] ?? 'Support Ticket') . "\n";
@@ -683,11 +717,7 @@ SUMMARY RULES:
             $contextText .= "- Ticket #{$pt->id} [{$pt->date}] Status: {$pt->status}\n  Subject: {$pt->title}\n  Message: {$cleanMsg}\n\n";
         }
 
-        $systemPrompt = "You are a customer support historian. Analyze the user's past tickets against their current active issue.
-YOUR TASK:
-1. explicitly highlight and summarize any past tickets that are related or similar to the current issue.
-2. briefly group and summarize unrelated tickets just to provide general context on their account health.
-Format your response purely in Markdown. Do not include JSON. Be concise but helpful for the support agent.";
+        $systemPrompt = $this->promptTemplates['historical_context'] ?? "You are a customer support historian. Analyze the user's past tickets against their current active issue.\nYOUR TASK:\n1. explicitly highlight and summarize any past tickets that are related or similar to the current issue.\n2. briefly group and summarize unrelated tickets just to provide general context on their account health.\nFormat your response purely in Markdown. Do not include JSON. Be concise but helpful for the support agent.";
 
         $fakeContext = [
             'subject'          => $currentTicket->title,
@@ -816,20 +846,30 @@ Format your response purely in Markdown. Do not include JSON. Be concise but hel
 
         $extraInstruction = !empty(trim($instruction)) ? "\n\nPriority admin instruction: " . trim($instruction) : '';
 
-        $rewritePrompt = "=== TASK ===\n";
-        $rewritePrompt .= "The admin has written a short rough draft reply for the following support ticket. EXPAND and POLISH it into a complete, fluent, professional client-facing reply.\n\n";
-        $rewritePrompt .= "RULES:\n";
-        $rewritePrompt .= "- Preserve the original intent and any specific instructions in the draft.\n";
-        $rewritePrompt .= "- Do NOT add a greeting (e.g. 'Dear Client') or a sign-off — the signature is handled separately.\n";
-        $rewritePrompt .= "- Write in a **{$tone}** tone.\n";
-        $rewritePrompt .= "- Output ONLY the final reply body. No extra commentary, no JSON, no prefixes.\n";
-        $rewritePrompt .= $extraInstruction . "\n\n";
-        $rewritePrompt .= "=== TICKET CONTEXT ===\n";
-        $rewritePrompt .= "Subject: " . ($context['subject'] ?? 'Support Ticket') . "\n";
-        $rewritePrompt .= "Client: " . ($context['client_name'] ?? 'Client') . "\n\n";
-        $rewritePrompt .= "=== ADMIN DRAFT ===\n";
-        $rewritePrompt .= trim($draftText) . "\n\n";
-        $rewritePrompt .= "=== POLISHED REPLY (output only) ===\n";
+        // Build rewrite prompt from DB template or fallback
+        $rewriteTemplate = $this->promptTemplates['rewrite_reply'] ?? '';
+        if (!empty(trim($rewriteTemplate)) && strpos($rewriteTemplate, '{{DRAFT}}') !== false) {
+            $rewritePrompt = str_replace(
+                ['{{TONE}}', '{{SUBJECT}}', '{{CLIENT_NAME}}', '{{EXTRA_INSTRUCTION}}', '{{DRAFT}}'],
+                [$tone, $context['subject'] ?? 'Support Ticket', $context['client_name'] ?? 'Client', $extraInstruction, trim($draftText)],
+                $rewriteTemplate
+            );
+        } else {
+            $rewritePrompt  = "=== TASK ===\n";
+            $rewritePrompt .= "The admin has written a short rough draft reply for the following support ticket. EXPAND and POLISH it into a complete, fluent, professional client-facing reply.\n\n";
+            $rewritePrompt .= "RULES:\n";
+            $rewritePrompt .= "- Preserve the original intent and any specific instructions in the draft.\n";
+            $rewritePrompt .= "- Do NOT add a greeting (e.g. 'Dear Client') or a sign-off — the signature is handled separately.\n";
+            $rewritePrompt .= "- Write in a **{$tone}** tone.\n";
+            $rewritePrompt .= "- Output ONLY the final reply body. No extra commentary, no JSON, no prefixes.\n";
+            $rewritePrompt .= $extraInstruction . "\n\n";
+            $rewritePrompt .= "=== TICKET CONTEXT ===\n";
+            $rewritePrompt .= "Subject: " . ($context['subject'] ?? 'Support Ticket') . "\n";
+            $rewritePrompt .= "Client: " . ($context['client_name'] ?? 'Client') . "\n\n";
+            $rewritePrompt .= "=== ADMIN DRAFT ===\n";
+            $rewritePrompt .= trim($draftText) . "\n\n";
+            $rewritePrompt .= "=== POLISHED REPLY (output only) ===\n";
+        }
 
         return [
             'status' => 'success',
@@ -865,20 +905,31 @@ Format your response purely in Markdown. Do not include JSON. Be concise but hel
 
         $extraInstruction = !empty(trim($instruction)) ? "\n\nPriority admin instruction: " . trim($instruction) : '';
 
-        $promptText = "=== TASK ===\n";
-        $promptText .= "The admin has written a short rough draft reply for the following ticket. Your job is to EXPAND and POLISH it into a complete, fluent, professional client-facing reply.\n\n";
-        $promptText .= "RULES:\n";
-        $promptText .= "- Preserve the original intent and any specific instructions in the draft.\n";
-        $promptText .= "- Do NOT add a greeting (e.g. 'Dear Client') or a sign-off — the signature is handled separately.\n";
-        $promptText .= "- Write in a **{$tone}** tone.\n";
-        $promptText .= "- Output ONLY the final reply body. No extra commentary, no JSON, no prefixes.\n";
-        $promptText .= $extraInstruction . "\n\n";
-        $promptText .= "=== TICKET CONTEXT ===\n";
-        $promptText .= "Subject: " . ($context['subject'] ?? 'Support Ticket') . "\n";
-        $promptText .= "Client: " . ($context['client_name'] ?? 'Client') . "\n\n";
-        $promptText .= "=== ADMIN DRAFT ===\n";
-        $promptText .= trim($draftText) . "\n\n";
-        $promptText .= "=== POLISHED REPLY (output only) ===\n";
+        // Build the rewrite prompt — use DB template if available (supports {{TONE}}, {{SUBJECT}}, {{CLIENT_NAME}}, {{EXTRA_INSTRUCTION}}, {{DRAFT}})
+        $rewriteTemplate = $this->promptTemplates['rewrite_reply'] ?? '';
+        if (!empty(trim($rewriteTemplate)) && strpos($rewriteTemplate, '{{DRAFT}}') !== false) {
+            $promptText = str_replace(
+                ['{{TONE}}', '{{SUBJECT}}', '{{CLIENT_NAME}}', '{{EXTRA_INSTRUCTION}}', '{{DRAFT}}'],
+                [$tone, $context['subject'] ?? 'Support Ticket', $context['client_name'] ?? 'Client', $extraInstruction, trim($draftText)],
+                $rewriteTemplate
+            );
+        } else {
+            // Fallback to hardcoded template
+            $promptText  = "=== TASK ===\n";
+            $promptText .= "The admin has written a short rough draft reply for the following ticket. Your job is to EXPAND and POLISH it into a complete, fluent, professional client-facing reply.\n\n";
+            $promptText .= "RULES:\n";
+            $promptText .= "- Preserve the original intent and any specific instructions in the draft.\n";
+            $promptText .= "- Do NOT add a greeting (e.g. 'Dear Client') or a sign-off — the signature is handled separately.\n";
+            $promptText .= "- Write in a **{$tone}** tone.\n";
+            $promptText .= "- Output ONLY the final reply body. No extra commentary, no JSON, no prefixes.\n";
+            $promptText .= $extraInstruction . "\n\n";
+            $promptText .= "=== TICKET CONTEXT ===\n";
+            $promptText .= "Subject: " . ($context['subject'] ?? 'Support Ticket') . "\n";
+            $promptText .= "Client: " . ($context['client_name'] ?? 'Client') . "\n\n";
+            $promptText .= "=== ADMIN DRAFT ===\n";
+            $promptText .= trim($draftText) . "\n\n";
+            $promptText .= "=== POLISHED REPLY (output only) ===\n";
+        }
 
         // Use the primary AI provider in free-text mode (no JSON schema)
         $startTime = microtime(true);
@@ -1008,8 +1059,8 @@ Format your response purely in Markdown. Do not include JSON. Be concise but hel
         $promptText .= trim($replyText) . "\n\n";
         
         $fakeSettings = $this->settings;
-        $fakeSettings['user_prompt_template'] = '{{MESSAGES}}'; 
-        $fakeSettings['system_prompt'] = "You are an expert QA Manager scoring support replies. Output strictly a single raw JSON object matching the requested schema.";
+        $fakeSettings['user_prompt_template'] = '{{MESSAGES}}';
+        $fakeSettings['system_prompt'] = $this->promptTemplates['score_reply'] ?? "You are an expert QA Manager scoring support replies. Output strictly a single raw JSON object matching the requested schema.";
 
         $fakeContext = [
             'subject' => '',
@@ -1188,13 +1239,24 @@ Format your response purely in Markdown. Do not include JSON. Be concise but hel
             return ['status' => 'error', 'message' => 'Draft text is empty.'];
         }
 
-        $promptText = "Rewrite the following support ticket reply into a reusable, generalized canned response template.\n";
-        $promptText .= "- Remove any specific client names, domain names, IP addresses, or highly specific dates.\n";
-        $promptText .= "- Replace removed specifics with general placeholders like [Client Name], [Domain], [IP Address].\n";
-        $promptText .= "- Make the tone professional and helpful.\n";
-        $promptText .= "- DO NOT include any JSON wrapping or preamble, just the raw text template.\n\n";
-        $promptText .= "=== DRAFT TO GENERALIZE ===\n";
-        $promptText .= trim($draftText);
+        $cannedTemplate = $this->promptTemplates['canned_template'] ?? '';
+        if (!empty(trim($cannedTemplate))) {
+            if (strpos($cannedTemplate, '{{DRAFT}}') !== false) {
+                // Template has a {{DRAFT}} placeholder — replace it
+                $promptText = str_replace('{{DRAFT}}', trim($draftText), $cannedTemplate);
+            } else {
+                // No placeholder — append the draft at the end
+                $promptText = rtrim($cannedTemplate) . "\n\n" . trim($draftText);
+            }
+        } else {
+            $promptText  = "Rewrite the following support ticket reply into a reusable, generalized canned response template.\n";
+            $promptText .= "- Remove any specific client names, domain names, IP addresses, or highly specific dates.\n";
+            $promptText .= "- Replace removed specifics with general placeholders like [Client Name], [Domain], [IP Address].\n";
+            $promptText .= "- Make the tone professional and helpful.\n";
+            $promptText .= "- DO NOT include any JSON wrapping or preamble, just the raw text template.\n\n";
+            $promptText .= "=== DRAFT TO GENERALIZE ===\n";
+            $promptText .= trim($draftText);
+        }
 
         $fakeSettings = $this->settings;
         $fakeSettings['user_prompt_template'] = '{{MESSAGES}}'; 
