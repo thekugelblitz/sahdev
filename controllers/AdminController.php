@@ -132,6 +132,25 @@ class AdminController
                 $table->timestamps();
             });
         }
+
+        // 7. Ensure Limits and Cost columns exist
+        try {
+            Capsule::table('tblsahdev_settings')->select('max_messages')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                $table->integer('max_messages')->default(10);
+                $table->integer('max_attachment_chars')->default(5000);
+                $table->integer('max_images')->default(3);
+            });
+        }
+        try {
+            Capsule::table('tblsahdev_providers')->select('cost_input_1m')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->table('tblsahdev_providers', function ($table) {
+                $table->decimal('cost_input_1m', 10, 4)->default(0.0000);
+                $table->decimal('cost_output_1m', 10, 4)->default(0.0000);
+            });
+        }
     }
 
     /**
@@ -362,8 +381,11 @@ class AdminController
             $temperature = (float) ($_POST['temperature'] ?? 0.70);
             $maxTokens = (int) ($_POST['max_tokens'] ?? 2048);
             $toneDefault = $_POST['tone_default'] ?? 'Professional';
-            $systemPrompt = $_POST['system_prompt'] ?? '';
             $autoAnalyzeOnLoad = !empty($_POST['auto_analyze_on_load']) ? 1 : 0;
+            
+            $maxMessages = (int) ($_POST['max_messages'] ?? 10);
+            $maxAttachmentChars = (int) ($_POST['max_attachment_chars'] ?? 5000);
+            $maxImages = (int) ($_POST['max_images'] ?? 3);
             
             $summarizerEnabled = !empty($_POST['summarizer_enabled']) ? 1 : 0;
             $summarizerThreshold = (int) ($_POST['summarizer_threshold'] ?? 15);
@@ -390,7 +412,9 @@ class AdminController
                     'temperature' => $temperature,
                     'max_tokens' => $maxTokens,
                     'tone_default' => $toneDefault,
-                    'system_prompt' => $systemPrompt,
+                    'max_messages' => $maxMessages,
+                    'max_attachment_chars' => $maxAttachmentChars,
+                    'max_images' => $maxImages,
                     'auto_analyze_on_load' => $autoAnalyzeOnLoad,
                     'summarizer_enabled' => $summarizerEnabled,
                     'summarizer_threshold' => $summarizerThreshold,
@@ -417,7 +441,9 @@ class AdminController
                 'temperature' => 0.70,
                 'max_tokens' => 2048,
                 'tone_default' => 'Professional',
-                'system_prompt' => '',
+                'max_messages' => 10,
+                'max_attachment_chars' => 5000,
+                'max_images' => 3,
                 'auto_analyze_on_load' => 0,
                 'summarizer_enabled' => 0,
                 'summarizer_threshold' => 15,
@@ -498,7 +524,7 @@ class AdminController
                     </div>
                 </div>
 
-                <div class="form-group" style="margin-bottom: 15px;">
+                <div class="form-group" style="margin-bottom: 25px;">
                     <label style="font-weight: 600; display: block; margin-bottom: 5px;">Default Tone</label>
                     <select name="tone_default" class="form-control" style="width: 100%; max-width: 300px;">
                         <?php
@@ -510,13 +536,33 @@ class AdminController
                         ?>
                     </select>
                 </div>
-
-                <div class="form-group" style="margin-bottom: 25px;">
-                    <label style="font-weight: 600; display: block; margin-bottom: 5px;">System Prompt</label>
-                    <textarea name="system_prompt" class="form-control" rows="6"
-                        style="width: 100%; resize: vertical;"><?php echo htmlspecialchars($settings->system_prompt); ?></textarea>
-                    <small class="text-muted">Instructions for the AI on how to interpret support tickets and format its
-                        response.</small>
+                
+                <div class="panel panel-default" style="margin-bottom: 25px; border-left: 4px solid #17a2b8;">
+                    <div class="panel-heading" style="background: #f4fbfc;">
+                        <h4 style="margin: 0; font-size: 15px; color:#117a8b;"><i class="fas fa-filter"></i> Data Extraction Limits <span class="label label-info" style="font-size: 11px; vertical-align: middle; margin-left: 6px;">Manage Context Size</span></h4>
+                    </div>
+                    <div class="panel-body">
+                        <div class="row" style="display: flex; gap: 20px;">
+                            <div class="form-group" style="flex: 1;">
+                                <label style="font-weight: 600; display: block; margin-bottom: 5px;">Recent Messages Limit</label>
+                                <input type="number" step="1" min="1" max="100" name="max_messages" class="form-control"
+                                    value="<?php echo htmlspecialchars($settings->max_messages ?? 10); ?>">
+                                <small class="text-muted">Number of most recent ticket replies to send to AI.</small>
+                            </div>
+                            <div class="form-group" style="flex: 1;">
+                                <label style="font-weight: 600; display: block; margin-bottom: 5px;">Text Attachment/Logs Chars</label>
+                                <input type="number" step="100" min="0" name="max_attachment_chars" class="form-control"
+                                    value="<?php echo htmlspecialchars($settings->max_attachment_chars ?? 5000); ?>">
+                                <small class="text-muted">Max characters extracted from attached .txt/.log files.</small>
+                            </div>
+                            <div class="form-group" style="flex: 1;">
+                                <label style="font-weight: 600; display: block; margin-bottom: 5px;">Max Images Analyzed</label>
+                                <input type="number" step="1" min="0" max="10" name="max_images" class="form-control"
+                                    value="<?php echo htmlspecialchars($settings->max_images ?? 3); ?>">
+                                <small class="text-muted">Number of recent images to send (Requires Gemini/GPT-4o).</small>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- AI Snapshot Feature Toggle -->
@@ -649,6 +695,8 @@ class AdminController
                 $apiKey = $_POST['api_key'] ?? '';
                 $apiUrl = $_POST['api_url'] ?? '';
                 $modelName = $_POST['model_name'] ?? '';
+                $costInput = (float) ($_POST['cost_input_1m'] ?? 0.0000);
+                $costOutput = (float) ($_POST['cost_output_1m'] ?? 0.0000);
 
                 if (empty($name)) {
                     $errorMessage = "Provider name is required.";
@@ -658,6 +706,8 @@ class AdminController
                         'provider_type' => $type,
                         'api_url' => $apiUrl,
                         'model_name' => $modelName,
+                        'cost_input_1m' => $costInput,
+                        'cost_output_1m' => $costOutput,
                         'updated_at' => \Carbon\Carbon::now(),
                     ];
 
@@ -778,6 +828,19 @@ class AdminController
                         </div>
                     </div>
 
+                    <div class="row" style="margin-bottom: 15px;">
+                        <div class="col-md-6 mb-2">
+                            <label>Input Cost / 1M Tokens ($)</label>
+                            <input type="number" step="0.0001" name="cost_input_1m" class="form-control"
+                                placeholder="e.g. 1.25" value="0.00">
+                        </div>
+                        <div class="col-md-6 mb-2">
+                            <label>Output Cost / 1M Tokens ($)</label>
+                            <input type="number" step="0.0001" name="cost_output_1m" class="form-control"
+                                placeholder="e.g. 5.00" value="0.00">
+                        </div>
+                    </div>
+
                     <div style="text-align: right;">
                         <button type="submit" class="btn btn-sm btn-success"><i class="fas fa-save"></i> Add Provider</button>
                     </div>
@@ -827,6 +890,19 @@ class AdminController
                                 <label>Model Name</label>
                                 <input type="text" name="model_name" class="form-control"
                                     value="<?php echo htmlspecialchars($p->model_name ?? ''); ?>">
+                            </div>
+                        </div>
+
+                        <div class="row" style="margin-bottom: 10px;">
+                            <div class="col-md-6 mb-2">
+                                <label>Input Cost / 1M Tokens ($)</label>
+                                <input type="number" step="0.0001" name="cost_input_1m" class="form-control"
+                                    value="<?php echo htmlspecialchars($p->cost_input_1m ?? '0.0000'); ?>">
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <label>Output Cost / 1M Tokens ($)</label>
+                                <input type="number" step="0.0001" name="cost_output_1m" class="form-control"
+                                    value="<?php echo htmlspecialchars($p->cost_output_1m ?? '0.0000'); ?>">
                             </div>
                         </div>
 
@@ -1951,7 +2027,7 @@ class AdminController
                     <div style="background: #fef2f2; border-left: 4px solid #ef4444; padding: 20px; border-radius: 8px;">
                         <span style="display:block; font-size: 13px; font-weight: 600; color: #b91c1c; text-transform: uppercase;">Estimated AI Cost</span>
                         <div style="font-size: 32px; font-weight: 700; color: #7f1d1d; margin-top: 5px;">$<?php echo number_format($roi['estimated_cost_usd'], 4); ?></div>
-                        <p style="margin:0; font-size:12px; color: #991b1b; margin-top: 5px;">Based on blended cost of $0.50 / 1M tokens.</p>
+                        <p style="margin:0; font-size:12px; color: #991b1b; margin-top: 5px;">Based on aggregated provider costs.</p>
                     </div>
                 </div>
             </div>

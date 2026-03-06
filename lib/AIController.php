@@ -1474,10 +1474,33 @@ class AIController
             $timeSavedMins = $timeSavedMinutes % 60;
             $timeSavedString = "{$timeSavedHours}h {$timeSavedMins}m";
 
-            // Estimated Cost (assuming an average mixed cost, say $0.50 per 1M tokens)
-            // This is just a rough estimate to show ROI on the dashboard.
-            $costPerMillionTokens = 0.50; 
-            $estimatedCost = ($totalTokens / 1000000) * $costPerMillionTokens;
+            // Estimated Cost based on Provider settings (blended avg if not split)
+            $estimatedCost = 0.00;
+            try {
+                $auditRecords = Capsule::table('tblsahdev_audit_trail')
+                    ->select(Capsule::raw('provider_used, SUM(tokens_used) as tokens'))
+                    ->groupBy('provider_used')
+                    ->get();
+                    
+                $providers = Capsule::table('tblsahdev_providers')->get()->keyBy('name');
+                
+                foreach ($auditRecords as $rec) {
+                    $providerName = $rec->provider_used;
+                    $tokens = $rec->tokens ?? 0;
+                    
+                    if ($providers->has($providerName)) {
+                        $p = $providers->get($providerName);
+                        // Blended average of input and output since tokens are tracked as a total sum
+                        $costPer1M = (float)(($p->cost_input_1m + $p->cost_output_1m) / 2);
+                    } else {
+                        $costPer1M = 0.50; // default fallback if provider deleted
+                    }
+                    $estimatedCost += ($tokens / 1000000) * $costPer1M;
+                }
+            } catch (\Exception $ce) {
+                // If calculation fails, fallback
+                $estimatedCost = ($totalTokens / 1000000) * 0.50;
+            }
 
             return [
                 'status' => 'success',

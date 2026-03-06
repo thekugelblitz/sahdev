@@ -11,6 +11,7 @@ class TicketDataExtractor
 
     // Limits to prevent massive memory usage
     private $maxMessages = 10;
+    private $maxAttachmentChars = 5000;
     private $maxAttachmentSize = 1048576; // 1 MB (extracted text threshold)
     private $maxImages = 3; // Max number of images to process
 
@@ -18,6 +19,18 @@ class TicketDataExtractor
     {
         $this->ticketId = $ticketId;
         $this->adminId = $adminId;
+
+        // Fetch dynamic limits from settings
+        try {
+            $settings = Capsule::table('tblsahdev_settings')->select('max_messages', 'max_attachment_chars', 'max_images')->first();
+            if ($settings) {
+                $this->maxMessages = (int) ($settings->max_messages ?? 10);
+                $this->maxAttachmentChars = (int) ($settings->max_attachment_chars ?? 5000);
+                $this->maxImages = (int) ($settings->max_images ?? 3);
+            }
+        } catch (\Exception $e) {
+            // Fallback to defaults if columns are missing or db fails
+        }
     }
 
     /**
@@ -275,7 +288,9 @@ class TicketDataExtractor
                     $content = @file_get_contents($filePath);
                     if ($content !== false) {
                         // Truncate if massive (safety net beyond filesize)
-                        $content = substr($content, 0, 5000) . "...(truncated)";
+                        if (strlen($content) > $this->maxAttachmentChars) {
+                            $content = substr($content, 0, $this->maxAttachmentChars) . "...(truncated)";
+                        }
                         $text .= "Attachment [{$file}]:\n" . htmlentities($content) . "\n\n";
                     }
                 }

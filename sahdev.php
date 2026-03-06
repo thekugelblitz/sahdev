@@ -130,6 +130,17 @@ function sahdev_activate()
                     $table->boolean('is_cached')->default(0);
                 });
             }
+
+            // Migrate: add data extraction limit columns if missing
+            try {
+                Capsule::table('tblsahdev_settings')->select('max_messages')->first();
+            } catch (\Exception $e) {
+                Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                    $table->integer('max_messages')->default(10);
+                    $table->integer('max_attachment_chars')->default(5000);
+                    $table->integer('max_images')->default(3);
+                });
+            }
         } catch (\Exception $e) {
             Capsule::schema()->create(
                 'tblsahdev_settings',
@@ -152,6 +163,9 @@ function sahdev_activate()
                     $table->boolean('auto_tagging')->default(0);
                     $table->boolean('quality_scorer_enabled')->default(1);
                     $table->string('custom_attachments_dir', 255)->nullable();
+                    $table->integer('max_messages')->default(10);
+                    $table->integer('max_attachment_chars')->default(5000);
+                    $table->integer('max_images')->default(3);
                     $table->timestamps(); // creates created_at, updated_at
                 }
             );
@@ -171,6 +185,9 @@ function sahdev_activate()
                 'pii_scrub_enabled' => 0,
                 'translation_enabled' => 0,
                 'auto_sentiment' => 0,
+                'max_messages' => 10,
+                'max_attachment_chars' => 5000,
+                'max_images' => 3,
                 'created_at' => \Carbon\Carbon::now(),
                 'updated_at' => \Carbon\Carbon::now(),
             ]);
@@ -179,6 +196,16 @@ function sahdev_activate()
         // Create tblsahdev_providers
         try {
             Capsule::table('tblsahdev_providers')->first();
+
+            // Migrate: add cost columns to tblsahdev_providers if missing
+            try {
+                Capsule::table('tblsahdev_providers')->select('cost_input_1m')->first();
+            } catch (\Exception $e) {
+                Capsule::schema()->table('tblsahdev_providers', function ($table) {
+                    $table->decimal('cost_input_1m', 10, 4)->default(0.0000);
+                    $table->decimal('cost_output_1m', 10, 4)->default(0.0000);
+                });
+            }
         } catch (\Exception $e) {
             Capsule::schema()->create(
                 'tblsahdev_providers',
@@ -190,6 +217,8 @@ function sahdev_activate()
                     $table->string('api_url')->nullable();
                     $table->string('model_name')->nullable();
                     $table->boolean('is_active')->default(true);
+                    $table->decimal('cost_input_1m', 10, 4)->default(0.0000);
+                    $table->decimal('cost_output_1m', 10, 4)->default(0.0000);
                     $table->timestamps();
                 }
             );
@@ -201,17 +230,20 @@ function sahdev_activate()
                 'api_key' => '', // Needs to be set via UI
                 'api_url' => '',
                 'model_name' => 'models/gemini-1.5-pro',
+                'cost_input_1m' => 1.25,
+                'cost_output_1m' => 5.00,
                 'created_at' => \Carbon\Carbon::now(),
                 'updated_at' => \Carbon\Carbon::now(),
             ]);
 
-            // Insert default LM Studio Provider
             Capsule::table('tblsahdev_providers')->insert([
                 'name' => 'Default Local AI',
                 'provider_type' => 'lmstudio',
                 'api_key' => '',
                 'api_url' => 'http://localhost:1234/v1/chat/completions',
                 'model_name' => 'local-model',
+                'cost_input_1m' => 0.00,
+                'cost_output_1m' => 0.00,
                 'created_at' => \Carbon\Carbon::now(),
                 'updated_at' => \Carbon\Carbon::now(),
             ]);
