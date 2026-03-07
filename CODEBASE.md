@@ -552,6 +552,9 @@ Global configuration. Always has exactly 1 row (id=1).
 | `tone_default` | varchar | Professional | Default tone |
 | `system_prompt` | text | (see sahdev_activate) | Global system persona (synced from prompt library) |
 | `user_prompt_template` | longtext | (default template) | Main analysis prompt (synced from prompt library) |
+| `max_messages` | int | 10 | Max recent messages to send |
+| `max_attachment_chars` | int | 5000 | Max extracted characters from attachments |
+| `max_images` | int | 3 | Max images analyzed per ticket |
 | `auto_analyze_on_load` | boolean | 0 | Auto-snapshot on ticket open |
 | `summarizer_enabled` | boolean | 1 | Feature toggle: AI Summarizer |
 | `summarizer_threshold` | int | 20 | Min messages to trigger summarizer |
@@ -582,6 +585,8 @@ One row per AI provider configuration.
 | `api_key` | text (encrypted) | API key, stored encrypted via WHMCS `encrypt()` |
 | `api_url` | varchar | Base URL for lmstudio/replicate |
 | `model_name` | varchar | Model identifier |
+| `cost_input_1m` | decimal(10,4) | Cost per 1M input tokens |
+| `cost_output_1m` | decimal(10,4) | Cost per 1M output tokens |
 | `is_active` | boolean | 1 = active |
 | `created_at`, `updated_at` | timestamps | — |
 
@@ -1007,6 +1012,9 @@ Managed at `Admin → Addons → Sahdev → Settings`:
 | Temperature | `temperature` | 0.0–1.0; higher = more creative |
 | Max Tokens | `max_tokens` | Max output length in tokens |
 | Default Tone | `tone_default` | Professional / Technical / Friendly / Strict / Custom |
+| Recent Messages Limit | `max_messages` | Number of most recent ticket replies to send |
+| Text Attachment Limits | `max_attachment_chars` | Max characters extracted from .txt/.log |
+| Max Images Analyzed | `max_images` | Number of recent images to send |
 | Auto-analyze on load | `auto_analyze_on_load` | Loads cached analysis when ticket opens |
 | AI Summarizer | `summarizer_enabled` | Toggle feature on/off globally |
 | Summarizer Threshold | `summarizer_threshold` | Min messages before summary is useful |
@@ -1082,8 +1090,9 @@ Managed at `Admin → Addons → Sahdev → Settings`:
 | 1.5 | 2026-01 | LM Studio local AI support, fallback provider, knowledge base, admin signatures |
 | 2.0 | 2026-02 | AI Summarizer, Historical Context, Canned Responses, Quality Scorer, Audit Trail, Analytics, Rewrite Reply, Intent System, Replicate provider, Compliance Mode |
 | 2.1 | 2026-03-03 | **Prompt Template Library** — all 7 prompt types editable from backend via `tblsahdev_prompt_templates`; Preset save/load/delete system via `tblsahdev_prompt_presets`; JSON import/export; Reset to factory defaults; `AIController::loadPromptTemplates()` added |
+| 2.1.1 | 2026-03-06 | Added configuration fields for context limits (`max_messages`, `max_attachment_chars`, `max_images`) and AI cost tracking |
 
 ---
 
-*End of CODEBASE.md — Sahdev v2.1.0*
-*Last updated: 2026-03-03 | Update this file whenever you add tables, methods, AJAX actions, or prompt keys.*
+*End of CODEBASE.md — Sahdev v2.1.1*
+*Last updated: 2026-03-06 | Update this file whenever you add tables, methods, AJAX actions, or prompt keys.*
