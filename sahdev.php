@@ -462,16 +462,23 @@ function sahdev_activate()
         // Create tblsahdev_intents
         try {
             Capsule::table('tblsahdev_intents')->first();
+
+            // If it exists but is completely empty, seed it
+            if (Capsule::table('tblsahdev_intents')->count() == 0) {
+                throw new \Exception("Table empty, needs seeding");
+            }
         } catch (\Exception $e) {
-            Capsule::schema()->create('tblsahdev_intents', function ($table) {
-                $table->increments('id');
-                $table->string('intent_key', 32)->unique();
-                $table->string('label', 64);
-                $table->text('directive');
-                $table->boolean('is_active')->default(1);
-                $table->integer('sort_order')->default(0);
-                $table->timestamps();
-            });
+            if (!Capsule::schema()->hasTable('tblsahdev_intents')) {
+                Capsule::schema()->create('tblsahdev_intents', function ($table) {
+                    $table->increments('id');
+                    $table->string('intent_key', 32)->unique();
+                    $table->string('label', 64);
+                    $table->text('directive');
+                    $table->boolean('is_active')->default(1);
+                    $table->integer('sort_order')->default(0);
+                    $table->timestamps();
+                });
+            }
 
             // Seed defaults
             Capsule::table('tblsahdev_intents')->insert([

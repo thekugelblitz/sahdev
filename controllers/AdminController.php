@@ -152,19 +152,28 @@ class AdminController
             });
         }
 
-        // 8. Ensure Intents Table Exists
+        // 8. Ensure Intents Table Exists and is Seeded
         try {
+            // Check if table exists
             Capsule::table('tblsahdev_intents')->first();
+            
+            // If it exists but is completely empty, seed it
+            if (Capsule::table('tblsahdev_intents')->count() == 0) {
+                throw new \Exception("Table empty, needs seeding");
+            }
         } catch (\Exception $e) {
-            Capsule::schema()->create('tblsahdev_intents', function ($table) {
-                $table->increments('id');
-                $table->string('intent_key', 32)->unique();
-                $table->string('label', 64);
-                $table->text('directive');
-                $table->boolean('is_active')->default(1);
-                $table->integer('sort_order')->default(0);
-                $table->timestamps();
-            });
+            // Create table if it doesn't exist
+            if (!Capsule::schema()->hasTable('tblsahdev_intents')) {
+                Capsule::schema()->create('tblsahdev_intents', function ($table) {
+                    $table->increments('id');
+                    $table->string('intent_key', 32)->unique();
+                    $table->string('label', 64);
+                    $table->text('directive');
+                    $table->boolean('is_active')->default(1);
+                    $table->integer('sort_order')->default(0);
+                    $table->timestamps();
+                });
+            }
 
             // Seed defaults
             Capsule::table('tblsahdev_intents')->insert([
@@ -1185,9 +1194,9 @@ class AdminController
                         </div>
 
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 15px;">
+                            <button type="submit" name="intent_action" value="update" class="btn btn-sm btn-primary"><i class="fas fa-save"></i> Save Changes</button>
                             <button type="submit" name="intent_action" value="delete" class="btn btn-sm btn-danger" <?php echo ($intent->intent_key === 'AUTO') ? 'disabled' : ''; ?>
                                 onclick="return confirm('WARNING: Are you sure you want to delete this intent?');"><i class="fas fa-trash"></i> Delete</button>
-                            <button type="submit" name="intent_action" value="update" class="btn btn-sm btn-primary"><i class="fas fa-save"></i> Save Changes</button>
                         </div>
                     </form>
                 </div>
