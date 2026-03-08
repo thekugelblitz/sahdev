@@ -463,6 +463,13 @@ function sahdev_activate()
         try {
             Capsule::table('tblsahdev_intents')->first();
 
+            // Setup utf8mb4 on specific columns to support emojis safely
+            Capsule::statement("ALTER TABLE tblsahdev_intents 
+                MODIFY label VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+                MODIFY directive TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+                MODIFY intent_key VARCHAR(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+            ");
+
             // If it exists but is completely empty, seed it
             if (Capsule::table('tblsahdev_intents')->count() == 0) {
                 throw new \Exception("Table empty, needs seeding");
@@ -481,9 +488,6 @@ function sahdev_activate()
                     $table->timestamps();
                 });
             }
-
-            // Ensure table supports emojis (utf8mb4) if it already existed but with wrong charset
-            Capsule::statement("ALTER TABLE tblsahdev_intents CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
 
             // Seed defaults
             Capsule::table('tblsahdev_intents')->insert([

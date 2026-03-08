@@ -177,9 +177,6 @@ class AdminController
                 });
             }
 
-            // Ensure table supports emojis (utf8mb4) if it already existed but with wrong charset
-            Capsule::statement("ALTER TABLE tblsahdev_intents CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
-
             // Seed defaults
             Capsule::table('tblsahdev_intents')->insert([
                 [
@@ -1086,9 +1083,13 @@ class AdminController
 
         // AGGRESSIVE SEEDING CHECK: if the table is completely empty, force seed it right before rendering.
         try {
-            // Ensure emoji support before attempting inserts
-            Capsule::statement("ALTER TABLE tblsahdev_intents CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
-            
+            // Safely convert the individual columns to utf8mb4 to support emojis without dropping the table
+            Capsule::statement("ALTER TABLE tblsahdev_intents 
+                MODIFY label VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+                MODIFY directive TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+                MODIFY intent_key VARCHAR(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+            ");
+
             if (Capsule::table('tblsahdev_intents')->count() == 0) {
                 Capsule::table('tblsahdev_intents')->insert([
                     [
