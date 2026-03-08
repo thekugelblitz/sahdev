@@ -50,6 +50,17 @@ function sahdev_inject_ticket_panel($vars)
 
     $scoreBtnStyle = $qualityScorerEnabled === 'true' ? '' : 'display: none;';
 
+    // Hardcode emojis for well known intents, since some DBs don't support utf8mb4 emojis natively
+    $intentIconMap = [
+        'AUTO'         => '🤖 ',
+        'RESOLVE'      => '✅ ',
+        'INVESTIGATE'  => '🧐 ',
+        'MORE_INFO'    => '❓ ',
+        'GUIDE'        => '🗺️ ',
+        'OUT_OF_SCOPE' => '🚫 ',
+        'DUPLICATE'    => '🔁 ',
+    ];
+
     // Load active intents from DB, ordered by sort_order
     $intentsList = [];
     try {
@@ -67,8 +78,13 @@ function sahdev_inject_ticket_panel($vars)
     if (count($intentsList) > 0) {
         foreach ($intentsList as $inc => $intent) {
             $isActiveClass = ($inc === 0) ? ' sahdev-intent-active' : '';
-            $intentButtonsHtml .= '<button type="button" class="btn btn-xs sahdev-intent-btn' . $isActiveClass . '" data-intent="' . htmlspecialchars($intent->intent_key) . '" style="border-radius: 20px; padding: 4px 12px; font-size: 12px; font-weight: 600;">' . htmlspecialchars($intent->label) . '</button> ';
-            $jsIntentLabels[$intent->intent_key] = $intent->label;
+            
+            // Prepend known emoji if exists
+            $emojiPrefix = isset($intentIconMap[$intent->intent_key]) ? $intentIconMap[$intent->intent_key] : '';
+            $displayLabel = $emojiPrefix . $intent->label;
+
+            $intentButtonsHtml .= '<button type="button" class="btn btn-xs sahdev-intent-btn' . $isActiveClass . '" data-intent="' . htmlspecialchars($intent->intent_key) . '" style="border-radius: 20px; padding: 4px 12px; font-size: 12px; font-weight: 600;">' . htmlspecialchars($displayLabel) . '</button> ';
+            $jsIntentLabels[$intent->intent_key] = $displayLabel;
         }
         $defaultIntentVal = htmlspecialchars($intentsList[0]->intent_key);
     } else {
