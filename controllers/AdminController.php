@@ -1034,8 +1034,14 @@ class AdminController
             if ($action === 'create' || $action === 'update') {
                 $id = (int) ($_POST['intent_id'] ?? 0);
                 $intentKey = strtoupper(trim($_POST['intent_key'] ?? ''));
-                $label = trim($_POST['label'] ?? '');
-                $directive = trim($_POST['directive'] ?? '');
+                
+                // Helper function to strip 4-byte characters (emojis)
+                $stripEmojis = function($string) {
+                    return preg_replace('/[\x{10000}-\x{10FFFF}]/u', '', $string);
+                };
+
+                $label = trim($stripEmojis($_POST['label'] ?? ''));
+                $directive = trim($stripEmojis($_POST['directive'] ?? ''));
                 $isActive = !empty($_POST['is_active']) ? 1 : 0;
                 $sortOrder = (int) ($_POST['sort_order'] ?? 0);
 
