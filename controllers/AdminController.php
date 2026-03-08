@@ -165,6 +165,8 @@ class AdminController
             // Create table if it doesn't exist
             if (!Capsule::schema()->hasTable('tblsahdev_intents')) {
                 Capsule::schema()->create('tblsahdev_intents', function ($table) {
+                    $table->charset = 'utf8mb4';
+                    $table->collation = 'utf8mb4_unicode_ci';
                     $table->increments('id');
                     $table->string('intent_key', 32)->unique();
                     $table->string('label', 64);
@@ -174,6 +176,9 @@ class AdminController
                     $table->timestamps();
                 });
             }
+
+            // Ensure table supports emojis (utf8mb4) if it already existed but with wrong charset
+            Capsule::statement("ALTER TABLE tblsahdev_intents CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
 
             // Seed defaults
             Capsule::table('tblsahdev_intents')->insert([
@@ -1081,6 +1086,9 @@ class AdminController
 
         // AGGRESSIVE SEEDING CHECK: if the table is completely empty, force seed it right before rendering.
         try {
+            // Ensure emoji support before attempting inserts
+            Capsule::statement("ALTER TABLE tblsahdev_intents CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+            
             if (Capsule::table('tblsahdev_intents')->count() == 0) {
                 Capsule::table('tblsahdev_intents')->insert([
                     [
