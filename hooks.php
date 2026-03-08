@@ -50,6 +50,36 @@ function sahdev_inject_ticket_panel($vars)
 
     $scoreBtnStyle = $qualityScorerEnabled === 'true' ? '' : 'display: none;';
 
+    // Load active intents from DB, ordered by sort_order
+    $intentsList = [];
+    try {
+        $intentsList = Capsule::table('tblsahdev_intents')
+            ->where('is_active', 1)
+            ->orderBy('sort_order', 'asc')
+            ->get();
+    } catch (\Exception $e) {
+        // Fallback or ignore if DB not ready
+    }
+    
+    // Generate Intent Buttons HTML
+    $intentButtonsHtml = '';
+    $jsIntentLabels = []; // To power the javascript badge label logic
+    if (count($intentsList) > 0) {
+        foreach ($intentsList as $inc => $intent) {
+            $isActiveClass = ($inc === 0) ? ' sahdev-intent-active' : '';
+            $intentButtonsHtml .= '<button type="button" class="btn btn-xs sahdev-intent-btn' . $isActiveClass . '" data-intent="' . htmlspecialchars($intent->intent_key) . '" style="border-radius: 20px; padding: 4px 12px; font-size: 12px; font-weight: 600;">' . htmlspecialchars($intent->label) . '</button> ';
+            $jsIntentLabels[$intent->intent_key] = $intent->label;
+        }
+        $defaultIntentVal = htmlspecialchars($intentsList[0]->intent_key);
+    } else {
+        // Ultimate fallback
+        $intentButtonsHtml = '<button type="button" class="btn btn-xs sahdev-intent-btn sahdev-intent-active" data-intent="AUTO" style="border-radius: 20px; padding: 4px 12px; font-size: 12px; font-weight: 600;">🤖 Auto (AI Decides)</button>';
+        $jsIntentLabels['AUTO'] = '🤖 Auto (AI Decides)';
+        $defaultIntentVal = 'AUTO';
+    }
+    
+    $jsIntentLabelsJson = json_encode($jsIntentLabels);
+
     $htmlPanel = <<<HTML
 <div class="panel panel-info" id="sahdev-ai-panel" style="margin-top: 20px; border-color: #0d6efd;">
     <div class="panel-heading" style="background-color: #0d6efd; color: white; display: flex; justify-content: space-between; align-items: center; cursor: pointer;" onclick="$('#sahdev-ai-body').slideToggle();">
@@ -61,19 +91,13 @@ function sahdev_inject_ticket_panel($vars)
         <form id="sahdev-ai-form">
             {$csrfToken}
             <input type="hidden" id="sahdev_ticket_id" value="{$ticketId}">
-            <input type="hidden" id="sahdev_intent" value="AUTO">
+            <input type="hidden" id="sahdev_intent" value="{$defaultIntentVal}">
 
             <!-- Intent Selector -->
             <div class="form-group" style="margin-bottom: 12px;">
                 <label style="font-weight: 600; margin-bottom: 6px; display: block;"><i class="fas fa-bullseye"></i> Reply Intent</label>
                 <div id="sahdev-intent-btns" style="display: flex; flex-wrap: wrap; gap: 6px;">
-                    <button type="button" class="btn btn-xs sahdev-intent-btn sahdev-intent-active" data-intent="AUTO" style="border-radius: 20px; padding: 4px 12px; font-size: 12px; font-weight: 600;">🤖 Auto (AI Decides)</button>
-                    <button type="button" class="btn btn-xs sahdev-intent-btn" data-intent="RESOLVE" style="border-radius: 20px; padding: 4px 12px; font-size: 12px; font-weight: 600;">✅ Resolved Query</button>
-                    <button type="button" class="btn btn-xs sahdev-intent-btn" data-intent="INVESTIGATE" style="border-radius: 20px; padding: 4px 12px; font-size: 12px; font-weight: 600;">🔍 Checking Query</button>
-                    <button type="button" class="btn btn-xs sahdev-intent-btn" data-intent="MORE_INFO" style="border-radius: 20px; padding: 4px 12px; font-size: 12px; font-weight: 600;">❓ Need More Info</button>
-                    <button type="button" class="btn btn-xs sahdev-intent-btn" data-intent="GUIDE" style="border-radius: 20px; padding: 4px 12px; font-size: 12px; font-weight: 600;">🗺️ Guide to Solution</button>
-                    <button type="button" class="btn btn-xs sahdev-intent-btn" data-intent="OUT_OF_SCOPE" style="border-radius: 20px; padding: 4px 12px; font-size: 12px; font-weight: 600;">🚫 Out of Scope</button>
-                    <button type="button" class="btn btn-xs sahdev-intent-btn" data-intent="DUPLICATE" style="border-radius: 20px; padding: 4px 12px; font-size: 12px; font-weight: 600;">🔁 Duplicate Ticket</button>
+                    {$intentButtonsHtml}
                 </div>
             </div>
             <style>

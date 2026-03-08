@@ -151,6 +151,88 @@ class AdminController
                 $table->decimal('cost_output_1m', 10, 4)->default(0.0000);
             });
         }
+
+        // 8. Ensure Intents Table Exists
+        try {
+            Capsule::table('tblsahdev_intents')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->create('tblsahdev_intents', function ($table) {
+                $table->increments('id');
+                $table->string('intent_key', 32)->unique();
+                $table->string('label', 64);
+                $table->text('directive');
+                $table->boolean('is_active')->default(1);
+                $table->integer('sort_order')->default(0);
+                $table->timestamps();
+            });
+
+            // Seed defaults
+            Capsule::table('tblsahdev_intents')->insert([
+                [
+                    'intent_key' => 'AUTO',
+                    'label'      => '🤖 Auto (AI Decides)',
+                    'directive'  => '', // Handled by AUTO fallback
+                    'is_active'  => 1,
+                    'sort_order' => 10,
+                    'created_at' => \Carbon\Carbon::now(),
+                    'updated_at' => \Carbon\Carbon::now()
+                ],
+                [
+                    'intent_key' => 'RESOLVE',
+                    'label'      => '✅ Resolved Query',
+                    'directive'  => 'REPLY INTENT — RESOLVED: The admin confirms this issue has been resolved. Write CLIENT_REPLY as a confident closing message. Acknowledge what was fixed, thank the client for their patience, and advise them to reopen the ticket if the issue recurs. Do NOT ask further questions.',
+                    'is_active'  => 1,
+                    'sort_order' => 20,
+                    'created_at' => \Carbon\Carbon::now(),
+                    'updated_at' => \Carbon\Carbon::now()
+                ],
+                [
+                    'intent_key' => 'INVESTIGATE',
+                    'label'      => '🔍 Checking Query',
+                    'directive'  => 'REPLY INTENT — INVESTIGATING: The admin is still actively investigating this issue. Write CLIENT_REPLY to acknowledge the issue empathetically, confirm the support team is actively working on it, and set realistic expectations without making firm time commitments. Keep the client reassured.',
+                    'is_active'  => 1,
+                    'sort_order' => 30,
+                    'created_at' => \Carbon\Carbon::now(),
+                    'updated_at' => \Carbon\Carbon::now()
+                ],
+                [
+                    'intent_key' => 'MORE_INFO',
+                    'label'      => '❓ Need More Info',
+                    'directive'  => 'REPLY INTENT — NEED MORE INFORMATION: The admin needs additional details before proceeding. Write CLIENT_REPLY to clearly and politely list exactly what specific information, logs, screenshots, credentials, or steps are required from the client. Be precise — avoid vague requests.',
+                    'is_active'  => 1,
+                    'sort_order' => 40,
+                    'created_at' => \Carbon\Carbon::now(),
+                    'updated_at' => \Carbon\Carbon::now()
+                ],
+                [
+                    'intent_key' => 'GUIDE',
+                    'label'      => '🗺️ Guide to Solution',
+                    'directive'  => 'REPLY INTENT — GUIDE TO SOLUTION: The admin wants to guide the client to self-resolve. Write CLIENT_REPLY as a clear, step-by-step guide in simple language the client can follow independently. Use numbered steps. Anticipate likely stumbling points and address them proactively.',
+                    'is_active'  => 1,
+                    'sort_order' => 50,
+                    'created_at' => \Carbon\Carbon::now(),
+                    'updated_at' => \Carbon\Carbon::now()
+                ],
+                [
+                    'intent_key' => 'OUT_OF_SCOPE',
+                    'label'      => '🚫 Out of Scope',
+                    'directive'  => 'REPLY INTENT — OUT OF SUPPORT SCOPE: This issue falls outside the support boundaries. Write CLIENT_REPLY to clearly but respectfully explain that this specific issue is not covered under the current support scope or plan. Where applicable, point to relevant resources, documentation, or upgrade options. Be firm yet courteous — avoid leaving the client feeling dismissed.',
+                    'is_active'  => 1,
+                    'sort_order' => 60,
+                    'created_at' => \Carbon\Carbon::now(),
+                    'updated_at' => \Carbon\Carbon::now()
+                ],
+                [
+                    'intent_key' => 'DUPLICATE',
+                    'label'      => '🔁 Duplicate Ticket',
+                    'directive'  => 'REPLY INTENT — DUPLICATE TICKET: This is a duplicate of an existing ticket. Write CLIENT_REPLY to politely inform the client that this appears to be a duplicate of an existing ticket they have already submitted. Instruct them to continue communication on the original ticket to avoid confusion and ensure continuity of support. Close this ticket gracefully.',
+                    'is_active'  => 1,
+                    'sort_order' => 70,
+                    'created_at' => \Carbon\Carbon::now(),
+                    'updated_at' => \Carbon\Carbon::now()
+                ],
+            ]);
+        }
     }
 
     /**
@@ -241,6 +323,7 @@ class AdminController
             'prompt_manager' => ['label' => '<i class="fas fa-magic"></i> Prompt Manager', 'url' => $base . '&action=prompt_manager'],
             'summaries' => ['label' => '<i class="fas fa-file-alt"></i> Ticket Summaries', 'url' => $base . '&action=summaries'],
             'canned_responses' => ['label' => '<i class="fas fa-save"></i> Canned Responses', 'url' => $base . '&action=canned_responses'],
+            'intents' => ['label' => '<i class="fas fa-bullseye"></i> Intents Manager', 'url' => $base . '&action=intents'],
             'analytics' => ['label' => '<i class="fas fa-chart-line"></i> Analytics', 'url' => $base . '&action=analytics'],
             'audit_trail' => ['label' => '<i class="fas fa-history"></i> Audit Trail', 'url' => $base . '&action=audit_trail'],
         ];
@@ -912,6 +995,199 @@ class AdminController
                                     class="fas fa-trash"></i> Delete</button>
                             <button type="submit" name="provider_action" value="update" class="btn btn-sm btn-primary"><i
                                     class="fas fa-save"></i> Save Changes</button>
+                        </div>
+                    </form>
+                </div>
+            <?php endforeach; ?>
+
+        </div>
+        <?php
+        return ob_get_clean();
+    }
+
+    /**
+     * Intents Manager View
+     *
+     * @return string
+     */
+    public function intents()
+    {
+        $successMessage = '';
+        $errorMessage = '';
+
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            check_token("WHMCS.admin.default");
+
+            $action = $_POST['intent_action'] ?? '';
+
+            if ($action === 'create' || $action === 'update') {
+                $id = (int) ($_POST['intent_id'] ?? 0);
+                $intentKey = strtoupper(trim($_POST['intent_key'] ?? ''));
+                $label = trim($_POST['label'] ?? '');
+                $directive = trim($_POST['directive'] ?? '');
+                $isActive = !empty($_POST['is_active']) ? 1 : 0;
+                $sortOrder = (int) ($_POST['sort_order'] ?? 0);
+
+                if (empty($intentKey) || empty($label)) {
+                    $errorMessage = "Intent Key and Label are required.";
+                } elseif (!preg_match('/^[A-Z0-9_]+$/', $intentKey)) {
+                    $errorMessage = "Intent Key must contain only uppercase letters, numbers, and underscores (e.g., RESOLVE_ISSUE).";
+                } else {
+                    $data = [
+                        'intent_key' => $intentKey,
+                        'label' => $label,
+                        'directive' => $directive,
+                        'is_active' => $isActive,
+                        'sort_order' => $sortOrder,
+                        'updated_at' => \Carbon\Carbon::now(),
+                    ];
+
+                    try {
+                        if ($action === 'create') {
+                            $data['created_at'] = \Carbon\Carbon::now();
+                            Capsule::table('tblsahdev_intents')->insert($data);
+                            $successMessage = "Intent created successfully.";
+                        } else {
+                            Capsule::table('tblsahdev_intents')->where('id', $id)->update($data);
+                            $successMessage = "Intent updated successfully.";
+                        }
+                    } catch (\Exception $e) {
+                         // Likely unique constraint violation on intent_key
+                         $errorMessage = "Failed to save Intent. Ensure the Intent Key is unique. Error: " . $e->getMessage();
+                    }
+                }
+            } elseif ($action === 'delete') {
+                $id = (int) $_POST['intent_id'];
+                
+                // Prevent deleting 'AUTO' as it's a fallback
+                $intent = Capsule::table('tblsahdev_intents')->where('id', $id)->first();
+                if ($intent && $intent->intent_key === 'AUTO') {
+                    $errorMessage = "The 'AUTO' intent is required by the system and cannot be deleted.";
+                } else {
+                    Capsule::table('tblsahdev_intents')->where('id', $id)->delete();
+                    $successMessage = "Intent deleted.";
+                }
+            }
+        }
+
+        $intents = Capsule::table('tblsahdev_intents')->orderBy('sort_order', 'asc')->get();
+
+        $csrfToken = generate_token("form");
+        $actionUrl = htmlspecialchars($this->moduleVars['modulelink']) . '&action=intents';
+
+        ob_start();
+        ?>
+        <style>
+            .intent-card {
+                border: 1px solid #ddd;
+                border-radius: 6px;
+                padding: 15px;
+                margin-bottom: 15px;
+                background: #fafafa;
+            }
+            .intent-header {
+                margin-bottom: 15px;
+                border-bottom: 1px solid #eee;
+                padding-bottom: 10px;
+            }
+        </style>
+
+        <?php echo $this->getNavigationMarkup('intents'); ?>
+        <div class="sahdev-page-container">
+
+            <h2 style="margin-bottom: 10px;">Reply Intents Manager</h2>
+            <p class="text-muted" style="margin-bottom: 25px;">Create and manage reply intents (e.g., Resolved, Need More Info). These appear as quick buttons in the ticket view and inject specific directives into the AI prompt when generating a reply.</p>
+
+            <?php if (!empty($successMessage)): ?>
+                <div class="alert alert-success"><i class="fas fa-check-circle"></i> <?php echo htmlspecialchars($successMessage); ?></div>
+            <?php endif; ?>
+            <?php if (!empty($errorMessage)): ?>
+                <div class="alert alert-danger"><i class="fas fa-exclamation-circle"></i> <?php echo htmlspecialchars($errorMessage); ?></div>
+            <?php endif; ?>
+
+            <!-- Add New Form -->
+            <div class="intent-card" style="border-left: 4px solid #198754; background: #f8fff9;">
+                <div class="intent-header">
+                    <h4 style="margin:0;"><i class="fas fa-plus-circle"></i> Add New Intent</h4>
+                </div>
+                <form method="post" action="<?php echo $actionUrl; ?>">
+                    <?php echo $csrfToken; ?>
+                    <input type="hidden" name="intent_action" value="create">
+
+                    <div class="row" style="margin-bottom: 10px;">
+                        <div class="col-md-3">
+                            <label>Internal Key (Uppercase)</label>
+                            <input type="text" name="intent_key" class="form-control" placeholder="e.g. ESCALATE" required>
+                        </div>
+                        <div class="col-md-5">
+                            <label>Button Label (Appears in UI)</label>
+                            <input type="text" name="label" class="form-control" placeholder="e.g. 📈 Escalate" required>
+                        </div>
+                        <div class="col-md-2">
+                            <label>Sort Order</label>
+                            <input type="number" name="sort_order" class="form-control" value="100">
+                        </div>
+                        <div class="col-md-2">
+                            <label style="display:block;">Status</label>
+                            <div class="checkbox" style="margin-top: 5px;">
+                                <label><input type="checkbox" name="is_active" value="1" checked> Active</label>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row" style="margin-bottom: 10px;">
+                        <div class="col-md-12">
+                            <label>AI Prompt Directive</label>
+                            <textarea name="directive" class="form-control" rows="3" placeholder="Instruction injected into system prompt when this intent is selected..."></textarea>
+                            <small class="text-muted">Example: "REPLY INTENT — ESCALATING: Inform the client this issue is being escalated to a senior technician for further review. Set expectations for a follow-up."</small>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn btn-sm btn-success mt-2"><i class="fas fa-plus"></i> Create Intent</button>
+                </form>
+            </div>
+
+            <hr style="margin: 30px 0;">
+            <h4 style="margin-bottom: 15px;">Existing Intents</h4>
+
+            <?php foreach ($intents as $intent): ?>
+                <div class="intent-card" style="<?php echo (!$intent->is_active) ? 'opacity: 0.6;' : ''; ?>">
+                    <form method="post" action="<?php echo $actionUrl; ?>">
+                        <?php echo $csrfToken; ?>
+                        <input type="hidden" name="intent_id" value="<?php echo $intent->id; ?>">
+
+                        <div class="row" style="margin-bottom: 10px;">
+                            <div class="col-md-3">
+                                <label>Internal Key</label>
+                                <input type="text" name="intent_key" class="form-control" value="<?php echo htmlspecialchars($intent->intent_key); ?>" <?php echo ($intent->intent_key === 'AUTO') ? 'readonly' : 'required'; ?>>
+                            </div>
+                            <div class="col-md-5">
+                                <label>Button Label</label>
+                                <input type="text" name="label" class="form-control" value="<?php echo htmlspecialchars($intent->label); ?>" required>
+                            </div>
+                            <div class="col-md-2">
+                                <label>Sort Order</label>
+                                <input type="number" name="sort_order" class="form-control" value="<?php echo htmlspecialchars($intent->sort_order); ?>">
+                            </div>
+                            <div class="col-md-2">
+                                <label style="display:block;">Status</label>
+                                <div class="checkbox" style="margin-top: 5px;">
+                                    <label><input type="checkbox" name="is_active" value="1" <?php echo ($intent->is_active) ? 'checked' : ''; ?>> Active</label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row" style="margin-bottom: 10px;">
+                            <div class="col-md-12">
+                                <label>AI Prompt Directive</label>
+                                <textarea name="directive" class="form-control" rows="3" <?php echo ($intent->intent_key === 'AUTO') ? 'readonly placeholder="AUTO uses default AI behavior without extra directives."' : ''; ?>><?php echo htmlspecialchars($intent->directive); ?></textarea>
+                            </div>
+                        </div>
+
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 15px;">
+                            <button type="submit" name="intent_action" value="delete" class="btn btn-sm btn-danger" <?php echo ($intent->intent_key === 'AUTO') ? 'disabled' : ''; ?>
+                                onclick="return confirm('WARNING: Are you sure you want to delete this intent?');"><i class="fas fa-trash"></i> Delete</button>
+                            <button type="submit" name="intent_action" value="update" class="btn btn-sm btn-primary"><i class="fas fa-save"></i> Save Changes</button>
                         </div>
                     </form>
                 </div>

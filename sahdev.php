@@ -459,6 +459,88 @@ function sahdev_activate()
             });
         }
 
+        // Create tblsahdev_intents
+        try {
+            Capsule::table('tblsahdev_intents')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->create('tblsahdev_intents', function ($table) {
+                $table->increments('id');
+                $table->string('intent_key', 32)->unique();
+                $table->string('label', 64);
+                $table->text('directive');
+                $table->boolean('is_active')->default(1);
+                $table->integer('sort_order')->default(0);
+                $table->timestamps();
+            });
+
+            // Seed defaults
+            Capsule::table('tblsahdev_intents')->insert([
+                [
+                    'intent_key' => 'AUTO',
+                    'label'      => '🤖 Auto (AI Decides)',
+                    'directive'  => '', // Handled by AUTO fallback
+                    'is_active'  => 1,
+                    'sort_order' => 10,
+                    'created_at' => \Carbon\Carbon::now(),
+                    'updated_at' => \Carbon\Carbon::now()
+                ],
+                [
+                    'intent_key' => 'RESOLVE',
+                    'label'      => '✅ Resolved Query',
+                    'directive'  => 'REPLY INTENT — RESOLVED: The admin confirms this issue has been resolved. Write CLIENT_REPLY as a confident closing message. Acknowledge what was fixed, thank the client for their patience, and advise them to reopen the ticket if the issue recurs. Do NOT ask further questions.',
+                    'is_active'  => 1,
+                    'sort_order' => 20,
+                    'created_at' => \Carbon\Carbon::now(),
+                    'updated_at' => \Carbon\Carbon::now()
+                ],
+                [
+                    'intent_key' => 'INVESTIGATE',
+                    'label'      => '🔍 Checking Query',
+                    'directive'  => 'REPLY INTENT — INVESTIGATING: The admin is still actively investigating this issue. Write CLIENT_REPLY to acknowledge the issue empathetically, confirm the support team is actively working on it, and set realistic expectations without making firm time commitments. Keep the client reassured.',
+                    'is_active'  => 1,
+                    'sort_order' => 30,
+                    'created_at' => \Carbon\Carbon::now(),
+                    'updated_at' => \Carbon\Carbon::now()
+                ],
+                [
+                    'intent_key' => 'MORE_INFO',
+                    'label'      => '❓ Need More Info',
+                    'directive'  => 'REPLY INTENT — NEED MORE INFORMATION: The admin needs additional details before proceeding. Write CLIENT_REPLY to clearly and politely list exactly what specific information, logs, screenshots, credentials, or steps are required from the client. Be precise — avoid vague requests.',
+                    'is_active'  => 1,
+                    'sort_order' => 40,
+                    'created_at' => \Carbon\Carbon::now(),
+                    'updated_at' => \Carbon\Carbon::now()
+                ],
+                [
+                    'intent_key' => 'GUIDE',
+                    'label'      => '🗺️ Guide to Solution',
+                    'directive'  => 'REPLY INTENT — GUIDE TO SOLUTION: The admin wants to guide the client to self-resolve. Write CLIENT_REPLY as a clear, step-by-step guide in simple language the client can follow independently. Use numbered steps. Anticipate likely stumbling points and address them proactively.',
+                    'is_active'  => 1,
+                    'sort_order' => 50,
+                    'created_at' => \Carbon\Carbon::now(),
+                    'updated_at' => \Carbon\Carbon::now()
+                ],
+                [
+                    'intent_key' => 'OUT_OF_SCOPE',
+                    'label'      => '🚫 Out of Scope',
+                    'directive'  => 'REPLY INTENT — OUT OF SUPPORT SCOPE: This issue falls outside the support boundaries. Write CLIENT_REPLY to clearly but respectfully explain that this specific issue is not covered under the current support scope or plan. Where applicable, point to relevant resources, documentation, or upgrade options. Be firm yet courteous — avoid leaving the client feeling dismissed.',
+                    'is_active'  => 1,
+                    'sort_order' => 60,
+                    'created_at' => \Carbon\Carbon::now(),
+                    'updated_at' => \Carbon\Carbon::now()
+                ],
+                [
+                    'intent_key' => 'DUPLICATE',
+                    'label'      => '🔁 Duplicate Ticket',
+                    'directive'  => 'REPLY INTENT — DUPLICATE TICKET: This is a duplicate of an existing ticket. Write CLIENT_REPLY to politely inform the client that this appears to be a duplicate of an existing ticket they have already submitted. Instruct them to continue communication on the original ticket to avoid confusion and ensure continuity of support. Close this ticket gracefully.',
+                    'is_active'  => 1,
+                    'sort_order' => 70,
+                    'created_at' => \Carbon\Carbon::now(),
+                    'updated_at' => \Carbon\Carbon::now()
+                ],
+            ]);
+        }
+
         return [
             // Supported values here include: success, error or info
             'status' => 'success',
