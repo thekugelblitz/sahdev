@@ -149,6 +149,22 @@ function sahdev_inject_ticket_panel($vars)
                 </div>
             </div>
 
+            <!-- Technical Context Input -->
+            <div class="row">
+                <div class="col-md-12">
+                    <div class="form-group" style="margin-bottom: 5px;">
+                        <label style="display: flex; justify-content: space-between; align-items: center;">
+                            <span><i class="fas fa-terminal" style="color:#6c757d;"></i> Technical Context (Optional)</span>
+                            <button type="button" id="btn-sahdev-paste-tech" class="btn btn-xs btn-default" style="font-size: 11px;">
+                                <i class="fas fa-paste"></i> Fetch from Clipboard
+                            </button>
+                        </label>
+                        <textarea id="sahdev_technical_context" class="form-control" rows="2" placeholder="Paste JSON API response, DNS output, server logs, or any raw technical data here to feed the AI..."></textarea>
+                        <div id="sahdev_tech_context_info" class="text-muted" style="font-size: 11px; margin-top: 4px; display: none;"></div>
+                    </div>
+                </div>
+            </div>
+
             <div class="form-group text-right" style="margin-top: 10px; display: flex; justify-content: flex-end; align-items: center; gap: 15px;">
                 <label style="font-weight: 600; font-size: 13px; margin: 0; cursor: pointer; color: #6f42c1;" title="If checked, the AI will use the condensed ticket summary instead of reading the full message history (if a summary exists).">
                     <input type="checkbox" id="sahdev_use_summary" value="1" checked style="vertical-align: middle; margin: 0 4px 0 0;"> Feed Summary (if available)
@@ -517,6 +533,41 @@ HTML;
         $('#sahdev_intent').val($(this).data('intent'));
     });
 
+    // Handle Fetch from Clipboard for Technical Context
+    $(document).on('click', '#btn-sahdev-paste-tech', async function() {
+        try {
+            var text = await navigator.clipboard.readText();
+            if (!text) {
+                alert("Clipboard is empty or contains no text.");
+                return;
+            }
+            $('#sahdev_technical_context').val(text);
+            
+            // Try to parse basic info
+            var infoDiv = $('#sahdev_tech_context_info');
+            try {
+                var jsonObj = JSON.parse(text);
+                var keys = Object.keys(jsonObj).slice(0, 3).join(', ');
+                var msg = "Valid JSON loaded (Keys: " + keys + "...). This will be fed to the AI.";
+                
+                // Specific heuristic for the example provided
+                if (jsonObj.records && jsonObj.records.length > 0 && jsonObj.records[0].type) {
+                     msg = "Detected DNS check/records data (" + jsonObj.records.length + " items). This will be fed to the AI.";
+                } else if (jsonObj.metadata && jsonObj.metadata.query) {
+                     msg = "Detected technical metadata for: " + jsonObj.metadata.query + ".";
+                }
+                
+                infoDiv.text(msg).css('color', '#198754').show(); // green
+            } catch (e) {
+                // Not JSON, just show text size
+                infoDiv.text("Loaded " + text.length + " characters of raw text context.").css('color', '#6c757d').show(); // gray
+            }
+        } catch (err) {
+            console.error("Failed to read clipboard: ", err);
+            alert("Could not read clipboard. Please ensure your browser allows clipboard access, or just paste the text manually into the box.");
+        }
+    });
+
     $(document).ready(function() {
         $(document).on('click', '#btn-sahdev-analyze, #btn-sahdev-regenerate', function(e) {
             e.preventDefault();
@@ -535,6 +586,7 @@ HTML;
                 tone: $('#sahdev_tone').val(),
                 intensity: $('#sahdev_intensity').val(),
                 instruction: $('#sahdev_instruction').val(),
+                technical_context: $('#sahdev_technical_context').val(),
                 intent: $('#sahdev_intent').val(),
                 use_summary: $('#sahdev_use_summary').length && !$('#sahdev_use_summary').is(':checked') ? 0 : 1,
                 include_historical_context: $('#sahdev_include_history').is(':checked') ? 1 : 0,

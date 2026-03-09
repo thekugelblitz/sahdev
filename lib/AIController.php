@@ -109,7 +109,7 @@ class AIController
         }
     }
 
-    public function getAnalysis(string $tone = null, string $customInstruction = null, bool $forceRegenerate = false, bool $forceFallback = false, string $intent = 'AUTO', bool $useSummaryToggle = true, bool $includeHistoricalContext = false): array
+    public function getAnalysis(string $tone = null, string $customInstruction = null, bool $forceRegenerate = false, bool $forceFallback = false, string $intent = 'AUTO', bool $useSummaryToggle = true, bool $includeHistoricalContext = false, string $technicalContext = ''): array
     {
         // 1. Rate Limit Check
         $this->checkRateLimit();
@@ -129,6 +129,12 @@ class AIController
             $customInstruction = empty($customInstruction)
                 ? $intentDirective
                 : $intentDirective . "\n\n" . $customInstruction;
+        }
+
+        // Inject technical context if provided
+        if (!empty($technicalContext)) {
+            $techInstruction = "=== TECHNICAL CONTEXT PROVIDED BY ADMIN ===\n" . $technicalContext;
+            $customInstruction = empty($customInstruction) ? $techInstruction : $customInstruction . "\n\n" . $techInstruction;
         }
 
         // Inject Quality Scorer Schema if enabled
@@ -342,7 +348,7 @@ class AIController
         );
     }
 
-    public function getPayload(string $tone = null, string $customInstruction = null, bool $forceRegenerate = false, string $intent = 'AUTO', bool $useSummaryToggle = true, bool $includeHistoricalContext = false): array
+    public function getPayload(string $tone = null, string $customInstruction = null, bool $forceRegenerate = false, string $intent = 'AUTO', bool $useSummaryToggle = true, bool $includeHistoricalContext = false, string $technicalContext = ''): array
     {
         // 1. Rate Limit Check
         $this->checkRateLimit();
@@ -362,6 +368,12 @@ class AIController
             $customInstruction = empty($customInstruction)
                 ? $intentDirective
                 : $intentDirective . "\n\n" . $customInstruction;
+        }
+
+        // Inject technical context if provided
+        if (!empty($technicalContext)) {
+            $techInstruction = "=== TECHNICAL CONTEXT PROVIDED BY ADMIN ===\n" . $technicalContext;
+            $customInstruction = empty($customInstruction) ? $techInstruction : $customInstruction . "\n\n" . $techInstruction;
         }
 
         // Inject Quality Scorer Schema if enabled

@@ -35,6 +35,7 @@ $tone = strip_tags($_POST['tone'] ?? '');
 $instruction = strip_tags($_POST['instruction'] ?? '');
 $intensity = (int) ($_POST['intensity'] ?? 3);
 $intent = strip_tags($_POST['intent'] ?? 'AUTO');
+$technicalContext = $_POST['technical_context'] ?? '';
 
 // Inject dive intensity context if higher than normal
 if ($intensity > 3) {
@@ -87,7 +88,7 @@ try {
     $controller = new \Sahdev\Lib\AIController($ticketId, $adminId);
 
     if ($action === 'get_payload') {
-        $response = $controller->getPayload($tone, $instruction, $forceRegenerate, $intent, $useSummary, $includeHistory);
+        $response = $controller->getPayload($tone, $instruction, $forceRegenerate, $intent, $useSummary, $includeHistory, $technicalContext);
     } elseif ($action === 'save_response') {
         $hashSignature = $_POST['hash_signature'] ?? '';
         $aiResponseRaw = $_POST['ai_response'] ?? '{}';
@@ -124,7 +125,7 @@ try {
         $response = $controller->rewriteReply($draftText, $tone ?: 'Professional', $instruction);
     } elseif ($action === 'auto_analyze') {
         // Feature: Auto-load AI Snapshot on ticket page load (always cached-first, no rate limit penalty on hit)
-        $response = $controller->getAnalysis($tone, $instruction, false, false, $intent, $useSummary, $includeHistory);
+        $response = $controller->getAnalysis($tone, $instruction, false, false, $intent, $useSummary, $includeHistory, $technicalContext);
     } elseif ($action === 'generate_summary') {
         // Feature: AI Ticket Summarizer — generate and save a condensed summary
         $response = $controller->generateSummary();
@@ -187,7 +188,7 @@ try {
         $response = $controller->getAnalyticsData();
     } else {
         // Default analyze_ticket (server-side generation)
-        $response = $controller->getAnalysis($tone, $instruction, $forceRegenerate, $forceFallback, $intent, $useSummary, $includeHistory);
+        $response = $controller->getAnalysis($tone, $instruction, $forceRegenerate, $forceFallback, $intent, $useSummary, $includeHistory, $technicalContext);
     }
 
     // Clean any prior output to prevent malformed JSON
