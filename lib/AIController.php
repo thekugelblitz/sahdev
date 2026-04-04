@@ -10,6 +10,7 @@ require_once __DIR__ . '/GoogleAIProvider.php';
 require_once __DIR__ . '/LMStudioAIProvider.php';
 require_once __DIR__ . '/ReplicateAIProvider.php';
 require_once __DIR__ . '/TicketDataExtractor.php';
+require_once __DIR__ . '/TaskProviderResolver.php';
 
 class AIController
 {
@@ -109,7 +110,80 @@ class AIController
         }
     }
 
-    public function getAnalysis(string $tone = null, string $customInstruction = null, bool $forceRegenerate = false, bool $forceFallback = false, string $intent = 'AUTO', bool $useSummaryToggle = true, bool $includeHistoricalContext = false, string $technicalContext = ''): array
+    /**
+     * Merge global settings with a specific provider row (model, URL, type, key) for one AI call.
+     *
+     * @param array<string,mixed> $base
+     * @return array<string,mixed>
+     */
+    private function mergeSettingsForProviderRow(array $base, $providerRow): array
+    {
+        $out = $base;
+        if (!$providerRow) {
+            return $out;
+        }
+        $out['model_name']     = $providerRow->model_name ?? ($out['model_name'] ?? '');
+        $out['api_url']        = $providerRow->api_url ?? '';
+        $out['provider_type']  = $providerRow->provider_type ?? '';
+        $out['api_key']        = !empty($providerRow->api_key) ? decrypt($providerRow->api_key) : '';
+
+        return $out;
+    }
+
+    /**
+     * Resolved primary + global fallback instances and merged call settings for a task.
+     *
+     * @return array{
+     *   primary: object,
+     *   fallback: ?object,
+     *   primary_row: object,
+     *   fallback_row: ?object,
+     *   call_settings: array,
+     *   fallback_call_settings: ?array,
+     *   effective_provider_id: int
+     * }
+     */
+    private function getProviderStackForTask(string $taskKey, ?int $overrideId = null): array
+    {
+        $effectiveId = TaskProviderResolver::resolveProviderId($taskKey, $overrideId, $this->settings);
+        $primaryRow  = Capsule::table('tblsahdev_providers')->where('id', $effectiveId)->first();
+        if (!$primaryRow) {
+            $pid = (int) ($this->settings['primary_provider_id'] ?? 1);
+            $primaryRow = Capsule::table('tblsahdev_providers')->where('id', $pid)->first();
+        }
+        if (!$primaryRow) {
+            throw new \Exception('AI Provider not found for this task. Check Sahdev AI Providers and routing.');
+        }
+
+        $primaryInst  = $this->initializeProvider($primaryRow);
+        $callSettings = $this->mergeSettingsForProviderRow($this->settings, $primaryRow);
+
+        $globalFbId = (int) ($this->settings['fallback_provider_id'] ?? 0);
+        $fallbackRow = null;
+        $fallbackInst = null;
+        $fallbackCallSettings = null;
+        if ($globalFbId > 0 && $globalFbId !== (int) $primaryRow->id) {
+            $fallbackRow = Capsule::table('tblsahdev_providers')->where('id', $globalFbId)->first();
+            if ($fallbackRow) {
+                $fallbackInst = $this->initializeProvider($fallbackRow);
+                $fallbackCallSettings = $this->mergeSettingsForProviderRow($this->settings, $fallbackRow);
+                $fallbackCallSettings['fallback_model_name'] = $fallbackRow->model_name;
+                $fallbackCallSettings['fallback_api_key']    = !empty($fallbackRow->api_key) ? decrypt($fallbackRow->api_key) : '';
+            }
+        }
+
+        return [
+            'primary'                => $primaryInst,
+            'fallback'               => $fallbackInst,
+            'primary_row'            => $primaryRow,
+            'fallback_row'           => $fallbackRow,
+            'call_settings'        => $callSettings,
+            'fallback_call_settings' => $fallbackCallSettings,
+            'effective_provider_id'  => (int) $primaryRow->id,
+        ];
+    }
+
+    public function getAnalysis(string $tone = null, string $customInstruction = null, bool $forceRegenerate = false, bool $forceFallback = false, string $intent = 'AUTO', bool $useSummaryToggle = true, bool $includeHistoricalContext = false, string $technicalContext = '', ?int $overrideProviderId = null): array
     {
         // 1. Rate Limit Check
         $this->checkRateLimit();
@@ -160,14 +234,17 @@ class AIController
             }
         }
 
-        // 3. Hash Generation for Cache
+        $stack        = $this->getProviderStackForTask(TaskProviderResolver::TASK_TICKET_REPLY, $overrideProviderId);
+        $callSettings = $stack['call_settings'];
+
+        // 3. Hash Generation for Cache (resolved model + global system prompt)
         $hashData = serialize([
             $context['subject'],
             $context['messages'], // Includes full message history
             $tone,
             $customInstruction,
             $intent,
-            $this->settings['model_name'],
+            $callSettings['model_name'],
             $this->settings['system_prompt']
         ]);
         $hashSignature = hash('sha256', $hashData);
@@ -188,46 +265,34 @@ class AIController
             }
         }
 
-        // 5. Call AI Provider (Primary with Fallback logic)
+        // 5. Call AI Provider (task primary with global fallback)
         $startTime = microtime(true);
-        $usedFallback = false;
 
-        try {
-            if ($forceFallback && $this->fallbackProvider) {
-                throw new \Exception("Manual fallback requested via frontend.");
-            }
-            // Attempt Primary Note: The provider utilizes $this->settings['model_name']
-            $response = $this->provider->generateResponse(
-                $context,
-                $this->settings,
-                $tone,
-                $customInstruction
-            );
-            $activeProvider = $this->provider;
-        } catch (\Exception $e) {
-            $this->logRequest($context, null, 0, microtime(true) - $startTime, "Primary Error: " . $e->getMessage());
+        if ($forceFallback && $stack['fallback']) {
+            $fbSettings     = $stack['fallback_call_settings'] ?? $this->mergeSettingsForProviderRow($this->settings, $stack['fallback_row']);
+            $response       = $stack['fallback']->generateResponse($context, $fbSettings, $tone, $customInstruction);
+            $activeProvider = $stack['fallback'];
+        } else {
+            try {
+                $response       = $stack['primary']->generateResponse($context, $callSettings, $tone, $customInstruction);
+                $activeProvider = $stack['primary'];
+            } catch (\Exception $e) {
+                $this->logRequest($context, null, 0, microtime(true) - $startTime, "Primary Error: " . $e->getMessage());
 
-            if ($this->fallbackProvider) {
-                // Attempt Fallback
-                $usedFallback = true;
-                $fallbackStart = microtime(true);
-                // Temporarily swap model_name to the fallback's model string if the fallback provider configures it like that
-                $this->settings['model_name'] = $this->settings['fallback_model_name'];
+                if ($stack['fallback'] && $stack['fallback_row']) {
+                    $fallbackStart = microtime(true);
+                    $fbSettings    = $stack['fallback_call_settings'] ?? $this->mergeSettingsForProviderRow($this->settings, $stack['fallback_row']);
 
-                try {
-                    $response = $this->fallbackProvider->generateResponse(
-                        $context,
-                        $this->settings,
-                        $tone,
-                        $customInstruction
-                    );
-                    $activeProvider = $this->fallbackProvider;
-                } catch (\Exception $fallbackErr) {
-                    $this->logRequest($context, null, 0, microtime(true) - $fallbackStart, "Fallback Error: " . $fallbackErr->getMessage());
-                    throw new \Exception("Both Primary and Fallback AI Providers failed. Latest Error: " . $fallbackErr->getMessage());
+                    try {
+                        $response       = $stack['fallback']->generateResponse($context, $fbSettings, $tone, $customInstruction);
+                        $activeProvider = $stack['fallback'];
+                    } catch (\Exception $fallbackErr) {
+                        $this->logRequest($context, null, 0, microtime(true) - $fallbackStart, "Fallback Error: " . $fallbackErr->getMessage());
+                        throw new \Exception("Both Primary and Fallback AI Providers failed. Latest Error: " . $fallbackErr->getMessage());
+                    }
+                } else {
+                    throw $e;
                 }
-            } else {
-                throw $e;
             }
         }
 
@@ -348,10 +413,13 @@ class AIController
         );
     }
 
-    public function getPayload(string $tone = null, string $customInstruction = null, bool $forceRegenerate = false, string $intent = 'AUTO', bool $useSummaryToggle = true, bool $includeHistoricalContext = false, string $technicalContext = ''): array
+    public function getPayload(string $tone = null, string $customInstruction = null, bool $forceRegenerate = false, string $intent = 'AUTO', bool $useSummaryToggle = true, bool $includeHistoricalContext = false, string $technicalContext = '', ?int $overrideProviderId = null): array
     {
         // 1. Rate Limit Check
         $this->checkRateLimit();
+
+        $stack        = $this->getProviderStackForTask(TaskProviderResolver::TASK_TICKET_REPLY, $overrideProviderId);
+        $callSettings = $stack['call_settings'];
 
         // 2. Extract Data
         $scrubPII = !empty($this->settings['compliance_mode']) || !empty($this->settings['pii_scrub_enabled']);
@@ -438,7 +506,7 @@ class AIController
             $tone,
             $customInstruction,
             $intent,
-            $this->settings['model_name'],
+            $callSettings['model_name'],
             $systemPrompt
         ]);
         $hashSignature = hash('sha256', $hashData);
@@ -459,15 +527,18 @@ class AIController
             }
         }
 
+        $ptype = $callSettings['provider_type'] ?? '';
         // Return the payload data needed for the browser to make the request
         return [
             'status'               => 'success',
             'cached'               => false,
             'hash_signature'       => $hashSignature,
-            'provider'             => $this->settings['provider_type'] === 'lmstudio' ? 'lmstudio' : ($this->settings['provider_type'] === 'replicate' ? 'replicate' : 'google'),
-            'api_url'              => $this->settings['api_url'] ?? '',
-            'api_key'              => $this->settings['api_key'] ?? '',
-            'model'                => $this->settings['model_name'],
+            'effective_provider_id' => $stack['effective_provider_id'],
+            'providers'            => TaskProviderResolver::listActiveProvidersForRouting(),
+            'provider'             => $ptype === 'lmstudio' ? 'lmstudio' : ($ptype === 'replicate' ? 'replicate' : 'google'),
+            'api_url'              => $callSettings['api_url'] ?? '',
+            'api_key'              => $callSettings['api_key'] ?? '',
+            'model'                => $callSettings['model_name'],
             'temperature'          => (float) $this->settings['temperature'],
             'max_tokens'           => (int) $this->settings['max_tokens'],
             'system_prompt'        => $systemPrompt,
@@ -476,12 +547,12 @@ class AIController
             'tone'                 => $tone,
             'custom_instruction'   => $customInstruction,
             'intent'               => $intent,
-            'has_fallback'         => $this->fallbackProvider !== null,
-            'fallback_api_key'     => $this->settings['fallback_api_key'] ?? '',
+            'has_fallback'         => $stack['fallback'] !== null,
+            'fallback_api_key'     => ($stack['fallback_call_settings']['fallback_api_key'] ?? $this->settings['fallback_api_key']) ?? '',
             'summary_used'         => $summaryUsed,
             'summary_available'    => $this->getSummary() !== null,
             'message_count'        => count($context['messages'] ?? []),
-            'summarizer_threshold' => $summarizerThreshold,
+            'summarizer_threshold' => (int) ($this->settings['summarizer_threshold'] ?? 15),
         ];
     }
 
@@ -562,6 +633,8 @@ class AIController
      */
     public function generateSummary(): array
     {
+        $stack = $this->getProviderStackForTask(TaskProviderResolver::TASK_SUMMARIZER, null);
+
         $scrubPII = !empty($this->settings['compliance_mode']) || !empty($this->settings['pii_scrub_enabled']);
         $extractor = new TicketDataExtractor($this->ticketId, $this->adminId);
         $context   = $extractor->getContext($scrubPII);
@@ -603,23 +676,26 @@ class AIController
             'attachments_images' => $context['attachments_images'] ?? [],
             'messages'         => [['admin' => false, 'date' => '', 'message' => $promptText]],
         ];
-        $fakeSettings = $this->settings;
+        $fakeSettings = $stack['call_settings'];
         $fakeSettings['user_prompt_template'] = '{{MESSAGES}}
 {{ATTACHMENTS_BLOCK}}';
         $fakeSettings['system_prompt']        = $systemPrompt;
         $fakeSettings['max_tokens']           = 1024; // summaries are short but might need room for file analysis
 
         $startTime = microtime(true);
-        $activeProvider = $this->provider;
+        $activeProvider = $stack['primary'];
         
         try {
-            $rawResponse = $this->provider->generateResponse($fakeContext, $fakeSettings, 'Professional', '');
+            $rawResponse = $stack['primary']->generateResponse($fakeContext, $fakeSettings, 'Professional', '');
         } catch (\Exception $e) {
-            if ($this->fallbackProvider) {
+            if ($stack['fallback'] && $stack['fallback_row']) {
                 try {
-                    $fakeSettings['model_name'] = $this->settings['fallback_model_name'] ?? $this->settings['model_name'];
-                    $rawResponse = $this->fallbackProvider->generateResponse($fakeContext, $fakeSettings, 'Professional', '');
-                    $activeProvider = $this->fallbackProvider;
+                    $fbSettings = $stack['fallback_call_settings'] ?? $this->mergeSettingsForProviderRow($this->settings, $stack['fallback_row']);
+                    $fbSettings['user_prompt_template'] = $fakeSettings['user_prompt_template'];
+                    $fbSettings['system_prompt']        = $systemPrompt;
+                    $fbSettings['max_tokens']           = 1024;
+                    $rawResponse = $stack['fallback']->generateResponse($fakeContext, $fbSettings, 'Professional', '');
+                    $activeProvider = $stack['fallback'];
                 } catch (\Exception $fe) {
                     return ['status' => 'error', 'message' => 'Summary generation failed. ' . $fe->getMessage()];
                 }
@@ -693,6 +769,8 @@ class AIController
      */
     public function generateHistoricalContext(int $limit = 7): array
     {
+        $stack = $this->getProviderStackForTask(TaskProviderResolver::TASK_HISTORICAL_CONTEXT, null);
+
         // 1. Fetch current ticket details
         $currentTicket = Capsule::table('tbltickets')->where('id', $this->ticketId)->first();
         if (!$currentTicket || empty($currentTicket->userid)) {
@@ -740,21 +818,23 @@ class AIController
             'messages'         => [['admin' => false, 'date' => '', 'message' => $contextText]],
         ];
 
-        $fakeSettings = $this->settings;
+        $fakeSettings = $stack['call_settings'];
         $fakeSettings['user_prompt_template'] = '{{MESSAGES}}';
         $fakeSettings['system_prompt']        = $systemPrompt;
 
         $startTime = microtime(true);
-        $activeProvider = $this->provider;
+        $activeProvider = $stack['primary'];
         
         try {
-            $rawResponse = $this->provider->generateResponse($fakeContext, $fakeSettings, 'Professional', '');
+            $rawResponse = $stack['primary']->generateResponse($fakeContext, $fakeSettings, 'Professional', '');
         } catch (\Exception $e) {
-            if ($this->fallbackProvider) {
+            if ($stack['fallback'] && $stack['fallback_row']) {
                 try {
-                    $fakeSettings['model_name'] = $this->settings['fallback_model_name'] ?? $this->settings['model_name'];
-                    $rawResponse = $this->fallbackProvider->generateResponse($fakeContext, $fakeSettings, 'Professional', '');
-                    $activeProvider = $this->fallbackProvider;
+                    $fbSettings = $stack['fallback_call_settings'] ?? $this->mergeSettingsForProviderRow($this->settings, $stack['fallback_row']);
+                    $fbSettings['user_prompt_template'] = '{{MESSAGES}}';
+                    $fbSettings['system_prompt']        = $systemPrompt;
+                    $rawResponse = $stack['fallback']->generateResponse($fakeContext, $fbSettings, 'Professional', '');
+                    $activeProvider = $stack['fallback'];
                 } catch (\Exception $fe) {
                     return ['status' => 'error', 'message' => 'Context generation failed. ' . $fe->getMessage()];
                 }
@@ -834,6 +914,9 @@ class AIController
             return ['status' => 'error', 'message' => 'Draft text is empty. Please write a draft in the editor first.'];
         }
 
+        $stack        = $this->getProviderStackForTask(TaskProviderResolver::TASK_REWRITE_REPLY, null);
+        $callSettings = $stack['call_settings'];
+
         $extractor = new TicketDataExtractor($this->ticketId, $this->adminId);
         $context = $extractor->getContext();
 
@@ -883,17 +966,19 @@ class AIController
             $rewritePrompt .= "=== POLISHED REPLY (output only) ===\n";
         }
 
+        $rwPtype = $callSettings['provider_type'] ?? '';
         return [
             'status' => 'success',
-            'provider' => $this->settings['provider_type'] === 'lmstudio' ? 'lmstudio' : ($this->settings['provider_type'] === 'replicate' ? 'replicate' : 'google'),
-            'api_url' => $this->settings['api_url'] ?? '',
-            'api_key' => $this->settings['api_key'] ?? '',
-            'model' => $this->settings['model_name'],
+            'effective_provider_id' => $stack['effective_provider_id'],
+            'provider' => $rwPtype === 'lmstudio' ? 'lmstudio' : ($rwPtype === 'replicate' ? 'replicate' : 'google'),
+            'api_url' => $callSettings['api_url'] ?? '',
+            'api_key' => $callSettings['api_key'] ?? '',
+            'model' => $callSettings['model_name'],
             'temperature' => (float) $this->settings['temperature'],
             'max_tokens' => (int) $this->settings['max_tokens'],
             'system_prompt' => $systemPrompt,
             'rewrite_prompt' => $rewritePrompt,
-            'has_fallback' => $this->fallbackProvider !== null,
+            'has_fallback' => $stack['fallback'] !== null,
         ];
     }
 
@@ -907,6 +992,8 @@ class AIController
         if (empty(trim($draftText))) {
             return ['status' => 'error', 'message' => 'Draft text is empty. Please write a short draft in the editor first.'];
         }
+
+        $stack = $this->getProviderStackForTask(TaskProviderResolver::TASK_REWRITE_REPLY, null);
 
         // Build a ticket context snippet for extra grounding
         $scrubPII = !empty($this->settings['compliance_mode']) || !empty($this->settings['pii_scrub_enabled']);
@@ -943,12 +1030,9 @@ class AIController
             $promptText .= "=== POLISHED REPLY (output only) ===\n";
         }
 
-        // Use the primary AI provider in free-text mode (no JSON schema)
+        // Use the resolved task provider in free-text mode (no JSON schema)
         $startTime = microtime(true);
         try {
-            // We call generateResponse but override the prompt using a special "freeform" approach.
-            // Since GoogleAIProvider / LMStudioAIProvider both accept raw context+settings,
-            // we build a minimal context that carries our custom prompt as the sole message.
             $fakeContext = [
                 'subject' => $context['subject'] ?? '',
                 'client_name' => $context['client_name'] ?? '',
@@ -958,15 +1042,13 @@ class AIController
                 'messages' => [['admin' => false, 'date' => '', 'message' => $promptText]],
             ];
 
-            $fakeSettings = $this->settings;
-            $fakeSettings['user_prompt_template'] = '{{MESSAGES}}'; // pass our custom prompt straight through
+            $fakeSettings = $stack['call_settings'];
+            $fakeSettings['user_prompt_template'] = '{{MESSAGES}}';
             $fakeSettings['system_prompt'] = $systemPrompt;
 
-            $rawResponse = $this->provider->generateResponse($fakeContext, $fakeSettings, $tone, '');
+            $rawResponse = $stack['primary']->generateResponse($fakeContext, $fakeSettings, $tone, '');
             $execTimeMs = round((microtime(true) - $startTime) * 1000);
 
-            // generateResponse returns a parsed JSON array; for rewrite we prefer CLIENT_REPLY if present.
-            // Replicate freeform responses come back as ['__raw_text__' => '...'].
             if (is_array($rawResponse) && isset($rawResponse['CLIENT_REPLY'])) {
                 $reply = $rawResponse['CLIENT_REPLY'];
             } elseif (is_array($rawResponse) && isset($rawResponse['__raw_text__'])) {
@@ -976,12 +1058,11 @@ class AIController
             } elseif (is_string($rawResponse)) {
                 $reply = $rawResponse;
             } else {
-                // The whole array might be the result — stringify it best we can
                 $reply = implode("\n\n", array_filter(array_values($rawResponse), 'is_string'));
             }
 
-            $tokensUsed = $this->provider->getLastTokenUsage() ?? 0;
-            $providerName = $this->provider->getName() ?? 'Primary';
+            $tokensUsed = $stack['primary']->getLastTokenUsage() ?? 0;
+            $providerName = $stack['primary']->getName() ?? 'Primary';
             $this->logAuditEntry('rewrite', $promptText, $reply, $tokensUsed, $execTimeMs, $providerName);
 
             return [
@@ -991,8 +1072,7 @@ class AIController
                 'tokens_used' => $tokensUsed,
             ];
         } catch (\Exception $e) {
-            // Try fallback if available
-            if ($this->fallbackProvider) {
+            if ($stack['fallback'] && $stack['fallback_row']) {
                 try {
                     $fakeContext = [
                         'subject' => $context['subject'] ?? '',
@@ -1002,11 +1082,10 @@ class AIController
                         'attachments_text' => '',
                         'messages' => [['admin' => false, 'date' => '', 'message' => $promptText]],
                     ];
-                    $fakeSettings = $this->settings;
-                    $fakeSettings['model_name'] = $this->settings['fallback_model_name'] ?? $this->settings['model_name'];
-                    $fakeSettings['user_prompt_template'] = '{{MESSAGES}}';
-                    $fakeSettings['system_prompt'] = $systemPrompt;
-                    $rawResponse = $this->fallbackProvider->generateResponse($fakeContext, $fakeSettings, $tone, '');
+                    $fbSettings = $stack['fallback_call_settings'] ?? $this->mergeSettingsForProviderRow($this->settings, $stack['fallback_row']);
+                    $fbSettings['user_prompt_template'] = '{{MESSAGES}}';
+                    $fbSettings['system_prompt'] = $systemPrompt;
+                    $rawResponse = $stack['fallback']->generateResponse($fakeContext, $fbSettings, $tone, '');
                     if (is_array($rawResponse) && isset($rawResponse['CLIENT_REPLY'])) {
                         $reply = $rawResponse['CLIENT_REPLY'];
                     } elseif (is_array($rawResponse) && isset($rawResponse['__raw_text__'])) {
@@ -1020,8 +1099,8 @@ class AIController
                     }
                     
                     $execTimeMsFallback = round((microtime(true) - $startTime) * 1000);
-                    $tokensUsedFallback = $this->fallbackProvider->getLastTokenUsage() ?? 0;
-                    $providerNameFallback = $this->fallbackProvider->getName() ?? 'Fallback';
+                    $tokensUsedFallback = $stack['fallback']->getLastTokenUsage() ?? 0;
+                    $providerNameFallback = $stack['fallback']->getName() ?? 'Fallback';
                     $this->logAuditEntry('rewrite_fallback', $promptText, $reply, $tokensUsedFallback, $execTimeMsFallback, $providerNameFallback);
 
                     return ['status' => 'success', 'reply' => $reply, 'execution_time_ms' => $execTimeMsFallback, 'tokens_used' => $tokensUsedFallback];
@@ -1041,6 +1120,8 @@ class AIController
         if (empty(trim($replyText))) {
             return ['status' => 'error', 'message' => 'Reply text is empty.'];
         }
+
+        $stack = $this->getProviderStackForTask(TaskProviderResolver::TASK_QUALITY_SCORE, null);
 
         $extractor = new TicketDataExtractor($this->ticketId, $this->adminId);
         $context = $extractor->getContext();
@@ -1070,9 +1151,7 @@ class AIController
         $promptText .= "=== REPLY TO EVALUATE ===\n";
         $promptText .= trim($replyText) . "\n\n";
         
-        $fakeSettings = $this->settings;
-        $fakeSettings['user_prompt_template'] = '{{MESSAGES}}';
-        $fakeSettings['system_prompt'] = $this->promptTemplates['score_reply'] ?? "You are an expert QA Manager scoring support replies. Output strictly a single raw JSON object matching the requested schema.";
+        $sysPrompt = $this->promptTemplates['score_reply'] ?? "You are an expert QA Manager scoring support replies. Output strictly a single raw JSON object matching the requested schema.";
 
         $fakeContext = [
             'subject' => '',
@@ -1083,18 +1162,12 @@ class AIController
             'messages' => [['admin' => false, 'date' => '', 'message' => $promptText]],
         ];
 
-        try {
-            $startTime = microtime(true);
-            $rawResponse = $this->provider->generateResponse($fakeContext, $fakeSettings, 'Professional', '');
-            $execTimeMs = round((microtime(true) - $startTime) * 1000);
-            
+        $parseScoreResponse = function ($rawResponse) {
             $scoreData = ['SCORE' => 0, 'CLARITY' => 0, 'TONE_SCORE' => 0, 'COMPLETENESS' => 0, 'REPLY_NOTES' => 'Parse failed'];
-            
             if (is_array($rawResponse)) {
                 $scoreData = array_merge($scoreData, $rawResponse);
             } elseif (is_string($rawResponse)) {
                 $cleanStr = trim($rawResponse);
-                // Be more aggressive — look for { ... } block
                 if (preg_match('/\{[\s\S]*\}/', $cleanStr, $matches)) {
                     $jsonBlock = $matches[0];
                     $decoded = json_decode($jsonBlock, true);
@@ -1103,16 +1176,38 @@ class AIController
                     }
                 }
             }
-
-            // Unify keys in case AI outputs lowercase (for robustness)
             if (isset($scoreData['score'])) { $scoreData['SCORE'] = $scoreData['score']; }
             if (isset($scoreData['clarity'])) { $scoreData['CLARITY'] = $scoreData['clarity']; }
             if (isset($scoreData['tone_score'])) { $scoreData['TONE_SCORE'] = $scoreData['tone_score']; }
             if (isset($scoreData['completeness'])) { $scoreData['COMPLETENESS'] = $scoreData['completeness']; }
             if (isset($scoreData['notes'])) { $scoreData['REPLY_NOTES'] = $scoreData['notes']; }
-            if (isset($scoreData['REPLY_NOTES'])) { $scoreData['notes'] = $scoreData['REPLY_NOTES']; } // Back-compatibility for DB if needed
+            if (isset($scoreData['REPLY_NOTES'])) { $scoreData['notes'] = $scoreData['REPLY_NOTES']; }
 
-            // Save to DB
+            return $scoreData;
+        };
+
+        try {
+            $startTime = microtime(true);
+            $fakeSettings = $stack['call_settings'];
+            $fakeSettings['user_prompt_template'] = '{{MESSAGES}}';
+            $fakeSettings['system_prompt'] = $sysPrompt;
+
+            try {
+                $rawResponse = $stack['primary']->generateResponse($fakeContext, $fakeSettings, 'Professional', '');
+            } catch (\Exception $pe) {
+                if ($stack['fallback'] && $stack['fallback_row']) {
+                    $fbSettings = $stack['fallback_call_settings'] ?? $this->mergeSettingsForProviderRow($this->settings, $stack['fallback_row']);
+                    $fbSettings['user_prompt_template'] = '{{MESSAGES}}';
+                    $fbSettings['system_prompt'] = $sysPrompt;
+                    $rawResponse = $stack['fallback']->generateResponse($fakeContext, $fbSettings, 'Professional', '');
+                } else {
+                    throw $pe;
+                }
+            }
+            $execTimeMs = round((microtime(true) - $startTime) * 1000);
+            
+            $scoreData = $parseScoreResponse($rawResponse);
+
             Capsule::table('tblsahdev_quality_scores')->insert([
                 'ticket_id' => $this->ticketId,
                 'admin_id' => $this->adminId,
@@ -1258,6 +1353,8 @@ class AIController
             return ['status' => 'error', 'message' => 'Draft text is empty.'];
         }
 
+        $stack = $this->getProviderStackForTask(TaskProviderResolver::TASK_CANNED_TEMPLATE, null);
+
         $cannedTemplate = $this->promptTemplates['canned_template'] ?? '';
         if (!empty(trim($cannedTemplate))) {
             if (strpos($cannedTemplate, '{{DRAFT}}') !== false) {
@@ -1277,9 +1374,9 @@ class AIController
             $promptText .= trim($draftText);
         }
 
-        $fakeSettings = $this->settings;
-        $fakeSettings['user_prompt_template'] = '{{MESSAGES}}'; 
-        $fakeSettings['system_prompt'] = "You are an expert technical writer creating generalized canned response templates.";
+        $fakeSettingsBase = $stack['call_settings'];
+        $fakeSettingsBase['user_prompt_template'] = '{{MESSAGES}}'; 
+        $fakeSettingsBase['system_prompt'] = "You are an expert technical writer creating generalized canned response templates.";
 
         $fakeContext = [
             'subject' => '',
@@ -1290,35 +1387,38 @@ class AIController
             'messages' => [['admin' => false, 'date' => '', 'message' => $promptText]],
         ];
 
-        try {
-            $startTime = microtime(true);
-            $rawResponse = $this->provider->generateResponse($fakeContext, $fakeSettings, 'Professional', '');
-            $execTimeMs = round((microtime(true) - $startTime) * 1000);
-            $tokensUsed = $this->provider->getLastTokenUsage() ?? 0;
-            $providerName = $this->provider->getName() ?? 'Unknown';
-
-            // Ensure we handle arrays back from providers gracefully
-            $template = '';
+        $extractTemplate = function ($rawResponse) {
             if (is_string($rawResponse)) {
-                $template = trim($rawResponse);
-            } elseif (is_array($rawResponse) && isset($rawResponse['reply'])) {
-                $template = trim($rawResponse['reply']);
-            } elseif (is_array($rawResponse)) {
-                $template = implode("\n\n", array_filter(array_values($rawResponse), 'is_string'));
+                return trim($rawResponse);
+            }
+            if (is_array($rawResponse) && isset($rawResponse['reply'])) {
+                return trim($rawResponse['reply']);
+            }
+            if (is_array($rawResponse)) {
+                return implode("\n\n", array_filter(array_values($rawResponse), 'is_string'));
             }
 
-            // Fallback provider attempt if template is empty
-            if (empty($template) && $this->fallbackProvider) {
-                 $rawResponseFallback = $this->fallbackProvider->generateResponse($fakeContext, $fakeSettings, 'Professional', '');
-                 if (is_string($rawResponseFallback)) {
-                     $template = trim($rawResponseFallback);
-                 } elseif (is_array($rawResponseFallback) && isset($rawResponseFallback['reply'])) {
-                     $template = trim($rawResponseFallback['reply']);
-                 } elseif (is_array($rawResponseFallback)) {
-                     $template = implode("\n\n", array_filter(array_values($rawResponseFallback), 'is_string'));
-                 }
-                 $tokensUsed = $this->fallbackProvider->getLastTokenUsage() ?? 0;
-                 $providerName = $this->fallbackProvider->getName() ?? 'Fallback';
+            return '';
+        };
+
+        try {
+            $startTime = microtime(true);
+            $fakeSettings = $fakeSettingsBase;
+            $rawResponse = $stack['primary']->generateResponse($fakeContext, $fakeSettings, 'Professional', '');
+            $execTimeMs = round((microtime(true) - $startTime) * 1000);
+            $tokensUsed = $stack['primary']->getLastTokenUsage() ?? 0;
+            $providerName = $stack['primary']->getName() ?? 'Unknown';
+
+            $template = $extractTemplate($rawResponse);
+
+            if (empty($template) && $stack['fallback'] && $stack['fallback_row']) {
+                $fbSettings = $stack['fallback_call_settings'] ?? $this->mergeSettingsForProviderRow($this->settings, $stack['fallback_row']);
+                $fbSettings['user_prompt_template'] = '{{MESSAGES}}';
+                $fbSettings['system_prompt'] = $fakeSettingsBase['system_prompt'];
+                $rawResponseFallback = $stack['fallback']->generateResponse($fakeContext, $fbSettings, 'Professional', '');
+                $template = $extractTemplate($rawResponseFallback);
+                $tokensUsed = $stack['fallback']->getLastTokenUsage() ?? 0;
+                $providerName = $stack['fallback']->getName() ?? 'Fallback';
             }
 
             if (empty($template)) {
@@ -1329,23 +1429,18 @@ class AIController
 
             return ['status' => 'success', 'template' => $template, 'execution_time_ms' => $execTimeMs, 'tokens_used' => $tokensUsed];
         } catch (\Exception $e) {
-            // Log fallback attempt on actual exception
-            if ($this->fallbackProvider) {
+            if ($stack['fallback'] && $stack['fallback_row']) {
                 try {
                     $startTimeFb = microtime(true);
-                    $rawResponseFallback = $this->fallbackProvider->generateResponse($fakeContext, $fakeSettings, 'Professional', '');
+                    $fbSettings = $stack['fallback_call_settings'] ?? $this->mergeSettingsForProviderRow($this->settings, $stack['fallback_row']);
+                    $fbSettings['user_prompt_template'] = '{{MESSAGES}}';
+                    $fbSettings['system_prompt'] = $fakeSettingsBase['system_prompt'];
+                    $rawResponseFallback = $stack['fallback']->generateResponse($fakeContext, $fbSettings, 'Professional', '');
                     $execTimeMsFb = round((microtime(true) - $startTimeFb) * 1000);
-                    $tokensUsedFb = $this->fallbackProvider->getLastTokenUsage() ?? 0;
-                    $providerNameFb = $this->fallbackProvider->getName() ?? 'Fallback';
+                    $tokensUsedFb = $stack['fallback']->getLastTokenUsage() ?? 0;
+                    $providerNameFb = $stack['fallback']->getName() ?? 'Fallback';
 
-                    $template = '';
-                    if (is_string($rawResponseFallback)) {
-                        $template = trim($rawResponseFallback);
-                    } elseif (is_array($rawResponseFallback) && isset($rawResponseFallback['reply'])) {
-                        $template = trim($rawResponseFallback['reply']);
-                    } elseif (is_array($rawResponseFallback)) {
-                        $template = implode("\n\n", array_filter(array_values($rawResponseFallback), 'is_string'));
-                    }
+                    $template = $extractTemplate($rawResponseFallback);
 
                     if (empty($template)) {
                        throw new \Exception("Fallback AI returned an empty template.");

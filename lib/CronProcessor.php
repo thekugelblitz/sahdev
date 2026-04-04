@@ -5,6 +5,8 @@ namespace Sahdev\Lib;
 use WHMCS\Database\Capsule;
 use Carbon\Carbon;
 
+require_once __DIR__ . '/TaskProviderResolver.php';
+
 /**
  * CronProcessor
  *
@@ -325,7 +327,7 @@ class CronProcessor
         $this->cronPrompt       = $tplUser ? $tplUser->content : $this->defaultCronUserPrompt();
         $this->cronSystemPrompt = $tplSys ? $tplSys->content : $this->defaultCronSystemPrompt();
 
-        $primaryId   = (int) ($this->settings['primary_provider_id'] ?? 1);
+        $primaryId   = TaskProviderResolver::resolveProviderId(TaskProviderResolver::TASK_CRON_INSIGHTS, null, $this->settings);
         $primaryData = Capsule::table('tblsahdev_providers')->where('id', $primaryId)->first();
 
         if (!$primaryData) {

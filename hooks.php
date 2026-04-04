@@ -44,6 +44,13 @@ function sahdev_inject_ticket_panel($vars)
     $autoAnalyzeEnabled = $settings && !empty($settings->auto_analyze_on_load) ? 'true' : 'false';
     $qualityScorerEnabled = $settings && !empty($settings->quality_scorer_enabled) ? 'true' : 'false';
 
+    $routingProviders = [];
+    try {
+        $routingProviders = Capsule::table('tblsahdev_providers')->where('is_active', 1)->orderBy('name')->get();
+    } catch (\Exception $e) {
+        $routingProviders = [];
+    }
+
     $isSel = function ($val, $current) {
         return $val === $current ? 'selected' : '';
     };
@@ -145,6 +152,21 @@ function sahdev_inject_ticket_panel($vars)
                     <div class="form-group">
                         <label>Custom Instruction (Optional)</label>
                         <input type="text" id="sahdev_instruction" class="form-control" placeholder="e.g. 'Ask for server credentials in the reply' or 'Explain why the load is high'">
+                    </div>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-12">
+                    <div class="form-group" style="margin-bottom: 10px;">
+                        <label style="font-weight: 600;">Model for this generation</label>
+                        <select id="sahdev_override_provider" class="form-control" style="max-width: 520px;">
+                            <option value="">Use default (routing / primary)</option>
+                            <?php foreach ($routingProviders as $rp): ?>
+                                <option value="<?php echo (int) $rp->id; ?>"><?php echo htmlspecialchars($rp->name . ' — ' . ($rp->model_name ?? '')); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                        <small class="text-muted">Optional override for this ticket’s analysis and reply generation only. Admins only.</small>
                     </div>
                 </div>
             </div>
@@ -591,7 +613,8 @@ HTML;
                 use_summary: $('#sahdev_use_summary').length && !$('#sahdev_use_summary').is(':checked') ? 0 : 1,
                 include_historical_context: $('#sahdev_include_history').is(':checked') ? 1 : 0,
                 token: $('input[name="token"]').val(),
-                force_regenerate: isRegenerate ? 'true' : 'false'
+                force_regenerate: isRegenerate ? 'true' : 'false',
+                override_provider_id: $('#sahdev_override_provider').val() || '0'
             };
 
             var payloadReqData = Object.assign({ action: 'get_payload' }, baseReqData);
@@ -1540,7 +1563,8 @@ HTML;
                 intent: 'AUTO',
                 use_summary: 1, // Snapshot always uses summary if available
                 token: $('input[name="token"]').val(),
-                force_regenerate: 'false'
+                force_regenerate: 'false',
+                override_provider_id: $('#sahdev_override_provider').length ? ($('#sahdev_override_provider').val() || '0') : '0'
             };
 
             // Step 1: get_payload — same as main button (checks cache + gets provider info)

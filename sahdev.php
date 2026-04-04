@@ -510,6 +510,14 @@ function sahdev_activate()
             });
         }
 
+        try {
+            Capsule::table('tblsahdev_settings')->select('task_provider_map')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                $table->longText('task_provider_map')->nullable();
+            });
+        }
+
         // Create tblsahdev_personas
         try {
             Capsule::table('tblsahdev_personas')->first();

@@ -3,6 +3,9 @@
 namespace Sahdev\Controllers;
 
 use WHMCS\Database\Capsule;
+use Sahdev\Lib\TaskProviderResolver;
+
+require_once dirname(__DIR__) . '/lib/TaskProviderResolver.php';
 
 class AdminController
 {
@@ -545,6 +548,15 @@ class AdminController
             });
         }
 
+        // Multi-model orchestration: per-task provider map (JSON)
+        try {
+            Capsule::table('tblsahdev_settings')->select('task_provider_map')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                $table->longText('task_provider_map')->nullable();
+            });
+        }
+
         // Handle form submission
         if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_settings'])) {
             check_token("WHMCS.admin.default"); // Verify CSRF
@@ -572,6 +584,21 @@ class AdminController
             $qualityScorerEnabled = !empty($_POST['quality_scorer_enabled']) ? 1 : 0;
             $customAttachmentsDir = trim($_POST['custom_attachments_dir'] ?? '');
 
+            $taskProviderMap = [];
+            $taskMapRaw = $_POST['task_provider_map'] ?? [];
+            if (is_array($taskMapRaw)) {
+                foreach (TaskProviderResolver::canonicalTaskKeys() as $key) {
+                    if (!isset($taskMapRaw[$key])) {
+                        continue;
+                    }
+                    $vid = (int) $taskMapRaw[$key];
+                    if ($vid > 0 && TaskProviderResolver::isValidActiveProviderId($vid)) {
+                        $taskProviderMap[$key] = $vid;
+                    }
+                }
+            }
+            $taskProviderMapJson = $taskProviderMap === [] ? null : json_encode($taskProviderMap);
+
             // Ensure valid bounds
             if ($temperature < 0 || $temperature > 1) {
                 $temperature = 0.70;
@@ -598,6 +625,7 @@ class AdminController
                     'scrub_passwords' => $scrubPasswords,
                     'quality_scorer_enabled' => $qualityScorerEnabled,
                     'custom_attachments_dir' => $customAttachmentsDir,
+                    'task_provider_map' => $taskProviderMapJson,
                     'updated_at' => \Carbon\Carbon::now(),
                 ]
             );
@@ -626,8 +654,11 @@ class AdminController
                 'scrub_ips' => 1,
                 'scrub_passwords' => 1,
                 'quality_scorer_enabled' => 1,
+                'task_provider_map' => null,
             ];
         }
+
+        $taskMapStored = TaskProviderResolver::parseTaskProviderMap($settings->task_provider_map ?? null);
 
         // Fetch all active providers
         $providers = Capsule::table('tblsahdev_providers')->where('is_active', 1)->get();
@@ -680,6 +711,46 @@ class AdminController
                             <?php endforeach; ?>
                         </select>
                         <small class="text-muted">Used automatically if the Primary AI fails to respond or is offline.</small>
+                    </div>
+                </div>
+
+                <div class="panel panel-default" style="margin-bottom: 25px; border-left: 4px solid #6f42c1;">
+                    <div class="panel-heading" style="background: #faf8ff;">
+                        <h4 style="margin: 0; font-size: 15px; color:#5a32a3;"><i class="fas fa-route"></i> Model routing (per task)</h4>
+                    </div>
+                    <div class="panel-body">
+                        <p class="text-muted" style="margin-top: 0; font-size: 13px;">
+                            Choose which saved AI provider runs each feature. Leave a row as <strong>Use primary</strong> to use the Primary AI Provider above.
+                            On ticket replies you can optionally override the model for one generation from the ticket panel.
+                        </p>
+                        <div class="table-responsive">
+                            <table class="table table-condensed" style="margin-bottom: 0;">
+                                <thead>
+                                    <tr><th style="width: 40%;">Feature</th><th>Provider</th></tr>
+                                </thead>
+                                <tbody>
+                                    <?php
+                                    $labels = TaskProviderResolver::taskKeyLabels();
+                                    foreach (TaskProviderResolver::canonicalTaskKeys() as $taskKey):
+                                        $sel = $taskMapStored[$taskKey] ?? 0;
+                                    ?>
+                                    <tr>
+                                        <td><?php echo htmlspecialchars($labels[$taskKey] ?? $taskKey); ?></td>
+                                        <td>
+                                            <select name="task_provider_map[<?php echo htmlspecialchars($taskKey); ?>]" class="form-control input-sm">
+                                                <option value="0" <?php echo $sel ? '' : 'selected'; ?>>Use primary (default)</option>
+                                                <?php foreach ($providers as $p): ?>
+                                                    <option value="<?php echo (int) $p->id; ?>" <?php echo ((int) $sel === (int) $p->id) ? 'selected' : ''; ?>>
+                                                        <?php echo htmlspecialchars($p->name . ' — ' . $p->model_name); ?>
+                                                    </option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                        </td>
+                                    </tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
 
