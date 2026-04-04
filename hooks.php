@@ -2039,40 +2039,60 @@ add_hook('CronJob', 1, function () {
 // ---------------------------------------------------------------------------
 // Ticket Insights: Inject insight badges into the support tickets list page
 // ---------------------------------------------------------------------------
-add_hook('AdminAreaPage', 1, function ($vars) {
+// WHMCS AdminAreaPage expects an array of *template variables*, not raw HTML.
+// Use AdminAreaFooterOutput (HTML before </body>) per developers.whmcs.com/hooks-reference/output/
+// AdminSupportTicketPagePreTickets is list-specific and also accepts HTML (ticket hook reference).
+
+/**
+ * @return string HTML to inject (empty if N/A)
+ */
+function sahdev_ticket_list_insights_markup(): string
+{
     try {
-        // Detect supporttickets.php list view (not individual ticket view).
-        // Themes may use action=list or omit action; single ticket is action=view&id=.
-        $script = basename($_SERVER['SCRIPT_NAME'] ?? '');
+        $script = strtolower(basename($_SERVER['SCRIPT_NAME'] ?? ''));
         $action = isset($_GET['action']) ? trim((string) $_GET['action']) : '';
         $id     = isset($_GET['id']) ? (int) $_GET['id'] : 0;
+        // Single-ticket view: do not inject list script
         $isTicketView = ($action === 'view' && $id > 0);
-        $isTicketList = (
-            $script === 'supporttickets.php' &&
-            !$isTicketView
-        );
+        $isTicketList = ($script === 'supporttickets.php') && !$isTicketView;
 
         if (!$isTicketList) {
-            return;
+            return '';
         }
 
-        // Guard: check module is available
         if (!\WHMCS\Database\Capsule::schema()->hasTable('tblsahdev_settings')) {
-            return;
+            return '';
         }
 
         $settings = \WHMCS\Database\Capsule::table('tblsahdev_settings')->first();
         if (!$settings || empty($settings->cron_insights_enabled)) {
-            return;
+            return '';
         }
 
         $versionBuster = time();
-        $ajaxUrl = htmlspecialchars("addonmodules.php?module=sahdev&sahdev_act=ajax_handler&v={$versionBuster}");
+        $ajaxUrl       = htmlspecialchars("addonmodules.php?module=sahdev&sahdev_act=ajax_handler&v={$versionBuster}");
 
         return sahdev_render_ticket_list_insights($ajaxUrl);
     } catch (\Throwable $e) {
         return '';
     }
+}
+
+add_hook('AdminAreaFooterOutput', 1, function ($vars) {
+    $filename = isset($vars['filename']) ? strtolower(trim((string) $vars['filename'])) : '';
+    $action   = isset($_GET['action']) ? trim((string) $_GET['action']) : '';
+    $id       = isset($_GET['id']) ? (int) $_GET['id'] : 0;
+    $isView   = ($action === 'view' && $id > 0);
+    $isList   = !$isView && (
+        $filename === 'supporttickets'
+        || $filename === 'supporttickets.php'
+        || strtolower(basename($_SERVER['SCRIPT_NAME'] ?? '')) === 'supporttickets.php'
+    );
+    if (!$isList) {
+        return '';
+    }
+
+    return sahdev_ticket_list_insights_markup();
 });
 
 /**
@@ -2149,11 +2169,15 @@ function sahdev_render_ticket_list_insights(string $ajaxUrl): string
 .sdv-tone         { background:#fff; color:#6c757d; border:1px solid #dee2e6; font-style:italic; }
 /* Admin reply badge */
 .sdv-admin-rep    { background:#e7f3ff; color:#0d6efd; border:1px solid #b6d4fe; }
-/* Row urgency left-border highlight */
-tr.sdv-row-critical td:first-child { border-left: 4px solid #dc3545 !important; }
-tr.sdv-row-high     td:first-child { border-left: 4px solid #fd7e14 !important; }
-tr.sdv-row-medium   td:first-child { border-left: 4px solid #ffc107 !important; }
-tr.sdv-row-low      td:first-child { border-left: 4px solid #198754 !important; }
+/* Row urgency — Subject cell (checkbox is first column on default WHMCS list) */
+tr.sdv-row-critical td.sdv-insight-target { box-shadow: inset 4px 0 0 #dc3545 !important; }
+tr.sdv-row-high     td.sdv-insight-target { box-shadow: inset 4px 0 0 #fd7e14 !important; }
+tr.sdv-row-medium   td.sdv-insight-target { box-shadow: inset 4px 0 0 #ffc107 !important; }
+tr.sdv-row-low      td.sdv-insight-target { box-shadow: inset 4px 0 0 #198754 !important; }
+.sdv-insight-panel--compact { border: 0; box-shadow: none; background: transparent; margin-top: 6px; }
+.sdv-insight-panel--compact .sdv-insight-panel-hd { display: none; }
+.sdv-insight-panel--compact .sdv-insight-panel-bd { padding: 4px 0 0; border: 0; background: transparent; }
+.sdv-insight-panel--compact .sdv-pill { border-radius: 2px; font-size: 9px; padding: 2px 6px; letter-spacing: 0; }
 /* Tooltip */
 .sdv-tooltip-wrap { position: relative; display: inline-flex; }
 .sdv-tooltip-box {
@@ -2205,177 +2229,237 @@ tr.sdv-row-low      td:first-child { border-left: 4px solid #198754 !important; 
         Polite: '🙂', Appreciative: '😊'
     };
 
-    /* ── Step 1: scan all <tr> rows and tag them with data-sdv-tid ── */
-    function tagRows() {
-        var rows = document.querySelectorAll('table tbody tr, table tr');
-        rows.forEach(function (row) {
-            // Already tagged
-            if (row.getAttribute('data-sdv-tid')) return;
-            // Look for a subject link inside this row
-            var links = row.querySelectorAll('a[href]');
-            for (var i = 0; i < links.length; i++) {
-                var m = links[i].href.match(/[?&]id=(\d+)(?:&|$)/);
-                if (!m) m = links[i].href.match(/supporttickets\.php\?.*[?&]id=(\d+)/);
-                if (!m) m = links[i].href.match(/[?&]id=(\d+)/);
-                if (m) {
-                    row.setAttribute('data-sdv-tid', m[1]);
-                    break;
+    function getTicketListTable() {
+        var scope = document.querySelector('#contentarea') || document.querySelector('.contentarea') || document.body;
+        var tables = scope.querySelectorAll('table');
+        var t, h, headers, txt;
+        for (t = 0; t < tables.length; t++) {
+            headers = tables[t].querySelectorAll('thead th, thead td, tbody tr:first-child th');
+            for (h = 0; h < headers.length; h++) {
+                txt = (headers[h].textContent || '').replace(/\s+/g, ' ').trim();
+                if (/\bsubject\b/i.test(txt) && txt.length < 80) {
+                    return tables[t];
                 }
-            }
-        });
-    }
-
-    /* ── Step 2: collect all tagged ticket IDs ── */
-    function collectIds() {
-        var ids = [];
-        document.querySelectorAll('[data-sdv-tid]').forEach(function (el) {
-            var tid = el.getAttribute('data-sdv-tid');
-            if (tid && ids.indexOf(tid) === -1) ids.push(tid);
-        });
-        return ids;
-    }
-
-    function findSubjectCell(row, tid) {
-        var want = String(tid);
-        var links = row.querySelectorAll('a[href]');
-        for (var i = 0; i < links.length; i++) {
-            var href = links[i].getAttribute('href') || '';
-            var m = href.match(/(?:\?|&)id=(\d+)(?:&|#|$)/);
-            if (m && m[1] === want) {
-                return links[i].closest('td');
             }
         }
         return null;
     }
 
-    /* ── Step 3: build and inject the insight panel into each row ── */
-    function injectInsights(insights) {
-        Object.keys(insights).forEach(function (tid) {
-            var ins = insights[tid];
-            var row = document.querySelector('[data-sdv-tid="' + tid + '"]');
-            if (!row) return;
+    function isSupportTicketsHref(href) {
+        if (!href) return false;
+        return href.toLowerCase().indexOf('supportticket') !== -1;
+    }
 
-            // Avoid double-injection
-            if (row.querySelector('.sdv-insight-panel')) return;
-
-            var urgency = (ins.urgency || 'medium').toLowerCase();
-            var urgClass = URG_CLASS[urgency] || 'sdv-urg-medium';
-            var urgIcon  = URG_ICON[urgency]  || '⚪';
-            var urgLabel = ins.urgency || 'Medium';
-            var sentiment = ins.sentiment_label || '';
-            var score     = ins.sentiment_score ? ins.sentiment_score + '/10' : '';
-            var tone      = ins.client_tone || '';
-            var toneIcon  = TONE_ICON[tone] || '';
-            var adminRep  = parseInt(ins.admin_reply_count) || 0;
-            var lastAdmin = ins.last_admin_name || '';
-            var summary   = (ins.ticket_summary || '').substring(0, 320);
-            var analyzedAt = ins.analyzed_at || '';
-
-            // Build tooltip content
-            var tipLines = [];
-            if (summary) tipLines.push(summary);
-            if (adminRep > 0) {
-                var adminLine = '👤 Admin replied ' + adminRep + ' time' + (adminRep > 1 ? 's' : '');
-                if (lastAdmin) adminLine += ' · Last: ' + lastAdmin;
-                tipLines.push(adminLine);
+    function extractTicketRefFromLink(anchor) {
+        var href = anchor.getAttribute('href') || '';
+        if (!isSupportTicketsHref(href)) return null;
+        var m = href.match(/[?&]id=(\d+)(?:&|#|$)/i);
+        if (m) return { id: m[1] };
+        m = href.match(/[?&]tid=([^&=#]+)/i);
+        if (m) {
+            try {
+                return { mask: decodeURIComponent(m[1]) };
+            } catch (e) {
+                return { mask: m[1] };
             }
-            if (analyzedAt) tipLines.push('🕐 Analyzed: ' + analyzedAt);
-            var tipHtml = tipLines.map(function(l) {
-                return '<span>' + l.replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</span>';
-            }).join('<br>');
+        }
+        return null;
+    }
 
-            var panel = document.createElement('div');
-            panel.className = 'sdv-insight-panel';
-            panel.setAttribute('data-sdv-injected', '1');
-
-            var hd = document.createElement('div');
-            hd.className = 'sdv-insight-panel-hd';
-            hd.textContent = 'Ticket insights';
-            panel.appendChild(hd);
-
-            var bd = document.createElement('div');
-            bd.className = 'sdv-insight-panel-bd';
-
-            var bar = document.createElement('div');
-            bar.className = 'sdv-insight-bar';
-
-            // Urgency pill (with tooltip)
-            var urgWrap = document.createElement('span');
-            urgWrap.className = 'sdv-tooltip-wrap';
-            urgWrap.innerHTML =
-                '<span class="sdv-pill ' + urgClass + '">' + urgIcon + ' ' + urgLabel + '</span>' +
-                (tipHtml ? '<div class="sdv-tooltip-box">' + tipHtml + '</div>' : '');
-            bar.appendChild(urgWrap);
-
-            // Sentiment pill
-            if (sentiment || score) {
-                var sentPill = document.createElement('span');
-                sentPill.className = 'sdv-pill sdv-sentiment';
-                sentPill.textContent = sentiment + (score ? ' ' + score : '');
-                bar.appendChild(sentPill);
-            }
-
-            // Tone pill
-            if (tone) {
-                var tonePill = document.createElement('span');
-                tonePill.className = 'sdv-pill sdv-tone';
-                tonePill.textContent = (toneIcon ? toneIcon + ' ' : '') + tone;
-                bar.appendChild(tonePill);
-            }
-
-            // Admin reply count (only if > 0)
-            if (adminRep > 0) {
-                var repPill = document.createElement('span');
-                repPill.className = 'sdv-pill sdv-admin-rep';
-                repPill.title = lastAdmin ? 'Last reply by: ' + lastAdmin : '';
-                repPill.textContent = '↩ ' + adminRep + ' admin reply' + (adminRep > 1 ? 's' : '');
-                bar.appendChild(repPill);
-            }
-
-            bd.appendChild(bar);
-
-            if (summary) {
-                var sum = document.createElement('div');
-                sum.className = 'sdv-summary-line';
-                sum.textContent = summary + (ins.ticket_summary && ins.ticket_summary.length > 320 ? '…' : '');
-                if (analyzedAt) {
-                    var mu = document.createElement('div');
-                    mu.className = 'sdv-muted';
-                    mu.textContent = 'Analyzed ' + analyzedAt;
-                    sum.appendChild(mu);
+    function tagRows() {
+        var tbl = getTicketListTable();
+        var rowList = tbl ? tbl.querySelectorAll('tbody tr') : document.querySelectorAll('#contentarea table tbody tr, .contentarea table tbody tr, table tbody tr');
+        rowList.forEach(function (row) {
+            if (row.getAttribute('data-sdv-tid') || row.getAttribute('data-sdv-tmask')) return;
+            var links = row.querySelectorAll('a[href]');
+            for (var i = 0; i < links.length; i++) {
+                var ref = extractTicketRefFromLink(links[i]);
+                if (!ref) continue;
+                if (ref.id) {
+                    row.setAttribute('data-sdv-tid', ref.id);
+                    return;
                 }
-                bd.appendChild(sum);
-            }
-
-            panel.appendChild(bd);
-
-            // Add row urgency left-border class
-            row.classList.add('sdv-row-' + urgency);
-
-            var td = findSubjectCell(row, tid);
-            if (td) {
-                td.style.paddingBottom = '6px';
-                td.style.verticalAlign = 'top';
-                td.appendChild(panel);
+                if (ref.mask) {
+                    row.setAttribute('data-sdv-tmask', ref.mask);
+                    return;
+                }
             }
         });
     }
 
-    /* ── Step 4: fetch insights from DB via AJAX ── */
-    function loadInsights(ids) {
-        if (!ids.length) return;
+    function collectIdsAndMasks() {
+        var ids = [];
+        var masks = [];
+        document.querySelectorAll('tr[data-sdv-tid]').forEach(function (el) {
+            var tid = el.getAttribute('data-sdv-tid');
+            if (tid && ids.indexOf(tid) === -1) ids.push(tid);
+        });
+        document.querySelectorAll('tr[data-sdv-tmask]').forEach(function (el) {
+            var m = el.getAttribute('data-sdv-tmask');
+            if (m && !el.getAttribute('data-sdv-tid') && masks.indexOf(m) === -1) masks.push(m);
+        });
+        return { ids: ids, masks: masks };
+    }
+
+    function findSubjectCell(row, tidAttr, maskAttr) {
+        var links = row.querySelectorAll('a[href]');
+        for (var i = 0; i < links.length; i++) {
+            if (!isSupportTicketsHref(links[i].getAttribute('href') || '')) continue;
+            var ref = extractTicketRefFromLink(links[i]);
+            if (!ref) continue;
+            if (tidAttr && ref.id && String(ref.id) === String(tidAttr)) return links[i].closest('td');
+            if (maskAttr && ref.mask && String(ref.mask) === String(maskAttr)) return links[i].closest('td');
+        }
+        return null;
+    }
+
+    function findRowsForNumericTicketId(nid, maskMap) {
+        var rows = [];
+        var q = document.querySelector('tr[data-sdv-tid="' + nid + '"]');
+        if (q) rows.push(q);
+        var mk;
+        for (mk in maskMap) {
+            if (!Object.prototype.hasOwnProperty.call(maskMap, mk)) continue;
+            if (parseInt(maskMap[mk], 10) !== parseInt(nid, 10)) continue;
+            document.querySelectorAll('tr[data-sdv-tmask]').forEach(function (row) {
+                if (row.getAttribute('data-sdv-tmask') === mk && rows.indexOf(row) === -1) rows.push(row);
+            });
+        }
+        return rows;
+    }
+
+    function injectIntoRow(row, ins) {
+        if (row.querySelector('.sdv-insight-panel')) return;
+
+        var urgency = (ins.urgency || 'medium').toLowerCase();
+        var urgClass = URG_CLASS[urgency] || 'sdv-urg-medium';
+        var urgIcon  = URG_ICON[urgency]  || '⚪';
+        var urgLabel = ins.urgency || 'Medium';
+        var sentiment = ins.sentiment_label || '';
+        var score     = ins.sentiment_score ? ins.sentiment_score + '/10' : '';
+        var tone      = ins.client_tone || '';
+        var toneIcon  = TONE_ICON[tone] || '';
+        var adminRep  = parseInt(ins.admin_reply_count, 10) || 0;
+        var lastAdmin = ins.last_admin_name || '';
+        var summary   = (ins.ticket_summary || '').substring(0, 320);
+        var analyzedAt = ins.analyzed_at || '';
+
+        var tipLines = [];
+        if (summary) tipLines.push(summary);
+        if (adminRep > 0) {
+            var adminLine = 'Admin replied ' + adminRep + ' time' + (adminRep > 1 ? 's' : '');
+            if (lastAdmin) adminLine += ' · Last: ' + lastAdmin;
+            tipLines.push(adminLine);
+        }
+        if (analyzedAt) tipLines.push('Analyzed: ' + analyzedAt);
+        var tipHtml = tipLines.map(function (l) {
+            return '<span>' + l.replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</span>';
+        }).join('<br>');
+
+        var panel = document.createElement('div');
+        panel.className = 'sdv-insight-panel sdv-insight-panel--compact';
+        panel.setAttribute('data-sdv-injected', '1');
+
+        var hd = document.createElement('div');
+        hd.className = 'sdv-insight-panel-hd';
+        hd.textContent = 'Ticket insights';
+        panel.appendChild(hd);
+
+        var bd = document.createElement('div');
+        bd.className = 'sdv-insight-panel-bd';
+
+        var bar = document.createElement('div');
+        bar.className = 'sdv-insight-bar';
+
+        var urgWrap = document.createElement('span');
+        urgWrap.className = 'sdv-tooltip-wrap';
+        urgWrap.innerHTML =
+            '<span class="sdv-pill ' + urgClass + '">' + urgIcon + ' ' + urgLabel + '</span>' +
+            (tipHtml ? '<div class="sdv-tooltip-box">' + tipHtml + '</div>' : '');
+        bar.appendChild(urgWrap);
+
+        if (sentiment || score) {
+            var sentPill = document.createElement('span');
+            sentPill.className = 'sdv-pill sdv-sentiment';
+            sentPill.textContent = sentiment + (score ? ' ' + score : '');
+            bar.appendChild(sentPill);
+        }
+
+        if (tone) {
+            var tonePill = document.createElement('span');
+            tonePill.className = 'sdv-pill sdv-tone';
+            tonePill.textContent = (toneIcon ? toneIcon + ' ' : '') + tone;
+            bar.appendChild(tonePill);
+        }
+
+        if (adminRep > 0) {
+            var repPill = document.createElement('span');
+            repPill.className = 'sdv-pill sdv-admin-rep';
+            repPill.title = lastAdmin ? 'Last reply by: ' + lastAdmin : '';
+            repPill.textContent = '↩ ' + adminRep + ' admin reply' + (adminRep > 1 ? 's' : '');
+            bar.appendChild(repPill);
+        }
+
+        bd.appendChild(bar);
+
+        if (summary) {
+            var sum = document.createElement('div');
+            sum.className = 'sdv-summary-line';
+            sum.textContent = summary + (ins.ticket_summary && ins.ticket_summary.length > 320 ? '…' : '');
+            if (analyzedAt) {
+                var mu = document.createElement('div');
+                mu.className = 'sdv-muted';
+                mu.textContent = 'Analyzed ' + analyzedAt;
+                sum.appendChild(mu);
+            }
+            bd.appendChild(sum);
+        }
+
+        panel.appendChild(bd);
+        row.classList.add('sdv-row-' + urgency);
+
+        var td = findSubjectCell(row, row.getAttribute('data-sdv-tid'), row.getAttribute('data-sdv-tmask'));
+        if (td) {
+            td.classList.add('sdv-insight-target');
+            td.style.paddingBottom = '6px';
+            td.style.verticalAlign = 'top';
+            td.appendChild(panel);
+        }
+    }
+
+    function injectInsightsPayload(data) {
+        var insights = data.insights || {};
+        var maskMap = data.mask_to_id || {};
+        Object.keys(insights).forEach(function (k) {
+            var nid = parseInt(k, 10);
+            if (isNaN(nid) || !insights[k]) return;
+            var rows = findRowsForNumericTicketId(nid, maskMap);
+            for (var r = 0; r < rows.length; r++) {
+                injectIntoRow(rows[r], insights[k]);
+            }
+        });
+    }
+
+    function loadInsights(ids, masks) {
+        var idArr = ids || [];
+        var maskArr = masks || [];
+        if (!idArr.length && !maskArr.length) return;
+
         var fd = new FormData();
         fd.append('action', 'get_ticket_insights');
-        ids.forEach(function (id) { fd.append('ticket_ids[]', id); });
+        idArr.forEach(function (id) { fd.append('ticket_ids[]', id); });
+        maskArr.forEach(function (m) { fd.append('ticket_tids[]', m); });
 
         fetch(AJAX_URL, { method: 'POST', body: fd, credentials: 'same-origin' })
             .then(function (r) { return r.json(); })
             .then(function (data) {
                 if (data.status === 'success' && data.insights) {
-                    injectInsights(data.insights);
+                    injectInsightsPayload(data);
                 }
             })
-            .catch(function () { /* fail silently on the list page */ });
+            .catch(function (err) {
+                if (window.console && console.warn) console.warn('Sahdev ticket list insights:', err);
+            });
     }
 
     var moTimer = null;
@@ -2384,18 +2468,26 @@ tr.sdv-row-low      td:first-child { border-left: 4px solid #198754 !important; 
         if (moTimer) clearTimeout(moTimer);
         moTimer = setTimeout(function () {
             tagRows();
-            var need = [];
-            document.querySelectorAll('[data-sdv-tid]').forEach(function (row) {
-                var t = row.getAttribute('data-sdv-tid');
-                if (t && !row.querySelector('.sdv-insight-panel')) need.push(t);
+            var needIds = [];
+            var needMasks = [];
+            document.querySelectorAll('tr[data-sdv-tid], tr[data-sdv-tmask]').forEach(function (row) {
+                if (row.querySelector('.sdv-insight-panel')) return;
+                var tid = row.getAttribute('data-sdv-tid');
+                var msk = row.getAttribute('data-sdv-tmask');
+                if (tid) {
+                    if (needIds.indexOf(tid) === -1) needIds.push(tid);
+                } else if (msk) {
+                    if (needMasks.indexOf(msk) === -1) needMasks.push(msk);
+                }
             });
-            loadInsights(need);
+            loadInsights(needIds, needMasks);
         }, 380);
     }
 
     function init() {
         tagRows();
-        loadInsights(collectIds());
+        var pack = collectIdsAndMasks();
+        loadInsights(pack.ids, pack.masks);
         if (!moStarted && document.body) {
             moStarted = true;
             try {

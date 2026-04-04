@@ -193,10 +193,35 @@ try {
         if (!is_array($rawIds)) {
             $rawIds = json_decode($rawIds, true) ?: [];
         }
+        $rawTids = $_POST['ticket_tids'] ?? [];
+        if (!is_array($rawTids)) {
+            $rawTids = json_decode($rawTids, true) ?: [];
+        }
+
         $ticketIds = array_map('intval', array_filter($rawIds));
+        $maskToId  = [];
+
+        if (!empty($rawTids)) {
+            $masks = array_unique(array_filter(array_map('trim', array_map('strval', $rawTids))));
+            if (!empty($masks)) {
+                $pairs = \WHMCS\Database\Capsule::table('tbltickets')
+                    ->whereIn('tid', $masks)
+                    ->get(['id', 'tid']);
+                foreach ($pairs as $p) {
+                    $maskToId[(string) $p->tid] = (int) $p->id;
+                    $ticketIds[]               = (int) $p->id;
+                }
+            }
+        }
+
+        $ticketIds = array_values(array_unique(array_filter($ticketIds)));
 
         if (empty($ticketIds)) {
-            $response = ['status' => 'success', 'insights' => []];
+            $response = [
+                'status'     => 'success',
+                'insights'   => [],
+                'mask_to_id' => new \stdClass(),
+            ];
         } else {
             $rows = \WHMCS\Database\Capsule::table('tblsahdev_sentiment')
                 ->whereIn('ticket_id', $ticketIds)
@@ -207,18 +232,22 @@ try {
 
             $insights = [];
             foreach ($rows as $row) {
-                $insights[(int)$row->ticket_id] = [
-                    'sentiment_score'    => (int)$row->score,
+                $insights[(int) $row->ticket_id] = [
+                    'sentiment_score'    => (int) $row->score,
                     'sentiment_label'    => $row->label,
                     'urgency'            => $row->urgency,
                     'client_tone'        => $row->client_tone,
                     'ticket_summary'     => $row->ticket_summary,
-                    'admin_reply_count'  => (int)$row->admin_reply_count,
+                    'admin_reply_count'  => (int) $row->admin_reply_count,
                     'last_admin_name'    => $row->last_admin_name,
                     'analyzed_at'        => $row->analyzed_at,
                 ];
             }
-            $response = ['status' => 'success', 'insights' => $insights];
+            $response = [
+                'status'     => 'success',
+                'insights'   => $insights,
+                'mask_to_id' => empty($maskToId) ? new \stdClass() : $maskToId,
+            ];
         }
     } elseif ($action === 'get_insights_queue') {
         // Returns the list of ticket IDs that need analysis (used by the incremental manual trigger)
