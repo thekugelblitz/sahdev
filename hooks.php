@@ -2003,3 +2003,260 @@ add_hook('AdminAreaViewTicketPage', 1, function ($vars) {
 
     return sahdev_inject_ticket_panel($vars);
 });
+
+// ---------------------------------------------------------------------------
+// Ticket Insights: WHMCS CronJob hook — batch-analyzes Awaiting Reply tickets
+// ---------------------------------------------------------------------------
+add_hook('CronJob', 1, function () {
+    try {
+        $moduleDir = __DIR__;
+
+        // Guard: only run if the module tables exist
+        if (!\WHMCS\Database\Capsule::schema()->hasTable('tblsahdev_settings')) {
+            return;
+        }
+
+        $settings = \WHMCS\Database\Capsule::table('tblsahdev_settings')->first();
+        if (!$settings || empty($settings->cron_insights_enabled)) {
+            return;
+        }
+
+        require_once $moduleDir . '/lib/AIProviderInterface.php';
+        require_once $moduleDir . '/lib/GoogleAIProvider.php';
+        require_once $moduleDir . '/lib/LMStudioAIProvider.php';
+        require_once $moduleDir . '/lib/ReplicateAIProvider.php';
+        require_once $moduleDir . '/lib/TicketDataExtractor.php';
+        require_once $moduleDir . '/lib/AIController.php';
+        require_once $moduleDir . '/lib/CronProcessor.php';
+
+        $processor = new \Sahdev\Lib\CronProcessor();
+        $processor->run();
+    } catch (\Throwable $e) {
+        // Silently swallow — never crash the WHMCS cron
+    }
+});
+
+// ---------------------------------------------------------------------------
+// Ticket Insights: Inject insight badges into the support tickets list page
+// ---------------------------------------------------------------------------
+add_hook('AdminAreaPage', 1, function ($vars) {
+    try {
+        // Detect supporttickets.php list view (not individual ticket view)
+        $script = $_SERVER['SCRIPT_NAME'] ?? '';
+        $isTicketList = (
+            strpos($script, 'supporttickets.php') !== false &&
+            empty($_GET['action']) &&
+            empty($_GET['id'])
+        );
+
+        if (!$isTicketList) {
+            return;
+        }
+
+        // Guard: check module is available
+        if (!\WHMCS\Database\Capsule::schema()->hasTable('tblsahdev_settings')) {
+            return;
+        }
+
+        $settings = \WHMCS\Database\Capsule::table('tblsahdev_settings')->first();
+        if (!$settings || empty($settings->cron_insights_enabled)) {
+            return;
+        }
+
+        $versionBuster = time();
+        $ajaxUrl = htmlspecialchars("addonmodules.php?module=sahdev&sahdev_act=ajax_handler&v={$versionBuster}");
+
+        return sahdev_render_ticket_list_insights($ajaxUrl);
+    } catch (\Throwable $e) {
+        return '';
+    }
+});
+
+/**
+ * Render the CSS + JS block injected into the support tickets list page.
+ */
+function sahdev_render_ticket_list_insights(string $ajaxUrl): string
+{
+    return <<<HTML
+<style>
+.sahdev-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 20px;
+    line-height: 1.5;
+    white-space: nowrap;
+    cursor: default;
+    vertical-align: middle;
+    margin-left: 4px;
+}
+.sahdev-badge-critical { background: #dc3545; color: #fff; }
+.sahdev-badge-high     { background: #fd7e14; color: #fff; }
+.sahdev-badge-medium   { background: #ffc107; color: #343a40; }
+.sahdev-badge-low      { background: #198754; color: #fff; }
+.sahdev-badge-sentiment {
+    background: #f1f3f5;
+    color: #495057;
+    border: 1px solid #dee2e6;
+}
+.sahdev-badge-tone {
+    background: #e9ecef;
+    color: #6c757d;
+    border: 1px solid #dee2e6;
+    font-style: italic;
+}
+.sahdev-insight-wrap { display: inline-flex; flex-wrap: wrap; gap: 3px; align-items: center; }
+[data-sahdev-tooltip] { position: relative; }
+[data-sahdev-tooltip]:hover::after {
+    content: attr(data-sahdev-tooltip);
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: #212529;
+    color: #fff;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 400;
+    white-space: pre-wrap;
+    max-width: 320px;
+    min-width: 160px;
+    z-index: 9999;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+    line-height: 1.5;
+    pointer-events: none;
+}
+</style>
+<script>
+(function() {
+    'use strict';
+
+    var AJAX_URL = '{$ajaxUrl}';
+
+    var urgencyClassMap = {
+        'critical': 'sahdev-badge-critical',
+        'high':     'sahdev-badge-high',
+        'medium':   'sahdev-badge-medium',
+        'low':      'sahdev-badge-low'
+    };
+
+    var toneIconMap = {
+        'Angry':       '😡',
+        'Threatening': '⚠️',
+        'Demanding':   '😤',
+        'Impatient':   '⏳',
+        'Neutral':     '😐',
+        'Confused':    '😕',
+        'Polite':      '🙂',
+        'Appreciative':'😊'
+    };
+
+    function extractTicketIds() {
+        var idMap = {};
+        // WHMCS ticket list: each row has a link like ?action=view&id=123
+        var links = document.querySelectorAll('table a[href*="action=view"], table a[href*="supporttickets.php?action=view"]');
+        links.forEach(function(link) {
+            var m = link.href.match(/[?&]id=(\d+)/);
+            if (m) {
+                idMap[m[1]] = link;
+            }
+        });
+        return idMap;
+    }
+
+    function buildTooltip(ins) {
+        var parts = [];
+        if (ins.ticket_summary) {
+            parts.push(ins.ticket_summary.substring(0, 280));
+        }
+        if (ins.admin_reply_count > 0 || ins.last_admin_name) {
+            var adminPart = 'Admin replies: ' + ins.admin_reply_count;
+            if (ins.last_admin_name) adminPart += ' | Last by: ' + ins.last_admin_name;
+            parts.push(adminPart);
+        }
+        if (ins.analyzed_at) {
+            parts.push('Analyzed: ' + ins.analyzed_at);
+        }
+        return parts.join('\n');
+    }
+
+    function renderBadges(ticketId, ins) {
+        var urgency = (ins.urgency || 'medium').toLowerCase();
+        var uc = urgencyClassMap[urgency] || 'sahdev-badge-medium';
+        var urg = ins.urgency || 'Medium';
+        var label = ins.sentiment_label || '';
+        var tone = ins.client_tone || '';
+        var toneIcon = toneIconMap[tone] || '';
+        var tooltip = buildTooltip(ins);
+
+        var html = '<span class="sahdev-insight-wrap" data-tid="' + ticketId + '">';
+        html += '<span class="sahdev-badge ' + uc + '" data-sahdev-tooltip="' + tooltip.replace(/"/g, '&quot;') + '">';
+        html += urg;
+        html += '</span>';
+        if (label) {
+            html += '<span class="sahdev-badge sahdev-badge-sentiment">' + label + '</span>';
+        }
+        if (tone) {
+            html += '<span class="sahdev-badge sahdev-badge-tone">' + toneIcon + ' ' + tone + '</span>';
+        }
+        html += '</span>';
+        return html;
+    }
+
+    function injectBadges(insights) {
+        Object.keys(insights).forEach(function(tid) {
+            var ins = insights[tid];
+            // Find the row link for this ticket ID
+            var links = document.querySelectorAll('table a[href*="id=' + tid + '"]');
+            if (!links.length) return;
+            var link = links[0];
+
+            // Avoid double-injection
+            if (link.parentNode.querySelector('[data-tid="' + tid + '"]')) return;
+
+            // Find the best container: the <td> containing the link
+            var td = link.closest('td') || link.parentNode;
+            var badgeHtml = renderBadges(tid, ins);
+            var span = document.createElement('span');
+            span.innerHTML = badgeHtml;
+            td.appendChild(span.firstChild);
+        });
+    }
+
+    function loadInsights(idMap) {
+        var ids = Object.keys(idMap);
+        if (!ids.length) return;
+
+        var formData = new FormData();
+        formData.append('action', 'get_ticket_insights');
+        ids.forEach(function(id) {
+            formData.append('ticket_ids[]', id);
+        });
+
+        fetch(AJAX_URL, { method: 'POST', body: formData, credentials: 'same-origin' })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.status === 'success' && data.insights) {
+                    injectBadges(data.insights);
+                }
+            })
+            .catch(function() {});
+    }
+
+    // Run after DOM is ready
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', function() {
+            loadInsights(extractTicketIds());
+        });
+    } else {
+        loadInsights(extractTicketIds());
+    }
+})();
+</script>
+HTML;
+}
+

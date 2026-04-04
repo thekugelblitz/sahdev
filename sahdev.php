@@ -166,6 +166,9 @@ function sahdev_activate()
                     $table->integer('max_messages')->default(10);
                     $table->integer('max_attachment_chars')->default(5000);
                     $table->integer('max_images')->default(3);
+                    $table->boolean('cron_insights_enabled')->default(1);
+                    $table->integer('cron_insights_interval_hours')->default(6);
+                    $table->integer('cron_insights_max_per_run')->default(20);
                     $table->timestamps(); // creates created_at, updated_at
                 }
             );
@@ -188,6 +191,9 @@ function sahdev_activate()
                 'max_messages' => 10,
                 'max_attachment_chars' => 5000,
                 'max_images' => 3,
+                'cron_insights_enabled' => 1,
+                'cron_insights_interval_hours' => 6,
+                'cron_insights_max_per_run' => 20,
                 'created_at' => \Carbon\Carbon::now(),
                 'updated_at' => \Carbon\Carbon::now(),
             ]);
@@ -419,14 +425,45 @@ function sahdev_activate()
         // Create tblsahdev_sentiment
         try {
             Capsule::table('tblsahdev_sentiment')->first();
+
+            // Migrate: add cron insight columns if missing
+            try {
+                Capsule::table('tblsahdev_sentiment')->select('client_tone')->first();
+            } catch (\Exception $e) {
+                Capsule::schema()->table('tblsahdev_sentiment', function ($table) {
+                    $table->string('client_tone', 64)->nullable()->comment('Angry, Demanding, Neutral, Polite, etc.');
+                    $table->text('ticket_summary')->nullable()->comment('AI-generated ticket summary');
+                    $table->integer('admin_reply_count')->unsigned()->default(0);
+                    $table->integer('last_admin_id')->unsigned()->nullable();
+                    $table->string('last_admin_name', 128)->nullable();
+                    $table->timestamp('analyzed_at')->nullable()->comment('When cron last analyzed this ticket');
+                });
+            }
         } catch (\Exception $e) {
             Capsule::schema()->create('tblsahdev_sentiment', function ($table) {
                 $table->increments('id');
-                $table->integer('ticket_id')->unsigned()->index();
+                $table->integer('ticket_id')->unsigned()->unique()->index();
                 $table->tinyInteger('score')->unsigned()->nullable()->comment('1-10 frustration score');
                 $table->string('label', 32)->nullable()->comment('Frustrated, Neutral, Satisfied');
-                $table->string('urgency', 16)->nullable()->comment('Low, Medium, High');
+                $table->string('urgency', 16)->nullable()->comment('Low, Medium, High, Critical');
+                $table->string('client_tone', 64)->nullable()->comment('Angry, Demanding, Neutral, Polite, etc.');
+                $table->text('ticket_summary')->nullable()->comment('AI-generated ticket summary');
+                $table->integer('admin_reply_count')->unsigned()->default(0);
+                $table->integer('last_admin_id')->unsigned()->nullable();
+                $table->string('last_admin_name', 128)->nullable();
+                $table->timestamp('analyzed_at')->nullable()->comment('When cron last analyzed this ticket');
                 $table->timestamps();
+            });
+        }
+
+        // Migrate: add cron insight settings columns if missing
+        try {
+            Capsule::table('tblsahdev_settings')->select('cron_insights_enabled')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                $table->boolean('cron_insights_enabled')->default(1);
+                $table->integer('cron_insights_interval_hours')->default(6);
+                $table->integer('cron_insights_max_per_run')->default(20);
             });
         }
 

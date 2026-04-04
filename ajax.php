@@ -50,7 +50,7 @@ if ($intensity > 3) {
 
 $ticketNotRequiredActions = [
     'search_canned_responses', 'generate_canned_template', 'save_canned_response', 'save_kb_article', 'delete_audit_entries',
-    'get_analytics'
+    'get_analytics', 'get_ticket_insights', 'trigger_cron_run'
 ];
 if (!$ticketId && !in_array($action, $ticketNotRequiredActions)) {
     header('HTTP/1.1 400 Bad Request');
@@ -186,6 +186,52 @@ try {
     } elseif ($action === 'get_analytics') {
         // Feature 8: AI Performance Analytics
         $response = $controller->getAnalyticsData();
+    } elseif ($action === 'get_ticket_insights') {
+        // Ticket Insights: fetch bulk sentiment/urgency data for ticket list badges
+        $rawIds = $_POST['ticket_ids'] ?? [];
+        if (!is_array($rawIds)) {
+            $rawIds = json_decode($rawIds, true) ?: [];
+        }
+        $ticketIds = array_map('intval', array_filter($rawIds));
+
+        if (empty($ticketIds)) {
+            $response = ['status' => 'success', 'insights' => []];
+        } else {
+            $rows = \WHMCS\Database\Capsule::table('tblsahdev_sentiment')
+                ->whereIn('ticket_id', $ticketIds)
+                ->get([
+                    'ticket_id', 'score', 'label', 'urgency', 'client_tone',
+                    'ticket_summary', 'admin_reply_count', 'last_admin_name', 'analyzed_at'
+                ]);
+
+            $insights = [];
+            foreach ($rows as $row) {
+                $insights[(int)$row->ticket_id] = [
+                    'sentiment_score'    => (int)$row->score,
+                    'sentiment_label'    => $row->label,
+                    'urgency'            => $row->urgency,
+                    'client_tone'        => $row->client_tone,
+                    'ticket_summary'     => $row->ticket_summary,
+                    'admin_reply_count'  => (int)$row->admin_reply_count,
+                    'last_admin_name'    => $row->last_admin_name,
+                    'analyzed_at'        => $row->analyzed_at,
+                ];
+            }
+            $response = ['status' => 'success', 'insights' => $insights];
+        }
+    } elseif ($action === 'trigger_cron_run') {
+        // Ticket Insights: manually trigger cron analysis from admin UI
+        require_once __DIR__ . '/lib/AIProviderInterface.php';
+        require_once __DIR__ . '/lib/GoogleAIProvider.php';
+        require_once __DIR__ . '/lib/LMStudioAIProvider.php';
+        require_once __DIR__ . '/lib/ReplicateAIProvider.php';
+        require_once __DIR__ . '/lib/TicketDataExtractor.php';
+        require_once __DIR__ . '/lib/AIController.php';
+        require_once __DIR__ . '/lib/CronProcessor.php';
+
+        $processor = new \Sahdev\Lib\CronProcessor();
+        $processor->run();
+        $response = ['status' => 'success', 'message' => 'Cron analysis triggered successfully. Check Ticket Insights for results.'];
     } else {
         // Default analyze_ticket (server-side generation)
         $response = $controller->getAnalysis($tone, $instruction, $forceRegenerate, $forceFallback, $intent, $useSummary, $includeHistory, $technicalContext);

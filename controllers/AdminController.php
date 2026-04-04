@@ -244,6 +244,57 @@ class AdminController
                 ],
             ]);
         }
+
+        // 9. Ensure cron_insights prompt template exists (migration for existing installs)
+        try {
+            $exists = Capsule::table('tblsahdev_prompt_templates')
+                ->where('prompt_key', 'cron_insights')
+                ->exists();
+            if (!$exists) {
+                $defs = $this->getDefaultPromptDefinitions();
+                if (isset($defs['cron_insights'])) {
+                    $def = $defs['cron_insights'];
+                    Capsule::table('tblsahdev_prompt_templates')->insert([
+                        'prompt_key'      => 'cron_insights',
+                        'label'           => $def['label'],
+                        'description'     => $def['description'],
+                        'default_content' => $def['content'],
+                        'content'         => $def['content'],
+                        'created_at'      => \Carbon\Carbon::now(),
+                        'updated_at'      => \Carbon\Carbon::now(),
+                    ]);
+                }
+            }
+        } catch (\Exception $e) {
+            // Non-fatal
+        }
+
+        // 10. Ensure cron insights settings columns exist (migration for existing installs)
+        try {
+            Capsule::table('tblsahdev_settings')->select('cron_insights_enabled')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                $table->boolean('cron_insights_enabled')->default(1);
+                $table->integer('cron_insights_interval_hours')->default(6);
+                $table->integer('cron_insights_max_per_run')->default(20);
+            });
+        }
+
+        // 11. Ensure expanded tblsahdev_sentiment columns exist (migration for existing installs)
+        try {
+            Capsule::table('tblsahdev_sentiment')->select('client_tone')->first();
+        } catch (\Exception $e) {
+            if (Capsule::schema()->hasTable('tblsahdev_sentiment')) {
+                Capsule::schema()->table('tblsahdev_sentiment', function ($table) {
+                    $table->string('client_tone', 64)->nullable();
+                    $table->text('ticket_summary')->nullable();
+                    $table->integer('admin_reply_count')->unsigned()->default(0);
+                    $table->integer('last_admin_id')->unsigned()->nullable();
+                    $table->string('last_admin_name', 128)->nullable();
+                    $table->timestamp('analyzed_at')->nullable();
+                });
+            }
+        }
     }
 
     /**
@@ -295,6 +346,11 @@ class AdminController
                 'description' => 'Prompt used when converting a specific reply into a reusable, generalized canned response template.',
                 'content'     => "Rewrite the following support ticket reply into a reusable, generalized canned response template.\n- Remove any specific client names, domain names, IP addresses, or highly specific dates.\n- Replace removed specifics with general placeholders like [Client Name], [Domain], [IP Address].\n- Make the tone professional and helpful.\n- DO NOT include any JSON wrapping or preamble, just the raw text template.\n\n=== DRAFT TO GENERALIZE ===\n{{DRAFT}}",
             ],
+            'cron_insights' => [
+                'label'       => 'Ticket Insights (Cron Analysis) Prompt',
+                'description' => 'User-turn prompt used by the background cron job to analyze Awaiting Reply tickets. Returns structured JSON with sentiment score, urgency, client tone, and a summary. Supports placeholders: {{CLIENT_NAME}}, {{DEPARTMENT}}, {{SUBJECT}}, {{MESSAGES}}.',
+                'content'     => "=== TASK ===\nAnalyze the support ticket conversation below and output ONLY a valid JSON object exactly matching this schema. No extra text.\n\n=== SCHEMA ===\n{\n  \"SENTIMENT_SCORE\": <integer 1-10, where 1=very satisfied/calm and 10=extremely frustrated/angry>,\n  \"SENTIMENT_LABEL\": <\"Satisfied\" | \"Neutral\" | \"Frustrated\" | \"Angry\">,\n  \"URGENCY\": <\"Low\" | \"Medium\" | \"High\" | \"Critical\">,\n  \"CLIENT_TONE\": <one of: \"Polite\", \"Neutral\", \"Impatient\", \"Demanding\", \"Angry\", \"Threatening\", \"Confused\", \"Appreciative\">,\n  \"TICKET_SUMMARY\": <string: 3-6 sentence plain-text summary of the entire ticket conversation, what the issue is, current status, and what is needed>\n}\n\n=== URGENCY GUIDE ===\nCritical = service is completely down or data is at risk\nHigh = major disruption, client explicitly escalating or threatening to leave\nMedium = functional issue affecting daily operations\nLow = informational question or minor inconvenience\n\n=== TICKET DATA ===\nClient: {{CLIENT_NAME}}\nDepartment: {{DEPARTMENT}}\nSubject: {{SUBJECT}}\n\n=== CONVERSATION ===\n{{MESSAGES}}",
+            ],
         ];
     }
 
@@ -335,6 +391,7 @@ class AdminController
             'summaries' => ['label' => '<i class="fas fa-file-alt"></i> Ticket Summaries', 'url' => $base . '&action=summaries'],
             'canned_responses' => ['label' => '<i class="fas fa-save"></i> Canned Responses', 'url' => $base . '&action=canned_responses'],
             'intents' => ['label' => '<i class="fas fa-bullseye"></i> Intents Manager', 'url' => $base . '&action=intents'],
+            'ticket_insights' => ['label' => '<i class="fas fa-brain"></i> Ticket Insights', 'url' => $base . '&action=ticket_insights'],
             'analytics' => ['label' => '<i class="fas fa-chart-line"></i> Analytics', 'url' => $base . '&action=analytics'],
             'audit_trail' => ['label' => '<i class="fas fa-history"></i> Audit Trail', 'url' => $base . '&action=audit_trail'],
         ];
@@ -2464,6 +2521,394 @@ class AdminController
             </div>
 
         </div>
+        <?php
+        return ob_get_clean();
+    }
+
+    // =========================================================================
+    // Ticket Insights Tab
+    // =========================================================================
+
+    /**
+     * Ticket Insights — settings, manual trigger, and paginated insights table.
+     */
+    public function ticket_insights()
+    {
+        $successMessage = '';
+        $errorMessage   = '';
+
+        // --- Inline schema migration ---
+        try {
+            Capsule::table('tblsahdev_settings')->select('cron_insights_enabled')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                $table->boolean('cron_insights_enabled')->default(1);
+                $table->integer('cron_insights_interval_hours')->default(6);
+                $table->integer('cron_insights_max_per_run')->default(20);
+            });
+        }
+        try {
+            Capsule::table('tblsahdev_sentiment')->select('client_tone')->first();
+        } catch (\Exception $e) {
+            if (Capsule::schema()->hasTable('tblsahdev_sentiment')) {
+                Capsule::schema()->table('tblsahdev_sentiment', function ($table) {
+                    $table->string('client_tone', 64)->nullable();
+                    $table->text('ticket_summary')->nullable();
+                    $table->integer('admin_reply_count')->unsigned()->default(0);
+                    $table->integer('last_admin_id')->unsigned()->nullable();
+                    $table->string('last_admin_name', 128)->nullable();
+                    $table->timestamp('analyzed_at')->nullable();
+                });
+            }
+        }
+
+        // --- Handle clear all action (must run before data fetch) ---
+        if (isset($_GET['clear_insights']) && $_GET['clear_insights'] == '1') {
+            Capsule::table('tblsahdev_sentiment')->truncate();
+            header('Location: ' . $this->moduleVars['modulelink'] . '&action=ticket_insights');
+            exit;
+        }
+
+        // --- Handle settings save ---
+        if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_insights_settings'])) {
+            check_token("WHMCS.admin.default");
+
+            $enabled      = !empty($_POST['cron_insights_enabled']) ? 1 : 0;
+            $intervalHours = max(1, (int) ($_POST['cron_insights_interval_hours'] ?? 6));
+            $maxPerRun    = max(1, min(100, (int) ($_POST['cron_insights_max_per_run'] ?? 20)));
+
+            Capsule::table('tblsahdev_settings')->where('id', 1)->update([
+                'cron_insights_enabled'        => $enabled,
+                'cron_insights_interval_hours' => $intervalHours,
+                'cron_insights_max_per_run'    => $maxPerRun,
+                'updated_at'                   => \Carbon\Carbon::now(),
+            ]);
+            $successMessage = 'Ticket Insights settings saved successfully.';
+        }
+
+        // --- Fetch settings ---
+        $settings = Capsule::table('tblsahdev_settings')->first();
+        $cronEnabled       = $settings ? (int) ($settings->cron_insights_enabled ?? 1) : 1;
+        $cronInterval      = $settings ? (int) ($settings->cron_insights_interval_hours ?? 6) : 6;
+        $cronMax           = $settings ? (int) ($settings->cron_insights_max_per_run ?? 20) : 20;
+
+        // --- Pagination ---
+        $page    = max(1, (int) ($_GET['ipage'] ?? 1));
+        $perPage = 20;
+        $offset  = ($page - 1) * $perPage;
+
+        $total   = Capsule::table('tblsahdev_sentiment')->count();
+        $pages   = max(1, (int) ceil($total / $perPage));
+
+        $rows = Capsule::table('tblsahdev_sentiment')
+            ->orderBy('analyzed_at', 'desc')
+            ->offset($offset)
+            ->limit($perPage)
+            ->get();
+
+        // Enrich with ticket subject & client name
+        $enriched = [];
+        foreach ($rows as $row) {
+            $ticket = Capsule::table('tbltickets')
+                ->select('id', 'tid', 'userid', 'name', 'title', 'status')
+                ->where('id', $row->ticket_id)
+                ->first();
+
+            $clientName = $ticket ? ($ticket->name ?? 'Unknown') : 'Unknown';
+            if ($ticket && $ticket->userid) {
+                $client = Capsule::table('tblclients')
+                    ->select('firstname', 'lastname')
+                    ->where('id', $ticket->userid)
+                    ->first();
+                if ($client) {
+                    $clientName = trim($client->firstname . ' ' . $client->lastname) ?: $clientName;
+                }
+            }
+
+            $enriched[] = [
+                'row'         => $row,
+                'ticket'      => $ticket,
+                'client_name' => $clientName,
+            ];
+        }
+
+        $csrfToken  = generate_token("form");
+        $actionUrl  = htmlspecialchars($this->moduleVars['modulelink'] . '&action=ticket_insights');
+        $ajaxUrlBase = htmlspecialchars($this->moduleVars['modulelink']);
+
+        $intervalOptions = [1 => '1 hour', 3 => '3 hours', 6 => '6 hours', 12 => '12 hours', 24 => '24 hours'];
+
+        ob_start();
+        ?>
+
+        <?php if (!empty($successMessage)): ?>
+            <div class="alert alert-success"><i class="fas fa-check-circle"></i> <?php echo htmlspecialchars($successMessage); ?></div>
+        <?php endif; ?>
+        <?php if (!empty($errorMessage)): ?>
+            <div class="alert alert-danger"><i class="fas fa-exclamation-circle"></i> <?php echo htmlspecialchars($errorMessage); ?></div>
+        <?php endif; ?>
+
+        <?php echo $this->getNavigationMarkup('ticket_insights'); ?>
+
+        <div class="sahdev-page-container">
+
+            <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #eee; padding-bottom: 15px; margin-bottom: 25px;">
+                <div>
+                    <h2 style="margin: 0 0 4px 0;"><i class="fas fa-brain" style="color:#0d6efd;"></i> Ticket Insights</h2>
+                    <p class="text-muted" style="margin:0; font-size:13px;">AI-powered sentiment, urgency, and tone analysis for all <em>Awaiting Reply</em> tickets. Runs automatically alongside the WHMCS cron.</p>
+                </div>
+                <div>
+                    <button type="button" id="sahdev-trigger-cron" class="btn btn-primary" style="gap: 6px; display:inline-flex; align-items:center;">
+                        <i class="fas fa-play-circle"></i> Run Analysis Now
+                    </button>
+                </div>
+            </div>
+
+            <!-- Settings Card -->
+            <div style="background:#fff; border:1px solid #e9ecef; border-radius:8px; padding:24px; margin-bottom:28px; box-shadow:0 1px 4px rgba(0,0,0,0.05);">
+                <h4 style="margin-top:0; margin-bottom:18px; font-size:16px;"><i class="fas fa-sliders-h" style="color:#6c757d;"></i> Cron Settings</h4>
+
+                <form method="post" action="<?php echo $actionUrl; ?>">
+                    <?php echo $csrfToken; ?>
+                    <input type="hidden" name="save_insights_settings" value="1">
+
+                    <div style="display:flex; gap:24px; flex-wrap:wrap; align-items:flex-end;">
+                        <div class="form-group" style="min-width:220px;">
+                            <label style="font-weight:600; display:block; margin-bottom:6px;">
+                                <i class="fas fa-toggle-on" style="color:#0d6efd;"></i> Enable Cron Ticket Analysis
+                            </label>
+                            <div class="form-check" style="margin-top:4px;">
+                                <input type="checkbox" class="form-check-input" name="cron_insights_enabled" id="cron_insights_enabled" value="1"
+                                    <?php echo $cronEnabled ? 'checked' : ''; ?>>
+                                <label class="form-check-label" for="cron_insights_enabled" style="font-weight:400;">
+                                    Analyze Awaiting Reply tickets on each WHMCS cron run
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="form-group" style="min-width:200px;">
+                            <label style="font-weight:600; display:block; margin-bottom:6px;">
+                                <i class="fas fa-clock" style="color:#0d6efd;"></i> Re-analyze Interval
+                            </label>
+                            <select name="cron_insights_interval_hours" class="form-control" style="max-width:180px;">
+                                <?php foreach ($intervalOptions as $val => $label): ?>
+                                    <option value="<?php echo $val; ?>" <?php echo ($cronInterval == $val) ? 'selected' : ''; ?>>
+                                        <?php echo htmlspecialchars($label); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                            <small class="text-muted">Skip tickets analyzed more recently than this.</small>
+                        </div>
+
+                        <div class="form-group" style="min-width:200px;">
+                            <label style="font-weight:600; display:block; margin-bottom:6px;">
+                                <i class="fas fa-layer-group" style="color:#0d6efd;"></i> Max Tickets per Cron Run
+                            </label>
+                            <input type="number" name="cron_insights_max_per_run" class="form-control" value="<?php echo (int)$cronMax; ?>"
+                                min="1" max="100" style="max-width:120px;">
+                            <small class="text-muted">Cap per execution to avoid timeouts.</small>
+                        </div>
+
+                        <div class="form-group" style="align-self:flex-end;">
+                            <button type="submit" class="btn btn-success">
+                                <i class="fas fa-save"></i> Save Settings
+                            </button>
+                        </div>
+                    </div>
+                </form>
+
+                <div style="margin-top:16px; padding:12px 16px; background:#f8f9fa; border-radius:6px; font-size:13px; color:#495057; border-left:3px solid #0d6efd;">
+                    <strong>How it works:</strong> Every WHMCS cron execution (default every 5 min), up to <strong><?php echo (int)$cronMax; ?></strong> tickets
+                    in <em>Awaiting Reply</em> status that haven't been analyzed in the last <strong><?php echo (int)$cronInterval; ?> hour(s)</strong> are sent to
+                    your configured AI provider. Results appear as badges on <code>supporttickets.php</code> and in the table below.
+                    The analysis prompt can be customized under the <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink'] . '&action=prompt_manager'); ?>">Prompt Manager</a> tab (key: <code>cron_insights</code>).
+                </div>
+            </div>
+
+            <!-- Insights Table -->
+            <div style="background:#fff; border:1px solid #e9ecef; border-radius:8px; padding:24px; box-shadow:0 1px 4px rgba(0,0,0,0.05);">
+                <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:18px;">
+                    <h4 style="margin:0; font-size:16px;"><i class="fas fa-table" style="color:#6c757d;"></i> Analyzed Tickets
+                        <span style="font-size:13px; font-weight:400; color:#6c757d; margin-left:8px;"><?php echo number_format($total); ?> total</span>
+                    </h4>
+                    <?php if ($total > 0): ?>
+                        <a href="<?php echo $actionUrl; ?>&clear_insights=1" class="btn btn-outline-danger btn-sm"
+                            onclick="return confirm('Clear all sentiment analysis data? This cannot be undone.');">
+                            <i class="fas fa-trash"></i> Clear All
+                        </a>
+                    <?php endif; ?>
+                </div>
+
+                <?php if (empty($enriched)): ?>
+                    <div style="text-align:center; padding:40px; color:#6c757d;">
+                        <i class="fas fa-inbox" style="font-size:36px; margin-bottom:12px; display:block; opacity:0.4;"></i>
+                        <p style="margin:0;">No tickets have been analyzed yet.</p>
+                        <p style="font-size:13px; margin-top:6px;">Click <strong>Run Analysis Now</strong> above or wait for the next WHMCS cron run.</p>
+                    </div>
+                <?php else: ?>
+                    <div style="overflow-x:auto;">
+                        <table class="table table-hover" style="font-size:13px; margin-bottom:0;">
+                            <thead style="background:#f8f9fa;">
+                                <tr>
+                                    <th style="width:70px;">Ticket</th>
+                                    <th>Client</th>
+                                    <th>Subject</th>
+                                    <th style="width:90px;">Urgency</th>
+                                    <th style="width:100px;">Sentiment</th>
+                                    <th style="width:120px;">Client Tone</th>
+                                    <th style="width:80px; text-align:center;">Admin Replies</th>
+                                    <th style="width:140px;">Last Admin</th>
+                                    <th style="width:130px;">Analyzed</th>
+                                    <th>Summary</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($enriched as $entry): ?>
+                                    <?php
+                                    $row = $entry['row'];
+                                    $ticket = $entry['ticket'];
+                                    $clientName = $entry['client_name'];
+
+                                    $urgencyColors = [
+                                        'critical' => ['bg' => '#dc3545', 'text' => '#fff'],
+                                        'high'     => ['bg' => '#fd7e14', 'text' => '#fff'],
+                                        'medium'   => ['bg' => '#ffc107', 'text' => '#343a40'],
+                                        'low'      => ['bg' => '#198754', 'text' => '#fff'],
+                                    ];
+                                    $urg = strtolower($row->urgency ?? 'medium');
+                                    $urgStyle = $urgencyColors[$urg] ?? $urgencyColors['medium'];
+                                    $scoreColor = '#6c757d';
+                                    $score = (int)($row->score ?? 5);
+                                    if ($score >= 8) $scoreColor = '#dc3545';
+                                    elseif ($score >= 6) $scoreColor = '#fd7e14';
+                                    elseif ($score <= 3) $scoreColor = '#198754';
+                                    ?>
+                                    <tr>
+                                        <td>
+                                            <?php if ($ticket): ?>
+                                                <a href="supporttickets.php?action=view&id=<?php echo (int)$row->ticket_id; ?>" target="_blank" style="font-weight:600;">
+                                                    #<?php echo htmlspecialchars($ticket->tid ?? $row->ticket_id); ?>
+                                                </a>
+                                            <?php else: ?>
+                                                <span class="text-muted">#<?php echo (int)$row->ticket_id; ?></span>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td><?php echo htmlspecialchars($clientName); ?></td>
+                                        <td>
+                                            <?php if ($ticket): ?>
+                                                <a href="supporttickets.php?action=view&id=<?php echo (int)$row->ticket_id; ?>" target="_blank">
+                                                    <?php echo htmlspecialchars(mb_substr($ticket->title ?? '', 0, 60)); ?>
+                                                </a>
+                                            <?php else: ?>
+                                                <span class="text-muted">(ticket deleted)</span>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td>
+                                            <span style="display:inline-block; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700;
+                                                background:<?php echo $urgStyle['bg']; ?>; color:<?php echo $urgStyle['text']; ?>;">
+                                                <?php echo htmlspecialchars(ucfirst($row->urgency ?? 'Medium')); ?>
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <span style="font-weight:700; color:<?php echo $scoreColor; ?>;">
+                                                <?php echo $score; ?>/10
+                                            </span>
+                                            <br><small class="text-muted" style="font-size:11px;"><?php echo htmlspecialchars($row->label ?? ''); ?></small>
+                                        </td>
+                                        <td>
+                                            <?php
+                                            $toneIcons = [
+                                                'Angry' => '😡', 'Threatening' => '⚠️', 'Demanding' => '😤',
+                                                'Impatient' => '⏳', 'Neutral' => '😐', 'Confused' => '😕',
+                                                'Polite' => '🙂', 'Appreciative' => '😊'
+                                            ];
+                                            $tone = $row->client_tone ?? '';
+                                            $icon = $toneIcons[$tone] ?? '';
+                                            ?>
+                                            <?php echo $icon ? $icon . ' ' : ''; ?><?php echo htmlspecialchars($tone ?: '—'); ?>
+                                        </td>
+                                        <td style="text-align:center; font-weight:600;">
+                                            <?php echo (int)($row->admin_reply_count ?? 0); ?>
+                                        </td>
+                                        <td>
+                                            <small><?php echo htmlspecialchars($row->last_admin_name ?? '—'); ?></small>
+                                        </td>
+                                        <td>
+                                            <small class="text-muted">
+                                                <?php echo $row->analyzed_at ? date('M j, H:i', strtotime($row->analyzed_at)) : '—'; ?>
+                                            </small>
+                                        </td>
+                                        <td>
+                                            <?php if (!empty($row->ticket_summary)): ?>
+                                                <details>
+                                                    <summary style="cursor:pointer; font-size:12px; color:#0d6efd; user-select:none;">View summary</summary>
+                                                    <p style="margin:6px 0 0; font-size:12px; line-height:1.6; color:#495057; max-width:380px; white-space:pre-wrap;"><?php echo htmlspecialchars($row->ticket_summary); ?></p>
+                                                </details>
+                                            <?php else: ?>
+                                                <span class="text-muted" style="font-size:11px;">—</span>
+                                            <?php endif; ?>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Pagination -->
+                    <?php if ($pages > 1): ?>
+                        <div style="display:flex; justify-content:center; margin-top:20px; gap:4px;">
+                            <?php for ($p = 1; $p <= $pages; $p++): ?>
+                                <a href="<?php echo $actionUrl . '&ipage=' . $p; ?>"
+                                    style="padding:5px 12px; border-radius:4px; border:1px solid <?php echo ($p == $page) ? '#0d6efd' : '#dee2e6'; ?>;
+                                        background:<?php echo ($p == $page) ? '#0d6efd' : '#fff'; ?>;
+                                        color:<?php echo ($p == $page) ? '#fff' : '#0d6efd'; ?>;
+                                        text-decoration:none; font-size:13px;">
+                                    <?php echo $p; ?>
+                                </a>
+                            <?php endfor; ?>
+                        </div>
+                    <?php endif; ?>
+                <?php endif; ?>
+            </div>
+        </div>
+
+        <script>
+        (function() {
+            var btn = document.getElementById('sahdev-trigger-cron');
+            if (!btn) return;
+
+            btn.addEventListener('click', function() {
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Running...';
+
+                var formData = new FormData();
+                formData.append('action', 'trigger_cron_run');
+
+                fetch('<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&sahdev_act=ajax_handler', {
+                    method: 'POST',
+                    body: formData,
+                    credentials: 'same-origin'
+                })
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    btn.disabled = false;
+                    if (data.status === 'success') {
+                        btn.innerHTML = '<i class="fas fa-check-circle"></i> Done! Reloading...';
+                        setTimeout(function() { window.location.reload(); }, 1500);
+                    } else {
+                        btn.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Error';
+                        alert('Error: ' + (data.message || 'Unknown error'));
+                    }
+                })
+                .catch(function(err) {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fas fa-play-circle"></i> Run Analysis Now';
+                    alert('Request failed: ' + err);
+                });
+            });
+        })();
+        </script>
+
         <?php
         return ob_get_clean();
     }
