@@ -2956,9 +2956,11 @@ class AdminController
 
         <script>
         (function() {
-            var btn = document.getElementById('sahdev-trigger-cron');
+            var btn    = document.getElementById('sahdev-trigger-cron');
             var msgBox = document.getElementById('sahdev-cron-msg');
             if (!btn) return;
+
+            var AJAX = '<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&sahdev_act=ajax_handler';
 
             function showMsg(html, type) {
                 if (!msgBox) return;
@@ -2967,55 +2969,87 @@ class AdminController
                 msgBox.innerHTML = html;
             }
 
+            function post(action, extra) {
+                var fd = new FormData();
+                fd.append('action', action);
+                if (extra) { Object.keys(extra).forEach(function(k) { fd.append(k, extra[k]); }); }
+                return fetch(AJAX, { method: 'POST', body: fd, credentials: 'same-origin' })
+                    .then(function(r) {
+                        // Guard: ensure response is JSON (not an HTML error/timeout page)
+                        var ct = r.headers.get('content-type') || '';
+                        if (!ct.includes('application/json') && !ct.includes('text/plain')) {
+                            throw new Error('Server returned non-JSON (possible timeout or PHP error). Status: ' + r.status);
+                        }
+                        return r.json();
+                    });
+            }
+
             btn.addEventListener('click', function() {
                 btn.disabled = true;
-                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Running...';
-                if (msgBox) { msgBox.style.display = 'none'; }
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Getting queue...';
+                showMsg('<i class="fas fa-spinner fa-spin"></i> Fetching tickets that need analysis...', 'info');
 
-                var formData = new FormData();
-                formData.append('action', 'trigger_cron_run');
-
-                fetch('<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&sahdev_act=ajax_handler', {
-                    method: 'POST',
-                    body: formData,
-                    credentials: 'same-origin'
-                })
-                .then(function(r) { return r.json(); })
+                post('get_insights_queue')
                 .then(function(data) {
-                    btn.disabled = false;
-                    var result = data.result || {};
-                    var details = '';
-                    if (result.tickets_found !== undefined) {
-                        details += ' &nbsp;|&nbsp; Tickets found: <strong>' + result.tickets_found + '</strong>';
+                    if (data.status !== 'success') {
+                        throw new Error(data.message || 'Could not fetch queue');
                     }
-                    if (result.analyzed !== undefined) {
-                        details += ' &nbsp;|&nbsp; Analyzed: <strong>' + result.analyzed + '</strong>';
-                    }
-                    if (result.skipped !== undefined && result.skipped > 0) {
-                        details += ' &nbsp;|&nbsp; Skipped: <strong>' + result.skipped + '</strong>';
-                    }
-                    if (result.statuses_checked) {
-                        details += ' &nbsp;|&nbsp; Statuses checked: <strong>' + result.statuses_checked.join(', ') + '</strong>';
-                    }
-
-                    if (data.status === 'success') {
-                        btn.innerHTML = '<i class="fas fa-check-circle"></i> Done!';
-                        showMsg('<i class="fas fa-check-circle"></i> ' + (data.message || 'Complete.') + details, 'success');
-                        if ((result.analyzed || 0) > 0) {
-                            setTimeout(function() { window.location.reload(); }, 2500);
-                        }
-                    } else {
+                    var queue = data.queue || [];
+                    if (!queue.length) {
+                        btn.disabled = false;
                         btn.innerHTML = '<i class="fas fa-play-circle"></i> Run Analysis Now';
-                        var errList = (result.errors || []).join('<br>');
-                        showMsg('<i class="fas fa-exclamation-triangle"></i> <strong>' + (data.message || 'Error') + '</strong>' + (errList ? '<br>' + errList : '') + details, 'danger');
+                        showMsg('<i class="fas fa-info-circle"></i> No tickets need analysis right now — all up to date.', 'info');
+                        return;
                     }
+                    // Process tickets one at a time so each request stays under timeout
+                    processQueue(queue, 0, 0, []);
                 })
                 .catch(function(err) {
                     btn.disabled = false;
                     btn.innerHTML = '<i class="fas fa-play-circle"></i> Run Analysis Now';
-                    showMsg('<i class="fas fa-exclamation-triangle"></i> Request failed: ' + err, 'danger');
+                    showMsg('<i class="fas fa-exclamation-triangle"></i> ' + err.message, 'danger');
                 });
             });
+
+            function processQueue(queue, index, doneCount, errors) {
+                var total = queue.length;
+                if (index >= total) {
+                    // All done
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fas fa-check-circle"></i> Done!';
+                    var msg = '<i class="fas fa-check-circle"></i> Analysis complete: <strong>' + doneCount + ' of ' + total + '</strong> ticket(s) analyzed.';
+                    if (errors.length) {
+                        msg += ' <strong>' + errors.length + '</strong> error(s):<br><small>' + errors.join('<br>') + '</small>';
+                    }
+                    showMsg(msg, doneCount > 0 ? 'success' : 'warning');
+                    if (doneCount > 0) { setTimeout(function() { window.location.reload(); }, 2000); }
+                    return;
+                }
+
+                var tid   = queue[index];
+                var pct   = Math.round(((index) / total) * 100);
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> ' + index + '/' + total;
+                showMsg(
+                    '<i class="fas fa-spinner fa-spin"></i> Analyzing ticket <strong>#' + tid + '</strong> &nbsp;(' + (index + 1) + ' of ' + total + ')' +
+                    '<div style="background:#dee2e6;border-radius:4px;height:6px;margin-top:8px;">' +
+                    '<div style="background:#0d6efd;height:6px;border-radius:4px;width:' + pct + '%;transition:width .3s;"></div></div>',
+                    'info'
+                );
+
+                post('analyze_single_insight', { ticket_id: tid })
+                .then(function(data) {
+                    if (data.status === 'success') {
+                        processQueue(queue, index + 1, doneCount + 1, errors);
+                    } else {
+                        errors.push('Ticket #' + tid + ': ' + (data.message || 'unknown error'));
+                        processQueue(queue, index + 1, doneCount, errors);
+                    }
+                })
+                .catch(function(err) {
+                    errors.push('Ticket #' + tid + ': ' + err.message);
+                    processQueue(queue, index + 1, doneCount, errors);
+                });
+            }
         })();
         </script>
 

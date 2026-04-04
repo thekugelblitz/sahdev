@@ -216,6 +216,38 @@ class CronProcessor
     }
 
     // -------------------------------------------------------------------------
+    // Queue helper — returns ticket IDs needing analysis (used by manual trigger)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Returns array of ticket IDs that need (re-)analysis, using the same
+     * logic as run() but without processing them.
+     */
+    public function getQueue(): array
+    {
+        $settings      = $this->settings;
+        $statuses      = $this->getTicketStatuses();
+        $cooldownHours = (int) ($settings['cron_insights_interval_hours'] ?? 6);
+        $maxPerRun     = max(1, (int) ($settings['cron_insights_max_per_run'] ?? 20));
+        $cooldownCutoff = Carbon::now()->subHours($cooldownHours);
+
+        return Capsule::table('tbltickets as t')
+            ->leftJoin('tblsahdev_sentiment as s', 's.ticket_id', '=', 't.id')
+            ->whereIn('t.status', $statuses)
+            ->where(function ($q) use ($cooldownCutoff) {
+                $q->whereNull('s.ticket_id')
+                  ->orWhere(function ($inner) use ($cooldownCutoff) {
+                      $inner->whereRaw('t.lastreply > s.ticket_last_reply_at')
+                            ->where('s.analyzed_at', '<', $cooldownCutoff);
+                  });
+            })
+            ->orderBy('t.lastreply', 'asc')
+            ->limit($maxPerRun)
+            ->pluck('t.id')
+            ->toArray();
+    }
+
+    // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
 

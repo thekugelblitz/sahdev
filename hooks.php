@@ -2077,183 +2077,242 @@ add_hook('AdminAreaPage', 1, function ($vars) {
  */
 function sahdev_render_ticket_list_insights(string $ajaxUrl): string
 {
+    // language=HTML
     return <<<HTML
 <style>
-.sahdev-badge {
+/* ── Sahdev Ticket Insights — badge styles ─────────────────────────────── */
+.sdv-insight-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    align-items: center;
+    margin-top: 6px;
+    padding-top: 5px;
+    border-top: 1px solid rgba(0,0,0,0.06);
+}
+.sdv-pill {
     display: inline-flex;
     align-items: center;
     gap: 3px;
     font-size: 10px;
-    font-weight: 600;
-    padding: 2px 7px;
+    font-weight: 700;
+    line-height: 1;
+    padding: 3px 8px;
     border-radius: 20px;
-    line-height: 1.5;
     white-space: nowrap;
+    letter-spacing: .3px;
     cursor: default;
-    vertical-align: middle;
-    margin-left: 4px;
 }
-.sahdev-badge-critical { background: #dc3545; color: #fff; }
-.sahdev-badge-high     { background: #fd7e14; color: #fff; }
-.sahdev-badge-medium   { background: #ffc107; color: #343a40; }
-.sahdev-badge-low      { background: #198754; color: #fff; }
-.sahdev-badge-sentiment {
-    background: #f1f3f5;
-    color: #495057;
-    border: 1px solid #dee2e6;
-}
-.sahdev-badge-tone {
-    background: #e9ecef;
-    color: #6c757d;
-    border: 1px solid #dee2e6;
-    font-style: italic;
-}
-.sahdev-insight-wrap { display: inline-flex; flex-wrap: wrap; gap: 3px; align-items: center; }
-[data-sahdev-tooltip] { position: relative; }
-[data-sahdev-tooltip]:hover::after {
-    content: attr(data-sahdev-tooltip);
+/* Urgency pills */
+.sdv-urg-critical { background:#dc3545; color:#fff; }
+.sdv-urg-high     { background:#fd7e14; color:#fff; }
+.sdv-urg-medium   { background:#ffc107; color:#212529; }
+.sdv-urg-low      { background:#198754; color:#fff; }
+/* Sentiment pill */
+.sdv-sentiment    { background:#f1f3f5; color:#495057; border:1px solid #dee2e6; font-weight:600; }
+/* Tone pill */
+.sdv-tone         { background:#fff; color:#6c757d; border:1px solid #dee2e6; font-style:italic; }
+/* Admin reply badge */
+.sdv-admin-rep    { background:#e7f3ff; color:#0d6efd; border:1px solid #b6d4fe; }
+/* Row urgency left-border highlight */
+tr.sdv-row-critical td:first-child { border-left: 4px solid #dc3545 !important; }
+tr.sdv-row-high     td:first-child { border-left: 4px solid #fd7e14 !important; }
+tr.sdv-row-medium   td:first-child { border-left: 4px solid #ffc107 !important; }
+tr.sdv-row-low      td:first-child { border-left: 4px solid #198754 !important; }
+/* Tooltip */
+.sdv-tooltip-wrap { position: relative; display: inline-flex; }
+.sdv-tooltip-box {
+    display: none;
     position: absolute;
-    bottom: calc(100% + 6px);
-    left: 50%;
-    transform: translateX(-50%);
+    bottom: calc(100% + 8px);
+    left: 0;
+    min-width: 240px;
+    max-width: 360px;
     background: #212529;
-    color: #fff;
-    padding: 6px 10px;
-    border-radius: 6px;
+    color: #f8f9fa;
     font-size: 11px;
     font-weight: 400;
-    white-space: pre-wrap;
-    max-width: 320px;
-    min-width: 160px;
-    z-index: 9999;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.25);
-    line-height: 1.5;
+    line-height: 1.55;
+    padding: 9px 12px;
+    border-radius: 7px;
+    box-shadow: 0 6px 20px rgba(0,0,0,.35);
+    z-index: 99999;
+    white-space: normal;
     pointer-events: none;
+    font-style: normal;
+    letter-spacing: 0;
 }
+.sdv-tooltip-box::after {
+    content: '';
+    position: absolute;
+    top: 100%; left: 14px;
+    border: 6px solid transparent;
+    border-top-color: #212529;
+}
+.sdv-tooltip-wrap:hover .sdv-tooltip-box { display: block; }
 </style>
 <script>
-(function() {
+(function () {
     'use strict';
 
     var AJAX_URL = '{$ajaxUrl}';
 
-    var urgencyClassMap = {
-        'critical': 'sahdev-badge-critical',
-        'high':     'sahdev-badge-high',
-        'medium':   'sahdev-badge-medium',
-        'low':      'sahdev-badge-low'
+    var URG_CLASS = {
+        critical: 'sdv-urg-critical',
+        high:     'sdv-urg-high',
+        medium:   'sdv-urg-medium',
+        low:      'sdv-urg-low'
+    };
+    var URG_ICON = { critical: '🔴', high: '🟠', medium: '🟡', low: '🟢' };
+    var TONE_ICON = {
+        Angry: '😡', Threatening: '⚠️', Demanding: '😤',
+        Impatient: '⏳', Neutral: '😐', Confused: '😕',
+        Polite: '🙂', Appreciative: '😊'
     };
 
-    var toneIconMap = {
-        'Angry':       '😡',
-        'Threatening': '⚠️',
-        'Demanding':   '😤',
-        'Impatient':   '⏳',
-        'Neutral':     '😐',
-        'Confused':    '😕',
-        'Polite':      '🙂',
-        'Appreciative':'😊'
-    };
-
-    function extractTicketIds() {
-        var idMap = {};
-        // WHMCS ticket list: each row has a link like ?action=view&id=123
-        var links = document.querySelectorAll('table a[href*="action=view"], table a[href*="supporttickets.php?action=view"]');
-        links.forEach(function(link) {
-            var m = link.href.match(/[?&]id=(\d+)/);
-            if (m) {
-                idMap[m[1]] = link;
+    /* ── Step 1: scan all <tr> rows and tag them with data-sdv-tid ── */
+    function tagRows() {
+        var rows = document.querySelectorAll('table tbody tr, table tr');
+        rows.forEach(function (row) {
+            // Already tagged
+            if (row.getAttribute('data-sdv-tid')) return;
+            // Look for a subject link inside this row
+            var links = row.querySelectorAll('a[href]');
+            for (var i = 0; i < links.length; i++) {
+                var m = links[i].href.match(/[?&]id=(\d+)(?:&|$)/);
+                if (!m) m = links[i].href.match(/supporttickets\.php\?.*[?&]id=(\d+)/);
+                if (!m) m = links[i].href.match(/[?&]id=(\d+)/);
+                if (m) {
+                    row.setAttribute('data-sdv-tid', m[1]);
+                    break;
+                }
             }
         });
-        return idMap;
     }
 
-    function buildTooltip(ins) {
-        var parts = [];
-        if (ins.ticket_summary) {
-            parts.push(ins.ticket_summary.substring(0, 280));
-        }
-        if (ins.admin_reply_count > 0 || ins.last_admin_name) {
-            var adminPart = 'Admin replies: ' + ins.admin_reply_count;
-            if (ins.last_admin_name) adminPart += ' | Last by: ' + ins.last_admin_name;
-            parts.push(adminPart);
-        }
-        if (ins.analyzed_at) {
-            parts.push('Analyzed: ' + ins.analyzed_at);
-        }
-        return parts.join('\n');
+    /* ── Step 2: collect all tagged ticket IDs ── */
+    function collectIds() {
+        var ids = [];
+        document.querySelectorAll('[data-sdv-tid]').forEach(function (el) {
+            var tid = el.getAttribute('data-sdv-tid');
+            if (tid && ids.indexOf(tid) === -1) ids.push(tid);
+        });
+        return ids;
     }
 
-    function renderBadges(ticketId, ins) {
-        var urgency = (ins.urgency || 'medium').toLowerCase();
-        var uc = urgencyClassMap[urgency] || 'sahdev-badge-medium';
-        var urg = ins.urgency || 'Medium';
-        var label = ins.sentiment_label || '';
-        var tone = ins.client_tone || '';
-        var toneIcon = toneIconMap[tone] || '';
-        var tooltip = buildTooltip(ins);
-
-        var html = '<span class="sahdev-insight-wrap" data-tid="' + ticketId + '">';
-        html += '<span class="sahdev-badge ' + uc + '" data-sahdev-tooltip="' + tooltip.replace(/"/g, '&quot;') + '">';
-        html += urg;
-        html += '</span>';
-        if (label) {
-            html += '<span class="sahdev-badge sahdev-badge-sentiment">' + label + '</span>';
-        }
-        if (tone) {
-            html += '<span class="sahdev-badge sahdev-badge-tone">' + toneIcon + ' ' + tone + '</span>';
-        }
-        html += '</span>';
-        return html;
-    }
-
-    function injectBadges(insights) {
-        Object.keys(insights).forEach(function(tid) {
+    /* ── Step 3: build and inject the insight bar into each row ── */
+    function injectInsights(insights) {
+        Object.keys(insights).forEach(function (tid) {
             var ins = insights[tid];
-            // Find the row link for this ticket ID
-            var links = document.querySelectorAll('table a[href*="id=' + tid + '"]');
-            if (!links.length) return;
-            var link = links[0];
+            var row = document.querySelector('[data-sdv-tid="' + tid + '"]');
+            if (!row) return;
 
             // Avoid double-injection
-            if (link.parentNode.querySelector('[data-tid="' + tid + '"]')) return;
+            if (row.querySelector('.sdv-insight-bar')) return;
 
-            // Find the best container: the <td> containing the link
-            var td = link.closest('td') || link.parentNode;
-            var badgeHtml = renderBadges(tid, ins);
-            var span = document.createElement('span');
-            span.innerHTML = badgeHtml;
-            td.appendChild(span.firstChild);
+            var urgency = (ins.urgency || 'medium').toLowerCase();
+            var urgClass = URG_CLASS[urgency] || 'sdv-urg-medium';
+            var urgIcon  = URG_ICON[urgency]  || '⚪';
+            var urgLabel = ins.urgency || 'Medium';
+            var sentiment = ins.sentiment_label || '';
+            var score     = ins.sentiment_score ? ins.sentiment_score + '/10' : '';
+            var tone      = ins.client_tone || '';
+            var toneIcon  = TONE_ICON[tone] || '';
+            var adminRep  = parseInt(ins.admin_reply_count) || 0;
+            var lastAdmin = ins.last_admin_name || '';
+            var summary   = (ins.ticket_summary || '').substring(0, 320);
+            var analyzedAt = ins.analyzed_at || '';
+
+            // Build tooltip content
+            var tipLines = [];
+            if (summary) tipLines.push(summary);
+            if (adminRep > 0) {
+                var adminLine = '👤 Admin replied ' + adminRep + ' time' + (adminRep > 1 ? 's' : '');
+                if (lastAdmin) adminLine += ' · Last: ' + lastAdmin;
+                tipLines.push(adminLine);
+            }
+            if (analyzedAt) tipLines.push('🕐 Analyzed: ' + analyzedAt);
+            var tipHtml = tipLines.map(function(l) {
+                return '<span>' + l.replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</span>';
+            }).join('<br>');
+
+            // Build pills HTML
+            var bar = document.createElement('div');
+            bar.className = 'sdv-insight-bar';
+            bar.setAttribute('data-sdv-injected', '1');
+
+            // Urgency pill (with tooltip)
+            var urgWrap = document.createElement('span');
+            urgWrap.className = 'sdv-tooltip-wrap';
+            urgWrap.innerHTML =
+                '<span class="sdv-pill ' + urgClass + '">' + urgIcon + ' ' + urgLabel + '</span>' +
+                (tipHtml ? '<div class="sdv-tooltip-box">' + tipHtml + '</div>' : '');
+            bar.appendChild(urgWrap);
+
+            // Sentiment pill
+            if (sentiment || score) {
+                var sentPill = document.createElement('span');
+                sentPill.className = 'sdv-pill sdv-sentiment';
+                sentPill.textContent = sentiment + (score ? ' ' + score : '');
+                bar.appendChild(sentPill);
+            }
+
+            // Tone pill
+            if (tone) {
+                var tonePill = document.createElement('span');
+                tonePill.className = 'sdv-pill sdv-tone';
+                tonePill.textContent = (toneIcon ? toneIcon + ' ' : '') + tone;
+                bar.appendChild(tonePill);
+            }
+
+            // Admin reply count (only if > 0)
+            if (adminRep > 0) {
+                var repPill = document.createElement('span');
+                repPill.className = 'sdv-pill sdv-admin-rep';
+                repPill.title = lastAdmin ? 'Last reply by: ' + lastAdmin : '';
+                repPill.textContent = '↩ ' + adminRep + ' admin reply' + (adminRep > 1 ? 's' : '');
+                bar.appendChild(repPill);
+            }
+
+            // Add row urgency left-border class
+            row.classList.add('sdv-row-' + urgency);
+
+            // Find the subject <td> — the one containing the ticket link
+            var subjectLink = row.querySelector('a[href*="id=' + tid + '"]');
+            var td = subjectLink ? subjectLink.closest('td') : null;
+            if (td) {
+                td.style.paddingBottom = '6px';
+                td.appendChild(bar);
+            }
         });
     }
 
-    function loadInsights(idMap) {
-        var ids = Object.keys(idMap);
+    /* ── Step 4: fetch insights from DB via AJAX ── */
+    function loadInsights(ids) {
         if (!ids.length) return;
+        var fd = new FormData();
+        fd.append('action', 'get_ticket_insights');
+        ids.forEach(function (id) { fd.append('ticket_ids[]', id); });
 
-        var formData = new FormData();
-        formData.append('action', 'get_ticket_insights');
-        ids.forEach(function(id) {
-            formData.append('ticket_ids[]', id);
-        });
-
-        fetch(AJAX_URL, { method: 'POST', body: formData, credentials: 'same-origin' })
-            .then(function(r) { return r.json(); })
-            .then(function(data) {
+        fetch(AJAX_URL, { method: 'POST', body: fd, credentials: 'same-origin' })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
                 if (data.status === 'success' && data.insights) {
-                    injectBadges(data.insights);
+                    injectInsights(data.insights);
                 }
             })
-            .catch(function() {});
+            .catch(function () { /* fail silently on the list page */ });
     }
 
-    // Run after DOM is ready
+    function init() {
+        tagRows();
+        loadInsights(collectIds());
+    }
+
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', function() {
-            loadInsights(extractTicketIds());
-        });
+        document.addEventListener('DOMContentLoaded', init);
     } else {
-        loadInsights(extractTicketIds());
+        init();
     }
 })();
 </script>

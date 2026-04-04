@@ -50,7 +50,7 @@ if ($intensity > 3) {
 
 $ticketNotRequiredActions = [
     'search_canned_responses', 'generate_canned_template', 'save_canned_response', 'save_kb_article', 'delete_audit_entries',
-    'get_analytics', 'get_ticket_insights', 'trigger_cron_run'
+    'get_analytics', 'get_ticket_insights', 'trigger_cron_run', 'get_insights_queue', 'analyze_single_insight'
 ];
 if (!$ticketId && !in_array($action, $ticketNotRequiredActions)) {
     header('HTTP/1.1 400 Bad Request');
@@ -219,6 +219,47 @@ try {
             }
             $response = ['status' => 'success', 'insights' => $insights];
         }
+    } elseif ($action === 'get_insights_queue') {
+        // Returns the list of ticket IDs that need analysis (used by the incremental manual trigger)
+        require_once __DIR__ . '/lib/AIProviderInterface.php';
+        require_once __DIR__ . '/lib/GoogleAIProvider.php';
+        require_once __DIR__ . '/lib/LMStudioAIProvider.php';
+        require_once __DIR__ . '/lib/ReplicateAIProvider.php';
+        require_once __DIR__ . '/lib/TicketDataExtractor.php';
+        require_once __DIR__ . '/lib/AIController.php';
+        require_once __DIR__ . '/lib/CronProcessor.php';
+
+        $processor = new \Sahdev\Lib\CronProcessor();
+        $queue     = $processor->getQueue();
+        $response  = ['status' => 'success', 'queue' => $queue, 'total' => count($queue)];
+
+    } elseif ($action === 'analyze_single_insight') {
+        // Processes ONE ticket for insights — called repeatedly by the incremental JS loop
+        $singleTicketId = (int) ($_POST['ticket_id'] ?? 0);
+        if (!$singleTicketId) {
+            $response = ['status' => 'error', 'message' => 'Missing ticket_id'];
+        } else {
+            require_once __DIR__ . '/lib/AIProviderInterface.php';
+            require_once __DIR__ . '/lib/GoogleAIProvider.php';
+            require_once __DIR__ . '/lib/LMStudioAIProvider.php';
+            require_once __DIR__ . '/lib/ReplicateAIProvider.php';
+            require_once __DIR__ . '/lib/TicketDataExtractor.php';
+            require_once __DIR__ . '/lib/AIController.php';
+            require_once __DIR__ . '/lib/CronProcessor.php';
+
+            // Give a single ticket plenty of time (Replicate can be slow)
+            @set_time_limit(180);
+            @ignore_user_abort(true);
+
+            $processor = new \Sahdev\Lib\CronProcessor();
+            try {
+                $processor->analyzeTicket($singleTicketId);
+                $response = ['status' => 'success', 'ticket_id' => $singleTicketId];
+            } catch (\Throwable $e) {
+                $response = ['status' => 'error', 'ticket_id' => $singleTicketId, 'message' => $e->getMessage()];
+            }
+        }
+
     } elseif ($action === 'trigger_cron_run') {
         // Ticket Insights: manually trigger cron analysis from admin UI
         require_once __DIR__ . '/lib/AIProviderInterface.php';
