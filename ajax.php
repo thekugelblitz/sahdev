@@ -230,8 +230,28 @@ try {
         require_once __DIR__ . '/lib/CronProcessor.php';
 
         $processor = new \Sahdev\Lib\CronProcessor();
-        $processor->run();
-        $response = ['status' => 'success', 'message' => 'Cron analysis triggered successfully. Check Ticket Insights for results.'];
+        $result    = $processor->run(true); // verbose=true returns diagnostic info
+
+        $analyzed = $result['analyzed'] ?? 0;
+        $found    = $result['tickets_found'] ?? 0;
+        $errors   = $result['errors'] ?? [];
+
+        if ($analyzed > 0) {
+            $msg = "Done! Analyzed {$analyzed} of {$found} ticket(s) successfully.";
+            if (!empty($errors)) {
+                $msg .= ' ' . count($errors) . ' ticket(s) had errors (see Audit Trail).';
+            }
+            $response = ['status' => 'success', 'message' => $msg, 'result' => $result];
+        } elseif (!empty($errors)) {
+            // Nothing was analyzed AND there are errors — surface them
+            $response = [
+                'status'  => 'error',
+                'message' => implode(' | ', $errors),
+                'result'  => $result,
+            ];
+        } else {
+            $response = ['status' => 'success', 'message' => "No tickets needed analysis right now (found: {$found}).", 'result' => $result];
+        }
     } else {
         // Default analyze_ticket (server-side generation)
         $response = $controller->getAnalysis($tone, $instruction, $forceRegenerate, $forceFallback, $intent, $useSummary, $includeHistory, $technicalContext);

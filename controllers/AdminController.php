@@ -279,6 +279,13 @@ class AdminController
                 $table->integer('cron_insights_max_per_run')->default(20);
             });
         }
+        try {
+            Capsule::table('tblsahdev_settings')->select('cron_insights_statuses')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                $table->string('cron_insights_statuses', 512)->nullable();
+            });
+        }
 
         // 11. Ensure expanded tblsahdev_sentiment columns exist (migration for existing installs)
         try {
@@ -2569,28 +2576,44 @@ class AdminController
             exit;
         }
 
+        // --- Ensure cron_insights_statuses column exists ---
+        try {
+            Capsule::table('tblsahdev_settings')->select('cron_insights_statuses')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                $table->string('cron_insights_statuses', 512)->nullable()->comment('Comma-separated ticket statuses to analyze');
+            });
+        }
+
         // --- Handle settings save ---
         if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_insights_settings'])) {
             check_token("WHMCS.admin.default");
 
-            $enabled      = !empty($_POST['cron_insights_enabled']) ? 1 : 0;
+            $enabled       = !empty($_POST['cron_insights_enabled']) ? 1 : 0;
             $intervalHours = max(1, (int) ($_POST['cron_insights_interval_hours'] ?? 6));
-            $maxPerRun    = max(1, min(100, (int) ($_POST['cron_insights_max_per_run'] ?? 20)));
+            $maxPerRun     = max(1, min(100, (int) ($_POST['cron_insights_max_per_run'] ?? 20)));
+            // Sanitize statuses: comma-separated, strip extra whitespace
+            $rawStatuses   = $_POST['cron_insights_statuses'] ?? '';
+            $statuses      = implode(', ', array_filter(array_map('trim', explode(',', $rawStatuses))));
 
             Capsule::table('tblsahdev_settings')->where('id', 1)->update([
                 'cron_insights_enabled'        => $enabled,
                 'cron_insights_interval_hours' => $intervalHours,
                 'cron_insights_max_per_run'    => $maxPerRun,
+                'cron_insights_statuses'       => $statuses ?: null,
                 'updated_at'                   => \Carbon\Carbon::now(),
             ]);
             $successMessage = 'Ticket Insights settings saved successfully.';
         }
 
         // --- Fetch settings ---
-        $settings = Capsule::table('tblsahdev_settings')->first();
+        $settings          = Capsule::table('tblsahdev_settings')->first();
         $cronEnabled       = $settings ? (int) ($settings->cron_insights_enabled ?? 1) : 1;
         $cronInterval      = $settings ? (int) ($settings->cron_insights_interval_hours ?? 6) : 6;
         $cronMax           = $settings ? (int) ($settings->cron_insights_max_per_run ?? 20) : 20;
+        $cronStatuses      = ($settings && !empty($settings->cron_insights_statuses))
+                             ? $settings->cron_insights_statuses
+                             : 'Customer-Reply, Awaiting Reply, Open';
 
         // --- Pagination ---
         $page    = max(1, (int) ($_GET['ipage'] ?? 1));
@@ -2652,10 +2675,13 @@ class AdminController
 
         <div class="sahdev-page-container">
 
+            <!-- Result message box shown after "Run Analysis Now" -->
+            <div id="sahdev-cron-msg" class="alert" style="display:none; margin-bottom:16px;"></div>
+
             <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #eee; padding-bottom: 15px; margin-bottom: 25px;">
                 <div>
                     <h2 style="margin: 0 0 4px 0;"><i class="fas fa-brain" style="color:#0d6efd;"></i> Ticket Insights</h2>
-                    <p class="text-muted" style="margin:0; font-size:13px;">AI-powered sentiment, urgency, and tone analysis for all <em>Awaiting Reply</em> tickets. Runs automatically alongside the WHMCS cron.</p>
+                    <p class="text-muted" style="margin:0; font-size:13px;">AI-powered sentiment, urgency, and tone analysis for configured ticket statuses. Runs automatically alongside the WHMCS cron.</p>
                 </div>
                 <div>
                     <button type="button" id="sahdev-trigger-cron" class="btn btn-primary" style="gap: 6px; display:inline-flex; align-items:center;">
@@ -2709,6 +2735,16 @@ class AdminController
                             <small class="text-muted">Cap per execution to avoid timeouts.</small>
                         </div>
 
+                        <div class="form-group" style="min-width:280px; flex:1;">
+                            <label style="font-weight:600; display:block; margin-bottom:6px;">
+                                <i class="fas fa-tags" style="color:#0d6efd;"></i> Ticket Statuses to Analyze
+                            </label>
+                            <input type="text" name="cron_insights_statuses" class="form-control"
+                                value="<?php echo htmlspecialchars($cronStatuses); ?>"
+                                placeholder="Customer-Reply, Awaiting Reply, Open">
+                            <small class="text-muted">Comma-separated. WHMCS default: <code>Customer-Reply</code>, <code>Open</code>. Check your WHMCS statuses if unsure.</small>
+                        </div>
+
                         <div class="form-group" style="align-self:flex-end;">
                             <button type="submit" class="btn btn-success">
                                 <i class="fas fa-save"></i> Save Settings
@@ -2719,9 +2755,11 @@ class AdminController
 
                 <div style="margin-top:16px; padding:12px 16px; background:#f8f9fa; border-radius:6px; font-size:13px; color:#495057; border-left:3px solid #0d6efd;">
                     <strong>How it works:</strong> Every WHMCS cron execution (default every 5 min), up to <strong><?php echo (int)$cronMax; ?></strong> tickets
-                    in <em>Awaiting Reply</em> status that haven't been analyzed in the last <strong><?php echo (int)$cronInterval; ?> hour(s)</strong> are sent to
+                    in <em><?php echo htmlspecialchars($cronStatuses); ?></em> status that haven't been analyzed in the last <strong><?php echo (int)$cronInterval; ?> hour(s)</strong> are sent to
                     your configured AI provider. Results appear as badges on <code>supporttickets.php</code> and in the table below.
                     The analysis prompt can be customized under the <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink'] . '&action=prompt_manager'); ?>">Prompt Manager</a> tab (key: <code>cron_insights</code>).
+                    <br><br><strong>Not sure which status to use?</strong> In standard WHMCS: when a client replies, the ticket status becomes <code>Customer-Reply</code>.
+                    Custom statuses depend on your WHMCS configuration. You can check by looking at a ticket waiting for your reply and noting its status label.
                 </div>
             </div>
 
@@ -2875,11 +2913,20 @@ class AdminController
         <script>
         (function() {
             var btn = document.getElementById('sahdev-trigger-cron');
+            var msgBox = document.getElementById('sahdev-cron-msg');
             if (!btn) return;
+
+            function showMsg(html, type) {
+                if (!msgBox) return;
+                msgBox.style.display = 'block';
+                msgBox.className = 'alert alert-' + type;
+                msgBox.innerHTML = html;
+            }
 
             btn.addEventListener('click', function() {
                 btn.disabled = true;
                 btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Running...';
+                if (msgBox) { msgBox.style.display = 'none'; }
 
                 var formData = new FormData();
                 formData.append('action', 'trigger_cron_run');
@@ -2892,18 +2939,37 @@ class AdminController
                 .then(function(r) { return r.json(); })
                 .then(function(data) {
                     btn.disabled = false;
+                    var result = data.result || {};
+                    var details = '';
+                    if (result.tickets_found !== undefined) {
+                        details += ' &nbsp;|&nbsp; Tickets found: <strong>' + result.tickets_found + '</strong>';
+                    }
+                    if (result.analyzed !== undefined) {
+                        details += ' &nbsp;|&nbsp; Analyzed: <strong>' + result.analyzed + '</strong>';
+                    }
+                    if (result.skipped !== undefined && result.skipped > 0) {
+                        details += ' &nbsp;|&nbsp; Skipped: <strong>' + result.skipped + '</strong>';
+                    }
+                    if (result.statuses_checked) {
+                        details += ' &nbsp;|&nbsp; Statuses checked: <strong>' + result.statuses_checked.join(', ') + '</strong>';
+                    }
+
                     if (data.status === 'success') {
-                        btn.innerHTML = '<i class="fas fa-check-circle"></i> Done! Reloading...';
-                        setTimeout(function() { window.location.reload(); }, 1500);
+                        btn.innerHTML = '<i class="fas fa-check-circle"></i> Done!';
+                        showMsg('<i class="fas fa-check-circle"></i> ' + (data.message || 'Complete.') + details, 'success');
+                        if ((result.analyzed || 0) > 0) {
+                            setTimeout(function() { window.location.reload(); }, 2500);
+                        }
                     } else {
-                        btn.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Error';
-                        alert('Error: ' + (data.message || 'Unknown error'));
+                        btn.innerHTML = '<i class="fas fa-play-circle"></i> Run Analysis Now';
+                        var errList = (result.errors || []).join('<br>');
+                        showMsg('<i class="fas fa-exclamation-triangle"></i> <strong>' + (data.message || 'Error') + '</strong>' + (errList ? '<br>' + errList : '') + details, 'danger');
                     }
                 })
                 .catch(function(err) {
                     btn.disabled = false;
                     btn.innerHTML = '<i class="fas fa-play-circle"></i> Run Analysis Now';
-                    alert('Request failed: ' + err);
+                    showMsg('<i class="fas fa-exclamation-triangle"></i> Request failed: ' + err, 'danger');
                 });
             });
         })();

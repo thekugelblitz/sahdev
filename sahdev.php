@@ -169,6 +169,7 @@ function sahdev_activate()
                     $table->boolean('cron_insights_enabled')->default(1);
                     $table->integer('cron_insights_interval_hours')->default(6);
                     $table->integer('cron_insights_max_per_run')->default(20);
+                    $table->string('cron_insights_statuses', 512)->nullable();
                     $table->timestamps(); // creates created_at, updated_at
                 }
             );
@@ -464,6 +465,14 @@ function sahdev_activate()
                 $table->boolean('cron_insights_enabled')->default(1);
                 $table->integer('cron_insights_interval_hours')->default(6);
                 $table->integer('cron_insights_max_per_run')->default(20);
+                $table->string('cron_insights_statuses', 512)->nullable();
+            });
+        }
+        try {
+            Capsule::table('tblsahdev_settings')->select('cron_insights_statuses')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                $table->string('cron_insights_statuses', 512)->nullable();
             });
         }
 
