@@ -170,6 +170,11 @@ function sahdev_activate()
                     $table->integer('cron_insights_interval_hours')->default(6);
                     $table->integer('cron_insights_max_per_run')->default(20);
                     $table->string('cron_insights_statuses', 512)->nullable();
+                    $table->timestamp('insights_cron_last_run_at')->nullable();
+                    $table->integer('insights_cron_last_found')->unsigned()->default(0);
+                    $table->integer('insights_cron_last_analyzed')->unsigned()->default(0);
+                    $table->integer('insights_cron_last_skipped')->unsigned()->default(0);
+                    $table->string('insights_cron_last_message', 512)->nullable();
                     $table->timestamps(); // creates created_at, updated_at
                 }
             );
@@ -481,6 +486,17 @@ function sahdev_activate()
         } catch (\Exception $e) {
             Capsule::schema()->table('tblsahdev_settings', function ($table) {
                 $table->string('cron_insights_statuses', 512)->nullable();
+            });
+        }
+        try {
+            Capsule::table('tblsahdev_settings')->select('insights_cron_last_run_at')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                $table->timestamp('insights_cron_last_run_at')->nullable();
+                $table->integer('insights_cron_last_found')->unsigned()->default(0);
+                $table->integer('insights_cron_last_analyzed')->unsigned()->default(0);
+                $table->integer('insights_cron_last_skipped')->unsigned()->default(0);
+                $table->string('insights_cron_last_message', 512)->nullable();
             });
         }
 

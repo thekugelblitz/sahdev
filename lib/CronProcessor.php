@@ -44,6 +44,11 @@ class CronProcessor
      */
     public function run(bool $verbose = false): array
     {
+        if (!$verbose) {
+            @set_time_limit(600);
+            @ignore_user_abort(true);
+        }
+
         $result = [
             'tickets_found'    => 0,
             'analyzed'         => 0,
@@ -122,9 +127,51 @@ class CronProcessor
         } catch (\Throwable $e) {
             $result['errors'][] = 'Fatal error: ' . $e->getMessage();
             $this->logError(0, 'CronProcessor::run() fatal: ' . $e->getMessage());
+        } finally {
+            if (!$verbose) {
+                $this->persistInsightsCronRun($result);
+            }
         }
 
         return $result;
+    }
+
+    /**
+     * Records the outcome of the automatic WHMCS CronJob run so admins can verify
+     * batch processing in Ticket Insights.
+     */
+    private function persistInsightsCronRun(array $result): void
+    {
+        try {
+            $found    = (int) ($result['tickets_found'] ?? 0);
+            $analyzed = (int) ($result['analyzed'] ?? 0);
+            $skipped  = (int) ($result['skipped'] ?? 0);
+            $errCount = count($result['errors'] ?? []);
+
+            if ($found === 0 && $analyzed === 0) {
+                $msg = ($errCount > 0)
+                    ? implode(' ', array_slice($result['errors'], 0, 2))
+                    : 'No tickets in queue (all up to date or no matching statuses).';
+            } else {
+                $msg = sprintf(
+                    'Batch: %d in queue, %d analyzed successfully, %d failed.',
+                    $found,
+                    $analyzed,
+                    $skipped
+                );
+            }
+
+            Capsule::table('tblsahdev_settings')->where('id', 1)->update([
+                'insights_cron_last_run_at'   => Carbon::now(),
+                'insights_cron_last_found'    => $found,
+                'insights_cron_last_analyzed'  => $analyzed,
+                'insights_cron_last_skipped'   => $skipped,
+                'insights_cron_last_message'   => substr($msg, 0, 500),
+                'updated_at'                   => Carbon::now(),
+            ]);
+        } catch (\Throwable $e) {
+            // Never break WHMCS cron
+        }
     }
 
     // -------------------------------------------------------------------------

@@ -2604,6 +2604,18 @@ class AdminController
             });
         }
 
+        try {
+            Capsule::table('tblsahdev_settings')->select('insights_cron_last_run_at')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                $table->timestamp('insights_cron_last_run_at')->nullable();
+                $table->integer('insights_cron_last_found')->unsigned()->default(0);
+                $table->integer('insights_cron_last_analyzed')->unsigned()->default(0);
+                $table->integer('insights_cron_last_skipped')->unsigned()->default(0);
+                $table->string('insights_cron_last_message', 512)->nullable();
+            });
+        }
+
         // --- Handle settings save ---
         if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_insights_settings'])) {
             check_token("WHMCS.admin.default");
@@ -2633,6 +2645,40 @@ class AdminController
         $cronStatuses      = ($settings && !empty($settings->cron_insights_statuses))
                              ? $settings->cron_insights_statuses
                              : 'Customer-Reply, Awaiting Reply, Open';
+
+        $insightsCronLastAt = $settings && !empty($settings->insights_cron_last_run_at)
+            ? $settings->insights_cron_last_run_at
+            : null;
+        $insightsCronFound    = $settings ? (int) ($settings->insights_cron_last_found ?? 0) : 0;
+        $insightsCronAnalyzed = $settings ? (int) ($settings->insights_cron_last_analyzed ?? 0) : 0;
+        $insightsCronSkipped  = $settings ? (int) ($settings->insights_cron_last_skipped ?? 0) : 0;
+        $insightsCronMsg      = $settings && !empty($settings->insights_cron_last_message)
+            ? (string) $settings->insights_cron_last_message
+            : '';
+
+        $cronStaleHours = 48;
+        $cronLastCarbon = null;
+        if ($insightsCronLastAt) {
+            try {
+                $cronLastCarbon = \Carbon\Carbon::parse($insightsCronLastAt);
+            } catch (\Exception $e) {
+                $cronLastCarbon = null;
+            }
+        }
+        $cronIsStale = $cronEnabled && $cronLastCarbon && $cronLastCarbon->lt(\Carbon\Carbon::now()->subHours($cronStaleHours));
+        $cronNeverRan = $cronEnabled && !$cronLastCarbon;
+
+        $cronUrlHint = '/crons/cron.php (under your WHMCS installation URL)';
+        try {
+            if (class_exists('\WHMCS\Config\Setting')) {
+                $su = \WHMCS\Config\Setting::getValue('SystemURL');
+                if (!empty($su)) {
+                    $cronUrlHint = rtrim($su, '/') . '/crons/cron.php';
+                }
+            }
+        } catch (\Throwable $e) {
+            // keep generic hint
+        }
 
         // Fetch WHMCS ticket statuses from its own table for the helper hint
         $whmcsStatuses = [];
@@ -2717,6 +2763,68 @@ class AdminController
                     <button type="button" id="sahdev-trigger-cron" class="btn btn-primary" style="gap: 6px; display:inline-flex; align-items:center;">
                         <i class="fas fa-play-circle"></i> Run Analysis Now
                     </button>
+                </div>
+            </div>
+
+            <!-- Automatic cron health (WHMCS CronJob hook) -->
+            <div class="panel panel-default" style="margin-bottom:22px;">
+                <div class="panel-heading" style="font-weight:600;">
+                    <i class="fas fa-heartbeat" style="color:#0d6efd;"></i> Automatic batch (WHMCS cron)
+                </div>
+                <div class="panel-body" style="font-size:13px;">
+                    <p style="margin-top:0; color:#495057;">
+                        Ticket Insights runs inside WHMCS when <strong>crons/cron.php</strong> executes (same schedule as your other WHMCS automation).
+                        Each run processes up to <strong><?php echo (int) $cronMax; ?></strong> queued tickets (see <em>Max Tickets per Cron Run</em> below).
+                    </p>
+                    <?php if ($cronNeverRan): ?>
+                        <div class="alert alert-warning" style="margin-bottom:12px;">
+                            <strong>No automatic run recorded yet.</strong>
+                            If you just enabled the feature, wait for the next cron tick. Otherwise confirm a system scheduler is calling
+                            <code><?php echo htmlspecialchars($cronUrlHint); ?></code>
+                            (or your host’s equivalent) at least every few minutes.
+                        </div>
+                    <?php elseif ($cronIsStale): ?>
+                        <div class="alert alert-warning" style="margin-bottom:12px;">
+                            <strong>Last automatic run was more than <?php echo (int) $cronStaleHours; ?> hours ago.</strong>
+                            Check that WHMCS cron is still firing and that PHP is not blocking long requests.
+                        </div>
+                    <?php else: ?>
+                        <div class="alert alert-success" style="margin-bottom:12px;">
+                            <strong>Recent cron activity recorded.</strong>
+                            <?php if ($cronLastCarbon): ?>
+                                Last batch: <strong><?php echo htmlspecialchars($cronLastCarbon->toDateTimeString()); ?></strong>
+                            <?php endif; ?>
+                        </div>
+                    <?php endif; ?>
+                    <table class="table table-condensed" style="margin-bottom:0; background:#f8f9fa;">
+                        <tbody>
+                            <tr>
+                                <td style="width:40%; border-top:none;"><strong>Last run</strong></td>
+                                <td style="border-top:none;">
+                                    <?php echo $cronLastCarbon ? htmlspecialchars($cronLastCarbon->toDateTimeString()) : '—'; ?>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td><strong>Tickets in batch</strong></td>
+                                <td><?php echo (int) $insightsCronFound; ?></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Analyzed OK</strong></td>
+                                <td><?php echo (int) $insightsCronAnalyzed; ?></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Failed in batch</strong></td>
+                                <td><?php echo (int) $insightsCronSkipped; ?></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Summary</strong></td>
+                                <td><?php echo $insightsCronMsg !== '' ? htmlspecialchars($insightsCronMsg) : '—'; ?></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <p class="text-muted" style="margin:12px 0 0; font-size:12px;">
+                        Manual <em>Run Analysis Now</em> does not update this card — only the WHMCS <code>CronJob</code> hook does, so this is your signal that scheduled batching is alive.
+                    </p>
                 </div>
             </div>
 
