@@ -432,12 +432,20 @@ function sahdev_activate()
                 Capsule::table('tblsahdev_sentiment')->select('client_tone')->first();
             } catch (\Exception $e) {
                 Capsule::schema()->table('tblsahdev_sentiment', function ($table) {
-                    $table->string('client_tone', 64)->nullable()->comment('Angry, Demanding, Neutral, Polite, etc.');
-                    $table->text('ticket_summary')->nullable()->comment('AI-generated ticket summary');
+                    $table->string('client_tone', 64)->nullable();
+                    $table->text('ticket_summary')->nullable();
                     $table->integer('admin_reply_count')->unsigned()->default(0);
-                    $table->integer('last_admin_id')->unsigned()->nullable();
                     $table->string('last_admin_name', 128)->nullable();
-                    $table->timestamp('analyzed_at')->nullable()->comment('When cron last analyzed this ticket');
+                    $table->timestamp('ticket_last_reply_at')->nullable();
+                    $table->timestamp('analyzed_at')->nullable();
+                });
+            }
+            // Migrate: add ticket_last_reply_at if upgrading from an older version
+            try {
+                Capsule::table('tblsahdev_sentiment')->select('ticket_last_reply_at')->first();
+            } catch (\Exception $e) {
+                Capsule::schema()->table('tblsahdev_sentiment', function ($table) {
+                    $table->timestamp('ticket_last_reply_at')->nullable();
                 });
             }
         } catch (\Exception $e) {
@@ -450,8 +458,8 @@ function sahdev_activate()
                 $table->string('client_tone', 64)->nullable()->comment('Angry, Demanding, Neutral, Polite, etc.');
                 $table->text('ticket_summary')->nullable()->comment('AI-generated ticket summary');
                 $table->integer('admin_reply_count')->unsigned()->default(0);
-                $table->integer('last_admin_id')->unsigned()->nullable();
                 $table->string('last_admin_name', 128)->nullable();
+                $table->timestamp('ticket_last_reply_at')->nullable()->comment('tbltickets.lastreply snapshot at analysis time');
                 $table->timestamp('analyzed_at')->nullable()->comment('When cron last analyzed this ticket');
                 $table->timestamps();
             });

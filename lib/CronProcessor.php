@@ -9,7 +9,15 @@ use Carbon\Carbon;
  * CronProcessor
  *
  * Batch-analyzes tickets via AI to extract sentiment, urgency, client tone,
- * and a ticket summary. Triggered by the WHMCS CronJob hook.
+ * and a ticket summary.  Triggered by the WHMCS CronJob hook.
+ *
+ * Re-analysis logic (smart, reply-driven):
+ *  - A ticket is SKIPPED if it was already analyzed AND tbltickets.lastreply
+ *    has not changed since the last analysis.  No new reply = no re-analysis.
+ *  - A ticket IS re-analyzed when a new reply/note is added (lastreply changed)
+ *    AND the minimum cooldown (cron_insights_interval_hours) has elapsed since
+ *    the last analysis, preventing rapid-fire processing on busy tickets.
+ *  - A ticket that has never been analyzed is always queued.
  */
 class CronProcessor
 {
@@ -29,23 +37,19 @@ class CronProcessor
     // -------------------------------------------------------------------------
 
     /**
-     * Main cron entry point.
-     *
-     * When $verbose = false (default, used by the CronJob hook), all exceptions
-     * are swallowed so the WHMCS cron never crashes.
-     *
-     * When $verbose = true (used by the manual "Run Analysis Now" button), a
-     * diagnostic array is returned instead so the admin can see what happened.
-     *
-     * @return array{tickets_found:int, analyzed:int, skipped:int, errors:array<string>}
+     * @param bool $verbose  When true (manual "Run Now" button) returns a rich
+     *                       diagnostic array.  When false (CronJob hook) all
+     *                       exceptions are swallowed to protect the WHMCS cron.
+     * @return array{tickets_found:int, analyzed:int, skipped:int, errors:string[]}
      */
     public function run(bool $verbose = false): array
     {
         $result = [
-            'tickets_found' => 0,
-            'analyzed'      => 0,
-            'skipped'       => 0,
-            'errors'        => [],
+            'tickets_found'    => 0,
+            'analyzed'         => 0,
+            'skipped'          => 0,
+            'errors'           => [],
+            'statuses_checked' => [],
         ];
 
         try {
@@ -56,40 +60,51 @@ class CronProcessor
                 return $result;
             }
 
-            // Validate provider is available before looping over tickets
             if (!$this->provider) {
-                $msg = 'No AI provider could be initialised. Check your provider configuration under AI Providers tab (missing or invalid API key / URL).';
+                $msg = 'No AI provider could be initialised. Check your provider configuration (missing/invalid API key or URL).';
                 $result['errors'][] = $msg;
                 $this->logError(0, $msg);
                 return $result;
             }
 
-            $intervalHours = (int) ($settings['cron_insights_interval_hours'] ?? 6);
+            $statuses      = $this->getTicketStatuses();
             $maxPerRun     = max(1, (int) ($settings['cron_insights_max_per_run'] ?? 20));
+            $cooldownHours = (int) ($settings['cron_insights_interval_hours'] ?? 6);
+            $cooldownCutoff = Carbon::now()->subHours($cooldownHours);
 
-            // Build list of statuses to include
-            $statuses = $this->getTicketStatuses();
             $result['statuses_checked'] = $statuses;
 
-            // Tickets NOT analyzed within the interval window
-            $cutoff          = Carbon::now()->subHours($intervalHours);
-            $recentlyAnalyzed = Capsule::table('tblsahdev_sentiment')
-                ->where('analyzed_at', '>=', $cutoff)
-                ->pluck('ticket_id')
-                ->toArray();
+            // Find tickets that need analysis:
+            //  1. Status matches configured list
+            //  2. Either never analyzed OR lastreply changed since last analysis
+            //     AND minimum cooldown has passed (prevents reprocessing on every
+            //     rapid successive reply)
+            //
+            // We join tblsahdev_sentiment to compare lastreply vs ticket_last_reply_at.
 
-            $tickets = Capsule::table('tbltickets')
-                ->whereIn('status', $statuses)
-                ->whereNotIn('id', $recentlyAnalyzed)
-                ->orderBy('lastreply', 'asc') // oldest last-reply first = most urgent
+            $tickets = Capsule::table('tbltickets as t')
+                ->leftJoin('tblsahdev_sentiment as s', 's.ticket_id', '=', 't.id')
+                ->whereIn('t.status', $statuses)
+                ->where(function ($q) use ($cooldownCutoff) {
+                    // Never analyzed
+                    $q->whereNull('s.ticket_id')
+                      ->orWhere(function ($inner) use ($cooldownCutoff) {
+                          // New reply since last analysis AND past cooldown
+                          $inner->whereRaw('t.lastreply > s.ticket_last_reply_at')
+                                ->where('s.analyzed_at', '<', $cooldownCutoff);
+                      });
+                })
+                ->orderBy('t.lastreply', 'asc')
                 ->limit($maxPerRun)
-                ->pluck('id')
+                ->pluck('t.id')
                 ->toArray();
 
             $result['tickets_found'] = count($tickets);
 
             if (empty($tickets)) {
-                $result['errors'][] = 'No eligible tickets found. Either no tickets are in the configured statuses (' . implode(', ', $statuses) . '), or all have been analyzed within the last ' . $intervalHours . ' hour(s).';
+                $result['errors'][] =
+                    'No tickets needed analysis. Either no tickets have the configured statuses (' .
+                    implode(', ', $statuses) . '), or all analyzed tickets have no new replies since the last run.';
                 return $result;
             }
 
@@ -116,23 +131,20 @@ class CronProcessor
     // Per-ticket analysis
     // -------------------------------------------------------------------------
 
-    /**
-     * Analyze a single ticket and upsert insights into tblsahdev_sentiment.
-     * Throws on any failure so the caller can decide how to handle it.
-     */
     public function analyzeTicket(int $ticketId): void
     {
         if (!$this->provider) {
             throw new \Exception('No AI provider available for cron analysis.');
         }
 
-        // --- Collect admin reply stats without AI ---
         $adminStats = $this->collectAdminStats($ticketId);
+        $context    = $this->buildLightContext($ticketId);
 
-        // --- Build a lightweight context for the AI ---
-        $context = $this->buildLightContext($ticketId);
+        // Capture the ticket's current lastreply so we can store it
+        $ticketLastReply = Capsule::table('tbltickets')
+            ->where('id', $ticketId)
+            ->value('lastreply');
 
-        // --- Call AI ---
         $settingsForProvider = $this->buildProviderSettings();
         $startTime = microtime(true);
 
@@ -158,34 +170,27 @@ class CronProcessor
             }
         }
 
-        $execMs = round((microtime(true) - $startTime) * 1000);
-
-        // --- Parse response ---
+        $execMs  = round((microtime(true) - $startTime) * 1000);
         $insights = $this->parseInsights($rawResponse);
 
-        // --- Upsert into tblsahdev_sentiment ---
         $now      = Carbon::now();
-        $existing = Capsule::table('tblsahdev_sentiment')
-            ->where('ticket_id', $ticketId)
-            ->first();
+        $existing = Capsule::table('tblsahdev_sentiment')->where('ticket_id', $ticketId)->first();
 
         $data = [
-            'score'             => max(1, min(10, (int) ($insights['SENTIMENT_SCORE'] ?? 5))),
-            'label'             => $this->sanitizeString($insights['SENTIMENT_LABEL'] ?? 'Neutral', 32),
-            'urgency'           => $this->sanitizeString($insights['URGENCY'] ?? 'Medium', 16),
-            'client_tone'       => $this->sanitizeString($insights['CLIENT_TONE'] ?? 'Neutral', 64),
-            'ticket_summary'    => substr($insights['TICKET_SUMMARY'] ?? '', 0, 65000),
-            'admin_reply_count' => $adminStats['admin_reply_count'],
-            'last_admin_id'     => $adminStats['last_admin_id'],
-            'last_admin_name'   => $adminStats['last_admin_name'],
-            'analyzed_at'       => $now,
-            'updated_at'        => $now,
+            'score'                  => max(1, min(10, (int) ($insights['SENTIMENT_SCORE'] ?? 5))),
+            'label'                  => $this->sanitizeString($insights['SENTIMENT_LABEL'] ?? 'Neutral', 32),
+            'urgency'                => $this->sanitizeString($insights['URGENCY'] ?? 'Medium', 16),
+            'client_tone'            => $this->sanitizeString($insights['CLIENT_TONE'] ?? 'Neutral', 64),
+            'ticket_summary'         => substr($insights['TICKET_SUMMARY'] ?? '', 0, 65000),
+            'admin_reply_count'      => $adminStats['admin_reply_count'],
+            'last_admin_name'        => $adminStats['last_admin_name'],
+            'ticket_last_reply_at'   => $ticketLastReply,  // store lastreply snapshot
+            'analyzed_at'            => $now,
+            'updated_at'             => $now,
         ];
 
         if ($existing) {
-            Capsule::table('tblsahdev_sentiment')
-                ->where('ticket_id', $ticketId)
-                ->update($data);
+            Capsule::table('tblsahdev_sentiment')->where('ticket_id', $ticketId)->update($data);
         } else {
             $data['ticket_id']  = $ticketId;
             $data['created_at'] = $now;
@@ -206,7 +211,7 @@ class CronProcessor
                 'created_at'        => $now,
             ]);
         } catch (\Throwable $e) {
-            // Audit is best-effort; never fail a successful analysis because of logging
+            // Best-effort only
         }
     }
 
@@ -214,19 +219,12 @@ class CronProcessor
     // Helpers
     // -------------------------------------------------------------------------
 
-    /**
-     * Returns the list of ticket statuses to analyse.
-     * Reads from the `cron_insights_statuses` setting (comma-separated) when
-     * present; falls back to the two most common WHMCS "needs admin reply"
-     * statuses so the feature works out-of-the-box.
-     */
     public function getTicketStatuses(): array
     {
         $raw = $this->settings['cron_insights_statuses'] ?? '';
         if (!empty($raw)) {
             return array_values(array_filter(array_map('trim', explode(',', $raw))));
         }
-        // WHMCS default statuses that mean "client replied / needs admin response"
         return ['Customer-Reply', 'Awaiting Reply', 'Open'];
     }
 
@@ -238,7 +236,6 @@ class CronProcessor
             throw new \Exception('Sahdev settings not found. Please activate the module.');
         }
 
-        // Load prompt template
         $tpl = Capsule::table('tblsahdev_prompt_templates')
             ->where('prompt_key', 'cron_insights')
             ->first();
@@ -246,12 +243,11 @@ class CronProcessor
         $this->cronPrompt   = $tpl ? $tpl->content : $this->defaultCronUserPrompt();
         $this->systemPrompt = $this->defaultCronSystemPrompt();
 
-        // Load primary provider
         $primaryId   = (int) ($this->settings['primary_provider_id'] ?? 1);
         $primaryData = Capsule::table('tblsahdev_providers')->where('id', $primaryId)->first();
 
         if (!$primaryData) {
-            throw new \Exception("Primary AI provider (ID #{$primaryId}) not found in database.");
+            throw new \Exception("Primary AI provider (ID #{$primaryId}) not found.");
         }
 
         $this->settings['model_name']    = $primaryData->model_name;
@@ -263,12 +259,11 @@ class CronProcessor
 
         if (!$this->provider) {
             throw new \Exception(
-                "Could not initialise AI provider '{$primaryData->name}' (type: {$primaryData->provider_type}). " .
-                "Check that the API key and URL are set correctly in the AI Providers tab."
+                "Could not initialise provider '{$primaryData->name}' ({$primaryData->provider_type}). " .
+                "Check API key and URL in the AI Providers tab."
             );
         }
 
-        // Fallback provider (optional — don't throw if missing)
         $fallbackId = (int) ($this->settings['fallback_provider_id'] ?? 0);
         if ($fallbackId > 0 && $fallbackId !== $primaryId) {
             $fallbackData = Capsule::table('tblsahdev_providers')->where('id', $fallbackId)->first();
@@ -304,9 +299,6 @@ class CronProcessor
         return null;
     }
 
-    /**
-     * Build settings array for the provider call, using cron-specific prompts.
-     */
     private function buildProviderSettings(): array
     {
         return array_merge($this->settings, [
@@ -318,13 +310,10 @@ class CronProcessor
         ]);
     }
 
-    /**
-     * Build a lean context array — no images, max 30 messages.
-     */
     private function buildLightContext(int $ticketId): array
     {
         $ticket = Capsule::table('tbltickets')
-            ->select('id', 'tid', 'did', 'userid', 'contactid', 'name', 'email', 'title', 'message', 'status', 'urgency', 'lastreply', 'date')
+            ->select('id', 'tid', 'did', 'userid', 'name', 'title', 'message', 'status', 'urgency', 'lastreply', 'date')
             ->where('id', $ticketId)
             ->first();
 
@@ -354,8 +343,9 @@ class CronProcessor
             'message' => $ticket->message,
         ];
 
+        // Use 'admin' column (WHMCS stores admin username string, not an ID)
         $replies = Capsule::table('tblticketreplies')
-            ->select('userid', 'adminid', 'message', 'date')
+            ->select('userid', 'admin', 'message', 'date')
             ->where('tid', $ticketId)
             ->orderBy('id', 'asc')
             ->limit(30)
@@ -363,7 +353,7 @@ class CronProcessor
 
         foreach ($replies as $reply) {
             $messages[] = [
-                'admin'   => !empty($reply->adminid),
+                'admin'   => !empty($reply->admin),   // non-empty string = admin reply
                 'date'    => $reply->date,
                 'message' => $reply->message,
             ];
@@ -381,59 +371,46 @@ class CronProcessor
         ];
     }
 
+    /**
+     * Count admin replies and get last admin name.
+     * WHMCS uses the `admin` column (username string) in tblticketreplies —
+     * there is NO `adminid` column in that table.
+     */
     private function collectAdminStats(int $ticketId): array
     {
+        // Fetch all replies where admin username is set (non-empty string)
         $adminReplies = Capsule::table('tblticketreplies')
             ->where('tid', $ticketId)
-            ->whereNotNull('adminid')
-            ->where('adminid', '>', 0)
+            ->whereNotNull('admin')
+            ->where('admin', '!=', '')
             ->orderBy('id', 'desc')
-            ->get(['adminid']);
+            ->pluck('admin')
+            ->toArray();
 
         $adminReplyCount = count($adminReplies);
-        $lastAdminId     = null;
-        $lastAdminName   = null;
-
-        if ($adminReplyCount > 0) {
-            $lastAdminId = (int) $adminReplies[0]->adminid;
-            $admin = Capsule::table('tbladmins')
-                ->select('firstname', 'lastname')
-                ->where('id', $lastAdminId)
-                ->first();
-            if ($admin) {
-                $lastAdminName = trim($admin->firstname . ' ' . $admin->lastname) ?: 'Admin #' . $lastAdminId;
-            }
-        }
+        $lastAdminName   = $adminReplyCount > 0 ? $adminReplies[0] : null;
 
         return [
             'admin_reply_count' => $adminReplyCount,
-            'last_admin_id'     => $lastAdminId,
             'last_admin_name'   => $lastAdminName,
         ];
     }
 
-    /**
-     * Parse the AI response — handles both clean JSON arrays and responses where
-     * the JSON is embedded inside a CLIENT_REPLY or text field.
-     */
     private function parseInsights(array $rawResponse): array
     {
-        // Happy path: provider returned the correct keys at root level
         if (!empty($rawResponse['SENTIMENT_SCORE']) || isset($rawResponse['SENTIMENT_LABEL'])) {
             return $rawResponse;
         }
 
-        // Some providers wrap JSON inside a text / CLIENT_REPLY field
         $text = $rawResponse['CLIENT_REPLY'] ?? $rawResponse['text'] ?? $rawResponse['response'] ?? '';
         if (empty($text)) {
             $text = json_encode($rawResponse);
         }
 
-        // Strip markdown code fences
-        $text = preg_replace('/```(?:json)?\s*/i', '', $text);
-        $text = preg_replace('/```/', '', $text);
-
+        $text    = preg_replace('/```(?:json)?\s*/i', '', $text);
+        $text    = preg_replace('/```/', '', $text);
         $decoded = json_decode(trim($text), true);
+
         if (is_array($decoded) && isset($decoded['SENTIMENT_SCORE'])) {
             return $decoded;
         }
@@ -469,7 +446,7 @@ class CronProcessor
     }
 
     // -------------------------------------------------------------------------
-    // Default prompts (used when DB template is not yet seeded)
+    // Default prompts
     // -------------------------------------------------------------------------
 
     private function defaultCronSystemPrompt(): string

@@ -296,9 +296,19 @@ class AdminController
                     $table->string('client_tone', 64)->nullable();
                     $table->text('ticket_summary')->nullable();
                     $table->integer('admin_reply_count')->unsigned()->default(0);
-                    $table->integer('last_admin_id')->unsigned()->nullable();
                     $table->string('last_admin_name', 128)->nullable();
+                    $table->timestamp('ticket_last_reply_at')->nullable();
                     $table->timestamp('analyzed_at')->nullable();
+                });
+            }
+        }
+        // Add ticket_last_reply_at for installs that had the older schema without it
+        try {
+            Capsule::table('tblsahdev_sentiment')->select('ticket_last_reply_at')->first();
+        } catch (\Exception $e) {
+            if (Capsule::schema()->hasTable('tblsahdev_sentiment')) {
+                Capsule::schema()->table('tblsahdev_sentiment', function ($table) {
+                    $table->timestamp('ticket_last_reply_at')->nullable();
                 });
             }
         }
@@ -2562,9 +2572,18 @@ class AdminController
                     $table->string('client_tone', 64)->nullable();
                     $table->text('ticket_summary')->nullable();
                     $table->integer('admin_reply_count')->unsigned()->default(0);
-                    $table->integer('last_admin_id')->unsigned()->nullable();
                     $table->string('last_admin_name', 128)->nullable();
+                    $table->timestamp('ticket_last_reply_at')->nullable();
                     $table->timestamp('analyzed_at')->nullable();
+                });
+            }
+        }
+        try {
+            Capsule::table('tblsahdev_sentiment')->select('ticket_last_reply_at')->first();
+        } catch (\Exception $e) {
+            if (Capsule::schema()->hasTable('tblsahdev_sentiment')) {
+                Capsule::schema()->table('tblsahdev_sentiment', function ($table) {
+                    $table->timestamp('ticket_last_reply_at')->nullable();
                 });
             }
         }
@@ -2614,6 +2633,17 @@ class AdminController
         $cronStatuses      = ($settings && !empty($settings->cron_insights_statuses))
                              ? $settings->cron_insights_statuses
                              : 'Customer-Reply, Awaiting Reply, Open';
+
+        // Fetch WHMCS ticket statuses from its own table for the helper hint
+        $whmcsStatuses = [];
+        try {
+            $whmcsStatuses = Capsule::table('tblticketstatuses')
+                ->orderBy('sortorder', 'asc')
+                ->pluck('title')
+                ->toArray();
+        } catch (\Exception $e) {
+            // tblticketstatuses may not exist on very old WHMCS versions — ignore
+        }
 
         // --- Pagination ---
         $page    = max(1, (int) ($_GET['ipage'] ?? 1));
@@ -2742,7 +2772,21 @@ class AdminController
                             <input type="text" name="cron_insights_statuses" class="form-control"
                                 value="<?php echo htmlspecialchars($cronStatuses); ?>"
                                 placeholder="Customer-Reply, Awaiting Reply, Open">
-                            <small class="text-muted">Comma-separated. WHMCS default: <code>Customer-Reply</code>, <code>Open</code>. Check your WHMCS statuses if unsure.</small>
+                            <?php if (!empty($whmcsStatuses)): ?>
+                                <small class="text-muted">
+                                    Your WHMCS statuses:
+                                    <?php foreach ($whmcsStatuses as $ws): ?>
+                                        <code style="cursor:pointer; margin-right:4px;" onclick="
+                                            var f=document.querySelector('[name=cron_insights_statuses]');
+                                            var v=f.value.trim();
+                                            f.value = v ? v+', <?php echo addslashes(htmlspecialchars($ws)); ?>' : '<?php echo addslashes(htmlspecialchars($ws)); ?>';
+                                        " title="Click to append"><?php echo htmlspecialchars($ws); ?></code>
+                                    <?php endforeach; ?>
+                                    <em>(click any to append)</em>
+                                </small>
+                            <?php else: ?>
+                                <small class="text-muted">Comma-separated. When a client replies in WHMCS the ticket status typically becomes <code>Customer-Reply</code>.</small>
+                            <?php endif; ?>
                         </div>
 
                         <div class="form-group" style="align-self:flex-end;">
@@ -2754,12 +2798,12 @@ class AdminController
                 </form>
 
                 <div style="margin-top:16px; padding:12px 16px; background:#f8f9fa; border-radius:6px; font-size:13px; color:#495057; border-left:3px solid #0d6efd;">
-                    <strong>How it works:</strong> Every WHMCS cron execution (default every 5 min), up to <strong><?php echo (int)$cronMax; ?></strong> tickets
-                    in <em><?php echo htmlspecialchars($cronStatuses); ?></em> status that haven't been analyzed in the last <strong><?php echo (int)$cronInterval; ?> hour(s)</strong> are sent to
-                    your configured AI provider. Results appear as badges on <code>supporttickets.php</code> and in the table below.
-                    The analysis prompt can be customized under the <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink'] . '&action=prompt_manager'); ?>">Prompt Manager</a> tab (key: <code>cron_insights</code>).
-                    <br><br><strong>Not sure which status to use?</strong> In standard WHMCS: when a client replies, the ticket status becomes <code>Customer-Reply</code>.
-                    Custom statuses depend on your WHMCS configuration. You can check by looking at a ticket waiting for your reply and noting its status label.
+                    <strong>Smart re-analysis:</strong> A ticket is only re-analyzed when a <strong>new reply or note is added</strong> since the last analysis
+                    (detected via WHMCS's <code>lastreply</code> field). Tickets with no new activity are never re-processed — saving AI tokens.
+                    The <em>Re-analyze Interval</em> acts as a <strong>minimum cooldown</strong>: even if a new reply exists, the same ticket won't be re-sent
+                    more than once per <strong><?php echo (int)$cronInterval; ?> hour(s)</strong> (prevents rapid re-analysis on busy tickets).
+                    Up to <strong><?php echo (int)$cronMax; ?></strong> tickets are processed per cron run.
+                    <br>The analysis prompt can be customized in the <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink'] . '&action=prompt_manager'); ?>">Prompt Manager</a> tab (key: <code>cron_insights</code>).
                 </div>
             </div>
 
