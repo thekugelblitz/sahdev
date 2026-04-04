@@ -1931,6 +1931,9 @@ class AdminController
             <h4 style="margin-bottom:15px; font-size:15px; border-bottom:1px solid #e2e8f0; padding-bottom:10px;">
                 <i class="fas fa-magic"></i> Prompt Templates
             </h4>
+            <p class="text-muted" style="font-size:12px; margin:-8px 0 16px;">
+                <strong>Ticket Insights (cron)</strong> — <code>cron_insights_system</code> sets the AI persona; <code>cron_insights</code> is the user turn with JSON schema. Both are used by the WHMCS CronJob batch and “analyze” actions on the Support Tickets list.
+            </p>
 
             <?php
             // Define placeholder hints for each key
@@ -1942,6 +1945,8 @@ class AdminController
                 'rewrite_reply'        => ['{{TONE}}','{{SUBJECT}}','{{CLIENT_NAME}}','{{EXTRA_INSTRUCTION}}','{{DRAFT}}'],
                 'score_reply'          => [],
                 'canned_template'      => ['{{DRAFT}}'],
+                'cron_insights_system' => [],
+                'cron_insights'        => ['{{CLIENT_NAME}}','{{DEPARTMENT}}','{{SUBJECT}}','{{MESSAGES}}'],
             ];
             $keyIcons = [
                 'system_default'       => 'fas fa-robot',
@@ -1951,8 +1956,20 @@ class AdminController
                 'rewrite_reply'        => 'fas fa-pen-fancy',
                 'score_reply'          => 'fas fa-star-half-alt',
                 'canned_template'      => 'fas fa-clone',
+                'cron_insights_system' => 'fas fa-user-shield',
+                'cron_insights'        => 'fas fa-clock',
             ];
-            $orderedKeys = ['system_default','user_prompt_template','summarizer','historical_context','rewrite_reply','score_reply','canned_template'];
+            $orderedKeys = [
+                'system_default',
+                'user_prompt_template',
+                'summarizer',
+                'historical_context',
+                'rewrite_reply',
+                'score_reply',
+                'canned_template',
+                'cron_insights_system',
+                'cron_insights',
+            ];
             foreach ($orderedKeys as $key):
                 if (!isset($templates[$key])) continue;
                 $tpl   = $templates[$key];
@@ -1989,7 +2006,9 @@ class AdminController
                         <?php echo $csrfToken; ?>
                         <input type="hidden" name="prompt_mgr_action" value="save_prompt">
                         <input type="hidden" name="prompt_key" value="<?php echo htmlspecialchars($key); ?>">
-                        <textarea name="prompt_content" class="pm-textarea" rows="<?php echo ($key === 'user_prompt_template' ? 22 : 10); ?>"><?php echo htmlspecialchars($tpl->content); ?></textarea>
+                        <textarea name="prompt_content" class="pm-textarea" rows="<?php
+                            echo $key === 'user_prompt_template' ? 22 : (strpos($key, 'cron_insights') === 0 ? 18 : 10);
+                        ?>"><?php echo htmlspecialchars($tpl->content); ?></textarea>
                         <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:10px; flex-wrap:wrap;">
                             <small class="text-muted" style="align-self:center; flex:1; font-size:11px;">Last updated: <?php echo $tpl->updated_at; ?></small>
                             <button type="submit" name="prompt_mgr_action" value="reset_prompt" class="btn btn-xs btn-default"
