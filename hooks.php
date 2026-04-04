@@ -2059,9 +2059,13 @@ function sahdev_build_ticket_list_insights_html(): string
         }
 
         $versionBuster = time();
-        $ajaxUrl       = htmlspecialchars("addonmodules.php?module=sahdev&sahdev_act=ajax_handler&v={$versionBuster}");
+        // json_encode for safe embedding in <script> — do NOT use htmlspecialchars() here (breaks & in query string)
+        $ajaxUrlJs = json_encode(
+            'addonmodules.php?module=sahdev&sahdev_act=ajax_handler&v=' . $versionBuster,
+            JSON_UNESCAPED_SLASHES
+        );
 
-        return sahdev_render_ticket_list_insights($ajaxUrl);
+        return sahdev_render_ticket_list_insights($ajaxUrlJs);
     } catch (\Throwable $e) {
         return '';
     }
@@ -2069,13 +2073,41 @@ function sahdev_build_ticket_list_insights_html(): string
 
 /**
  * Detect admin Support Tickets list across classic scripts and routed admin URLs.
+ *
+ * @param array|null $vars Optional hook vars (e.g. AdminAreaFooterOutput / AdminAreaPage) — use filename when present.
  */
-function sahdev_is_admin_support_tickets_list_page(): bool
+function sahdev_is_admin_support_tickets_list_page(?array $vars = null): bool
 {
     $action = isset($_GET['action']) ? trim((string) $_GET['action']) : '';
     $id     = isset($_GET['id']) ? (int) $_GET['id'] : 0;
     if ($action === 'view' && $id > 0) {
         return false;
+    }
+
+    if (is_array($vars) && !empty($vars['filename'])) {
+        $fn = strtolower((string) $vars['filename']);
+        if ($fn === 'supporttickets.php') {
+            return true;
+        }
+        // WHMCS 8.x admin may route through index.php (rp / SPA-style)
+        if ($fn === 'index.php') {
+            $rp = isset($_GET['rp']) ? (string) $_GET['rp'] : '';
+            if ($rp !== '') {
+                $rpLower = strtolower($rp);
+                if (strpos($rpLower, 'support') !== false && strpos($rpLower, 'ticket') !== false
+                    && strpos($rpLower, 'viewticket') === false) {
+                    return true;
+                }
+                $decoded = @base64_decode($rp, true);
+                if ($decoded !== false && is_string($decoded)) {
+                    $dl = strtolower($decoded);
+                    if (strpos($dl, 'support') !== false && strpos($dl, 'ticket') !== false
+                        && strpos($dl, 'viewticket') === false) {
+                        return true;
+                    }
+                }
+            }
+        }
     }
 
     $script = strtolower(basename($_SERVER['SCRIPT_NAME'] ?? ''));
@@ -2102,14 +2134,15 @@ function sahdev_is_admin_support_tickets_list_page(): bool
  * Emit list insights HTML once per request (AdminSupportTicketPagePreTickets + AdminAreaFooterOutput).
  *
  * @param bool $skipUrlCheck true for AdminSupportTicketPagePreTickets (list-only hook)
+ * @param array|null $footerVars AdminAreaFooterOutput $vars (filename, etc.) when not skipping URL check
  */
-function sahdev_emit_ticket_list_insights_markup(bool $skipUrlCheck): string
+function sahdev_emit_ticket_list_insights_markup(bool $skipUrlCheck, ?array $footerVars = null): string
 {
     static $emitted = false;
     if ($emitted) {
         return '';
     }
-    if (!$skipUrlCheck && !sahdev_is_admin_support_tickets_list_page()) {
+    if (!$skipUrlCheck && !sahdev_is_admin_support_tickets_list_page($footerVars)) {
         return '';
     }
 
@@ -2123,20 +2156,20 @@ function sahdev_emit_ticket_list_insights_markup(bool $skipUrlCheck): string
 
 // Official ticket hook: admin support tickets listing only (developers.whmcs.com — Ticket hooks)
 add_hook('AdminSupportTicketPagePreTickets', 1, function () {
-    return sahdev_emit_ticket_list_insights_markup(true);
+    return sahdev_emit_ticket_list_insights_markup(true, null);
 });
 
 // Fallback: HTML before </body> (Output hooks) when filename/routing differs by install
 add_hook('AdminAreaFooterOutput', 1, function ($vars) {
-    unset($vars);
-
-    return sahdev_emit_ticket_list_insights_markup(false);
+    return sahdev_emit_ticket_list_insights_markup(false, is_array($vars) ? $vars : null);
 });
 
 /**
  * Render the CSS + JS block injected into the support tickets list page.
+ *
+ * @param string $ajaxUrlJs JSON-encoded string literal for the ajax endpoint (e.g. from json_encode)
  */
-function sahdev_render_ticket_list_insights(string $ajaxUrl): string
+function sahdev_render_ticket_list_insights(string $ajaxUrlJs): string
 {
     // language=HTML
     return <<<HTML
@@ -2252,7 +2285,14 @@ tr.sdv-row-low      td.sdv-insight-target { box-shadow: inset 4px 0 0 #198754 !i
 (function () {
     'use strict';
 
-    var AJAX_URL = '{$ajaxUrl}';
+    var AJAX_URL = (function () {
+        var raw = {$ajaxUrlJs};
+        try {
+            return new URL(raw, window.location.href).href;
+        } catch (e) {
+            return raw;
+        }
+    })();
 
     var URG_CLASS = {
         critical: 'sdv-urg-critical',
@@ -2275,9 +2315,17 @@ tr.sdv-row-low      td.sdv-insight-target { box-shadow: inset 4px 0 0 #198754 !i
             headers = tables[t].querySelectorAll('thead th, thead td, tbody tr:first-child th');
             for (h = 0; h < headers.length; h++) {
                 txt = (headers[h].textContent || '').replace(/\s+/g, ' ').trim();
-                if (/\bsubject\b/i.test(txt) && txt.length < 80) {
+                if (txt.length < 80 && (/\bsubject\b/i.test(txt) || /\bbetreff\b/i.test(txt) || /\bsujet\b/i.test(txt) || /\basunto\b/i.test(txt))) {
                     return tables[t];
                 }
+            }
+        }
+        for (t = 0; t < tables.length; t++) {
+            var firstRow = tables[t].querySelector('tbody tr');
+            if (!firstRow) continue;
+            var probe = firstRow.querySelector('a[href*="id="]');
+            if (probe && isSupportTicketsHref(resolveHref(probe))) {
+                return tables[t];
             }
         }
         return null;
@@ -2300,6 +2348,9 @@ tr.sdv-row-low      td.sdv-insight-target { box-shadow: inset 4px 0 0 #198754 !i
         try {
             var loc = window.location.href.toLowerCase();
             if (loc.indexOf('supportticket') !== -1 && /[?&]id=\d+/.test(h)) {
+                return true;
+            }
+            if (loc.indexOf('supportticket') !== -1 && (/[?&]id=\d+/.test(h) || /[?&]action=view/.test(h))) {
                 return true;
             }
         } catch (e) {}
@@ -2359,14 +2410,25 @@ tr.sdv-row-low      td.sdv-insight-target { box-shadow: inset 4px 0 0 #198754 !i
 
     function findSubjectCell(row, tidAttr, maskAttr) {
         var links = row.querySelectorAll('a[href]');
-        for (var i = 0; i < links.length; i++) {
+        var i, ref, td;
+        for (i = 0; i < links.length; i++) {
             if (!isSupportTicketsHref(resolveHref(links[i]))) continue;
-            var ref = extractTicketRefFromLink(links[i]);
+            ref = extractTicketRefFromLink(links[i]);
             if (!ref) continue;
-            if (tidAttr && ref.id && String(ref.id) === String(tidAttr)) return links[i].closest('td');
-            if (maskAttr && ref.mask && String(ref.mask) === String(maskAttr)) return links[i].closest('td');
+            if (tidAttr && ref.id && String(ref.id) === String(tidAttr)) {
+                td = links[i].closest('td');
+                if (td) return td;
+            }
+            if (maskAttr && ref.mask && String(ref.mask) === String(maskAttr)) {
+                td = links[i].closest('td');
+                if (td) return td;
+            }
         }
-        return null;
+        var tds = row.querySelectorAll('td');
+        if (tds.length >= 2) {
+            return tds[tds.length - 1];
+        }
+        return tds.length ? tds[0] : null;
     }
 
     function findRowsForNumericTicketId(nid, maskMap) {
