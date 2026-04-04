@@ -124,66 +124,71 @@ class WhmcsTicketTagHelper
         }
 
         $s = self::getSchema();
-        if (!$s) {
-            return $out;
+        if ($s) {
+            try {
+                $q = Capsule::table($s['linksTable'] . ' as tl')
+                    ->join($s['tagsTable'] . ' as tg', 'tl.' . $s['linkTagCol'], '=', 'tg.' . $s['tagIdCol'])
+                    ->whereIn('tl.' . $s['linkRelCol'], $ticketIds)
+                    ->orderBy('tg.' . $s['tagTextCol'], 'asc');
+
+                if (!empty($s['typeCol'])) {
+                    $q->whereIn('tl.' . $s['typeCol'], array_merge(self::REL_TYPE_VALUES, [1, 2]));
+                }
+
+                $rows = $q->get([
+                    'tl.' . $s['linkRelCol'] . ' as _rel',
+                    'tg.' . $s['tagTextCol'] . ' as tname',
+                ]);
+
+                foreach ($rows as $row) {
+                    $rid = (int) ($row->_rel ?? 0);
+                    $t   = trim((string) ($row->tname ?? ''));
+                    if ($rid < 1 || $t === '' || !isset($out[$rid])) {
+                        continue;
+                    }
+                    if (!in_array($t, $out[$rid], true)) {
+                        $out[$rid][] = $t;
+                    }
+                }
+
+                // If type filter hid rows (wrong enum), retry without type for tickets still empty
+                if (!empty($s['typeCol'])) {
+                    $still = [];
+                    foreach ($ticketIds as $tid) {
+                        if (empty($out[$tid])) {
+                            $still[] = $tid;
+                        }
+                    }
+                    if ($still !== []) {
+                        $q2 = Capsule::table($s['linksTable'] . ' as tl')
+                            ->join($s['tagsTable'] . ' as tg', 'tl.' . $s['linkTagCol'], '=', 'tg.' . $s['tagIdCol'])
+                            ->whereIn('tl.' . $s['linkRelCol'], $still)
+                            ->orderBy('tg.' . $s['tagTextCol'], 'asc');
+                        foreach ($q2->get([
+                            'tl.' . $s['linkRelCol'] . ' as _rel',
+                            'tg.' . $s['tagTextCol'] . ' as tname',
+                        ]) as $row) {
+                            $rid = (int) ($row->_rel ?? 0);
+                            $t   = trim((string) ($row->tname ?? ''));
+                            if ($rid < 1 || $t === '' || !isset($out[$rid])) {
+                                continue;
+                            }
+                            if (!in_array($t, $out[$rid], true)) {
+                                $out[$rid][] = $t;
+                            }
+                        }
+                    }
+                }
+            } catch (\Throwable $e) {
+                // tbltickettags pivot may still be readable
+            }
         }
 
-        try {
-            $q = Capsule::table($s['linksTable'] . ' as tl')
-                ->join($s['tagsTable'] . ' as tg', 'tl.' . $s['linkTagCol'], '=', 'tg.' . $s['tagIdCol'])
-                ->whereIn('tl.' . $s['linkRelCol'], $ticketIds)
-                ->orderBy('tg.' . $s['tagTextCol'], 'asc');
-
-            if (!empty($s['typeCol'])) {
-                $q->whereIn('tl.' . $s['typeCol'], array_merge(self::REL_TYPE_VALUES, [1, 2]));
+        if (self::resolveTicketTagPivotMeta() !== null) {
+            try {
+                self::fillTagsFromPivotRead($ticketIds, $out);
+            } catch (\Throwable $e) {
             }
-
-            $rows = $q->get([
-                'tl.' . $s['linkRelCol'] . ' as _rel',
-                'tg.' . $s['tagTextCol'] . ' as tname',
-            ]);
-
-            foreach ($rows as $row) {
-                $rid = (int) ($row->_rel ?? 0);
-                $t   = trim((string) ($row->tname ?? ''));
-                if ($rid < 1 || $t === '' || !isset($out[$rid])) {
-                    continue;
-                }
-                if (!in_array($t, $out[$rid], true)) {
-                    $out[$rid][] = $t;
-                }
-            }
-
-            // If type filter hid rows (wrong enum), retry without type for tickets still empty
-            if (!empty($s['typeCol'])) {
-                $still = [];
-                foreach ($ticketIds as $tid) {
-                    if (empty($out[$tid])) {
-                        $still[] = $tid;
-                    }
-                }
-                if ($still !== []) {
-                    $q2 = Capsule::table($s['linksTable'] . ' as tl')
-                        ->join($s['tagsTable'] . ' as tg', 'tl.' . $s['linkTagCol'], '=', 'tg.' . $s['tagIdCol'])
-                        ->whereIn('tl.' . $s['linkRelCol'], $still)
-                        ->orderBy('tg.' . $s['tagTextCol'], 'asc');
-                    foreach ($q2->get([
-                        'tl.' . $s['linkRelCol'] . ' as _rel',
-                        'tg.' . $s['tagTextCol'] . ' as tname',
-                    ]) as $row) {
-                        $rid = (int) ($row->_rel ?? 0);
-                        $t   = trim((string) ($row->tname ?? ''));
-                        if ($rid < 1 || $t === '' || !isset($out[$rid])) {
-                            continue;
-                        }
-                        if (!in_array($t, $out[$rid], true)) {
-                            $out[$rid][] = $t;
-                        }
-                    }
-                }
-            }
-        } catch (\Throwable $e) {
-            return array_fill_keys($ticketIds, []);
         }
 
         return $out;
@@ -223,6 +228,11 @@ class WhmcsTicketTagHelper
         try {
             self::tryTicketsTableTagColumns($ticketId, $normalizedTags);
         } catch (\Throwable $e) {
+        }
+
+        // Prefer tbltickettags when present; avoid also inserting tbltaglinks rows (duplicate tags in UI).
+        if (self::resolveTicketTagPivotMeta() !== null) {
+            return;
         }
 
         $s = self::getSchema();
@@ -281,18 +291,15 @@ class WhmcsTicketTagHelper
     }
 
     /**
-     * Many WHMCS builds use a simple ticket_id ↔ tag_id pivot (Tag Cloud sidebar).
+     * Ticket ↔ tag pivot used by WHMCS Tag Cloud (`tbltickettags` on many installs) plus `tbltags` for label text.
      *
-     * @param string[] $tagNames
+     * @return array{pivot:string,ticketCol:string,tagCol:string,cols:string[],meta:array{tagsTable:string,tagTextCol:string,tagIdCol:string}}|null
      */
-    private static function tryPivotTicketTagTable(int $ticketId, array $tagNames): void
+    private static function resolveTicketTagPivotMeta(): ?array
     {
-        if ($tagNames === []) {
-            return;
-        }
         $meta = self::resolveStandardTagsTable();
         if (!$meta) {
-            return;
+            return null;
         }
 
         foreach (['tbltickettags', 'tbl_ticket_tags', 'tbl_ticket_tag', 'tblticket_tags'] as $pivot) {
@@ -316,43 +323,113 @@ class WhmcsTicketTagHelper
                 continue;
             }
 
-            $aiIds = Capsule::table($meta['tagsTable'])
-                ->where($meta['tagTextCol'], 'like', self::AI_TAG_PREFIX . '%')
-                ->pluck($meta['tagIdCol'])
-                ->toArray();
-            if (!empty($aiIds)) {
-                Capsule::table($pivot)
-                    ->where($ticketCol, $ticketId)
-                    ->whereIn($tagCol, $aiIds)
-                    ->delete();
-            }
+            return [
+                'pivot'     => $pivot,
+                'ticketCol' => $ticketCol,
+                'tagCol'    => $tagCol,
+                'cols'      => $cols,
+                'meta'      => $meta,
+            ];
+        }
 
-            foreach ($tagNames as $name) {
-                $tagId = self::getOrCreateTagIdDirect($meta, $name);
-                if ($tagId === null) {
-                    continue;
-                }
-                $exists = Capsule::table($pivot)
-                    ->where($ticketCol, $ticketId)
-                    ->where($tagCol, $tagId)
-                    ->exists();
-                if ($exists) {
-                    continue;
-                }
-                $row = [$ticketCol => $ticketId, $tagCol => $tagId];
-                if (in_array('created_at', $cols, true)) {
-                    $row['created_at'] = date('Y-m-d H:i:s');
-                }
-                if (in_array('updated_at', $cols, true)) {
-                    $row['updated_at'] = date('Y-m-d H:i:s');
-                }
-                try {
-                    Capsule::table($pivot)->insert($row);
-                } catch (\Throwable $e) {
-                    // ignore duplicate / constraint
-                }
-            }
+        return null;
+    }
+
+    /**
+     * Many WHMCS builds use a simple ticket_id ↔ tag_id pivot (Tag Cloud sidebar).
+     *
+     * @param string[] $tagNames
+     */
+    private static function tryPivotTicketTagTable(int $ticketId, array $tagNames): void
+    {
+        if ($tagNames === []) {
             return;
+        }
+        $pm = self::resolveTicketTagPivotMeta();
+        if (!$pm) {
+            return;
+        }
+
+        $pivot     = $pm['pivot'];
+        $ticketCol = $pm['ticketCol'];
+        $tagCol    = $pm['tagCol'];
+        $cols      = $pm['cols'];
+        $meta      = $pm['meta'];
+
+        $aiIds = Capsule::table($meta['tagsTable'])
+            ->where($meta['tagTextCol'], 'like', self::AI_TAG_PREFIX . '%')
+            ->pluck($meta['tagIdCol'])
+            ->toArray();
+        if (!empty($aiIds)) {
+            Capsule::table($pivot)
+                ->where($ticketCol, $ticketId)
+                ->whereIn($tagCol, $aiIds)
+                ->delete();
+        }
+
+        foreach ($tagNames as $name) {
+            $tagId = self::getOrCreateTagIdDirect($meta, $name);
+            if ($tagId === null) {
+                continue;
+            }
+            $exists = Capsule::table($pivot)
+                ->where($ticketCol, $ticketId)
+                ->where($tagCol, $tagId)
+                ->exists();
+            if ($exists) {
+                continue;
+            }
+            $row = [$ticketCol => $ticketId, $tagCol => $tagId];
+            if (in_array('created_at', $cols, true)) {
+                $row['created_at'] = date('Y-m-d H:i:s');
+            }
+            if (in_array('updated_at', $cols, true)) {
+                $row['updated_at'] = date('Y-m-d H:i:s');
+            }
+            try {
+                Capsule::table($pivot)->insert($row);
+            } catch (\Throwable $e) {
+                // ignore duplicate / constraint
+            }
+        }
+    }
+
+    /**
+     * When `tbltaglinks` is absent, WHMCS may still store tags via `tbltickettags` + `tbltags`.
+     *
+     * @param int[] $ticketIds
+     * @param array<int, string[]> $out
+     */
+    private static function fillTagsFromPivotRead(array $ticketIds, array &$out): void
+    {
+        $pm = self::resolveTicketTagPivotMeta();
+        if (!$pm) {
+            return;
+        }
+
+        $m = $pm['meta'];
+        try {
+            $rows = Capsule::table($pm['pivot'] . ' as pt')
+                ->join($m['tagsTable'] . ' as tg', 'pt.' . $pm['tagCol'], '=', 'tg.' . $m['tagIdCol'])
+                ->whereIn('pt.' . $pm['ticketCol'], $ticketIds)
+                ->orderBy('tg.' . $m['tagTextCol'], 'asc')
+                ->get([
+                    'pt.' . $pm['ticketCol'] . ' as _rel',
+                    'tg.' . $m['tagTextCol'] . ' as tname',
+                ]);
+        } catch (\Throwable $e) {
+            return;
+        }
+
+        foreach ($rows as $row) {
+            $rid = (int) ($row->_rel ?? 0);
+            $t   = trim((string) ($row->tname ?? ''));
+            if ($rid < 1 || $t === '' || !isset($out[$rid])) {
+                continue;
+            }
+            if (!in_array($t, $out[$rid], true)) {
+                $out[$rid][] = $t;
+            }
         }
     }
 
