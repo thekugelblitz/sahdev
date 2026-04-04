@@ -245,17 +245,17 @@ class AdminController
             ]);
         }
 
-        // 9. Ensure cron_insights prompt template exists (migration for existing installs)
+        // 9. Ensure cron insights prompt templates exist (migration for existing installs)
         try {
-            $exists = Capsule::table('tblsahdev_prompt_templates')
-                ->where('prompt_key', 'cron_insights')
-                ->exists();
-            if (!$exists) {
-                $defs = $this->getDefaultPromptDefinitions();
-                if (isset($defs['cron_insights'])) {
-                    $def = $defs['cron_insights'];
+            $defs = $this->getDefaultPromptDefinitions();
+            foreach (['cron_insights_system', 'cron_insights'] as $pkey) {
+                $exists = Capsule::table('tblsahdev_prompt_templates')
+                    ->where('prompt_key', $pkey)
+                    ->exists();
+                if (!$exists && isset($defs[$pkey])) {
+                    $def = $defs[$pkey];
                     Capsule::table('tblsahdev_prompt_templates')->insert([
-                        'prompt_key'      => 'cron_insights',
+                        'prompt_key'      => $pkey,
                         'label'           => $def['label'],
                         'description'     => $def['description'],
                         'default_content' => $def['content'],
@@ -363,10 +363,15 @@ class AdminController
                 'description' => 'Prompt used when converting a specific reply into a reusable, generalized canned response template.',
                 'content'     => "Rewrite the following support ticket reply into a reusable, generalized canned response template.\n- Remove any specific client names, domain names, IP addresses, or highly specific dates.\n- Replace removed specifics with general placeholders like [Client Name], [Domain], [IP Address].\n- Make the tone professional and helpful.\n- DO NOT include any JSON wrapping or preamble, just the raw text template.\n\n=== DRAFT TO GENERALIZE ===\n{{DRAFT}}",
             ],
+            'cron_insights_system' => [
+                'label'       => 'Ticket Insights — System (AI persona)',
+                'description' => 'System instruction for the cron / batch ticket insights job. Shapes tone and depth of the JSON analysis. Editable like other prompts; paired with “Ticket Insights (Cron) — User prompt”.',
+                'content'     => "You are a senior support lead triaging hosting and billing tickets for an internal team. Your job is to read the conversation and output one JSON object only — no markdown fences, no preamble, no explanation outside JSON.\n\nHow to write TICKET_SUMMARY:\n- Sound like a real handoff from an experienced tech: concrete, plain language, specific facts (product, error text, deadlines, who is waiting on what).\n- Avoid generic AI phrasing: do not use filler such as \"It is important to note\", \"The client is seeking assistance\", \"It appears that\", \"Overall, the conversation indicates\", or hollow signposting.\n- Prefer short, information-dense sentences. If something is unclear, say what is unknown and what would confirm it — do not invent details.\n\nAll JSON keys required by the user message must be present and valid.",
+            ],
             'cron_insights' => [
-                'label'       => 'Ticket Insights (Cron Analysis) Prompt',
-                'description' => 'User-turn prompt used by the background cron job to analyze Awaiting Reply tickets. Returns structured JSON with sentiment score, urgency, client tone, and a summary. Supports placeholders: {{CLIENT_NAME}}, {{DEPARTMENT}}, {{SUBJECT}}, {{MESSAGES}}.',
-                'content'     => "=== TASK ===\nAnalyze the support ticket conversation below and output ONLY a valid JSON object exactly matching this schema. No extra text.\n\n=== SCHEMA ===\n{\n  \"SENTIMENT_SCORE\": <integer 1-10, where 1=very satisfied/calm and 10=extremely frustrated/angry>,\n  \"SENTIMENT_LABEL\": <\"Satisfied\" | \"Neutral\" | \"Frustrated\" | \"Angry\">,\n  \"URGENCY\": <\"Low\" | \"Medium\" | \"High\" | \"Critical\">,\n  \"CLIENT_TONE\": <one of: \"Polite\", \"Neutral\", \"Impatient\", \"Demanding\", \"Angry\", \"Threatening\", \"Confused\", \"Appreciative\">,\n  \"TICKET_SUMMARY\": <string: 3-6 sentence plain-text summary of the entire ticket conversation, what the issue is, current status, and what is needed>\n}\n\n=== URGENCY GUIDE ===\nCritical = service is completely down or data is at risk\nHigh = major disruption, client explicitly escalating or threatening to leave\nMedium = functional issue affecting daily operations\nLow = informational question or minor inconvenience\n\n=== TICKET DATA ===\nClient: {{CLIENT_NAME}}\nDepartment: {{DEPARTMENT}}\nSubject: {{SUBJECT}}\n\n=== CONVERSATION ===\n{{MESSAGES}}",
+                'label'       => 'Ticket Insights (Cron) — User prompt',
+                'description' => 'User-turn prompt for the background cron that analyzes tickets (sentiment, urgency, tone, TICKET_SUMMARY). Placeholders: {{CLIENT_NAME}}, {{DEPARTMENT}}, {{SUBJECT}}, {{MESSAGES}}. Pair with “Ticket Insights — System”.',
+                'content'     => "=== TASK ===\nHelp a technician understand this ticket in a few seconds. Read the full thread and output ONLY a valid JSON object matching the schema below. No extra text, no markdown code fences.\n\n=== WRITING RULES FOR TICKET_SUMMARY ===\n- Internal handoff only — not a client-facing reply.\n- Lead with what is wrong or blocked, then the key facts (service, error snippet if any, billing amount if relevant, deadlines).\n- Use 2–4 tight sentences for typical tickets; 1–2 if trivial. Be specific; avoid vague restatements of the subject line.\n- Do not use corporate or \"AI report\" tone. No bullet lists inside the JSON string unless the ticket itself is a list of distinct items.\n\n=== SCHEMA ===\n{\n  \"SENTIMENT_SCORE\": <integer 1-10: 1=calm/satisfied, 10=very upset>,\n  \"SENTIMENT_LABEL\": <\"Satisfied\" | \"Neutral\" | \"Frustrated\" | \"Angry\">,\n  \"URGENCY\": <\"Low\" | \"Medium\" | \"High\" | \"Critical\">,\n  \"CLIENT_TONE\": <one of: \"Polite\", \"Neutral\", \"Impatient\", \"Demanding\", \"Angry\", \"Threatening\", \"Confused\", \"Appreciative\">,\n  \"TICKET_SUMMARY\": <string: follow WRITING RULES above>\n}\n\n=== URGENCY GUIDE ===\nCritical = widespread outage, data at risk, or money-critical failure\nHigh = major disruption, clear escalation, repeated failed attempts\nMedium = everyday issue affecting work\nLow = how-to, cosmetic, or minor inconvenience\n\n=== TICKET DATA ===\nClient: {{CLIENT_NAME}}\nDepartment: {{DEPARTMENT}}\nSubject: {{SUBJECT}}\n\n=== CONVERSATION ===\n{{MESSAGES}}",
             ],
         ];
     }
@@ -2958,7 +2963,7 @@ class AdminController
                     The <em>Re-analyze Interval</em> acts as a <strong>minimum cooldown</strong>: even if a new reply exists, the same ticket won't be re-sent
                     more than once per <strong><?php echo (int)$cronInterval; ?> hour(s)</strong> (prevents rapid re-analysis on busy tickets).
                     Up to <strong><?php echo (int)$cronMax; ?></strong> tickets are processed per cron run.
-                    <br>The analysis prompt can be customized in the <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink'] . '&action=prompt_manager'); ?>">Prompt Manager</a> tab (key: <code>cron_insights</code>).
+                    <br>Edit prompts in <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink'] . '&action=prompt_manager'); ?>">Prompt Manager</a>: <code>cron_insights_system</code> (persona) and <code>cron_insights</code> (user prompt + JSON schema).
                 </div>
             </div>
 

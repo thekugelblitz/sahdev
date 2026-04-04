@@ -24,8 +24,8 @@ class CronProcessor
     private $settings;
     private $provider     = null;
     private $fallback     = null;
-    private $cronPrompt   = null;
-    private $systemPrompt = null;
+    private $cronPrompt        = null;
+    private $cronSystemPrompt  = null;
 
     public function __construct()
     {
@@ -315,12 +315,15 @@ class CronProcessor
             throw new \Exception('Sahdev settings not found. Please activate the module.');
         }
 
-        $tpl = Capsule::table('tblsahdev_prompt_templates')
+        $tplUser = Capsule::table('tblsahdev_prompt_templates')
             ->where('prompt_key', 'cron_insights')
             ->first();
+        $tplSys  = Capsule::table('tblsahdev_prompt_templates')
+            ->where('prompt_key', 'cron_insights_system')
+            ->first();
 
-        $this->cronPrompt   = $tpl ? $tpl->content : $this->defaultCronUserPrompt();
-        $this->systemPrompt = $this->defaultCronSystemPrompt();
+        $this->cronPrompt       = $tplUser ? $tplUser->content : $this->defaultCronUserPrompt();
+        $this->cronSystemPrompt = $tplSys ? $tplSys->content : $this->defaultCronSystemPrompt();
 
         $primaryId   = (int) ($this->settings['primary_provider_id'] ?? 1);
         $primaryData = Capsule::table('tblsahdev_providers')->where('id', $primaryId)->first();
@@ -381,10 +384,10 @@ class CronProcessor
     private function buildProviderSettings(): array
     {
         return array_merge($this->settings, [
-            'system_prompt'          => $this->systemPrompt,
+            'system_prompt'          => $this->cronSystemPrompt,
             'user_prompt_template'   => $this->cronPrompt,
-            'temperature'            => 0.2,
-            'max_tokens'             => 1024,
+            'temperature'            => 0.38,
+            'max_tokens'             => 1408,
             'quality_scorer_enabled' => 0,
         ]);
     }
@@ -530,29 +533,35 @@ class CronProcessor
 
     private function defaultCronSystemPrompt(): string
     {
-        return "You are a ticket triage specialist. Analyze support ticket conversations and output ONLY a valid JSON object. No extra text, no markdown fences, no explanation.";
+        return "You are a senior support lead triaging hosting and billing tickets for an internal team. Your job is to read the conversation and output one JSON object only — no markdown fences, no preamble, no explanation outside JSON.\n\nHow to write TICKET_SUMMARY:\n- Sound like a real handoff from an experienced tech: concrete, plain language, specific facts (product, error text, deadlines, who is waiting on what).\n- Avoid generic AI phrasing: do not use filler such as \"It is important to note\", \"The client is seeking assistance\", \"It appears that\", \"Overall, the conversation indicates\", or hollow signposting.\n- Prefer short, information-dense sentences. If something is unclear, say what is unknown and what would confirm it — do not invent details.\n\nAll JSON keys required by the user message must be present and valid.";
     }
 
     private function defaultCronUserPrompt(): string
     {
         return <<<'PROMPT'
 === TASK ===
-Analyze the support ticket conversation below and output ONLY a valid JSON object exactly matching this schema. No extra text.
+Help a technician understand this ticket in a few seconds. Read the full thread and output ONLY a valid JSON object matching the schema below. No extra text, no markdown code fences.
+
+=== WRITING RULES FOR TICKET_SUMMARY ===
+- Internal handoff only — not a client-facing reply.
+- Lead with what is wrong or blocked, then the key facts (service, error snippet if any, billing amount if relevant, deadlines).
+- Use 2–4 tight sentences for typical tickets; 1–2 if trivial. Be specific; avoid vague restatements of the subject line.
+- Do not use corporate or "AI report" tone. No bullet lists inside the JSON string unless the ticket itself is a list of distinct items.
 
 === SCHEMA ===
 {
-  "SENTIMENT_SCORE": <integer 1-10, where 1=very satisfied/calm and 10=extremely frustrated/angry>,
+  "SENTIMENT_SCORE": <integer 1-10: 1=calm/satisfied, 10=very upset>,
   "SENTIMENT_LABEL": <"Satisfied" | "Neutral" | "Frustrated" | "Angry">,
   "URGENCY": <"Low" | "Medium" | "High" | "Critical">,
   "CLIENT_TONE": <one of: "Polite", "Neutral", "Impatient", "Demanding", "Angry", "Threatening", "Confused", "Appreciative">,
-  "TICKET_SUMMARY": <string: 3-6 sentence plain-text summary of the entire ticket conversation, what the issue is, current status, and what is needed>
+  "TICKET_SUMMARY": <string: follow WRITING RULES above>
 }
 
 === URGENCY GUIDE ===
-Critical = service is completely down or data is at risk
-High = major disruption, client explicitly escalating or threatening to leave
-Medium = functional issue affecting daily operations
-Low = informational question or minor inconvenience
+Critical = widespread outage, data at risk, or money-critical failure
+High = major disruption, clear escalation, repeated failed attempts
+Medium = everyday issue affecting work
+Low = how-to, cosmetic, or minor inconvenience
 
 === TICKET DATA ===
 Client: {{CLIENT_NAME}}

@@ -2245,10 +2245,44 @@ tr.sdv-row-critical td.sdv-insight-target { box-shadow: inset 4px 0 0 #dc3545 !i
 tr.sdv-row-high     td.sdv-insight-target { box-shadow: inset 4px 0 0 #fd7e14 !important; }
 tr.sdv-row-medium   td.sdv-insight-target { box-shadow: inset 4px 0 0 #ffc107 !important; }
 tr.sdv-row-low      td.sdv-insight-target { box-shadow: inset 4px 0 0 #198754 !important; }
-.sdv-insight-panel--compact { border: 0; box-shadow: none; background: transparent; margin-top: 6px; }
+.sdv-insight-panel--compact { border: 0; box-shadow: none; background: transparent; margin-top: 4px; }
 .sdv-insight-panel--compact .sdv-insight-panel-hd { display: none; }
-.sdv-insight-panel--compact .sdv-insight-panel-bd { padding: 4px 0 0; border: 0; background: transparent; }
-.sdv-insight-panel--compact .sdv-pill { border-radius: 2px; font-size: 9px; padding: 2px 6px; letter-spacing: 0; }
+.sdv-insight-panel--compact .sdv-insight-panel-bd { padding: 2px 0 0; border: 0; background: transparent; }
+.sdv-insight-panel--compact .sdv-pill { border-radius: 2px; font-size: 9px; padding: 2px 5px; letter-spacing: 0; }
+.sdv-insight-meta {
+    margin-top: 4px;
+    font-size: 10px;
+    line-height: 1.35;
+    color: #6c757d;
+}
+.sdv-insight-summary-toggle {
+    background: none;
+    border: none;
+    color: #0d6efd;
+    padding: 0;
+    margin: 0;
+    font-size: 10px;
+    cursor: pointer;
+    text-decoration: underline;
+    vertical-align: baseline;
+}
+.sdv-insight-summary-toggle:hover { color: #0a58ca; }
+.sdv-insight-summary-body {
+    display: none;
+    margin-top: 6px;
+    padding: 6px 8px;
+    font-size: 11px;
+    line-height: 1.45;
+    color: #343a40;
+    background: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 4px;
+    max-height: 220px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+.sdv-insight-summary-body.sdv-open { display: block; }
 /* Tooltip */
 .sdv-tooltip-wrap { position: relative; display: inline-flex; }
 .sdv-tooltip-box {
@@ -2459,11 +2493,12 @@ tr.sdv-row-low      td.sdv-insight-target { box-shadow: inset 4px 0 0 #198754 !i
         var toneIcon  = TONE_ICON[tone] || '';
         var adminRep  = parseInt(ins.admin_reply_count, 10) || 0;
         var lastAdmin = ins.last_admin_name || '';
-        var summary   = (ins.ticket_summary || '').substring(0, 320);
+        var fullSummary = (ins.ticket_summary || '').trim();
+        var tipPreview  = fullSummary.length > 260 ? fullSummary.substring(0, 260) + '…' : fullSummary;
         var analyzedAt = ins.analyzed_at || '';
 
         var tipLines = [];
-        if (summary) tipLines.push(summary);
+        if (tipPreview) tipLines.push(tipPreview);
         if (adminRep > 0) {
             var adminLine = 'Admin replied ' + adminRep + ' time' + (adminRep > 1 ? 's' : '');
             if (lastAdmin) adminLine += ' · Last: ' + lastAdmin;
@@ -2520,17 +2555,32 @@ tr.sdv-row-low      td.sdv-insight-target { box-shadow: inset 4px 0 0 #198754 !i
 
         bd.appendChild(bar);
 
-        if (summary) {
-            var sum = document.createElement('div');
-            sum.className = 'sdv-summary-line';
-            sum.textContent = summary + (ins.ticket_summary && ins.ticket_summary.length > 320 ? '…' : '');
-            if (analyzedAt) {
-                var mu = document.createElement('div');
-                mu.className = 'sdv-muted';
-                mu.textContent = 'Analyzed ' + analyzedAt;
-                sum.appendChild(mu);
-            }
-            bd.appendChild(sum);
+        var meta = document.createElement('div');
+        meta.className = 'sdv-insight-meta';
+        if (analyzedAt) {
+            meta.appendChild(document.createTextNode('Analyzed ' + analyzedAt));
+        }
+        if (fullSummary) {
+            if (analyzedAt) meta.appendChild(document.createTextNode(' · '));
+            var toggle = document.createElement('button');
+            toggle.type = 'button';
+            toggle.className = 'sdv-insight-summary-toggle';
+            toggle.setAttribute('aria-expanded', 'false');
+            toggle.textContent = 'Show summary';
+            var sumBody = document.createElement('div');
+            sumBody.className = 'sdv-insight-summary-body';
+            sumBody.textContent = fullSummary.length > 12000 ? fullSummary.substring(0, 12000) + '…' : fullSummary;
+            toggle.addEventListener('click', function (ev) {
+                ev.preventDefault();
+                var open = sumBody.classList.toggle('sdv-open');
+                toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+                toggle.textContent = open ? 'Hide summary' : 'Show summary';
+            });
+            meta.appendChild(toggle);
+            bd.appendChild(meta);
+            bd.appendChild(sumBody);
+        } else if (analyzedAt) {
+            bd.appendChild(meta);
         }
 
         panel.appendChild(bd);
@@ -2539,7 +2589,7 @@ tr.sdv-row-low      td.sdv-insight-target { box-shadow: inset 4px 0 0 #198754 !i
         var td = findSubjectCell(row, row.getAttribute('data-sdv-tid'), row.getAttribute('data-sdv-tmask'));
         if (td) {
             td.classList.add('sdv-insight-target');
-            td.style.paddingBottom = '6px';
+            td.style.paddingBottom = '4px';
             td.style.verticalAlign = 'top';
             td.appendChild(panel);
         }
