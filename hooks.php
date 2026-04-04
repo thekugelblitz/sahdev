@@ -137,7 +137,30 @@ function sahdev_inject_ticket_panel($vars)
     
     $jsIntentLabelsJson = json_encode($jsIntentLabels);
 
+    $whmcsTagsBarHtml = '';
+    require_once __DIR__ . '/lib/WhmcsTicketTagHelper.php';
+    try {
+        $whmcsTagNames = \Sahdev\Lib\WhmcsTicketTagHelper::getTagsForTicket($ticketId);
+        if (!empty($whmcsTagNames)) {
+            $chips = '';
+            foreach ($whmcsTagNames as $tg) {
+                $isAi = (strpos($tg, \Sahdev\Lib\WhmcsTicketTagHelper::AI_TAG_PREFIX) === 0);
+                $cls = $isAi ? 'label-info' : 'label-default';
+                $chips .= '<span class="label ' . $cls . '" style="display:inline-block;margin:2px 4px 2px 0;padding:5px 9px;font-size:12px;">'
+                    . htmlspecialchars($tg, ENT_QUOTES, 'UTF-8') . '</span>';
+            }
+            $whmcsTagsBarHtml = '<div class="sdv-whmcs-tags-bar" style="margin-top:12px;margin-bottom:0;padding:10px 12px;background:#f8f9fa;border:1px solid #dee2e6;border-radius:6px;">'
+                . '<span style="font-weight:600;color:#495057;margin-right:8px;"><i class="fas fa-tags"></i> Tags</span>'
+                . '<span style="vertical-align:middle;">' . $chips . '</span>'
+                . '<span class="text-muted" style="font-size:11px;margin-left:8px;">(ai-* = Sahdev cron)</span>'
+                . '</div>';
+        }
+    } catch (\Throwable $e) {
+        $whmcsTagsBarHtml = '';
+    }
+
     $htmlPanel = <<<HTML
+{$whmcsTagsBarHtml}
 <div class="panel panel-info" id="sahdev-ai-panel" style="margin-top: 20px; border-color: #0d6efd;">
     <div class="panel-heading" style="background-color: #0d6efd; color: white; display: flex; justify-content: space-between; align-items: center; cursor: pointer;" onclick="$('#sahdev-ai-body').slideToggle();">
         <h3 class="panel-title"><i class="fas fa-robot"></i> Sahdev AI Ticket Intelligence</h3>

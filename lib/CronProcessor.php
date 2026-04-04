@@ -6,6 +6,7 @@ use WHMCS\Database\Capsule;
 use Carbon\Carbon;
 
 require_once __DIR__ . '/TaskProviderResolver.php';
+require_once __DIR__ . '/WhmcsTicketTagHelper.php';
 
 /**
  * CronProcessor
@@ -262,6 +263,16 @@ class CronProcessor
         } catch (\Throwable $e) {
             // Best-effort only
         }
+
+        // WHMCS Tag Cloud: replace ai-* tags from last run with fresh AI tags (when enabled)
+        if (!empty($this->settings['auto_tagging'])) {
+            try {
+                $tagList = WhmcsTicketTagHelper::normalizeTagList($insights['TAGS'] ?? []);
+                WhmcsTicketTagHelper::syncSahdevAiTags($ticketId, $tagList);
+            } catch (\Throwable $e) {
+                // Never break cron
+            }
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -483,6 +494,9 @@ class CronProcessor
     private function parseInsights(array $rawResponse): array
     {
         if (!empty($rawResponse['SENTIMENT_SCORE']) || isset($rawResponse['SENTIMENT_LABEL'])) {
+            if (!isset($rawResponse['TAGS'])) {
+                $rawResponse['TAGS'] = [];
+            }
             return $rawResponse;
         }
 
@@ -496,6 +510,9 @@ class CronProcessor
         $decoded = json_decode(trim($text), true);
 
         if (is_array($decoded) && isset($decoded['SENTIMENT_SCORE'])) {
+            if (!isset($decoded['TAGS'])) {
+                $decoded['TAGS'] = [];
+            }
             return $decoded;
         }
 
@@ -505,6 +522,7 @@ class CronProcessor
             'URGENCY'          => 'Medium',
             'CLIENT_TONE'      => 'Neutral',
             'TICKET_SUMMARY'   => 'Analysis could not be parsed from AI response.',
+            'TAGS'             => [],
         ];
     }
 
@@ -556,7 +574,8 @@ Help a technician understand this ticket in a few seconds. Read the full thread 
   "SENTIMENT_LABEL": <"Satisfied" | "Neutral" | "Frustrated" | "Angry">,
   "URGENCY": <"Low" | "Medium" | "High" | "Critical">,
   "CLIENT_TONE": <one of: "Polite", "Neutral", "Impatient", "Demanding", "Angry", "Threatening", "Confused", "Appreciative">,
-  "TICKET_SUMMARY": <string: follow WRITING RULES above>
+  "TICKET_SUMMARY": <string: follow WRITING RULES above>,
+  "TAGS": <JSON array of 2-6 short topic slugs for WHMCS Tag Cloud; each must start with "ai-" then lowercase letters, digits, or hyphens only, e.g. "ai-billing", "ai-ssl", "ai-dns", "ai-outage", "ai-email">
 }
 
 === URGENCY GUIDE ===

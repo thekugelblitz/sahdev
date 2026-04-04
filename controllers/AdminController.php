@@ -374,7 +374,7 @@ class AdminController
             'cron_insights' => [
                 'label'       => 'Ticket Insights (Cron) — User prompt',
                 'description' => 'User-turn prompt for the background cron that analyzes tickets (sentiment, urgency, tone, TICKET_SUMMARY). Placeholders: {{CLIENT_NAME}}, {{DEPARTMENT}}, {{SUBJECT}}, {{MESSAGES}}. Pair with “Ticket Insights — System”.',
-                'content'     => "=== TASK ===\nHelp a technician understand this ticket in a few seconds. Read the full thread and output ONLY a valid JSON object matching the schema below. No extra text, no markdown code fences.\n\n=== WRITING RULES FOR TICKET_SUMMARY ===\n- Internal handoff only — not a client-facing reply.\n- Lead with what is wrong or blocked, then the key facts (service, error snippet if any, billing amount if relevant, deadlines).\n- Use 2–4 tight sentences for typical tickets; 1–2 if trivial. Be specific; avoid vague restatements of the subject line.\n- Do not use corporate or \"AI report\" tone. No bullet lists inside the JSON string unless the ticket itself is a list of distinct items.\n\n=== SCHEMA ===\n{\n  \"SENTIMENT_SCORE\": <integer 1-10: 1=calm/satisfied, 10=very upset>,\n  \"SENTIMENT_LABEL\": <\"Satisfied\" | \"Neutral\" | \"Frustrated\" | \"Angry\">,\n  \"URGENCY\": <\"Low\" | \"Medium\" | \"High\" | \"Critical\">,\n  \"CLIENT_TONE\": <one of: \"Polite\", \"Neutral\", \"Impatient\", \"Demanding\", \"Angry\", \"Threatening\", \"Confused\", \"Appreciative\">,\n  \"TICKET_SUMMARY\": <string: follow WRITING RULES above>\n}\n\n=== URGENCY GUIDE ===\nCritical = widespread outage, data at risk, or money-critical failure\nHigh = major disruption, clear escalation, repeated failed attempts\nMedium = everyday issue affecting work\nLow = how-to, cosmetic, or minor inconvenience\n\n=== TICKET DATA ===\nClient: {{CLIENT_NAME}}\nDepartment: {{DEPARTMENT}}\nSubject: {{SUBJECT}}\n\n=== CONVERSATION ===\n{{MESSAGES}}",
+                'content'     => "=== TASK ===\nHelp a technician understand this ticket in a few seconds. Read the full thread and output ONLY a valid JSON object matching the schema below. No extra text, no markdown code fences.\n\n=== WRITING RULES FOR TICKET_SUMMARY ===\n- Internal handoff only — not a client-facing reply.\n- Lead with what is wrong or blocked, then the key facts (service, error snippet if any, billing amount if relevant, deadlines).\n- Use 2–4 tight sentences for typical tickets; 1–2 if trivial. Be specific; avoid vague restatements of the subject line.\n- Do not use corporate or \"AI report\" tone. No bullet lists inside the JSON string unless the ticket itself is a list of distinct items.\n\n=== SCHEMA ===\n{\n  \"SENTIMENT_SCORE\": <integer 1-10: 1=calm/satisfied, 10=very upset>,\n  \"SENTIMENT_LABEL\": <\"Satisfied\" | \"Neutral\" | \"Frustrated\" | \"Angry\">,\n  \"URGENCY\": <\"Low\" | \"Medium\" | \"High\" | \"Critical\">,\n  \"CLIENT_TONE\": <one of: \"Polite\", \"Neutral\", \"Impatient\", \"Demanding\", \"Angry\", \"Threatening\", \"Confused\", \"Appreciative\">,\n  \"TICKET_SUMMARY\": <string: follow WRITING RULES above>,\n  \"TAGS\": <JSON array of 2-6 topic slugs for WHMCS Tag Cloud; each element must start with ai- then use only lowercase letters, digits, or hyphens (examples: ai-billing, ai-ssl, ai-dns, ai-outage, ai-email)>\n}\n\n=== URGENCY GUIDE ===\nCritical = widespread outage, data at risk, or money-critical failure\nHigh = major disruption, clear escalation, repeated failed attempts\nMedium = everyday issue affecting work\nLow = how-to, cosmetic, or minor inconvenience\n\n=== TICKET DATA ===\nClient: {{CLIENT_NAME}}\nDepartment: {{DEPARTMENT}}\nSubject: {{SUBJECT}}\n\n=== CONVERSATION ===\n{{MESSAGES}}",
             ],
         ];
     }
@@ -539,6 +539,15 @@ class AdminController
             });
         }
 
+        // Inline migration: ensure auto_tagging column exists (WHMCS Tag Cloud from cron insights)
+        try {
+            Capsule::table('tblsahdev_settings')->select('auto_tagging')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                $table->boolean('auto_tagging')->default(0);
+            });
+        }
+
         // Inline migration: ensure custom_attachments_dir column exists
         try {
             Capsule::table('tblsahdev_settings')->select('custom_attachments_dir')->first();
@@ -582,6 +591,7 @@ class AdminController
             $scrubIps = !empty($_POST['scrub_ips']) ? 1 : 0;
             $scrubPasswords = !empty($_POST['scrub_passwords']) ? 1 : 0;
             $qualityScorerEnabled = !empty($_POST['quality_scorer_enabled']) ? 1 : 0;
+            $autoTagging = !empty($_POST['auto_tagging']) ? 1 : 0;
             $customAttachmentsDir = trim($_POST['custom_attachments_dir'] ?? '');
 
             $taskProviderMap = [];
@@ -624,6 +634,7 @@ class AdminController
                     'scrub_ips' => $scrubIps,
                     'scrub_passwords' => $scrubPasswords,
                     'quality_scorer_enabled' => $qualityScorerEnabled,
+                    'auto_tagging' => $autoTagging,
                     'custom_attachments_dir' => $customAttachmentsDir,
                     'task_provider_map' => $taskProviderMapJson,
                     'updated_at' => \Carbon\Carbon::now(),
@@ -654,6 +665,7 @@ class AdminController
                 'scrub_ips' => 1,
                 'scrub_passwords' => 1,
                 'quality_scorer_enabled' => 1,
+                'auto_tagging' => 0,
                 'task_provider_map' => null,
             ];
         }
@@ -864,6 +876,24 @@ class AdminController
                         </div>
                         <p class="text-muted" style="margin-top: 8px; margin-bottom: 0; font-size:13px;">
                             When enabled, Sahdev will automatically evaluate the clarity, tone, and completeness of its own generated replies and display a confidence score badge in the ticket panel in a single combined AI call. Manual draft scoring remains available regardless of this setting.
+                        </p>
+                    </div>
+                </div>
+
+                <!-- WHMCS Tag Cloud (cron insights) -->
+                <div class="panel panel-default" style="margin-bottom: 25px; border-left: 4px solid #0dcaf0;">
+                    <div class="panel-heading" style="background: #f0fcff;">
+                        <h4 style="margin: 0; font-size: 15px; color:#087990;"><i class="fas fa-tags"></i> WHMCS ticket tags (AI) <span class="label label-info" style="font-size: 11px; vertical-align: middle; margin-left: 6px;">Tag Cloud</span></h4>
+                    </div>
+                    <div class="panel-body">
+                        <div class="checkbox" style="margin-top: 0;">
+                            <label style="font-weight: 600; font-size: 14px;">
+                                <input type="checkbox" name="auto_tagging" value="1" <?php echo !empty($settings->auto_tagging) ? 'checked' : ''; ?>>
+                                &nbsp;Apply AI-generated tags from Ticket Insights (cron) to WHMCS
+                            </label>
+                        </div>
+                        <p class="text-muted" style="margin-top: 8px; margin-bottom: 0; font-size:13px;">
+                            When enabled, each successful cron (or list “analyze”) run writes topic tags into WHMCS’s native tag tables. Tags use the <code>ai-</code> prefix (for example <code>ai-billing</code>, <code>ai-dns</code>) so they stay distinct from manual tags; Sahdev replaces previous <code>ai-*</code> links on that ticket each time it re-analyzes. Requires WHMCS Tag Cloud tables (<code>tbltags</code> / <code>tbltaglinks</code>). Tags also appear in a strip above the Sahdev panel on the ticket view.
                         </p>
                     </div>
                 </div>
