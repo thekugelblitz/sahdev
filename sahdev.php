@@ -175,6 +175,8 @@ function sahdev_activate()
                     $table->integer('insights_cron_last_analyzed')->unsigned()->default(0);
                     $table->integer('insights_cron_last_skipped')->unsigned()->default(0);
                     $table->string('insights_cron_last_message', 512)->nullable();
+                    $table->string('insights_cron_http_url', 2048)->nullable();
+                    $table->text('insights_cron_cli_command')->nullable();
                     $table->timestamps(); // creates created_at, updated_at
                 }
             );
@@ -497,6 +499,14 @@ function sahdev_activate()
                 $table->integer('insights_cron_last_analyzed')->unsigned()->default(0);
                 $table->integer('insights_cron_last_skipped')->unsigned()->default(0);
                 $table->string('insights_cron_last_message', 512)->nullable();
+            });
+        }
+        try {
+            Capsule::table('tblsahdev_settings')->select('insights_cron_http_url')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                $table->string('insights_cron_http_url', 2048)->nullable();
+                $table->text('insights_cron_cli_command')->nullable();
             });
         }
 

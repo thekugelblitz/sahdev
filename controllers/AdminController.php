@@ -2616,6 +2616,15 @@ class AdminController
             });
         }
 
+        try {
+            Capsule::table('tblsahdev_settings')->select('insights_cron_http_url')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                $table->string('insights_cron_http_url', 2048)->nullable();
+                $table->text('insights_cron_cli_command')->nullable();
+            });
+        }
+
         // --- Handle settings save ---
         if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_insights_settings'])) {
             check_token("WHMCS.admin.default");
@@ -2626,12 +2635,16 @@ class AdminController
             // Sanitize statuses: comma-separated, strip extra whitespace
             $rawStatuses   = $_POST['cron_insights_statuses'] ?? '';
             $statuses      = implode(', ', array_filter(array_map('trim', explode(',', $rawStatuses))));
+            $cronHttpUrl   = substr(trim((string) ($_POST['insights_cron_http_url'] ?? '')), 0, 2048);
+            $cronCliCmd    = trim((string) ($_POST['insights_cron_cli_command'] ?? ''));
 
             Capsule::table('tblsahdev_settings')->where('id', 1)->update([
                 'cron_insights_enabled'        => $enabled,
                 'cron_insights_interval_hours' => $intervalHours,
                 'cron_insights_max_per_run'    => $maxPerRun,
                 'cron_insights_statuses'       => $statuses ?: null,
+                'insights_cron_http_url'       => $cronHttpUrl !== '' ? $cronHttpUrl : null,
+                'insights_cron_cli_command'    => $cronCliCmd !== '' ? $cronCliCmd : null,
                 'updated_at'                   => \Carbon\Carbon::now(),
             ]);
             $successMessage = 'Ticket Insights settings saved successfully.';
@@ -2668,17 +2681,18 @@ class AdminController
         $cronIsStale = $cronEnabled && $cronLastCarbon && $cronLastCarbon->lt(\Carbon\Carbon::now()->subHours($cronStaleHours));
         $cronNeverRan = $cronEnabled && !$cronLastCarbon;
 
-        $cronUrlHint = '/crons/cron.php (under your WHMCS installation URL)';
-        try {
-            if (class_exists('\WHMCS\Config\Setting')) {
-                $su = \WHMCS\Config\Setting::getValue('SystemURL');
-                if (!empty($su)) {
-                    $cronUrlHint = rtrim($su, '/') . '/crons/cron.php';
-                }
-            }
-        } catch (\Throwable $e) {
-            // keep generic hint
-        }
+        require_once __DIR__ . '/../lib/CronUrlHelper.php';
+        $whmcsCronDefaultHttp = \Sahdev\Lib\CronUrlHelper::whmcsDefaultCronHttpUrl();
+        $cronHttpSaved       = ($settings && !empty($settings->insights_cron_http_url))
+            ? trim((string) $settings->insights_cron_http_url)
+            : '';
+        $cronCliSaved        = ($settings && !empty($settings->insights_cron_cli_command))
+            ? (string) $settings->insights_cron_cli_command
+            : '';
+        $cronHttpEffective   = \Sahdev\Lib\CronUrlHelper::effectiveHttpUrl($cronHttpSaved ?: null);
+        $cronUrlHint         = $cronHttpEffective !== ''
+            ? $cronHttpEffective
+            : '/crons/cron.php (set SystemURL in WHMCS or paste URL below)';
 
         // Fetch WHMCS ticket statuses from its own table for the helper hint
         $whmcsStatuses = [];

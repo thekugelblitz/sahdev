@@ -50,7 +50,8 @@ if ($intensity > 3) {
 
 $ticketNotRequiredActions = [
     'search_canned_responses', 'generate_canned_template', 'save_canned_response', 'save_kb_article', 'delete_audit_entries',
-    'get_analytics', 'get_ticket_insights', 'trigger_cron_run', 'get_insights_queue', 'analyze_single_insight'
+    'get_analytics', 'get_ticket_insights', 'trigger_cron_run', 'get_insights_queue', 'analyze_single_insight',
+    'test_whmcs_cron_http',
 ];
 if (!$ticketId && !in_array($action, $ticketNotRequiredActions)) {
     header('HTTP/1.1 400 Bad Request');
@@ -258,6 +259,80 @@ try {
             } catch (\Throwable $e) {
                 $response = ['status' => 'error', 'ticket_id' => $singleTicketId, 'message' => $e->getMessage()];
             }
+        }
+
+    } elseif ($action === 'test_whmcs_cron_http') {
+        // Admin-only: GET the configured WHMCS cron.php over HTTP for debugging (may run full WHMCS cron).
+        require_once __DIR__ . '/lib/CronUrlHelper.php';
+
+        $posted = trim((string) ($_POST['test_url'] ?? ''));
+        $row    = \WHMCS\Database\Capsule::table('tblsahdev_settings')->first();
+        $saved  = trim((string) ($row->insights_cron_http_url ?? ''));
+        $url    = $posted !== '' ? $posted : \Sahdev\Lib\CronUrlHelper::effectiveHttpUrl($saved ?: null);
+
+        if ($url === '' || !preg_match('#^https?://#i', $url)) {
+            $response = [
+                'status'  => 'error',
+                'message' => 'No valid HTTP(S) URL. Enter a full URL (include https:// and any token query string WHMCS requires), or save a default under Ticket Insights settings.',
+            ];
+        } else {
+            $t0 = microtime(true);
+            $body = false;
+            $code = 0;
+            $err  = '';
+
+            if (function_exists('curl_init')) {
+                $ch = curl_init($url);
+                curl_setopt_array($ch, [
+                    CURLOPT_RETURNTRANSFER => true,
+                    CURLOPT_FOLLOWLOCATION => true,
+                    CURLOPT_MAXREDIRS      => 5,
+                    CURLOPT_TIMEOUT        => 120,
+                    CURLOPT_CONNECTTIMEOUT => 20,
+                    CURLOPT_SSL_VERIFYPEER => true,
+                    CURLOPT_USERAGENT      => 'SahdevAddon/WHMCS-Cron-Test',
+                ]);
+                $body = curl_exec($ch);
+                $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                $err  = (string) curl_error($ch);
+                curl_close($ch);
+            } else {
+                $ctx = stream_context_create([
+                    'http' => [
+                        'timeout'         => 120,
+                        'follow_location' => 1,
+                        'user_agent'      => 'SahdevAddon/WHMCS-Cron-Test',
+                    ],
+                    'ssl'  => [
+                        'verify_peer'      => true,
+                        'verify_peer_name' => true,
+                    ],
+                ]);
+                $body = @file_get_contents($url, false, $ctx);
+                if ($body === false) {
+                    $err = 'file_get_contents failed (enable curl or check allow_url_fopen)';
+                } else {
+                    $code = 200;
+                    if (isset($http_response_header[0]) && preg_match('#\s(\d{3})\s#', $http_response_header[0], $m)) {
+                        $code = (int) $m[1];
+                    }
+                }
+            }
+
+            $ms      = (int) round((microtime(true) - $t0) * 1000);
+            $rawLen  = is_string($body) ? strlen($body) : 0;
+            $preview = is_string($body) ? mb_substr(trim(strip_tags($body)), 0, 2000) : '';
+
+            $response = [
+                'status'       => ($err !== '' && $body === false) ? 'error' : 'success',
+                'message'      => $err !== '' ? $err : 'Request finished.',
+                'url_tested'   => $url,
+                'http_code'    => $code,
+                'duration_ms'  => $ms,
+                'bytes'        => $rawLen,
+                'body_preview' => $preview,
+                'curl_error'   => $err,
+            ];
         }
 
     } elseif ($action === 'trigger_cron_run') {
