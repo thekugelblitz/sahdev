@@ -140,10 +140,22 @@ function sahdev_inject_ticket_panel($vars)
     $whmcsTagsBarHtml = '';
     require_once __DIR__ . '/lib/WhmcsTicketTagHelper.php';
     try {
-        $whmcsTagNames = \Sahdev\Lib\WhmcsTicketTagHelper::getTagsForTicket($ticketId);
-        if (!empty($whmcsTagNames)) {
+        $fromWhmcs = \Sahdev\Lib\WhmcsTicketTagHelper::getTagsForTicket($ticketId);
+        $fromSent  = [];
+        if (Capsule::schema()->hasColumn('tblsahdev_sentiment', 'ai_tags_json')) {
+            $sentRow = Capsule::table('tblsahdev_sentiment')->where('ticket_id', $ticketId)->first();
+            if ($sentRow && !empty($sentRow->ai_tags_json)) {
+                $d = json_decode($sentRow->ai_tags_json, true);
+                if (is_array($d)) {
+                    $fromSent = array_values(array_filter($d));
+                }
+            }
+        }
+        $mergedTags = array_values(array_unique(array_merge($fromSent, $fromWhmcs)));
+        sort($mergedTags);
+        if (!empty($mergedTags)) {
             $chips = '';
-            foreach ($whmcsTagNames as $tg) {
+            foreach ($mergedTags as $tg) {
                 $isAi = (strpos($tg, \Sahdev\Lib\WhmcsTicketTagHelper::AI_TAG_PREFIX) === 0);
                 $cls = $isAi ? 'label-info' : 'label-default';
                 $chips .= '<span class="label ' . $cls . '" style="display:inline-block;margin:2px 4px 2px 0;padding:5px 9px;font-size:12px;">'
@@ -152,7 +164,7 @@ function sahdev_inject_ticket_panel($vars)
             $whmcsTagsBarHtml = '<div class="sdv-whmcs-tags-bar" style="margin-top:12px;margin-bottom:0;padding:10px 12px;background:#f8f9fa;border:1px solid #dee2e6;border-radius:6px;">'
                 . '<span style="font-weight:600;color:#495057;margin-right:8px;"><i class="fas fa-tags"></i> Tags</span>'
                 . '<span style="vertical-align:middle;">' . $chips . '</span>'
-                . '<span class="text-muted" style="font-size:11px;margin-left:8px;">(ai-* = Sahdev cron)</span>'
+                . '<span class="text-muted" style="font-size:11px;margin-left:8px;">(ai-* = Sahdev; same tags appear in WHMCS Tag Cloud when enabled)</span>'
                 . '</div>';
         }
     } catch (\Throwable $e) {
@@ -2338,6 +2350,9 @@ tr.sdv-row-sent-high td { background-color: rgba(220, 53, 69, 0.06) !important; 
 .sdv-insight-panel--compact .sdv-insight-panel-hd { display: none; }
 .sdv-insight-panel--compact .sdv-insight-panel-bd { padding: 2px 0 0; border: 0; background: transparent; }
 .sdv-insight-panel--compact .sdv-pill { border-radius: 2px; font-size: 9px; padding: 2px 5px; letter-spacing: 0; }
+.sdv-insight-tags-row { margin-top: 4px; display: flex; flex-wrap: wrap; gap: 3px 5px; align-items: center; }
+.sdv-tag-chip { font-size: 9px !important; padding: 2px 6px !important; border-radius: 3px !important; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sdv-tag-chip.sdv-tag-ai { background: #cff4fc !important; color: #055160 !important; border: 1px solid #9eeaf9 !important; font-weight: 600; }
 .sdv-insight-meta {
     margin-top: 4px;
     font-size: 10px;
@@ -2739,6 +2754,22 @@ tr.sdv-row-sent-high td { background-color: rgba(220, 53, 69, 0.06) !important; 
 
         bd.appendChild(bar);
 
+        var tags = Array.isArray(ins.tags) ? ins.tags : [];
+        row.setAttribute('data-sdv-tag-count', String(tags.length));
+        if (tags.length) {
+            var tagRow = document.createElement('div');
+            tagRow.className = 'sdv-insight-tags-row';
+            tags.forEach(function (t) {
+                var sp = document.createElement('span');
+                var ts = String(t);
+                sp.className = 'sdv-pill sdv-tag-chip' + (ts.indexOf('ai-') === 0 ? ' sdv-tag-ai' : '');
+                sp.textContent = ts;
+                sp.setAttribute('title', 'Tag (WHMCS Tag Cloud when synced)');
+                tagRow.appendChild(sp);
+            });
+            bd.appendChild(tagRow);
+        }
+
         var meta = document.createElement('div');
         meta.className = 'sdv-insight-meta';
         if (analyzedAt) {
@@ -2911,6 +2942,12 @@ tr.sdv-row-sent-high td { background-color: rgba(220, 53, 69, 0.06) !important; 
             var n = parseInt(s, 10);
             return isNaN(n) ? -1 : n;
         }
+        function tagCnt(a) {
+            var s = a.getAttribute('data-sdv-tag-count');
+            if (s === null || s === '') return 0;
+            var n = parseInt(s, 10);
+            return isNaN(n) ? 0 : n;
+        }
         if (mode === 'default') {
             rows.sort(function (a, b) { return orig(a) - orig(b); });
         } else if (mode === 'score_desc') {
@@ -2977,6 +3014,18 @@ tr.sdv-row-sent-high td { background-color: rgba(220, 53, 69, 0.06) !important; 
                 if (d !== 0) return d;
                 return orig(a) - orig(b);
             });
+        } else if (mode === 'tag_count_desc') {
+            rows.sort(function (a, b) {
+                var d = tagCnt(b) - tagCnt(a);
+                if (d !== 0) return d;
+                return orig(a) - orig(b);
+            });
+        } else if (mode === 'tag_count_asc') {
+            rows.sort(function (a, b) {
+                var d = tagCnt(a) - tagCnt(b);
+                if (d !== 0) return d;
+                return orig(a) - orig(b);
+            });
         } else {
             return;
         }
@@ -3036,6 +3085,8 @@ tr.sdv-row-sent-high td { background-color: rgba(220, 53, 69, 0.06) !important; 
             ['default', 'WHMCS order (original)'],
             ['severity_desc', 'Severity (sentiment + tone, worst first)'],
             ['severity_asc', 'Severity (calmest first)'],
+            ['tag_count_desc', 'Tags (most tags first)'],
+            ['tag_count_asc', 'Tags (fewest tags first)'],
             ['score_desc', 'Sentiment score (highest first)'],
             ['score_asc', 'Sentiment score (lowest first)'],
             ['tone_desc', 'Client tone (most hostile first)'],

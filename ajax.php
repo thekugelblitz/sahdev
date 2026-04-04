@@ -226,16 +226,36 @@ try {
                 'mask_to_id' => new \stdClass(),
             ];
         } else {
+            require_once __DIR__ . '/lib/WhmcsTicketTagHelper.php';
+
+            $selectCols = [
+                'ticket_id', 'score', 'label', 'urgency', 'client_tone',
+                'ticket_summary', 'admin_reply_count', 'last_admin_name', 'analyzed_at',
+            ];
+            if (\WHMCS\Database\Capsule::schema()->hasColumn('tblsahdev_sentiment', 'ai_tags_json')) {
+                $selectCols[] = 'ai_tags_json';
+            }
+
             $rows = \WHMCS\Database\Capsule::table('tblsahdev_sentiment')
                 ->whereIn('ticket_id', $ticketIds)
-                ->get([
-                    'ticket_id', 'score', 'label', 'urgency', 'client_tone',
-                    'ticket_summary', 'admin_reply_count', 'last_admin_name', 'analyzed_at'
-                ]);
+                ->get($selectCols);
 
+            $needBulk = [];
             $insights = [];
             foreach ($rows as $row) {
-                $insights[(int) $row->ticket_id] = [
+                $tid = (int) $row->ticket_id;
+                $tags = [];
+                if (!empty($row->ai_tags_json)) {
+                    $decoded = json_decode($row->ai_tags_json, true);
+                    if (is_array($decoded)) {
+                        $tags = array_values(array_filter($decoded));
+                    }
+                }
+                if ($tags === []) {
+                    $needBulk[] = $tid;
+                }
+
+                $insights[$tid] = [
                     'sentiment_score'    => (int) $row->score,
                     'sentiment_label'    => $row->label,
                     'urgency'            => $row->urgency,
@@ -244,7 +264,21 @@ try {
                     'admin_reply_count'  => (int) $row->admin_reply_count,
                     'last_admin_name'    => $row->last_admin_name,
                     'analyzed_at'        => $row->analyzed_at,
+                    'tags'               => $tags,
                 ];
+            }
+
+            $needBulk = array_values(array_unique($needBulk));
+            if ($needBulk !== []) {
+                $bulk = \Sahdev\Lib\WhmcsTicketTagHelper::getTagsForTickets($needBulk);
+                foreach ($needBulk as $tid) {
+                    if (!empty($insights[$tid]['tags']) || !isset($insights[$tid])) {
+                        continue;
+                    }
+                    if (!empty($bulk[$tid])) {
+                        $insights[$tid]['tags'] = $bulk[$tid];
+                    }
+                }
             }
             $response = [
                 'status'     => 'success',

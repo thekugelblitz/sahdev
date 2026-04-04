@@ -315,6 +315,15 @@ class AdminController
                 });
             }
         }
+        try {
+            Capsule::table('tblsahdev_sentiment')->select('ai_tags_json')->first();
+        } catch (\Exception $e) {
+            if (Capsule::schema()->hasTable('tblsahdev_sentiment')) {
+                Capsule::schema()->table('tblsahdev_sentiment', function ($table) {
+                    $table->text('ai_tags_json')->nullable();
+                });
+            }
+        }
     }
 
     /**
@@ -2709,6 +2718,15 @@ class AdminController
             if (Capsule::schema()->hasTable('tblsahdev_sentiment')) {
                 Capsule::schema()->table('tblsahdev_sentiment', function ($table) {
                     $table->timestamp('ticket_last_reply_at')->nullable();
+                });
+            }
+        }
+        try {
+            Capsule::table('tblsahdev_sentiment')->select('ai_tags_json')->first();
+        } catch (\Exception $e) {
+            if (Capsule::schema()->hasTable('tblsahdev_sentiment')) {
+                Capsule::schema()->table('tblsahdev_sentiment', function ($table) {
+                    $table->text('ai_tags_json')->nullable();
                 });
             }
         }

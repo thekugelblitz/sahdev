@@ -6,7 +6,7 @@ use WHMCS\Database\Capsule;
 
 /**
  * Reads/writes WHMCS core ticket tags (Tag Cloud) when available.
- * Schema differs slightly across WHMCS versions — columns are detected at runtime.
+ * Schema differs across WHMCS versions — columns are detected at runtime.
  */
 class WhmcsTicketTagHelper
 {
@@ -15,8 +15,13 @@ class WhmcsTicketTagHelper
     /** @var array<string,mixed>|null */
     private static $schemaCache;
 
+    /** rel_type / type values seen in WHMCS builds */
+    private const REL_TYPE_VALUES = [
+        'ticket', 'Ticket', 'TICKET', 'support', 'Support', 'SupportTicket',
+    ];
+
     /**
-     * @return array<string,mixed>|null  keys: tagsTable, linksTable, tagTextCol, tagIdCol, linkIdCol, relIdCol, typeCol, typeValue
+     * @return array<string,mixed>|null
      */
     public static function getSchema(): ?array
     {
@@ -56,7 +61,7 @@ class WhmcsTicketTagHelper
         }
 
         $linkTagIdCol = $pick(['tagid', 'tag_id'], $linkColsL, $linkCols);
-        $linkRelIdCol = $pick(['relid', 'rel_id', 'entityid', 'entity_id'], $linkColsL, $linkCols);
+        $linkRelIdCol = $pick(['relid', 'rel_id', 'entityid', 'entity_id', 'ticketid', 'ticket_id'], $linkColsL, $linkCols);
         $linkPkCol    = $pick(['id'], $linkColsL, $linkCols);
         $typeCol      = $pick(['rel_type', 'type', 'entity_type'], $linkColsL, $linkCols);
 
@@ -85,34 +90,89 @@ class WhmcsTicketTagHelper
      */
     public static function getTagsForTicket(int $ticketId): array
     {
+        $rows = self::getTagsForTickets([$ticketId]);
+        return $rows[$ticketId] ?? [];
+    }
+
+    /**
+     * @param int[] $ticketIds
+     * @return array<int, string[]> ticket id => tag strings
+     */
+    public static function getTagsForTickets(array $ticketIds): array
+    {
+        $ticketIds = array_values(array_unique(array_filter(array_map('intval', $ticketIds))));
+        $out = [];
+        foreach ($ticketIds as $tid) {
+            $out[$tid] = [];
+        }
+        if ($ticketIds === []) {
+            return $out;
+        }
+
         $s = self::getSchema();
-        if (!$s || $ticketId < 1) {
-            return [];
+        if (!$s) {
+            return $out;
         }
 
         try {
             $q = Capsule::table($s['linksTable'] . ' as tl')
                 ->join($s['tagsTable'] . ' as tg', 'tl.' . $s['linkTagCol'], '=', 'tg.' . $s['tagIdCol'])
-                ->where('tl.' . $s['linkRelCol'], $ticketId);
+                ->whereIn('tl.' . $s['linkRelCol'], $ticketIds)
+                ->orderBy('tg.' . $s['tagTextCol'], 'asc');
 
             if (!empty($s['typeCol'])) {
-                $q->whereIn('tl.' . $s['typeCol'], ['ticket', 'Ticket', 'support']);
+                $q->whereIn('tl.' . $s['typeCol'], array_merge(self::REL_TYPE_VALUES, [1, 2]));
             }
 
-            $rows = $q->orderBy('tg.' . $s['tagTextCol'], 'asc')
-                ->get(['tg.' . $s['tagTextCol'] . ' as tname']);
+            $rows = $q->get([
+                'tl.' . $s['linkRelCol'] . ' as _rel',
+                'tg.' . $s['tagTextCol'] . ' as tname',
+            ]);
 
-            $out = [];
             foreach ($rows as $row) {
-                $t = trim((string) ($row->tname ?? ''));
-                if ($t !== '' && !in_array($t, $out, true)) {
-                    $out[] = $t;
+                $rid = (int) ($row->_rel ?? 0);
+                $t   = trim((string) ($row->tname ?? ''));
+                if ($rid < 1 || $t === '' || !isset($out[$rid])) {
+                    continue;
+                }
+                if (!in_array($t, $out[$rid], true)) {
+                    $out[$rid][] = $t;
                 }
             }
-            return $out;
+
+            // If type filter hid rows (wrong enum), retry without type for tickets still empty
+            if (!empty($s['typeCol'])) {
+                $still = [];
+                foreach ($ticketIds as $tid) {
+                    if (empty($out[$tid])) {
+                        $still[] = $tid;
+                    }
+                }
+                if ($still !== []) {
+                    $q2 = Capsule::table($s['linksTable'] . ' as tl')
+                        ->join($s['tagsTable'] . ' as tg', 'tl.' . $s['linkTagCol'], '=', 'tg.' . $s['tagIdCol'])
+                        ->whereIn('tl.' . $s['linkRelCol'], $still)
+                        ->orderBy('tg.' . $s['tagTextCol'], 'asc');
+                    foreach ($q2->get([
+                        'tl.' . $s['linkRelCol'] . ' as _rel',
+                        'tg.' . $s['tagTextCol'] . ' as tname',
+                    ]) as $row) {
+                        $rid = (int) ($row->_rel ?? 0);
+                        $t   = trim((string) ($row->tname ?? ''));
+                        if ($rid < 1 || $t === '' || !isset($out[$rid])) {
+                            continue;
+                        }
+                        if (!in_array($t, $out[$rid], true)) {
+                            $out[$rid][] = $t;
+                        }
+                    }
+                }
+            }
         } catch (\Throwable $e) {
-            return [];
+            return array_fill_keys($ticketIds, []);
         }
+
+        return $out;
     }
 
     /**
@@ -162,7 +222,7 @@ class WhmcsTicketTagHelper
             ->where('tg.' . $s['tagTextCol'], 'like', self::AI_TAG_PREFIX . '%');
 
         if (!empty($s['typeCol'])) {
-            $q->whereIn('tl.' . $s['typeCol'], ['ticket', 'Ticket', 'support']);
+            $q->whereIn('tl.' . $s['typeCol'], array_merge(self::REL_TYPE_VALUES, [1, 2]));
         }
 
         $pk = $s['linkPkCol'] ?? 'id';
@@ -200,7 +260,6 @@ class WhmcsTicketTagHelper
         try {
             return (int) Capsule::table($s['tagsTable'])->insertGetId($insert);
         } catch (\Throwable $e) {
-            // Race: fetch again
             $existing = Capsule::table($s['tagsTable'])
                 ->where($s['tagTextCol'], $tagName)
                 ->value($s['tagIdCol']);
@@ -218,40 +277,44 @@ class WhmcsTicketTagHelper
             ->where($s['linkRelCol'], $ticketId);
 
         if (!empty($s['typeCol'])) {
-            $q->whereIn($s['typeCol'], ['ticket', 'Ticket', 'support']);
+            $q->whereIn($s['typeCol'], array_merge(self::REL_TYPE_VALUES, [1, 2]));
         }
 
         if ($q->exists()) {
             return;
         }
 
-        $row = [
+        $baseRow = [
             $s['linkTagCol'] => $tagId,
             $s['linkRelCol'] => $ticketId,
         ];
 
-        if (!empty($s['typeCol'])) {
-            $row[$s['typeCol']] = 'ticket';
-        }
-
         $linkTableCols = Capsule::schema()->getColumnListing($s['linksTable']);
+        $timestamps = [];
         if (in_array('created_at', $linkTableCols, true)) {
-            $row['created_at'] = date('Y-m-d H:i:s');
+            $timestamps['created_at'] = date('Y-m-d H:i:s');
         }
         if (in_array('updated_at', $linkTableCols, true)) {
-            $row['updated_at'] = date('Y-m-d H:i:s');
+            $timestamps['updated_at'] = date('Y-m-d H:i:s');
         }
 
-        try {
-            Capsule::table($s['linksTable'])->insert($row);
-        } catch (\Throwable $e) {
-            if (!empty($s['typeCol']) && isset($row[$s['typeCol']]) && $row[$s['typeCol']] === 'ticket') {
-                $row[$s['typeCol']] = 'Ticket';
-                try {
-                    Capsule::table($s['linksTable'])->insert($row);
-                } catch (\Throwable $e2) {
-                    // ignore
-                }
+        if (empty($s['typeCol'])) {
+            try {
+                Capsule::table($s['linksTable'])->insert(array_merge($baseRow, $timestamps));
+            } catch (\Throwable $e) {
+                // ignore
+            }
+            return;
+        }
+
+        $typeAttempts = array_merge(self::REL_TYPE_VALUES, [1, 2]);
+        foreach ($typeAttempts as $typeVal) {
+            $row = array_merge($baseRow, [$s['typeCol'] => $typeVal], $timestamps);
+            try {
+                Capsule::table($s['linksTable'])->insert($row);
+                return;
+            } catch (\Throwable $e) {
+                continue;
             }
         }
     }

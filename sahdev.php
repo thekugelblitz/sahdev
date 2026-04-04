@@ -455,6 +455,14 @@ function sahdev_activate()
                     $table->timestamp('ticket_last_reply_at')->nullable();
                 });
             }
+            // AI tags (mirrors WHMCS Tag Cloud + list display)
+            try {
+                Capsule::table('tblsahdev_sentiment')->select('ai_tags_json')->first();
+            } catch (\Exception $e) {
+                Capsule::schema()->table('tblsahdev_sentiment', function ($table) {
+                    $table->text('ai_tags_json')->nullable()->comment('JSON array of ai-* tag slugs');
+                });
+            }
         } catch (\Exception $e) {
             Capsule::schema()->create('tblsahdev_sentiment', function ($table) {
                 $table->increments('id');
@@ -468,6 +476,7 @@ function sahdev_activate()
                 $table->string('last_admin_name', 128)->nullable();
                 $table->timestamp('ticket_last_reply_at')->nullable()->comment('tbltickets.lastreply snapshot at analysis time');
                 $table->timestamp('analyzed_at')->nullable()->comment('When cron last analyzed this ticket');
+                $table->text('ai_tags_json')->nullable()->comment('JSON array of ai-* tag slugs (WHMCS Tag Cloud)');
                 $table->timestamps();
             });
         }

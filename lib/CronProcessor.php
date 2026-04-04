@@ -223,6 +223,8 @@ class CronProcessor
         $execMs  = round((microtime(true) - $startTime) * 1000);
         $insights = $this->parseInsights($rawResponse);
 
+        $tagList = WhmcsTicketTagHelper::normalizeTagList($insights['TAGS'] ?? []);
+
         $now      = Carbon::now();
         $existing = Capsule::table('tblsahdev_sentiment')->where('ticket_id', $ticketId)->first();
 
@@ -238,6 +240,9 @@ class CronProcessor
             'analyzed_at'            => $now,
             'updated_at'             => $now,
         ];
+        if (Capsule::schema()->hasTable('tblsahdev_sentiment') && Capsule::schema()->hasColumn('tblsahdev_sentiment', 'ai_tags_json')) {
+            $data['ai_tags_json'] = $tagList === [] ? null : json_encode($tagList);
+        }
 
         if ($existing) {
             Capsule::table('tblsahdev_sentiment')->where('ticket_id', $ticketId)->update($data);
@@ -267,7 +272,6 @@ class CronProcessor
         // WHMCS Tag Cloud: replace ai-* tags from last run with fresh AI tags (when enabled)
         if (!empty($this->settings['auto_tagging'])) {
             try {
-                $tagList = WhmcsTicketTagHelper::normalizeTagList($insights['TAGS'] ?? []);
                 WhmcsTicketTagHelper::syncSahdevAiTags($ticketId, $tagList);
             } catch (\Throwable $e) {
                 // Never break cron
