@@ -2283,6 +2283,47 @@ tr.sdv-row-low      td.sdv-insight-target { box-shadow: inset 4px 0 0 #198754 !i
     word-break: break-word;
 }
 .sdv-insight-summary-body.sdv-open { display: block; }
+/* List toolbar — Support Tickets page */
+.sdv-list-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+    margin: 0 0 12px 0;
+    padding: 8px 12px;
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    font-size: 12px;
+}
+.sdv-list-toolbar .sdv-list-toolbar-label { font-weight: 600; color: #495057; margin-right: 4px; }
+.sdv-list-toolbar button.btn-sdv {
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 4px;
+    border: 1px solid #ced4da;
+    background: #fff;
+    color: #212529;
+    cursor: pointer;
+}
+.sdv-list-toolbar button.btn-sdv:hover { background: #e9ecef; }
+.sdv-list-toolbar button.btn-sdv:disabled { opacity: 0.55; cursor: not-allowed; }
+.sdv-list-toolbar select.sdv-sort-select {
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    border: 1px solid #ced4da;
+    max-width: 220px;
+}
+.sdv-list-toolbar .sdv-list-msg {
+    flex: 1 1 100%;
+    font-size: 11px;
+    color: #6c757d;
+    margin: 0;
+    min-height: 1.2em;
+}
+.sdv-list-toolbar .sdv-list-msg.sdv-ok { color: #198754; }
+.sdv-list-toolbar .sdv-list-msg.sdv-err { color: #dc3545; }
 /* Tooltip */
 .sdv-tooltip-wrap { position: relative; display: inline-flex; }
 .sdv-tooltip-box {
@@ -2340,6 +2381,7 @@ tr.sdv-row-low      td.sdv-insight-target { box-shadow: inset 4px 0 0 #198754 !i
         Impatient: '⏳', Neutral: '😐', Confused: '😕',
         Polite: '🙂', Appreciative: '😊'
     };
+    var URG_RANK = { critical: 4, high: 3, medium: 2, low: 1 };
 
     function getTicketListTable() {
         var scope = document.querySelector('#contentarea') || document.querySelector('.contentarea') || document.body;
@@ -2586,6 +2628,11 @@ tr.sdv-row-low      td.sdv-insight-target { box-shadow: inset 4px 0 0 #198754 !i
         panel.appendChild(bd);
         row.classList.add('sdv-row-' + urgency);
 
+        var scNum = parseInt(ins.sentiment_score, 10);
+        if (isNaN(scNum)) scNum = 0;
+        row.setAttribute('data-sdv-score', String(scNum));
+        row.setAttribute('data-sdv-urgency-rank', String(URG_RANK[urgency] || 0));
+
         var td = findSubjectCell(row, row.getAttribute('data-sdv-tid'), row.getAttribute('data-sdv-tmask'));
         if (td) {
             td.classList.add('sdv-insight-target');
@@ -2623,6 +2670,10 @@ tr.sdv-row-low      td.sdv-insight-target { box-shadow: inset 4px 0 0 #198754 !i
             .then(function (data) {
                 if (data.status === 'success' && data.insights) {
                     injectInsightsPayload(data);
+                    var sel = document.getElementById('sdv-sort-insights');
+                    if (sel && sel.value && sel.value !== 'default') {
+                        applyTicketSort(sel.value);
+                    }
                 }
             })
             .catch(function (err) {
@@ -2636,6 +2687,7 @@ tr.sdv-row-low      td.sdv-insight-target { box-shadow: inset 4px 0 0 #198754 !i
         if (moTimer) clearTimeout(moTimer);
         moTimer = setTimeout(function () {
             tagRows();
+            stampOriginalRowOrder();
             var needIds = [];
             var needMasks = [];
             document.querySelectorAll('tr[data-sdv-tid], tr[data-sdv-tmask]').forEach(function (row) {
@@ -2652,8 +2704,301 @@ tr.sdv-row-low      td.sdv-insight-target { box-shadow: inset 4px 0 0 #198754 !i
         }, 380);
     }
 
+    function postListAjax(action, extra) {
+        var fd = new FormData();
+        fd.append('action', action);
+        if (extra) {
+            Object.keys(extra).forEach(function (k) {
+                var v = extra[k];
+                if (v === undefined || v === null) return;
+                if (Array.isArray(v)) {
+                    v.forEach(function (item) { fd.append(k + '[]', item); });
+                } else {
+                    fd.append(k, v);
+                }
+            });
+        }
+        return fetch(AJAX_URL, { method: 'POST', body: fd, credentials: 'same-origin' }).then(function (r) { return r.json(); });
+    }
+
+    function stampOriginalRowOrder() {
+        var tbl = getTicketListTable();
+        if (!tbl) return;
+        var rows = tbl.querySelectorAll('tbody tr');
+        for (var i = 0; i < rows.length; i++) {
+            if (!rows[i].hasAttribute('data-sdv-orig-idx')) {
+                rows[i].setAttribute('data-sdv-orig-idx', String(i));
+            }
+        }
+    }
+
+    function applyTicketSort(mode) {
+        var tbl = getTicketListTable();
+        if (!tbl) return;
+        var tb = tbl.querySelector('tbody');
+        if (!tb) return;
+        var rows = Array.prototype.slice.call(tb.querySelectorAll('tr'));
+        function orig(a) { return parseInt(a.getAttribute('data-sdv-orig-idx') || '0', 10); }
+        function score(a) {
+            var s = a.getAttribute('data-sdv-score');
+            if (s === null || s === '') return -1;
+            var n = parseInt(s, 10);
+            return isNaN(n) ? -1 : n;
+        }
+        function urg(a) {
+            var u = a.getAttribute('data-sdv-urgency-rank');
+            if (u === null || u === '') return -1;
+            var n = parseInt(u, 10);
+            return isNaN(n) ? -1 : n;
+        }
+        if (mode === 'default') {
+            rows.sort(function (a, b) { return orig(a) - orig(b); });
+        } else if (mode === 'score_desc') {
+            rows.sort(function (a, b) {
+                var d = score(b) - score(a);
+                if (d !== 0) return d;
+                return orig(a) - orig(b);
+            });
+        } else if (mode === 'score_asc') {
+            rows.sort(function (a, b) {
+                var sa = score(a);
+                var sb = score(b);
+                var ta = sa < 0 ? 999 : sa;
+                var tbv = sb < 0 ? 999 : sb;
+                var d = ta - tbv;
+                if (d !== 0) return d;
+                return orig(a) - orig(b);
+            });
+        } else if (mode === 'urgency_desc') {
+            rows.sort(function (a, b) {
+                var d = urg(b) - urg(a);
+                if (d !== 0) return d;
+                return orig(a) - orig(b);
+            });
+        } else if (mode === 'urgency_asc') {
+            rows.sort(function (a, b) {
+                var ua = urg(a);
+                var ub = urg(b);
+                var ta = ua < 0 ? 99 : ua;
+                var tbv = ub < 0 ? 99 : ub;
+                var d = ta - tbv;
+                if (d !== 0) return d;
+                return orig(a) - orig(b);
+            });
+        } else {
+            return;
+        }
+        rows.forEach(function (r) { tb.appendChild(r); });
+    }
+
+    function setToolbarMsg(el, text, kind) {
+        if (!el) return;
+        el.textContent = text || '';
+        el.className = 'sdv-list-msg' + (kind === 'ok' ? ' sdv-ok' : kind === 'err' ? ' sdv-err' : '');
+    }
+
+    function injectToolbar() {
+        if (document.getElementById('sdv-ticket-list-toolbar')) return;
+        var host = document.querySelector('#contentarea') || document.querySelector('.contentarea');
+        if (!host) return;
+
+        var bar = document.createElement('div');
+        bar.id = 'sdv-ticket-list-toolbar';
+        bar.className = 'sdv-list-toolbar';
+        bar.setAttribute('role', 'region');
+        bar.setAttribute('aria-label', 'Sahdev ticket insights actions');
+
+        var lbl = document.createElement('span');
+        lbl.className = 'sdv-list-toolbar-label';
+        lbl.textContent = 'Sahdev insights';
+        bar.appendChild(lbl);
+
+        var btnQueue = document.createElement('button');
+        btnQueue.type = 'button';
+        btnQueue.className = 'btn-sdv';
+        btnQueue.id = 'sdv-btn-queue-analyze';
+        btnQueue.title = 'Run AI analysis on tickets in the queue (same logic as cron batch)';
+        btnQueue.textContent = 'Analyze queue';
+        bar.appendChild(btnQueue);
+
+        var btnForce = document.createElement('button');
+        btnForce.type = 'button';
+        btnForce.className = 'btn-sdv';
+        btnForce.id = 'sdv-btn-force-page';
+        btnForce.title = 'Re-run AI analysis for every ticket visible on this page (ignores “already analyzed”)';
+        btnForce.textContent = 'Force re-analyze page';
+        bar.appendChild(btnForce);
+
+        var sortLbl = document.createElement('label');
+        sortLbl.style.marginLeft = '8px';
+        sortLbl.style.fontWeight = '600';
+        sortLbl.style.color = '#495057';
+        sortLbl.textContent = 'Sort:';
+        bar.appendChild(sortLbl);
+
+        var sel = document.createElement('select');
+        sel.className = 'sdv-sort-select';
+        sel.id = 'sdv-sort-insights';
+        sel.setAttribute('aria-label', 'Sort tickets by Sahdev scores');
+        [
+            ['default', 'WHMCS order (original)'],
+            ['score_desc', 'Sentiment score (highest first)'],
+            ['score_asc', 'Sentiment score (lowest first)'],
+            ['urgency_desc', 'Urgency (Critical → Low)'],
+            ['urgency_asc', 'Urgency (Low → Critical)']
+        ].forEach(function (opt) {
+            var o = document.createElement('option');
+            o.value = opt[0];
+            o.textContent = opt[1];
+            sel.appendChild(o);
+        });
+        bar.appendChild(sel);
+
+        var msg = document.createElement('p');
+        msg.className = 'sdv-list-msg';
+        msg.id = 'sdv-list-toolbar-msg';
+        bar.appendChild(msg);
+
+        host.insertBefore(bar, host.firstChild);
+
+        btnQueue.addEventListener('click', function () {
+            btnQueue.disabled = true;
+            btnForce.disabled = true;
+            setToolbarMsg(msg, 'Fetching queue…', '');
+            postListAjax('get_insights_queue')
+                .then(function (data) {
+                    if (data.status !== 'success') throw new Error(data.message || 'Queue failed');
+                    var queue = data.queue || [];
+                    if (!queue.length) {
+                        setToolbarMsg(msg, 'No tickets in queue — all up to date for current rules.', 'ok');
+                        btnQueue.disabled = false;
+                        btnForce.disabled = false;
+                        return;
+                    }
+                    setToolbarMsg(msg, 'Analyzing 0 / ' + queue.length + '…', '');
+                    function step(idx, done, errs) {
+                        if (idx >= queue.length) {
+                            btnQueue.disabled = false;
+                            btnForce.disabled = false;
+                            var s = 'Done: ' + done + ' of ' + queue.length + ' analyzed.';
+                            if (errs.length) s += ' Errors: ' + errs.length + '.';
+                            setToolbarMsg(msg, s, errs.length ? 'err' : 'ok');
+                            if (done > 0) window.location.reload();
+                            return;
+                        }
+                        var tid = queue[idx];
+                        setToolbarMsg(msg, 'Analyzing ticket #' + tid + ' (' + (idx + 1) + '/' + queue.length + ')…', '');
+                        postListAjax('analyze_single_insight', { ticket_id: String(tid) })
+                            .then(function (d) {
+                                if (d.status === 'success') {
+                                    step(idx + 1, done + 1, errs);
+                                } else {
+                                    errs.push('#' + tid + ': ' + (d.message || 'error'));
+                                    step(idx + 1, done, errs);
+                                }
+                            })
+                            .catch(function (e) {
+                                errs.push('#' + tid + ': ' + e.message);
+                                step(idx + 1, done, errs);
+                            });
+                    }
+                    step(0, 0, []);
+                })
+                .catch(function (e) {
+                    setToolbarMsg(msg, e.message || 'Failed', 'err');
+                    btnQueue.disabled = false;
+                    btnForce.disabled = false;
+                });
+        });
+
+        btnForce.addEventListener('click', function () {
+            var ids = [];
+            document.querySelectorAll('tbody tr[data-sdv-tid]').forEach(function (tr) {
+                var id = tr.getAttribute('data-sdv-tid');
+                if (id && ids.indexOf(id) === -1) ids.push(id);
+            });
+            var masks = [];
+            document.querySelectorAll('tbody tr[data-sdv-tmask]').forEach(function (tr) {
+                if (tr.getAttribute('data-sdv-tid')) return;
+                var m = tr.getAttribute('data-sdv-tmask');
+                if (m && masks.indexOf(m) === -1) masks.push(m);
+            });
+
+            function runForceChain(idList) {
+                if (!idList.length) {
+                    setToolbarMsg(msg, 'No ticket rows with resolvable IDs on this page.', 'err');
+                    return;
+                }
+                if (!window.confirm('Force re-analyze ' + idList.length + ' ticket(s) on this page? This calls the AI for each ticket.')) return;
+                btnQueue.disabled = true;
+                btnForce.disabled = true;
+                function step(i, done, errs) {
+                    if (i >= idList.length) {
+                        btnQueue.disabled = false;
+                        btnForce.disabled = false;
+                        setToolbarMsg(msg, 'Finished: ' + done + ' of ' + idList.length + ' re-analyzed.', errs.length ? 'err' : 'ok');
+                        if (done > 0) window.location.reload();
+                        return;
+                    }
+                    var tid = idList[i];
+                    setToolbarMsg(msg, 'Re-analyzing #' + tid + ' (' + (i + 1) + '/' + idList.length + ')…', '');
+                    postListAjax('analyze_single_insight', { ticket_id: String(tid) })
+                        .then(function (d) {
+                            if (d.status === 'success') step(i + 1, done + 1, errs);
+                            else {
+                                errs.push('#' + tid);
+                                step(i + 1, done, errs);
+                            }
+                        })
+                        .catch(function () {
+                            errs.push('#' + tid);
+                            step(i + 1, done, errs);
+                        });
+                }
+                step(0, 0, []);
+            }
+
+            if (masks.length) {
+                var fd = new FormData();
+                fd.append('action', 'get_ticket_insights');
+                masks.forEach(function (m) { fd.append('ticket_tids[]', m); });
+                fetch(AJAX_URL, { method: 'POST', body: fd, credentials: 'same-origin' })
+                    .then(function (r) { return r.json(); })
+                    .then(function (data) {
+                        var map = data.mask_to_id || {};
+                        Object.keys(map).forEach(function (k) {
+                            var nid = map[k];
+                            if (nid == null) return;
+                            var s = String(nid);
+                            if (ids.indexOf(s) === -1) ids.push(s);
+                        });
+                        runForceChain(ids);
+                    })
+                    .catch(function (e) {
+                        setToolbarMsg(msg, 'Could not resolve ticket #s: ' + (e.message || 'error'), 'err');
+                    });
+            } else {
+                runForceChain(ids);
+            }
+        });
+
+        sel.addEventListener('change', function () {
+            applyTicketSort(sel.value);
+        });
+    }
+
+    function tryInjectToolbar(attempt) {
+        attempt = attempt || 0;
+        injectToolbar();
+        if (!document.getElementById('sdv-ticket-list-toolbar') && attempt < 8) {
+            setTimeout(function () { tryInjectToolbar(attempt + 1); }, 350);
+        }
+    }
+
     function init() {
         tagRows();
+        stampOriginalRowOrder();
+        tryInjectToolbar(0);
         var pack = collectIdsAndMasks();
         loadInsights(pack.ids, pack.masks);
         if (!moStarted && document.body) {
