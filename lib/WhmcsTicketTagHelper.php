@@ -291,17 +291,19 @@ class WhmcsTicketTagHelper
     }
 
     /**
-     * Ticket ↔ tag pivot used by WHMCS Tag Cloud (`tbltickettags` on many installs) plus `tbltags` for label text.
+     * Ticket ↔ tag pivot for Tag Cloud: either tag_id → tbltags (FK mode) or plain tag text on the row (text mode).
      *
-     * @return array{pivot:string,ticketCol:string,tagCol:string,cols:string[],meta:array{tagsTable:string,tagTextCol:string,tagIdCol:string}}|null
+     * @return array{
+     *   mode:'fk'|'text',
+     *   pivot:string,
+     *   ticketCol:string,
+     *   tagCol:string,
+     *   cols:string[],
+     *   meta?:array{tagsTable:string,tagTextCol:string,tagIdCol:string}
+     * }|null
      */
     private static function resolveTicketTagPivotMeta(): ?array
     {
-        $meta = self::resolveStandardTagsTable();
-        if (!$meta) {
-            return null;
-        }
-
         foreach (['tbltickettags', 'tbl_ticket_tags', 'tbl_ticket_tag', 'tblticket_tags'] as $pivot) {
             if (!Capsule::schema()->hasTable($pivot)) {
                 continue;
@@ -317,26 +319,46 @@ class WhmcsTicketTagHelper
                 }
                 return null;
             };
+
             $ticketCol = $pick(['ticket_id', 'ticketid', 'tid']);
-            $tagCol    = $pick(['tag_id', 'tagid']);
-            if (!$ticketCol || !$tagCol) {
+            if (!$ticketCol) {
                 continue;
             }
 
-            return [
-                'pivot'     => $pivot,
-                'ticketCol' => $ticketCol,
-                'tagCol'    => $tagCol,
-                'cols'      => $cols,
-                'meta'      => $meta,
-            ];
+            $tagFkCol = $pick(['tag_id', 'tagid']);
+            $tagTextCol = $pick(['tag']);
+
+            if ($tagFkCol) {
+                $meta = self::resolveStandardTagsTable();
+                if ($meta) {
+                    return [
+                        'mode'      => 'fk',
+                        'pivot'     => $pivot,
+                        'ticketCol' => $ticketCol,
+                        'tagCol'    => $tagFkCol,
+                        'cols'      => $cols,
+                        'meta'      => $meta,
+                    ];
+                }
+            }
+
+            // e.g. id, ticketid, tag — tag string stored directly (no tbltags join)
+            if ($tagTextCol && !$tagFkCol) {
+                return [
+                    'mode'      => 'text',
+                    'pivot'     => $pivot,
+                    'ticketCol' => $ticketCol,
+                    'tagCol'    => $tagTextCol,
+                    'cols'      => $cols,
+                ];
+            }
         }
 
         return null;
     }
 
     /**
-     * Many WHMCS builds use a simple ticket_id ↔ tag_id pivot (Tag Cloud sidebar).
+     * Many WHMCS builds use tbltickettags: either ticket_id ↔ tag_id or ticket_id + tag (plain text).
      *
      * @param string[] $tagNames
      */
@@ -347,6 +369,12 @@ class WhmcsTicketTagHelper
         }
         $pm = self::resolveTicketTagPivotMeta();
         if (!$pm) {
+            return;
+        }
+
+        if ($pm['mode'] === 'text') {
+            self::tryPivotTicketTagTableText($pm, $ticketId, $tagNames);
+
             return;
         }
 
@@ -395,7 +423,46 @@ class WhmcsTicketTagHelper
     }
 
     /**
-     * When `tbltaglinks` is absent, WHMCS may still store tags via `tbltickettags` + `tbltags`.
+     * @param array{mode:string,pivot:string,ticketCol:string,tagCol:string,cols:string[]} $pm
+     * @param string[] $tagNames Normalized ai-* slugs
+     */
+    private static function tryPivotTicketTagTableText(array $pm, int $ticketId, array $tagNames): void
+    {
+        $pivot     = $pm['pivot'];
+        $ticketCol = $pm['ticketCol'];
+        $tagCol    = $pm['tagCol'];
+        $cols      = $pm['cols'];
+
+        Capsule::table($pivot)
+            ->where($ticketCol, $ticketId)
+            ->where($tagCol, 'like', self::AI_TAG_PREFIX . '%')
+            ->delete();
+
+        foreach ($tagNames as $name) {
+            $name = substr((string) $name, 0, 191);
+            $exists = Capsule::table($pivot)
+                ->where($ticketCol, $ticketId)
+                ->where($tagCol, $name)
+                ->exists();
+            if ($exists) {
+                continue;
+            }
+            $row = [$ticketCol => $ticketId, $tagCol => $name];
+            if (in_array('created_at', $cols, true)) {
+                $row['created_at'] = date('Y-m-d H:i:s');
+            }
+            if (in_array('updated_at', $cols, true)) {
+                $row['updated_at'] = date('Y-m-d H:i:s');
+            }
+            try {
+                Capsule::table($pivot)->insert($row);
+            } catch (\Throwable $e) {
+            }
+        }
+    }
+
+    /**
+     * When `tbltaglinks` is absent, WHMCS may still store tags via `tbltickettags` (+ `tbltags` for FK mode).
      *
      * @param int[] $ticketIds
      * @param array<int, string[]> $out
@@ -404,6 +471,31 @@ class WhmcsTicketTagHelper
     {
         $pm = self::resolveTicketTagPivotMeta();
         if (!$pm) {
+            return;
+        }
+
+        if ($pm['mode'] === 'text') {
+            try {
+                $rows = Capsule::table($pm['pivot'])
+                    ->whereIn($pm['ticketCol'], $ticketIds)
+                    ->orderBy($pm['tagCol'], 'asc')
+                    ->get([$pm['ticketCol'], $pm['tagCol']]);
+            } catch (\Throwable $e) {
+                return;
+            }
+            $tc = $pm['ticketCol'];
+            $tg = $pm['tagCol'];
+            foreach ($rows as $row) {
+                $rid = (int) ($row->{$tc} ?? 0);
+                $t   = trim((string) ($row->{$tg} ?? ''));
+                if ($rid < 1 || $t === '' || !isset($out[$rid])) {
+                    continue;
+                }
+                if (!in_array($t, $out[$rid], true)) {
+                    $out[$rid][] = $t;
+                }
+            }
+
             return;
         }
 
