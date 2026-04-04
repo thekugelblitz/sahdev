@@ -211,7 +211,17 @@ class WhmcsTicketTagHelper
         }
 
         try {
-            self::tryTicketsTableTagsColumn($ticketId, $normalizedTags);
+            self::tryPivotTicketTagTable($ticketId, $normalizedTags);
+        } catch (\Throwable $e) {
+        }
+
+        try {
+            self::tryPolymorphicTaggables($ticketId, $normalizedTags);
+        } catch (\Throwable $e) {
+        }
+
+        try {
+            self::tryTicketsTableTagColumns($ticketId, $normalizedTags);
         } catch (\Throwable $e) {
         }
 
@@ -234,6 +244,282 @@ class WhmcsTicketTagHelper
             });
         } catch (\Throwable $e) {
             // Never break cron
+        }
+    }
+
+    /**
+     * @return array{tagsTable:string,tagTextCol:string,tagIdCol:string}|null
+     */
+    private static function resolveStandardTagsTable(): ?array
+    {
+        foreach (['tbltags', 'tbltag'] as $t) {
+            if (!Capsule::schema()->hasTable($t)) {
+                continue;
+            }
+            $cols = Capsule::schema()->getColumnListing($t);
+            $lc   = array_map('strtolower', $cols);
+            $pick = function (array $cands) use ($lc, $cols) {
+                foreach ($cands as $c) {
+                    $i = array_search(strtolower($c), $lc, true);
+                    if ($i !== false) {
+                        return $cols[$i];
+                    }
+                }
+                return null;
+            };
+            $tagTextCol = $pick(['tag', 'name', 'title']);
+            $tagIdCol   = $pick(['id']);
+            if ($tagTextCol && $tagIdCol) {
+                return [
+                    'tagsTable'  => $t,
+                    'tagTextCol' => $tagTextCol,
+                    'tagIdCol'   => $tagIdCol,
+                ];
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Many WHMCS builds use a simple ticket_id ↔ tag_id pivot (Tag Cloud sidebar).
+     *
+     * @param string[] $tagNames
+     */
+    private static function tryPivotTicketTagTable(int $ticketId, array $tagNames): void
+    {
+        if ($tagNames === []) {
+            return;
+        }
+        $meta = self::resolveStandardTagsTable();
+        if (!$meta) {
+            return;
+        }
+
+        foreach (['tbltickettags', 'tbl_ticket_tags', 'tbl_ticket_tag', 'tblticket_tags'] as $pivot) {
+            if (!Capsule::schema()->hasTable($pivot)) {
+                continue;
+            }
+            $cols = Capsule::schema()->getColumnListing($pivot);
+            $lc   = array_map('strtolower', $cols);
+            $pick = function (array $cands) use ($lc, $cols) {
+                foreach ($cands as $c) {
+                    $i = array_search(strtolower($c), $lc, true);
+                    if ($i !== false) {
+                        return $cols[$i];
+                    }
+                }
+                return null;
+            };
+            $ticketCol = $pick(['ticket_id', 'ticketid', 'tid']);
+            $tagCol    = $pick(['tag_id', 'tagid']);
+            if (!$ticketCol || !$tagCol) {
+                continue;
+            }
+
+            $aiIds = Capsule::table($meta['tagsTable'])
+                ->where($meta['tagTextCol'], 'like', self::AI_TAG_PREFIX . '%')
+                ->pluck($meta['tagIdCol'])
+                ->toArray();
+            if (!empty($aiIds)) {
+                Capsule::table($pivot)
+                    ->where($ticketCol, $ticketId)
+                    ->whereIn($tagCol, $aiIds)
+                    ->delete();
+            }
+
+            foreach ($tagNames as $name) {
+                $tagId = self::getOrCreateTagIdDirect($meta, $name);
+                if ($tagId === null) {
+                    continue;
+                }
+                $exists = Capsule::table($pivot)
+                    ->where($ticketCol, $ticketId)
+                    ->where($tagCol, $tagId)
+                    ->exists();
+                if ($exists) {
+                    continue;
+                }
+                $row = [$ticketCol => $ticketId, $tagCol => $tagId];
+                if (in_array('created_at', $cols, true)) {
+                    $row['created_at'] = date('Y-m-d H:i:s');
+                }
+                if (in_array('updated_at', $cols, true)) {
+                    $row['updated_at'] = date('Y-m-d H:i:s');
+                }
+                try {
+                    Capsule::table($pivot)->insert($row);
+                } catch (\Throwable $e) {
+                    // ignore duplicate / constraint
+                }
+            }
+            return;
+        }
+    }
+
+    /**
+     * Polymorphic tag rows (taggable_id + taggable_type) used in some WHMCS versions.
+     *
+     * @param string[] $tagNames
+     */
+    private static function tryPolymorphicTaggables(int $ticketId, array $tagNames): void
+    {
+        if ($tagNames === []) {
+            return;
+        }
+        $meta = self::resolveStandardTagsTable();
+        if (!$meta) {
+            return;
+        }
+
+        foreach (['tbltaggables', 'tbl_taggables'] as $table) {
+            if (!Capsule::schema()->hasTable($table)) {
+                continue;
+            }
+            $cols = Capsule::schema()->getColumnListing($table);
+            $lc   = array_map('strtolower', $cols);
+            $pick = function (array $cands) use ($lc, $cols) {
+                foreach ($cands as $c) {
+                    $i = array_search(strtolower($c), $lc, true);
+                    if ($i !== false) {
+                        return $cols[$i];
+                    }
+                }
+                return null;
+            };
+            $tagIdCol   = $pick(['tag_id', 'tagid']);
+            $relIdCol   = $pick(['taggable_id', 'entity_id', 'rel_id', 'ticket_id', 'ticketid']);
+            $typeCol    = $pick(['taggable_type', 'entity_type', 'type', 'rel_type']);
+            if (!$tagIdCol || !$relIdCol || !$typeCol) {
+                continue;
+            }
+
+            $typeGuesses = array_merge(
+                [
+                    'ticket', 'Ticket', 'tickets', 'TICKET', 'support', 'Support',
+                    'WHMCS\\Support\\Ticket', 'WHMCS\\Tickets\\Ticket', 'WHMCS\\Ticket\\Ticket',
+                ],
+                self::distinctColumnValues($table, $typeCol)
+            );
+            $typeGuesses = array_values(array_unique(array_filter($typeGuesses)));
+
+            $aiIds = Capsule::table($meta['tagsTable'])
+                ->where($meta['tagTextCol'], 'like', self::AI_TAG_PREFIX . '%')
+                ->pluck($meta['tagIdCol'])
+                ->toArray();
+            if (!empty($aiIds)) {
+                Capsule::table($table)
+                    ->where($relIdCol, $ticketId)
+                    ->whereIn($tagIdCol, $aiIds)
+                    ->whereIn($typeCol, $typeGuesses)
+                    ->delete();
+            }
+
+            foreach ($tagNames as $name) {
+                $tid = self::getOrCreateTagIdDirect($meta, $name);
+                if ($tid === null) {
+                    continue;
+                }
+                foreach ($typeGuesses as $typeVal) {
+                    $exists = Capsule::table($table)
+                        ->where($relIdCol, $ticketId)
+                        ->where($tagIdCol, $tid)
+                        ->where($typeCol, $typeVal)
+                        ->exists();
+                    if ($exists) {
+                        break;
+                    }
+                    $row = [
+                        $tagIdCol   => $tid,
+                        $relIdCol   => $ticketId,
+                        $typeCol    => $typeVal,
+                    ];
+                    if (in_array('created_at', $cols, true)) {
+                        $row['created_at'] = date('Y-m-d H:i:s');
+                    }
+                    if (in_array('updated_at', $cols, true)) {
+                        $row['updated_at'] = date('Y-m-d H:i:s');
+                    }
+                    try {
+                        Capsule::table($table)->insert($row);
+                        break;
+                    } catch (\Throwable $e) {
+                        continue;
+                    }
+                }
+            }
+            return;
+        }
+    }
+
+    /**
+     * @return mixed[]
+     */
+    private static function distinctColumnValues(string $table, string $column): array
+    {
+        try {
+            return Capsule::table($table)->whereNotNull($column)->distinct()->limit(40)->pluck($column)->toArray();
+        } catch (\Throwable $e) {
+            return [];
+        }
+    }
+
+    /**
+     * @param array{tagsTable:string,tagTextCol:string,tagIdCol:string} $meta
+     */
+    private static function getOrCreateTagIdDirect(array $meta, string $tagName): ?int
+    {
+        $tagName = substr($tagName, 0, 128);
+        $existing = Capsule::table($meta['tagsTable'])
+            ->where($meta['tagTextCol'], $tagName)
+            ->value($meta['tagIdCol']);
+        if ($existing !== null) {
+            return (int) $existing;
+        }
+        $insert = [$meta['tagTextCol'] => $tagName];
+        $tagTableCols = Capsule::schema()->getColumnListing($meta['tagsTable']);
+        if (in_array('created_at', $tagTableCols, true)) {
+            $insert['created_at'] = date('Y-m-d H:i:s');
+        }
+        if (in_array('updated_at', $tagTableCols, true)) {
+            $insert['updated_at'] = date('Y-m-d H:i:s');
+        }
+        try {
+            return (int) Capsule::table($meta['tagsTable'])->insertGetId($insert);
+        } catch (\Throwable $e) {
+            $existing = Capsule::table($meta['tagsTable'])
+                ->where($meta['tagTextCol'], $tagName)
+                ->value($meta['tagIdCol']);
+            return $existing !== null ? (int) $existing : null;
+        }
+    }
+
+    /**
+     * Learn rel_type / type values already stored so inserts match the UI.
+     *
+     * @param array<string,mixed> $s
+     * @return mixed[]
+     */
+    private static function inferLinkTypeValues(array $s): array
+    {
+        if (empty($s['typeCol'])) {
+            return [];
+        }
+        try {
+            $fromDb = Capsule::table($s['linksTable'])
+                ->whereNotNull($s['typeCol'])
+                ->distinct()
+                ->limit(40)
+                ->pluck($s['typeCol'])
+                ->toArray();
+            $clean = [];
+            foreach ($fromDb as $v) {
+                if ($v !== null && $v !== '') {
+                    $clean[] = $v;
+                }
+            }
+            return array_values(array_unique(array_merge(self::REL_TYPE_VALUES, [1, 2], $clean)));
+        } catch (\Throwable $e) {
+            return array_merge(self::REL_TYPE_VALUES, [1, 2]);
         }
     }
 
@@ -274,38 +560,56 @@ class WhmcsTicketTagHelper
     }
 
     /**
-     * If core stores tags as CSV on tbltickets.tags, merge Sahdev slugs there.
+     * Updates every string-like column on tbltickets whose name contains "tag" (e.g. tags, tag_list).
      *
      * @param string[] $tagNames
      */
-    private static function tryTicketsTableTagsColumn(int $ticketId, array $tagNames): void
+    private static function tryTicketsTableTagColumns(int $ticketId, array $tagNames): void
     {
         if ($tagNames === [] || !Capsule::schema()->hasTable('tbltickets')) {
             return;
         }
-        if (!Capsule::schema()->hasColumn('tbltickets', 'tags')) {
-            return;
-        }
 
-        $current = trim((string) (Capsule::table('tbltickets')->where('id', $ticketId)->value('tags') ?? ''));
-        $parts   = $current === '' ? [] : array_map('trim', explode(',', $current));
-
-        $keep = [];
-        foreach ($parts as $p) {
-            if ($p === '') {
+        $cols = Capsule::schema()->getColumnListing('tbltickets');
+        $allowedNames = ['tags', 'tag', 'tag_list', 'taglist', 'tickettags'];
+        foreach ($cols as $col) {
+            $l = strtolower((string) $col);
+            if (!in_array($l, $allowedNames, true)) {
                 continue;
             }
-            // Drop previous Sahdev slugs / "AI …" style tags so we can replace the set
-            if (preg_match('/^ai[-\s]/i', $p)) {
+            try {
+                $type = Capsule::schema()->getColumnType('tbltickets', $col);
+            } catch (\Throwable $e) {
                 continue;
             }
-            $keep[] = $p;
-        }
+            $tl = strtolower((string) $type);
+            if (strpos($tl, 'char') === false && strpos($tl, 'text') === false && strpos($tl, 'string') === false) {
+                continue;
+            }
 
-        $merged = array_values(array_unique(array_merge($keep, $tagNames)));
-        Capsule::table('tbltickets')->where('id', $ticketId)->update([
-            'tags' => implode(',', $merged),
-        ]);
+            $current = trim((string) (Capsule::table('tbltickets')->where('id', $ticketId)->value($col) ?? ''));
+            $parts   = $current === '' ? [] : array_map('trim', explode(',', $current));
+
+            $keep = [];
+            foreach ($parts as $p) {
+                if ($p === '') {
+                    continue;
+                }
+                if (preg_match('/^ai[-\s]/i', $p)) {
+                    continue;
+                }
+                $keep[] = $p;
+            }
+
+            $merged = array_values(array_unique(array_merge($keep, $tagNames)));
+            try {
+                Capsule::table('tbltickets')->where('id', $ticketId)->update([
+                    $col => implode(',', $merged),
+                ]);
+            } catch (\Throwable $e) {
+                continue;
+            }
+        }
     }
 
     /**
@@ -321,7 +625,7 @@ class WhmcsTicketTagHelper
             ->where('tg.' . $s['tagTextCol'], 'like', self::AI_TAG_PREFIX . '%');
 
         if (!empty($s['typeCol'])) {
-            $q->whereIn('tl.' . $s['typeCol'], array_merge(self::REL_TYPE_VALUES, [1, 2]));
+            $q->whereIn('tl.' . $s['typeCol'], self::inferLinkTypeValues($s));
         }
 
         $pk = $s['linkPkCol'] ?? 'id';
@@ -376,7 +680,7 @@ class WhmcsTicketTagHelper
             ->where($s['linkRelCol'], $ticketId);
 
         if (!empty($s['typeCol'])) {
-            $q->whereIn($s['typeCol'], array_merge(self::REL_TYPE_VALUES, [1, 2]));
+            $q->whereIn($s['typeCol'], self::inferLinkTypeValues($s));
         }
 
         if ($q->exists()) {
@@ -406,7 +710,7 @@ class WhmcsTicketTagHelper
             return;
         }
 
-        $typeAttempts = array_merge(self::REL_TYPE_VALUES, [1, 2]);
+        $typeAttempts = self::inferLinkTypeValues($s);
         foreach ($typeAttempts as $typeVal) {
             $row = array_merge($baseRow, [$s['typeCol'] => $typeVal], $timestamps);
             try {
