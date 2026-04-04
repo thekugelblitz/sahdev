@@ -2044,22 +2044,11 @@ add_hook('CronJob', 1, function () {
 // AdminSupportTicketPagePreTickets is list-specific and also accepts HTML (ticket hook reference).
 
 /**
- * @return string HTML to inject (empty if N/A)
+ * Build CSS/JS for the Support Tickets list (reads tblsahdev_sentiment via AJAX).
  */
-function sahdev_ticket_list_insights_markup(): string
+function sahdev_build_ticket_list_insights_html(): string
 {
     try {
-        $script = strtolower(basename($_SERVER['SCRIPT_NAME'] ?? ''));
-        $action = isset($_GET['action']) ? trim((string) $_GET['action']) : '';
-        $id     = isset($_GET['id']) ? (int) $_GET['id'] : 0;
-        // Single-ticket view: do not inject list script
-        $isTicketView = ($action === 'view' && $id > 0);
-        $isTicketList = ($script === 'supporttickets.php') && !$isTicketView;
-
-        if (!$isTicketList) {
-            return '';
-        }
-
         if (!\WHMCS\Database\Capsule::schema()->hasTable('tblsahdev_settings')) {
             return '';
         }
@@ -2078,21 +2067,70 @@ function sahdev_ticket_list_insights_markup(): string
     }
 }
 
-add_hook('AdminAreaFooterOutput', 1, function ($vars) {
-    $filename = isset($vars['filename']) ? strtolower(trim((string) $vars['filename'])) : '';
-    $action   = isset($_GET['action']) ? trim((string) $_GET['action']) : '';
-    $id       = isset($_GET['id']) ? (int) $_GET['id'] : 0;
-    $isView   = ($action === 'view' && $id > 0);
-    $isList   = !$isView && (
-        $filename === 'supporttickets'
-        || $filename === 'supporttickets.php'
-        || strtolower(basename($_SERVER['SCRIPT_NAME'] ?? '')) === 'supporttickets.php'
-    );
-    if (!$isList) {
+/**
+ * Detect admin Support Tickets list across classic scripts and routed admin URLs.
+ */
+function sahdev_is_admin_support_tickets_list_page(): bool
+{
+    $action = isset($_GET['action']) ? trim((string) $_GET['action']) : '';
+    $id     = isset($_GET['id']) ? (int) $_GET['id'] : 0;
+    if ($action === 'view' && $id > 0) {
+        return false;
+    }
+
+    $script = strtolower(basename($_SERVER['SCRIPT_NAME'] ?? ''));
+    $self   = strtolower(basename($_SERVER['PHP_SELF'] ?? ''));
+    $uri    = strtolower($_SERVER['REQUEST_URI'] ?? '');
+
+    if ($script === 'supporttickets.php' || $self === 'supporttickets.php') {
+        return true;
+    }
+    if (strpos($uri, 'supporttickets.php') !== false) {
+        return true;
+    }
+    if (preg_match('/supportticket/', $uri) && strpos($uri, 'action=view') === false) {
+        return true;
+    }
+    if (!empty($_GET['rp']) && stripos((string) $_GET['rp'], 'ticket') !== false) {
+        return true;
+    }
+
+    return false;
+}
+
+/**
+ * Emit list insights HTML once per request (AdminSupportTicketPagePreTickets + AdminAreaFooterOutput).
+ *
+ * @param bool $skipUrlCheck true for AdminSupportTicketPagePreTickets (list-only hook)
+ */
+function sahdev_emit_ticket_list_insights_markup(bool $skipUrlCheck): string
+{
+    static $emitted = false;
+    if ($emitted) {
+        return '';
+    }
+    if (!$skipUrlCheck && !sahdev_is_admin_support_tickets_list_page()) {
         return '';
     }
 
-    return sahdev_ticket_list_insights_markup();
+    $html = sahdev_build_ticket_list_insights_html();
+    if ($html !== '') {
+        $emitted = true;
+    }
+
+    return $html;
+}
+
+// Official ticket hook: admin support tickets listing only (developers.whmcs.com — Ticket hooks)
+add_hook('AdminSupportTicketPagePreTickets', 1, function () {
+    return sahdev_emit_ticket_list_insights_markup(true);
+});
+
+// Fallback: HTML before </body> (Output hooks) when filename/routing differs by install
+add_hook('AdminAreaFooterOutput', 1, function ($vars) {
+    unset($vars);
+
+    return sahdev_emit_ticket_list_insights_markup(false);
 });
 
 /**
@@ -2245,13 +2283,31 @@ tr.sdv-row-low      td.sdv-insight-target { box-shadow: inset 4px 0 0 #198754 !i
         return null;
     }
 
+    function resolveHref(anchor) {
+        var href = anchor.getAttribute('href') || '';
+        if (!href) return '';
+        try {
+            return new URL(href, window.location.href).href;
+        } catch (e) {
+            return href;
+        }
+    }
+
     function isSupportTicketsHref(href) {
         if (!href) return false;
-        return href.toLowerCase().indexOf('supportticket') !== -1;
+        var h = href.toLowerCase();
+        if (h.indexOf('supportticket') !== -1) return true;
+        try {
+            var loc = window.location.href.toLowerCase();
+            if (loc.indexOf('supportticket') !== -1 && /[?&]id=\d+/.test(h)) {
+                return true;
+            }
+        } catch (e) {}
+        return false;
     }
 
     function extractTicketRefFromLink(anchor) {
-        var href = anchor.getAttribute('href') || '';
+        var href = resolveHref(anchor);
         if (!isSupportTicketsHref(href)) return null;
         var m = href.match(/[?&]id=(\d+)(?:&|#|$)/i);
         if (m) return { id: m[1] };
@@ -2304,7 +2360,7 @@ tr.sdv-row-low      td.sdv-insight-target { box-shadow: inset 4px 0 0 #198754 !i
     function findSubjectCell(row, tidAttr, maskAttr) {
         var links = row.querySelectorAll('a[href]');
         for (var i = 0; i < links.length; i++) {
-            if (!isSupportTicketsHref(links[i].getAttribute('href') || '')) continue;
+            if (!isSupportTicketsHref(resolveHref(links[i]))) continue;
             var ref = extractTicketRefFromLink(links[i]);
             if (!ref) continue;
             if (tidAttr && ref.id && String(ref.id) === String(tidAttr)) return links[i].closest('td');

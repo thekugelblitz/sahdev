@@ -2911,6 +2911,39 @@ class AdminController
                             <?php endif; ?>
                         </div>
 
+                        <div style="width:100%; flex-basis:100%; border-top:1px solid #eee; margin-top:8px; padding-top:18px;">
+                            <h5 style="margin:0 0 14px; font-size:14px;"><i class="fas fa-link" style="color:#6c757d;"></i> WHMCS cron URL &amp; CLI path</h5>
+                            <p class="text-muted" style="font-size:12px; margin:-6px 0 12px;">
+                                Many installs move <code>cron.php</code> outside the default <code>/crons/</code> folder. Set the <strong>full HTTP URL</strong> you use to trigger the cron (include <code>https://</code> and any token query string from WHMCS),
+                                and/or paste your <strong>CLI</strong> line for your own records (e.g. cPanel EA-PHP path to a non-standard cron directory).
+                            </p>
+                            <div class="form-group" style="max-width:920px;">
+                                <label style="font-weight:600;">HTTP cron URL (override)</label>
+                                <input type="text" name="insights_cron_http_url" class="form-control" autocomplete="off"
+                                    value="<?php echo htmlspecialchars($cronHttpSaved); ?>"
+                                    placeholder="<?php echo htmlspecialchars($whmcsCronDefaultHttp ?: 'https://your-domain.com/path/to/cron.php'); ?>">
+                                <small class="text-muted">
+                                    Leave blank to use WHMCS <strong>SystemURL</strong> + <code>/crons/cron.php</code>
+                                    (detected: <code><?php echo htmlspecialchars($whmcsCronDefaultHttp ?: '—'); ?></code>).
+                                </small>
+                            </div>
+                            <div class="form-group" style="max-width:920px;">
+                                <label style="font-weight:600;">CLI / crontab command (reference)</label>
+                                <textarea name="insights_cron_cli_command" class="form-control" rows="2" style="font-family:monospace;font-size:12px;"
+                                    placeholder="/opt/cpanel/ea-php82/root/usr/bin/php -q /home/user/secops/crons/cron.php"><?php echo htmlspecialchars($cronCliSaved); ?></textarea>
+                                <small class="text-muted">Not executed by Sahdev — stored so operators see the real server path (e.g. security-hardened cron folder).</small>
+                            </div>
+                            <div class="form-group" style="margin-bottom:8px;">
+                                <button type="button" id="sahdev-test-cron-http" class="btn btn-default btn-sm">
+                                    <i class="fas fa-vial"></i> Test HTTP cron URL
+                                </button>
+                                <button type="button" id="sahdev-debug-insights-cron" class="btn btn-info btn-sm" style="margin-left:6px;">
+                                    <i class="fas fa-bug"></i> Debug Ticket Insights batch
+                                </button>
+                            </div>
+                            <pre id="sahdev-cron-debug-out" style="display:none; max-height:280px; overflow:auto; font-size:11px; padding:12px; background:#212529; color:#f8f9fa; border-radius:6px; margin-top:8px; white-space:pre-wrap;"></pre>
+                        </div>
+
                         <div class="form-group" style="align-self:flex-end;">
                             <button type="submit" class="btn btn-success">
                                 <i class="fas fa-save"></i> Save Settings
@@ -3080,7 +3113,7 @@ class AdminController
         (function() {
             var btn    = document.getElementById('sahdev-trigger-cron');
             var msgBox = document.getElementById('sahdev-cron-msg');
-            if (!btn) return;
+            var dbgOut = document.getElementById('sahdev-cron-debug-out');
 
             var AJAX = '<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&sahdev_act=ajax_handler';
 
@@ -3105,6 +3138,37 @@ class AdminController
                         return r.json();
                     });
             }
+
+            var testHttpBtn = document.getElementById('sahdev-test-cron-http');
+            if (testHttpBtn) {
+                testHttpBtn.addEventListener('click', function() {
+                    var urlField = document.querySelector('[name="insights_cron_http_url"]');
+                    var testUrl = urlField ? urlField.value.trim() : '';
+                    if (dbgOut) { dbgOut.style.display = 'block'; dbgOut.textContent = 'Requesting…'; }
+                    post('test_whmcs_cron_http', { test_url: testUrl })
+                        .then(function(d) { if (dbgOut) dbgOut.textContent = JSON.stringify(d, null, 2); })
+                        .catch(function(e) { if (dbgOut) dbgOut.textContent = 'Error: ' + e.message; });
+                });
+            }
+
+            var dbgBtn = document.getElementById('sahdev-debug-insights-cron');
+            if (dbgBtn) {
+                dbgBtn.addEventListener('click', function() {
+                    dbgBtn.disabled = true;
+                    if (dbgOut) { dbgOut.style.display = 'block'; dbgOut.textContent = 'Running batch…'; }
+                    post('trigger_cron_run')
+                        .then(function(d) {
+                            dbgBtn.disabled = false;
+                            if (dbgOut) dbgOut.textContent = JSON.stringify(d, null, 2);
+                        })
+                        .catch(function(e) {
+                            dbgBtn.disabled = false;
+                            if (dbgOut) dbgOut.textContent = 'Error: ' + e.message;
+                        });
+                });
+            }
+
+            if (!btn) return;
 
             btn.addEventListener('click', function() {
                 btn.disabled = true;
