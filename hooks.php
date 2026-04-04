@@ -51,9 +51,43 @@ function sahdev_inject_ticket_panel($vars)
         $routingProviders = [];
     }
 
+    require_once __DIR__ . '/lib/TaskProviderResolver.php';
+    $defaultTicketOptionLabel = 'Default (routing)';
+    if ($settings) {
+        $effId = \Sahdev\Lib\TaskProviderResolver::resolveProviderId(
+            \Sahdev\Lib\TaskProviderResolver::TASK_TICKET_REPLY,
+            null,
+            (array) $settings
+        );
+        $defRow = Capsule::table('tblsahdev_providers')->where('id', $effId)->first();
+        if ($defRow) {
+            $mn = trim((string) ($defRow->model_name ?? ''));
+            $defaultTicketOptionLabel = 'Default: ' . $defRow->name . ($mn !== '' ? ' — ' . $mn : '');
+        }
+    }
+    $defaultTicketOptionLabelEsc = htmlspecialchars($defaultTicketOptionLabel, ENT_QUOTES, 'UTF-8');
+
+    $providerOptionsHtml = '';
+    foreach ($routingProviders as $rp) {
+        $rid    = (int) $rp->id;
+        $rlabel = htmlspecialchars($rp->name . ' — ' . ($rp->model_name ?? ''), ENT_QUOTES, 'UTF-8');
+        $providerOptionsHtml .= '<option value="' . $rid . '">' . $rlabel . '</option>';
+    }
+
     $isSel = function ($val, $current) {
         return $val === $current ? 'selected' : '';
     };
+
+    $toneSelProfessional = $isSel('Professional', $defaultTone);
+    $toneSelTechnical    = $isSel('Technical', $defaultTone);
+    $toneSelFriendly     = $isSel('Friendly', $defaultTone);
+    $toneSelStrict       = $isSel('Strict', $defaultTone);
+    $toneSelCustom       = $isSel('Custom', $defaultTone);
+
+    $modelSelectHtml = '<select id="sahdev_override_provider" class="form-control" style="max-width: 520px; color: #212529; background-color: #fff;">'
+        . '<option value="">' . $defaultTicketOptionLabelEsc . '</option>'
+        . $providerOptionsHtml
+        . '</select>';
 
     $scoreBtnStyle = $qualityScorerEnabled === 'true' ? '' : 'display: none;';
 
@@ -127,6 +161,7 @@ function sahdev_inject_ticket_panel($vars)
                 .sahdev-intent-btn { background: #f0f0f0; color: #555; border: 1px solid #ccc; transition: all 0.15s ease; }
                 .sahdev-intent-btn:hover { background: #dbe4ff; color: #3a56c9; border-color: #3a56c9; }
                 .sahdev-intent-active { background: #0d6efd !important; color: #fff !important; border-color: #0d6efd !important; }
+                #sahdev_override_provider, #sahdev_override_provider option { color: #212529; background-color: #fff; }
             </style>
 
             <div class="row">
@@ -134,11 +169,11 @@ function sahdev_inject_ticket_panel($vars)
                     <div class="form-group">
                         <label>AI Tone</label>
                         <select id="sahdev_tone" class="form-control">
-                            <option value="Professional" {$isSel('Professional', $defaultTone)}>Professional</option>
-                            <option value="Technical" {$isSel('Technical', $defaultTone)}>Technical</option>
-                            <option value="Friendly" {$isSel('Friendly', $defaultTone)}>Friendly</option>
-                            <option value="Strict" {$isSel('Strict', $defaultTone)}>Strict</option>
-                            <option value="Custom" {$isSel('Custom', $defaultTone)}>Custom</option>
+                            <option value="Professional" {$toneSelProfessional}>Professional</option>
+                            <option value="Technical" {$toneSelTechnical}>Technical</option>
+                            <option value="Friendly" {$toneSelFriendly}>Friendly</option>
+                            <option value="Strict" {$toneSelStrict}>Strict</option>
+                            <option value="Custom" {$toneSelCustom}>Custom</option>
                         </select>
                     </div>
                 </div>
@@ -160,12 +195,7 @@ function sahdev_inject_ticket_panel($vars)
                 <div class="col-md-12">
                     <div class="form-group" style="margin-bottom: 10px;">
                         <label style="font-weight: 600;">Model for this generation</label>
-                        <select id="sahdev_override_provider" class="form-control" style="max-width: 520px;">
-                            <option value="">Use default (routing / primary)</option>
-                            <?php foreach ($routingProviders as $rp): ?>
-                                <option value="<?php echo (int) $rp->id; ?>"><?php echo htmlspecialchars($rp->name . ' — ' . ($rp->model_name ?? '')); ?></option>
-                            <?php endforeach; ?>
-                        </select>
+                        {$modelSelectHtml}
                         <small class="text-muted">Optional override for this ticket’s analysis and reply generation only. Admins only.</small>
                     </div>
                 </div>
@@ -2258,10 +2288,18 @@ function sahdev_render_ticket_list_insights(string $ajaxUrlJs): string
 .sdv-urg-high     { background:#fd7e14; color:#fff; }
 .sdv-urg-medium   { background:#ffc107; color:#212529; }
 .sdv-urg-low      { background:#198754; color:#fff; }
-/* Sentiment pill */
-.sdv-sentiment    { background:#f1f3f5; color:#495057; border:1px solid #dee2e6; font-weight:600; }
-/* Tone pill */
-.sdv-tone         { background:#fff; color:#6c757d; border:1px solid #dee2e6; font-style:italic; }
+/* Sentiment pill — intensity tiers (score /10) */
+.sdv-sent-unknown   { background:#e9ecef; color:#495057; border:1px solid #ced4da; font-weight:600; }
+.sdv-sent-calm      { background: linear-gradient(135deg, #d4edda 0%, #e8f5e9 100%); color:#155724; border:1px solid #a3d9b1; font-weight:700; box-shadow: 0 0 0 1px rgba(25,135,84,0.12); }
+.sdv-sent-moderate  { background: linear-gradient(135deg, #fff3cd 0%, #fff8e1 100%); color:#856404; border:1px solid #ffecb5; font-weight:700; box-shadow: 0 0 0 1px rgba(255,193,7,0.25); }
+.sdv-sent-high      { background: linear-gradient(135deg, #f8d7da 0%, #fde8e8 100%); color:#842029; border:1px solid #f1aeb5; font-weight:800; box-shadow: 0 0 0 1px rgba(220,53,69,0.35); animation: sdv-pulse-soft 2.2s ease-in-out infinite; }
+@keyframes sdv-pulse-soft { 0%,100% { filter: brightness(1); } 50% { filter: brightness(0.97); } }
+/* Tone pill — client emotional posture */
+.sdv-tone-positive  { background: linear-gradient(135deg, #e7f6ec 0%, #f0fff4 100%); color:#0f5132; border:1px solid #a3cfbb; font-weight:600; font-style: normal; }
+.sdv-tone-neutral   { background:#f8f9fa; color:#495057; border:1px solid #dee2e6; font-weight:600; font-style: normal; }
+.sdv-tone-warm      { background: linear-gradient(135deg, #fff4e5 0%, #fffaf0 100%); color:#b45309; border:1px solid #fec89a; font-weight:700; font-style: normal; }
+.sdv-tone-hot       { background: linear-gradient(135deg, #fde2e4 0%, #fff0f1 100%); color:#9b1c31; border:1px solid #f5a8b0; font-weight:800; font-style: normal; box-shadow: 0 0 0 1px rgba(220,53,69,0.25); }
+.sdv-tone           { background:#fff; color:#6c757d; border:1px solid #dee2e6; font-style:italic; }
 /* Admin reply badge */
 .sdv-admin-rep    { background:#e7f3ff; color:#0d6efd; border:1px solid #b6d4fe; }
 /* Row urgency — Subject cell (checkbox is first column on default WHMCS list) */
@@ -2269,6 +2307,10 @@ tr.sdv-row-critical td.sdv-insight-target { box-shadow: inset 4px 0 0 #dc3545 !i
 tr.sdv-row-high     td.sdv-insight-target { box-shadow: inset 4px 0 0 #fd7e14 !important; }
 tr.sdv-row-medium   td.sdv-insight-target { box-shadow: inset 4px 0 0 #ffc107 !important; }
 tr.sdv-row-low      td.sdv-insight-target { box-shadow: inset 4px 0 0 #198754 !important; }
+/* Subtle row wash by sentiment intensity (stacks with urgency stripe) */
+tr.sdv-row-sent-calm td { background-color: rgba(25, 135, 84, 0.035) !important; }
+tr.sdv-row-sent-moderate td { background-color: rgba(255, 193, 7, 0.06) !important; }
+tr.sdv-row-sent-high td { background-color: rgba(220, 53, 69, 0.06) !important; }
 .sdv-insight-panel--compact { border: 0; box-shadow: none; background: transparent; margin-top: 4px; }
 .sdv-insight-panel--compact .sdv-insight-panel-hd { display: none; }
 .sdv-insight-panel--compact .sdv-insight-panel-bd { padding: 2px 0 0; border: 0; background: transparent; }
@@ -2403,9 +2445,60 @@ tr.sdv-row-low      td.sdv-insight-target { box-shadow: inset 4px 0 0 #198754 !i
     var TONE_ICON = {
         Angry: '😡', Threatening: '⚠️', Demanding: '😤',
         Impatient: '⏳', Neutral: '😐', Confused: '😕',
-        Polite: '🙂', Appreciative: '😊'
+        Polite: '🙂', Appreciative: '😊', Frustrated: '😤'
+    };
+    /** Higher = more hostile / needs attention — used for sorting & severity */
+    var TONE_RANK = {
+        Threatening: 10, Angry: 10, Frustrated: 8, Demanding: 8,
+        Impatient: 6, Confused: 4, Neutral: 2, Polite: 1, Appreciative: 0
     };
     var URG_RANK = { critical: 4, high: 3, medium: 2, low: 1 };
+
+    function sentimentTierClass(score) {
+        var n = parseInt(score, 10);
+        if (isNaN(n)) return 'sdv-sent-unknown';
+        if (n <= 3) return 'sdv-sent-calm';
+        if (n <= 6) return 'sdv-sent-moderate';
+        return 'sdv-sent-high';
+    }
+
+    function sentimentRowClass(score) {
+        var n = parseInt(score, 10);
+        if (isNaN(n)) return '';
+        if (n <= 3) return 'sdv-row-sent-calm';
+        if (n <= 6) return 'sdv-row-sent-moderate';
+        return 'sdv-row-sent-high';
+    }
+
+    function tonePillClass(tone) {
+        if (!tone) return 'sdv-tone-neutral';
+        var t = String(tone);
+        if (TONE_RANK[t] !== undefined) {
+            var r = TONE_RANK[t];
+            if (r >= 8) return 'sdv-tone-hot';
+            if (r >= 5) return 'sdv-tone-warm';
+            if (r <= 1) return 'sdv-tone-positive';
+            return 'sdv-tone-neutral';
+        }
+        var low = t.toLowerCase();
+        if (/threat|angry|hostile|frustrat/i.test(low)) return 'sdv-tone-hot';
+        if (/demand|impatient|urgent|upset|annoyed/i.test(low)) return 'sdv-tone-warm';
+        if (/polite|thank|appreciat|kind/i.test(low)) return 'sdv-tone-positive';
+        return 'sdv-tone-neutral';
+    }
+
+    function toneRankForSort(tone) {
+        if (!tone) return 0;
+        if (TONE_RANK[tone] !== undefined) return TONE_RANK[tone];
+        var low = String(tone).toLowerCase();
+        if (/threat|angry|hostile/i.test(low)) return 10;
+        if (/frustrat/i.test(low)) return 8;
+        if (/demand|impatient/i.test(low)) return 6;
+        if (/confus/i.test(low)) return 4;
+        if (/neutral/i.test(low)) return 2;
+        if (/polite|appreciat/i.test(low)) return 1;
+        return 3;
+    }
 
     function getTicketListTable() {
         var scope = document.querySelector('#contentarea') || document.querySelector('.contentarea') || document.body;
@@ -2599,14 +2692,16 @@ tr.sdv-row-low      td.sdv-insight-target { box-shadow: inset 4px 0 0 #198754 !i
 
         if (sentiment || score) {
             var sentPill = document.createElement('span');
-            sentPill.className = 'sdv-pill sdv-sentiment';
+            sentPill.className = 'sdv-pill ' + sentimentTierClass(ins.sentiment_score);
+            sentPill.setAttribute('title', 'Sentiment intensity (0–10): higher = stronger negative affect in the client message.');
             sentPill.textContent = sentiment + (score ? ' ' + score : '');
             bar.appendChild(sentPill);
         }
 
         if (tone) {
             var tonePill = document.createElement('span');
-            tonePill.className = 'sdv-pill sdv-tone';
+            tonePill.className = 'sdv-pill ' + tonePillClass(tone);
+            tonePill.setAttribute('title', 'Detected client tone — color reflects severity.');
             tonePill.textContent = (toneIcon ? toneIcon + ' ' : '') + tone;
             bar.appendChild(tonePill);
         }
@@ -2651,10 +2746,16 @@ tr.sdv-row-low      td.sdv-insight-target { box-shadow: inset 4px 0 0 #198754 !i
 
         panel.appendChild(bd);
         row.classList.add('sdv-row-' + urgency);
+        var sentRow = sentimentRowClass(ins.sentiment_score);
+        if (sentRow) row.classList.add(sentRow);
 
         var scNum = parseInt(ins.sentiment_score, 10);
         if (isNaN(scNum)) scNum = 0;
+        var trk = toneRankForSort(tone);
+        var severity = scNum * 10 + trk;
         row.setAttribute('data-sdv-score', String(scNum));
+        row.setAttribute('data-sdv-tone-rank', String(trk));
+        row.setAttribute('data-sdv-severity', String(severity));
         row.setAttribute('data-sdv-urgency-rank', String(URG_RANK[urgency] || 0));
 
         var td = findSubjectCell(row, row.getAttribute('data-sdv-tid'), row.getAttribute('data-sdv-tmask'));
@@ -2775,6 +2876,18 @@ tr.sdv-row-low      td.sdv-insight-target { box-shadow: inset 4px 0 0 #198754 !i
             var n = parseInt(u, 10);
             return isNaN(n) ? -1 : n;
         }
+        function toneR(a) {
+            var t = a.getAttribute('data-sdv-tone-rank');
+            if (t === null || t === '') return -1;
+            var n = parseInt(t, 10);
+            return isNaN(n) ? -1 : n;
+        }
+        function sev(a) {
+            var s = a.getAttribute('data-sdv-severity');
+            if (s === null || s === '') return -1;
+            var n = parseInt(s, 10);
+            return isNaN(n) ? -1 : n;
+        }
         if (mode === 'default') {
             rows.sort(function (a, b) { return orig(a) - orig(b); });
         } else if (mode === 'score_desc') {
@@ -2806,6 +2919,38 @@ tr.sdv-row-low      td.sdv-insight-target { box-shadow: inset 4px 0 0 #198754 !i
                 var ta = ua < 0 ? 99 : ua;
                 var tbv = ub < 0 ? 99 : ub;
                 var d = ta - tbv;
+                if (d !== 0) return d;
+                return orig(a) - orig(b);
+            });
+        } else if (mode === 'severity_desc') {
+            rows.sort(function (a, b) {
+                var d = sev(b) - sev(a);
+                if (d !== 0) return d;
+                return orig(a) - orig(b);
+            });
+        } else if (mode === 'severity_asc') {
+            rows.sort(function (a, b) {
+                var sa = sev(a);
+                var sb = sev(b);
+                var ta = sa < 0 ? 99999 : sa;
+                var tbv = sb < 0 ? 99999 : sb;
+                var d = ta - tbv;
+                if (d !== 0) return d;
+                return orig(a) - orig(b);
+            });
+        } else if (mode === 'tone_desc') {
+            rows.sort(function (a, b) {
+                var d = toneR(b) - toneR(a);
+                if (d !== 0) return d;
+                return orig(a) - orig(b);
+            });
+        } else if (mode === 'tone_asc') {
+            rows.sort(function (a, b) {
+                var ta = toneR(a);
+                var tbv = toneR(b);
+                var xa = ta < 0 ? 999 : ta;
+                var xb = tbv < 0 ? 999 : tbv;
+                var d = xa - xb;
                 if (d !== 0) return d;
                 return orig(a) - orig(b);
             });
@@ -2866,8 +3011,12 @@ tr.sdv-row-low      td.sdv-insight-target { box-shadow: inset 4px 0 0 #198754 !i
         sel.setAttribute('aria-label', 'Sort tickets by Sahdev scores');
         [
             ['default', 'WHMCS order (original)'],
+            ['severity_desc', 'Severity (sentiment + tone, worst first)'],
+            ['severity_asc', 'Severity (calmest first)'],
             ['score_desc', 'Sentiment score (highest first)'],
             ['score_asc', 'Sentiment score (lowest first)'],
+            ['tone_desc', 'Client tone (most hostile first)'],
+            ['tone_asc', 'Client tone (calmest first)'],
             ['urgency_desc', 'Urgency (Critical → Low)'],
             ['urgency_asc', 'Urgency (Low → Critical)']
         ].forEach(function (opt) {
