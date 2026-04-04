@@ -902,7 +902,7 @@ class AdminController
                             </label>
                         </div>
                         <p class="text-muted" style="margin-top: 8px; margin-bottom: 0; font-size:13px;">
-                            When enabled, each successful cron (or list “analyze”) run writes topic tags into WHMCS’s native tag tables. Tags use the <code>ai-</code> prefix (for example <code>ai-billing</code>, <code>ai-dns</code>) so they stay distinct from manual tags; Sahdev replaces previous <code>ai-*</code> links on that ticket each time it re-analyzes. Requires WHMCS Tag Cloud tables (<code>tbltags</code> / <code>tbltaglinks</code>). Tags also appear in a strip above the Sahdev panel on the ticket view.
+                            When enabled, each successful cron or ticket-list “analyze” run pushes tags into WHMCS so they show in the <strong>native Tag Cloud</strong> field on the ticket (sidebar). Tags use the <code>ai-</code> prefix (e.g. <code>ai-billing</code>) so they stay distinct from manual tags; Sahdev replaces previous <code>ai-*</code> entries on that ticket when it re-analyzes. Sahdev tries the internal <code>UpdateTicket</code> API, the <code>tbltickets.tags</code> column if your build has it, and the standard <code>tbltags</code> / <code>tbltaglinks</code> tables. After enabling, run analysis again (or wait for cron) so existing tickets get tags. The ticket list still shows tag chips in Sahdev insights.
                         </p>
                     </div>
                 </div>

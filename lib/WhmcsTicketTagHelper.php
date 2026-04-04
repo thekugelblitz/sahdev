@@ -31,12 +31,26 @@ class WhmcsTicketTagHelper
 
         self::$schemaCache = ['ok' => false, 'data' => null];
 
-        if (!Capsule::schema()->hasTable('tbltags') || !Capsule::schema()->hasTable('tbltaglinks')) {
+        $tagsTable = null;
+        foreach (['tbltags', 'tbltag'] as $t) {
+            if (Capsule::schema()->hasTable($t)) {
+                $tagsTable = $t;
+                break;
+            }
+        }
+        $linksTable = null;
+        foreach (['tbltaglinks', 'tbltag_links'] as $t) {
+            if (Capsule::schema()->hasTable($t)) {
+                $linksTable = $t;
+                break;
+            }
+        }
+        if (!$tagsTable || !$linksTable) {
             return null;
         }
 
-        $tagCols  = Capsule::schema()->getColumnListing('tbltags');
-        $linkCols = Capsule::schema()->getColumnListing('tbltaglinks');
+        $tagCols  = Capsule::schema()->getColumnListing($tagsTable);
+        $linkCols = Capsule::schema()->getColumnListing($linksTable);
 
         $lower = function ($c) {
             return strtolower((string) $c);
@@ -61,7 +75,7 @@ class WhmcsTicketTagHelper
         }
 
         $linkTagIdCol = $pick(['tagid', 'tag_id'], $linkColsL, $linkCols);
-        $linkRelIdCol = $pick(['relid', 'rel_id', 'entityid', 'entity_id', 'ticketid', 'ticket_id'], $linkColsL, $linkCols);
+        $linkRelIdCol = $pick(['relid', 'rel_id', 'entityid', 'entity_id', 'ticketid', 'ticket_id', 'object_id'], $linkColsL, $linkCols);
         $linkPkCol    = $pick(['id'], $linkColsL, $linkCols);
         $typeCol      = $pick(['rel_type', 'type', 'entity_type'], $linkColsL, $linkCols);
 
@@ -70,8 +84,8 @@ class WhmcsTicketTagHelper
         }
 
         $data = [
-            'tagsTable'   => 'tbltags',
-            'linksTable'  => 'tbltaglinks',
+            'tagsTable'   => $tagsTable,
+            'linksTable'  => $linksTable,
             'tagTextCol'  => $tagTextCol,
             'tagIdCol'    => $tagIdCol,
             'linkTagCol'  => $linkTagIdCol,
@@ -176,20 +190,34 @@ class WhmcsTicketTagHelper
     }
 
     /**
-     * Replace Sahdev-managed tags on this ticket (tag names starting with "ai-") and attach new ones.
+     * Writes tags into WHMCS Tag Cloud: tries local API, tbltickets.tags (if present), then tag/link tables.
      *
      * @param string[] $normalizedTags Already normalized (ai-* slugs)
      */
     public static function syncSahdevAiTags(int $ticketId, array $normalizedTags): void
     {
-        $s = self::getSchema();
-        if (!$s || $ticketId < 1) {
+        if ($ticketId < 1) {
             return;
         }
 
         $normalizedTags = array_values(array_unique(array_filter($normalizedTags)));
         if (count($normalizedTags) > 8) {
             $normalizedTags = array_slice($normalizedTags, 0, 8);
+        }
+
+        try {
+            self::tryLocalApiTicketTags($ticketId, $normalizedTags);
+        } catch (\Throwable $e) {
+        }
+
+        try {
+            self::tryTicketsTableTagsColumn($ticketId, $normalizedTags);
+        } catch (\Throwable $e) {
+        }
+
+        $s = self::getSchema();
+        if (!$s) {
+            return;
         }
 
         try {
@@ -207,6 +235,77 @@ class WhmcsTicketTagHelper
         } catch (\Throwable $e) {
             // Never break cron
         }
+    }
+
+    /**
+     * Some WHMCS builds accept tags via internal API (undocumented; safe to attempt).
+     *
+     * @param string[] $tagNames
+     */
+    private static function tryLocalApiTicketTags(int $ticketId, array $tagNames): void
+    {
+        if (!function_exists('localAPI') || $tagNames === []) {
+            return;
+        }
+
+        $csv = implode(',', $tagNames);
+        $adminUser = '';
+        try {
+            if (session_status() === PHP_SESSION_ACTIVE && !empty($_SESSION['adminid'])) {
+                $u = Capsule::table('tbladmins')->where('id', (int) $_SESSION['adminid'])->value('username');
+                if (is_string($u) && $u !== '') {
+                    $adminUser = $u;
+                }
+            }
+        } catch (\Throwable $e) {
+        }
+
+        $post = [
+            'ticketid' => $ticketId,
+            'tags'     => $csv,
+        ];
+        @localAPI('UpdateTicket', $post, $adminUser);
+
+        // Alternate parameter name seen in some forks / minor versions
+        @localAPI('UpdateTicket', [
+            'ticketid' => $ticketId,
+            'tag'      => $csv,
+        ], $adminUser);
+    }
+
+    /**
+     * If core stores tags as CSV on tbltickets.tags, merge Sahdev slugs there.
+     *
+     * @param string[] $tagNames
+     */
+    private static function tryTicketsTableTagsColumn(int $ticketId, array $tagNames): void
+    {
+        if ($tagNames === [] || !Capsule::schema()->hasTable('tbltickets')) {
+            return;
+        }
+        if (!Capsule::schema()->hasColumn('tbltickets', 'tags')) {
+            return;
+        }
+
+        $current = trim((string) (Capsule::table('tbltickets')->where('id', $ticketId)->value('tags') ?? ''));
+        $parts   = $current === '' ? [] : array_map('trim', explode(',', $current));
+
+        $keep = [];
+        foreach ($parts as $p) {
+            if ($p === '') {
+                continue;
+            }
+            // Drop previous Sahdev slugs / "AI …" style tags so we can replace the set
+            if (preg_match('/^ai[-\s]/i', $p)) {
+                continue;
+            }
+            $keep[] = $p;
+        }
+
+        $merged = array_values(array_unique(array_merge($keep, $tagNames)));
+        Capsule::table('tbltickets')->where('id', $ticketId)->update([
+            'tags' => implode(',', $merged),
+        ]);
     }
 
     /**
