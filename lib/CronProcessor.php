@@ -553,36 +553,30 @@ class CronProcessor
 
     private function defaultCronSystemPrompt(): string
     {
-        return "You are a senior support lead triaging hosting and billing tickets for an internal team. Your job is to read the conversation and output one JSON object only — no markdown fences, no preamble, no explanation outside JSON.\n\nHow to write TICKET_SUMMARY:\n- Sound like a real handoff from an experienced tech: concrete, plain language, specific facts (product, error text, deadlines, who is waiting on what).\n- Avoid generic AI phrasing: do not use filler such as \"It is important to note\", \"The client is seeking assistance\", \"It appears that\", \"Overall, the conversation indicates\", or hollow signposting.\n- Prefer short, information-dense sentences. If something is unclear, say what is unknown and what would confirm it — do not invent details.\n\nAll JSON keys required by the user message must be present and valid.";
+        return "You are a senior support lead triaging hosting and billing tickets for an internal team. Your job is to read the conversation and output one JSON object only — no markdown fences, no preamble, no explanation outside JSON.\n\nHow to write TICKET_SUMMARY:\n- Sound like a real handoff from an experienced tech: concrete, plain language, specific facts (product, error text, deadlines, who is waiting on what).\n- Aim for 3–6 sentences when the ticket has real substance; shorter for trivial threads.\n- Avoid generic AI phrasing: do not use filler such as \"It is important to note\", \"The client is seeking assistance\", \"It appears that\", \"Overall, the conversation indicates\", or hollow signposting.\n- Prefer short, information-dense sentences. If something is unclear, say what is unknown and what would confirm it — do not invent details.\n\nTAGS must align with the substance of the thread (same themes you would mention to a colleague), using only the ai-* slug format described in the user message.\n\nAll JSON keys required by the user message must be present and valid.";
     }
 
     private function defaultCronUserPrompt(): string
     {
         return <<<'PROMPT'
 === TASK ===
-Help a technician understand this ticket in a few seconds. Read the full thread and output ONLY a valid JSON object matching the schema below. No extra text, no markdown code fences.
-
-=== WRITING RULES FOR TICKET_SUMMARY ===
-- Internal handoff only — not a client-facing reply.
-- Lead with what is wrong or blocked, then the key facts (service, error snippet if any, billing amount if relevant, deadlines).
-- Use 2–4 tight sentences for typical tickets; 1–2 if trivial. Be specific; avoid vague restatements of the subject line.
-- Do not use corporate or "AI report" tone. No bullet lists inside the JSON string unless the ticket itself is a list of distinct items.
+Analyze the support ticket conversation below and output ONLY a valid JSON object exactly matching this schema. No extra text.
 
 === SCHEMA ===
 {
-  "SENTIMENT_SCORE": <integer 1-10: 1=calm/satisfied, 10=very upset>,
+  "SENTIMENT_SCORE": <integer 1-10, where 1=very satisfied/calm and 10=extremely frustrated/angry>,
   "SENTIMENT_LABEL": <"Satisfied" | "Neutral" | "Frustrated" | "Angry">,
   "URGENCY": <"Low" | "Medium" | "High" | "Critical">,
   "CLIENT_TONE": <one of: "Polite", "Neutral", "Impatient", "Demanding", "Angry", "Threatening", "Confused", "Appreciative">,
-  "TICKET_SUMMARY": <string: follow WRITING RULES above>,
-  "TAGS": <JSON array of 2-6 short topic slugs for WHMCS Tag Cloud; each must start with "ai-" then lowercase letters, digits, or hyphens only, e.g. "ai-billing", "ai-ssl", "ai-dns", "ai-outage", "ai-email">
+  "TICKET_SUMMARY": <string: 3-6 sentence plain-text summary of the entire ticket conversation, what the issue is, current status, and what is needed>,
+  "TAGS": <JSON array of 2-6 short topic slugs for the WHMCS Tag Cloud. Rules: each string must start with the prefix ai- (examples: ai-billing, ai-ssl, ai-dns, ai-outage, ai-email, ai-abuse); after ai- use only lowercase letters, digits, and hyphens; no spaces; pick themes that match this ticket (product area, failure type, billing, security, abuse, email, DNS, etc.)>
 }
 
 === URGENCY GUIDE ===
-Critical = widespread outage, data at risk, or money-critical failure
-High = major disruption, clear escalation, repeated failed attempts
-Medium = everyday issue affecting work
-Low = how-to, cosmetic, or minor inconvenience
+Critical = service is completely down or data is at risk
+High = major disruption, client explicitly escalating or threatening to leave
+Medium = functional issue affecting daily operations
+Low = informational question or minor inconvenience
 
 === TICKET DATA ===
 Client: {{CLIENT_NAME}}
