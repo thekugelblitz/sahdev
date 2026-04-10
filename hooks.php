@@ -2787,9 +2787,40 @@ tr.sdv-row-sent-high td { background-color: rgba(220, 53, 69, 0.06) !important; 
     }
 
     function tagRows() {
-        var tbl = getTicketListTable();
-        var rowList = tbl ? tbl.querySelectorAll('tbody tr') : document.querySelectorAll('#contentarea table tbody tr, .contentarea table tbody tr, table tbody tr');
-        rowList.forEach(function (row) {
+        var scope = document.querySelector('#contentarea') || document.querySelector('.contentarea') || document.body;
+        var tables = scope.querySelectorAll('table');
+        var allRows = [];
+
+        // Capture rows from every table that looks like a support ticket list table.
+        for (var t = 0; t < tables.length; t++) {
+            var table = tables[t];
+            var looksLikeTicketTable = false;
+            var headers = table.querySelectorAll('thead th, thead td, tbody tr:first-child th');
+            for (var h = 0; h < headers.length; h++) {
+                var txt = (headers[h].textContent || '').replace(/\s+/g, ' ').trim();
+                if (txt.length < 80 && (/\bsubject\b/i.test(txt) || /\bbetreff\b/i.test(txt) || /\bsujet\b/i.test(txt) || /\basunto\b/i.test(txt))) {
+                    looksLikeTicketTable = true;
+                    break;
+                }
+            }
+            if (!looksLikeTicketTable) {
+                var firstRow = table.querySelector('tbody tr');
+                var probe = firstRow ? firstRow.querySelector('a[href*="id="]') : null;
+                if (probe && isSupportTicketsHref(resolveHref(probe))) {
+                    looksLikeTicketTable = true;
+                }
+            }
+            if (!looksLikeTicketTable) continue;
+
+            var rows = table.querySelectorAll('tbody tr');
+            rows.forEach(function (r) { allRows.push(r); });
+        }
+
+        if (allRows.length === 0) {
+            allRows = Array.prototype.slice.call(document.querySelectorAll('#contentarea table tbody tr, .contentarea table tbody tr, table tbody tr'));
+        }
+
+        allRows.forEach(function (row) {
             if (row.getAttribute('data-sdv-tid') || row.getAttribute('data-sdv-tmask')) return;
             var links = row.querySelectorAll('a[href]');
             for (var i = 0; i < links.length; i++) {
