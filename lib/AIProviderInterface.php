@@ -28,6 +28,34 @@ interface AIProviderInterface
     public function getLastTokenUsage(): int;
 
     /**
+     * Get detailed token usage (input vs output).
+     * 
+     * @return array An array with 'input' and 'output' token counts.
+     */
+    public function getLastTokenDetails(): array;
+
+    /**
+     * Get the provider type string (google or lmstudio).
+     * 
+     * @return string
+     */
+    public function getProviderType(): string;
+
+    /**
+     * Get the provider name (for audit logging).
+     *
+     * @return string
+     */
+    public function getName(): string;
+
+    /**
+     * Get the API URL endpoint.
+     * 
+     * @return string
+     */
+    public function getApiUrl(): string;
+
+    /**
      * Refetch models dynamically
      *
      * @param string $apiKey Unencrypted API key to fetch available models

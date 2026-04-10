@@ -3,20 +3,26 @@
 namespace Sahdev\Lib;
 
 /**
- * Class GoogleAIProvider
- * Implementation of Google Gemini AI integration.
+ * Class LMStudioAIProvider
+ * Implementation of LM Studio integration (OpenAI compatible API).
  */
-class GoogleAIProvider implements AIProviderInterface
+class LMStudioAIProvider implements AIProviderInterface
 {
+    private $apiUrl;
     private $apiKey;
     private $lastTokenUsage = 0;
     private $lastTokenDetails = ['input' => 0, 'output' => 0];
-    private $maxRetries = 2;
-    private $timeout = 30; // seconds
+    private $maxRetries = 1;
+    private $timeout = 120; // local models can take longer
 
-    public function __construct(string $apiKey)
+    public function __construct(string $apiUrl, string $apiKey = '')
     {
+        $this->apiUrl = rtrim($apiUrl, '/');
         $this->apiKey = $apiKey;
+        // If they just put http://localhost:1234, append /v1/chat/completions
+        if (substr($this->apiUrl, -1) !== 's' && substr($this->apiUrl, -4) !== 'chat' && strpos($this->apiUrl, 'v1') === false) {
+            $this->apiUrl .= '/v1/chat/completions';
+        }
     }
 
     /**
@@ -24,54 +30,45 @@ class GoogleAIProvider implements AIProviderInterface
      */
     public function generateResponse(array $context, array $settings, string $tone, string $customInstruction): array
     {
-        $model = $settings['model_name'] ?: 'models/gemini-1.5-pro';
-        $endpoint = "https://generativelanguage.googleapis.com/v1beta/{$model}:generateContent?key=" . $this->apiKey;
+        $model = $settings['model_name'] ?: 'local-model'; // LM Studio often ignores this but requires it
 
-        // Build the prompt containing structure for the LLM
+        $systemMessage = $settings['system_prompt'] ?? "You are a helpful Senior Technical Support Engineer.";
         $userPromptTemplate = $settings['user_prompt_template'] ?? null;
-        $prompt = $this->buildPrompt($context, $tone, $customInstruction, $settings['system_prompt'], $userPromptTemplate);
 
-        $parts = [
-            ['text' => $prompt]
-        ];
+        $prompt = $this->buildPrompt($context, $tone, $customInstruction, $userPromptTemplate);
+
+        $userContent = [];
+        $userContent[] = ['type' => 'text', 'text' => $prompt];
 
         if (!empty($context['attachments_images'])) {
             foreach ($context['attachments_images'] as $img) {
-                $partsArray = explode(',', $img['url'], 2);
-                if (count($partsArray) === 2) {
-                    $mime = str_replace(['data:', ';base64'], '', $partsArray[0]);
-                    $base64 = $partsArray[1];
-                    $parts[] = [
-                        'inlineData' => [
-                            'mimeType' => $mime,
-                            'data' => $base64
-                        ]
-                    ];
-                }
+                $userContent[] = [
+                    'type' => 'image_url',
+                    'image_url' => [
+                        'url' => $img['url']
+                    ]
+                ];
             }
         }
 
         $payload = [
-            'contents' => [
-                [
-                    'parts' => $parts
-                ]
+            'model' => $model,
+            'messages' => [
+                ['role' => 'system', 'content' => $systemMessage],
+                ['role' => 'user', 'content' => $userContent]
             ],
-            'generationConfig' => [
-                'temperature' => (float) $settings['temperature'],
-                'maxOutputTokens' => (int) $settings['max_tokens'],
-                'responseMimeType' => 'application/json',
-            ],
-            'systemInstruction' => [
-                'parts' => [
-                    ['text' => $settings['system_prompt']]
-                ]
-            ]
+            'temperature' => (float) $settings['temperature'],
+            'max_tokens' => (int) $settings['max_tokens'],
+            'stream' => false
         ];
+
+        // Some versions of LM Studio support 'response_format' for JSON
+        if (strpos($this->apiUrl, 'v1/chat/completions') !== false) {
+            $payload['response_format'] = ['type' => 'json_object'];
+        }
 
         $jsonPayload = json_encode($payload);
 
-        // Retry logic
         $attempts = 0;
         $response = null;
         $exception = null;
@@ -79,18 +76,17 @@ class GoogleAIProvider implements AIProviderInterface
         while ($attempts <= $this->maxRetries) {
             $attempts++;
             try {
-                $response = $this->makeRequest($endpoint, $jsonPayload);
+                $response = $this->makeRequest($this->apiUrl, $jsonPayload);
 
-                // If successful, break
-                if (isset($response['candidates'][0]['content']['parts'][0]['text'])) {
+                if (isset($response['choices'][0]['message']['content'])) {
                     break;
                 } else if (isset($response['error'])) {
-                    throw new \Exception("Google AI Error: " . ($response['error']['message'] ?? 'Unknown Error'));
+                    throw new \Exception("LM Studio Error: " . ($response['error']['message'] ?? 'Unknown Error'));
                 }
             } catch (\Exception $e) {
                 $exception = $e;
                 if ($attempts <= $this->maxRetries) {
-                    sleep(1); // Wait 1 second before retrying
+                    sleep(2);
                 }
             }
         }
@@ -99,23 +95,31 @@ class GoogleAIProvider implements AIProviderInterface
             throw $exception;
         }
 
-        $responseText = $response['candidates'][0]['content']['parts'][0]['text'] ?? '';
+        $responseText = $response['choices'][0]['message']['content'] ?? '';
 
-        // Update token usage calculation
-        if (isset($response['usageMetadata'])) {
-            $this->lastTokenUsage = $response['usageMetadata']['totalTokenCount'] ?? 0;
-            $this->lastTokenDetails['input'] = $response['usageMetadata']['promptTokenCount'] ?? 0;
-            $this->lastTokenDetails['output'] = $response['usageMetadata']['candidatesTokenCount'] ?? 0;
+        if (isset($response['usage'])) {
+            $this->lastTokenUsage = $response['usage']['total_tokens'] ?? 0;
+            $this->lastTokenDetails['input'] = $response['usage']['prompt_tokens'] ?? 0;
+            $this->lastTokenDetails['output'] = $response['usage']['completion_tokens'] ?? 0;
         }
 
-        // Parse JSON
+        // Clean up response if the model didn't strictly follow JSON output block
+        $responseText = trim($responseText);
+        if (strpos($responseText, '```json') !== false) {
+            $responseText = preg_replace('/```json\s*/', '', $responseText);
+            $responseText = preg_replace('/```\s*$/', '', $responseText);
+            $responseText = trim($responseText);
+        }
+
+        // Strip out thought block if deepseek r1 format is used by local model
+        $responseText = preg_replace('/<think>.*?<\/think>/s', '', $responseText);
+        $responseText = trim($responseText);
+
         $parsed = json_decode($responseText, true);
         if (json_last_error() !== JSON_ERROR_NONE) {
-            // Unlikely with responseMimeType: application/json but good fallback
-            throw new \Exception("Failed to decode JSON from AI response: " . json_last_error_msg());
+            throw new \Exception("Failed to decode JSON from LM Studio response: " . json_last_error_msg() . "\nRaw Output: " . substr($responseText, 0, 100));
         }
 
-        // Validate structure
         return $this->validateStructure($parsed);
     }
 
@@ -140,7 +144,7 @@ class GoogleAIProvider implements AIProviderInterface
      */
     public function getProviderType(): string
     {
-        return 'google';
+        return 'lmstudio';
     }
 
     /**
@@ -148,7 +152,7 @@ class GoogleAIProvider implements AIProviderInterface
      */
     public function getName(): string
     {
-        return 'Google Gemini';
+        return 'LM Studio (Local)';
     }
 
     /**
@@ -156,7 +160,7 @@ class GoogleAIProvider implements AIProviderInterface
      */
     public function getApiUrl(): string
     {
-        return "https://generativelanguage.googleapis.com";
+        return $this->apiUrl;
     }
 
     /**
@@ -164,7 +168,15 @@ class GoogleAIProvider implements AIProviderInterface
      */
     public function getAvailableModels(string $apiKey): array
     {
-        $endpoint = "https://generativelanguage.googleapis.com/v1beta/models?key=" . $apiKey;
+        // For LM Studio, the models endpoint is typically /v1/models
+        $baseUrl = parse_url($this->apiUrl, PHP_URL_SCHEME) . '://' . parse_url($this->apiUrl, PHP_URL_HOST);
+        $port = parse_url($this->apiUrl, PHP_URL_PORT);
+        if ($port) {
+            $baseUrl .= ':' . $port;
+        }
+
+        $endpoint = $baseUrl . '/v1/models';
+
         $ch = curl_init($endpoint);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_TIMEOUT, 10);
@@ -180,10 +192,10 @@ class GoogleAIProvider implements AIProviderInterface
         $decoded = json_decode($result, true);
         $models = [];
 
-        if (isset($decoded['models']) && is_array($decoded['models'])) {
-            foreach ($decoded['models'] as $model) {
-                if (strpos($model['name'], 'gemini') !== false) {
-                    $models[] = $model['name'];
+        if (isset($decoded['data']) && is_array($decoded['data'])) {
+            foreach ($decoded['data'] as $model) {
+                if (isset($model['id'])) {
+                    $models[] = $model['id'];
                 }
             }
         }
@@ -191,18 +203,21 @@ class GoogleAIProvider implements AIProviderInterface
         return $models;
     }
 
-    /**
-     * Makes cURL request
-     */
     private function makeRequest(string $endpoint, string $payload): array
     {
         $ch = curl_init($endpoint);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_POST, true);
         curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        $headers = [
             'Content-Type: application/json',
-        ]);
+        ];
+
+        // Use the provided API key if available, otherwise fallback to 'local' for auth-less setups
+        $token = !empty($this->apiKey) ? $this->apiKey : 'local';
+        $headers[] = 'Authorization: Bearer ' . $token;
+
+        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
         curl_setopt($ch, CURLOPT_TIMEOUT, $this->timeout);
 
         $result = curl_exec($ch);
@@ -211,22 +226,19 @@ class GoogleAIProvider implements AIProviderInterface
         curl_close($ch);
 
         if ($error) {
-            throw new \Exception("cURL Error: $error");
+            throw new \Exception("LM Studio Request Error (cURL): $error. Ensure LM Studio is running and API is enabled.");
         }
 
         $decoded = json_decode($result, true);
 
         if ($httpCode >= 400 && $httpCode < 600) {
             $msg = $decoded['error']['message'] ?? 'Unknown API Error';
-            throw new \Exception("API returned $httpCode: $msg");
+            throw new \Exception("LM Studio returned $httpCode: $msg. Ensure the exact API endpoint URL is provided.");
         }
 
-        return $decoded;
+        return $decoded ?: [];
     }
 
-    /**
-     * Ensures we return a valid structure
-     */
     private function validateStructure($parsed): array
     {
         $defaults = [
@@ -240,17 +252,15 @@ class GoogleAIProvider implements AIProviderInterface
         return array_merge($defaults, $parsed ?: []);
     }
 
-    /**
-     * Build the prompt text safely
-     */
-    private function buildPrompt(array $context, string $tone, string $customInstruction, string $systemPrompt, ?string $userPromptTemplate = null): string
+    private function buildPrompt(array $context, string $tone, string $customInstruction, ?string $userPromptTemplate = null): string
     {
         // Build re-usable blocks
         $msgs = array_reverse($context['messages'] ?? []);
         $used = 0; $budget = 8000; $lines = [];
         foreach ($msgs as $msg) {
             $type = $msg['admin'] ? 'ADMIN' : 'CLIENT';
-            $entry = "[{$type}] ({$msg['date']}):\n" . ($msg['message'] ?? '') . "\n\n";
+            $body = $this->sanitizeForPrompt($msg['message'] ?? '');
+            $entry = "[{$type}] ({$msg['date']}):\n{$body}\n\n";
             if ($used + strlen($entry) > $budget) break;
             $lines[] = $entry; $used += strlen($entry);
         }
@@ -268,7 +278,7 @@ class GoogleAIProvider implements AIProviderInterface
             $customInstructionBlock = "\u26a0\ufe0f PRIORITY OVERRIDE \u2014 ADMIN INSTRUCTION \u26a0\ufe0f\n"
                 . "This instruction supersedes all other context. Re-interpret all ticket data through this lens.\n"
                 . trim($customInstruction) . "\n"
-                . str_repeat("\u2501", 40) . "\n\n";
+                . str_repeat('\u2501', 40) . "\n\n";
         }
 
         // Use admin-defined template if available
@@ -288,7 +298,7 @@ class GoogleAIProvider implements AIProviderInterface
         $prompt .= "  \"RESPONSIBILITY\": \"string (Client, Host, or 3rd Party)\",\n";
         $prompt .= "  \"RISK_LEVEL\": \"string (Low, Medium, High, or Critical)\",\n";
         $prompt .= "  \"INTERNAL_ACTION_PLAN\": \"string (detailed steps for the support team)\",\n";
-        $prompt .= "  \"CLIENT_REPLY\": \"string (reply to client in Markdown \u2014 body only, no greeting or sign-off)\",\n";
+        $prompt .= "  \"CLIENT_REPLY\": \"string (reply to client in Markdown — body only, no greeting or sign-off)\",\n";
         $prompt .= "  \"SCORE\": \"int (Optional 0-100 rating)\",\n";
         $prompt .= "  \"CLARITY\": \"int (Optional 0-100)\",\n";
         $prompt .= "  \"TONE_SCORE\": \"int (Optional 0-100)\",\n";
@@ -305,6 +315,10 @@ class GoogleAIProvider implements AIProviderInterface
         return $prompt;
     }
 
+    /**
+     * Sanitize input text before adding to the AI prompt.
+     * Removes HTML tags, control characters, code fences, and excess whitespace.
+     */
     private function sanitizeForPrompt(string $text): string
     {
         $s = strip_tags($text);
@@ -315,10 +329,5 @@ class GoogleAIProvider implements AIProviderInterface
         $s = preg_replace('/\n{4,}/', "\n\n\n", $s);
         $s = preg_replace('/ {3,}/', '  ', $s);
         return trim($s);
-    }
-
-    private function sanitizeMessageBody(array $msg): string
-    {
-        return $this->sanitizeForPrompt($msg['message'] ?? '');
     }
 }

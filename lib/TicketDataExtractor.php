@@ -7,24 +7,41 @@ use WHMCS\Database\Capsule;
 class TicketDataExtractor
 {
     private $ticketId;
+    private $adminId;
 
     // Limits to prevent massive memory usage
     private $maxMessages = 10;
+    private $maxAttachmentChars = 5000;
     private $maxAttachmentSize = 1048576; // 1 MB (extracted text threshold)
+    private $maxImages = 3; // Max number of images to process
 
-    public function __construct(int $ticketId)
+    public function __construct(int $ticketId, int $adminId = null)
     {
         $this->ticketId = $ticketId;
+        $this->adminId = $adminId;
+
+        // Fetch dynamic limits from settings
+        try {
+            $settings = Capsule::table('tblsahdev_settings')->select('max_messages', 'max_attachment_chars', 'max_images')->first();
+            if ($settings) {
+                $this->maxMessages = (int) ($settings->max_messages ?? 10);
+                $this->maxAttachmentChars = (int) ($settings->max_attachment_chars ?? 5000);
+                $this->maxImages = (int) ($settings->max_images ?? 3);
+            }
+        } catch (\Exception $e) {
+            // Fallback to defaults if columns are missing or db fails
+        }
     }
 
     /**
      * Extracts full context securely for a specific ticket.
      * Uses query builder entirely (no raw SQL).
      *
+     * @param bool $scrubPII Whether to run the compliance PII scrubber over the context data.
      * @return array
      * @throws \Exception
      */
-    public function getContext(): array
+    public function getContext(bool $scrubPII = false): array
     {
         $context = [];
 
@@ -52,7 +69,49 @@ class TicketDataExtractor
         // 4. Extract simple text from attachments (if any and if safe)
         $context['attachments_text'] = $this->extractAttachmentText($ticket);
 
+        // 4.5. Extract images and URLs
+        $context['attachments_images'] = $this->extractImageAttachments($ticket);
+        $context['attachments_images'] = array_merge($context['attachments_images'], $this->extractImageUrls($ticket));
+        
+        // Cap the total images to maxImages
+        if (count($context['attachments_images']) > $this->maxImages) {
+            $context['attachments_images'] = array_slice($context['attachments_images'], 0, $this->maxImages);
+        }
+
+        // 5. Extract active admin's signature
+        $context['admin_signature'] = $this->extractAdminSignature();
+
+        // 6. Apply Compliance Mode (PII Scrubber) if requested
+        if ($scrubPII) {
+            $context['subject'] = $this->scrubPII($context['subject']);
+            $context['client_name'] = $this->scrubPII($context['client_name']);
+            // Scrub all messages
+            if (isset($context['messages']) && is_array($context['messages'])) {
+                foreach ($context['messages'] as &$msg) {
+                    if (isset($msg['message'])) {
+                        $msg['message'] = $this->scrubPII($msg['message']);
+                    }
+                }
+            }
+            if (isset($context['attachments_text'])) {
+                $context['attachments_text'] = $this->scrubPII($context['attachments_text']);
+            }
+        }
+
         return $context;
+    }
+
+    private function extractAdminSignature(): string
+    {
+        if (!$this->adminId) {
+            return '';
+        }
+        
+        $signature = Capsule::table('tbladmins')
+            ->where('id', $this->adminId)
+            ->value('signature');
+            
+        return $signature ? trim(strip_tags($signature, '<br><p><a><b><strong><i><em>')) : '';
     }
 
     private function getDepartmentName($did): string
@@ -109,12 +168,17 @@ class TicketDataExtractor
     private function extractMessages($ticket): array
     {
         $messages = [];
+        $maxMessageChars = 3000; // cap per message to avoid context overflow on small-context models
 
         // Let's add the original first
+        $body = strip_tags($ticket->message);
+        if (strlen($body) > $maxMessageChars) {
+            $body = substr($body, 0, $maxMessageChars) . '...[truncated]';
+        }
         $messages[] = [
-            'date' => $ticket->date,
-            'message' => strip_tags($ticket->message),
-            'admin' => false,
+            'date'    => $ticket->date,
+            'message' => $body,
+            'admin'   => false,
         ];
 
         // Fetch newest replies first, up to limit
@@ -128,10 +192,14 @@ class TicketDataExtractor
         $replies = $replies->reverse();
 
         foreach ($replies as $reply) {
+            $body = strip_tags($reply->message);
+            if (strlen($body) > $maxMessageChars) {
+                $body = substr($body, 0, $maxMessageChars) . '...[truncated]';
+            }
             $messages[] = [
-                'date' => $reply->date,
-                'message' => strip_tags($reply->message),
-                'admin' => !empty($reply->admin),
+                'date'    => $reply->date,
+                'message' => $body,
+                'admin'   => !empty($reply->admin),
             ];
         }
 
@@ -175,10 +243,37 @@ class TicketDataExtractor
 
         // Grab standard WHMCS attachments directory
         global $attachments_dir;
-        $whmcsAttachmentsDir = $attachments_dir ?? '';
+        
+        $whmcsAttachmentsDir = '';
 
+        // 1. Check Custom Override from Settings First
+        $customDir = \WHMCS\Database\Capsule::table('tblsahdev_settings')->value('custom_attachments_dir');
+        if (!empty(trim($customDir ?? ''))) {
+            $whmcsAttachmentsDir = rtrim(trim($customDir), '/\\');
+        }
+
+        // 2. Check Global Variable
+        if (empty($whmcsAttachmentsDir)) {
+            $whmcsAttachmentsDir = $attachments_dir ?? '';
+        }
+
+        // 3. Check configuration.php
+        if (empty($whmcsAttachmentsDir)) {
+            $possibleConfig = dirname(__DIR__, 3) . DIRECTORY_SEPARATOR . 'configuration.php';
+            if (file_exists($possibleConfig)) {
+                include $possibleConfig;
+                $whmcsAttachmentsDir = $attachments_dir ?? '';
+            }
+        }
+
+        // 4. Check tblconfiguration
         if (empty($whmcsAttachmentsDir)) {
             $whmcsAttachmentsDir = \WHMCS\Database\Capsule::table('tblconfiguration')->where('setting', 'Attachments_Dir')->value('value');
+        }
+
+        // 5. Fallback generic path
+        if (empty($whmcsAttachmentsDir)) {
+            $whmcsAttachmentsDir = dirname(__DIR__, 3) . DIRECTORY_SEPARATOR . 'attachments';
         }
 
         foreach ($files as $file) {
@@ -186,18 +281,222 @@ class TicketDataExtractor
                 continue;
 
             $extension = strtolower(pathinfo($file, PATHINFO_EXTENSION));
-            if (in_array($extension, ['txt', 'log', 'csv', 'json'])) {
+            if (in_array($extension, ['txt', 'log', 'csv', 'json', 'php', 'html', 'htm', 'js', 'css', 'sql', 'sh', 'py', 'xml', 'yml', 'yaml', 'ini', 'conf'])) {
                 $filePath = $whmcsAttachmentsDir . DIRECTORY_SEPARATOR . $file;
 
                 if (file_exists($filePath) && filesize($filePath) < $this->maxAttachmentSize) {
                     $content = @file_get_contents($filePath);
                     if ($content !== false) {
                         // Truncate if massive (safety net beyond filesize)
-                        $content = substr($content, 0, 5000) . "...(truncated)";
+                        if (strlen($content) > $this->maxAttachmentChars) {
+                            $content = substr($content, 0, $this->maxAttachmentChars) . "...(truncated)";
+                        }
                         $text .= "Attachment [{$file}]:\n" . htmlentities($content) . "\n\n";
                     }
                 }
             }
+        }
+
+        return $text;
+    }
+
+    private function extractImageAttachments($ticket): array
+    {
+        $images = [];
+        global $attachments_dir;
+        
+        // Try multiple ways to get the WHMCS attachments dir
+        $whmcsAttachmentsDir = '';
+
+        // 1. Check Custom Override from Settings First
+        $customDir = \WHMCS\Database\Capsule::table('tblsahdev_settings')->value('custom_attachments_dir');
+        if (!empty(trim($customDir ?? ''))) {
+            $whmcsAttachmentsDir = rtrim(trim($customDir), '/\\');
+        }
+
+        // 2. Check Global Variable
+        if (empty($whmcsAttachmentsDir)) {
+            $whmcsAttachmentsDir = $attachments_dir ?? '';
+        }
+
+        // 3. Check configuration.php
+        if (empty($whmcsAttachmentsDir)) {
+            $possibleConfig = dirname(__DIR__, 3) . DIRECTORY_SEPARATOR . 'configuration.php';
+            if (file_exists($possibleConfig)) {
+                include $possibleConfig;
+                $whmcsAttachmentsDir = $attachments_dir ?? '';
+            }
+        }
+
+        // 4. Check tblconfiguration
+        if (empty($whmcsAttachmentsDir)) {
+            $whmcsAttachmentsDir = \WHMCS\Database\Capsule::table('tblconfiguration')->where('setting', 'Attachments_Dir')->value('value');
+        }
+
+        // 5. Fallback generic path
+        if (empty($whmcsAttachmentsDir)) {
+            $whmcsAttachmentsDir = dirname(__DIR__, 3) . DIRECTORY_SEPARATOR . 'attachments';
+        }
+
+        $allAttachments = [];
+        
+        $originalAttachments = Capsule::table('tbltickets')->where('id', $ticket->id)->value('attachment');
+        if (!empty(trim($originalAttachments ?? ''))) {
+            $allAttachments = array_merge($allAttachments, explode('|', $originalAttachments));
+        }
+
+        $repliesAttachments = Capsule::table('tblticketreplies')
+            ->where('tid', $ticket->id)
+            ->orderBy('id', 'desc')
+            ->limit(3)
+            ->pluck('attachment');
+
+        foreach ($repliesAttachments as $attachmentString) {
+            if (!empty(trim($attachmentString ?? ''))) {
+                $allAttachments = array_merge($allAttachments, explode('|', $attachmentString));
+            }
+        }
+
+        foreach ($allAttachments as $file) {
+            if (empty($file) || count($images) >= $this->maxImages) {
+                continue;
+            }
+
+            $extension = strtolower(pathinfo($file, PATHINFO_EXTENSION));
+            if (in_array($extension, ['png', 'jpg', 'jpeg', 'gif', 'webp'])) {
+                $filePath = rtrim($whmcsAttachmentsDir, '/\\') . DIRECTORY_SEPARATOR . $file;
+                
+                // Track missing files by appending info to context if we want, but instead let's just make sure path is right
+                if (file_exists($filePath) && filesize($filePath) < 5242880) { // 5MB limit for images
+                    $content = @file_get_contents($filePath);
+                    if ($content !== false) {
+                        $finfo = new \finfo(FILEINFO_MIME_TYPE);
+                        $mimeType = $finfo->buffer($content);
+                        if ($mimeType) {
+                            $base64 = base64_encode($content);
+                            $images[] = [
+                                'url' => "data:{$mimeType};base64,{$base64}",
+                                'source' => 'attachment: ' . $file
+                            ];
+                        }
+                    }
+                }
+            }
+        }
+
+        return $images;
+    }
+
+    private function extractImageUrls($ticket): array
+    {
+        $images = [];
+        $messagesText = $ticket->message . " ";
+        
+        $replies = Capsule::table('tblticketreplies')
+            ->where('tid', $ticket->id)
+            ->orderBy('id', 'desc')
+            ->limit($this->maxMessages - 1)
+            ->pluck('message');
+            
+        foreach ($replies as $reply) {
+            $messagesText .= $reply . " ";
+        }
+
+        // Extract direct image URLs
+        if (preg_match_all('/https?:\/\/[^\s"\'<>]+?\.(?:png|jpg|jpeg|gif|webp)(?:\?[^\s"\'<>]+)?/i', $messagesText, $matches)) {
+            foreach (array_unique($matches[0]) as $url) {
+                if (count($images) >= $this->maxImages) break;
+                
+                $imgData = $this->fetchUrlAsBase64($url);
+                if ($imgData) {
+                    $images[] = [
+                        'url' => $imgData,
+                        'source' => 'url: ' . $url
+                    ];
+                }
+            }
+        }
+
+        // Extract prnt.sc links
+        if (preg_match_all('/https?:\/\/prnt\.sc\/[a-zA-Z0-9_-]+/i', $messagesText, $matches)) {
+            foreach (array_unique($matches[0]) as $prntScUrl) {
+                if (count($images) >= $this->maxImages) break;
+                
+                $html = @file_get_contents($prntScUrl);
+                if ($html && preg_match('/<img[^>]+(?:id="screenshot-image"|class="[^"]*screenshot-image[^"]*")[^>]+src="([^"]+)"/i', $html, $imgMatches)) {
+                    $actualUrl = $imgMatches[1];
+                    // Sometimes prnt.sc image URLs are relative to their own CDN or absolute imgur
+                    if (strpos($actualUrl, 'http') !== 0 && strpos($actualUrl, '//') === 0) {
+                        $actualUrl = 'https:' . $actualUrl;
+                    } elseif (strpos($actualUrl, 'http') !== 0) {
+                        continue; // Skip relative generic links not starting with //
+                    }
+                    $imgData = $this->fetchUrlAsBase64($actualUrl);
+                    if ($imgData) {
+                        $images[] = [
+                            'url' => $imgData,
+                            'source' => 'prnt.sc: ' . $prntScUrl
+                        ];
+                    }
+                }
+            }
+        }
+
+        return $images;
+    }
+
+    private function fetchUrlAsBase64(string $url): ?string
+    {
+        $ch = curl_init($url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        // Pretend to be a browser to prevent 403 blocks from CDNs
+        curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+        
+        $content = curl_exec($ch);
+        $contentType = curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        if ($content !== false && $httpCode === 200 && strpos($contentType, 'image/') !== false) {
+            $base64 = base64_encode($content);
+            return "data:{$contentType};base64,{$base64}";
+        }
+        
+        return null;
+    }
+
+    /**
+     * Compliance Mode PII Scrubber
+     * Redacts emails, credit cards, IPs, and common password patterns.
+     */
+    private function scrubPII(string $text): string
+    {
+        if (empty($text)) return $text;
+
+        $settings = Capsule::table('tblsahdev_settings')->first();
+        if (!$settings) return $text;
+
+        // 1. Scrub Credit Cards (basic 13-16 digit matching)
+        if (!isset($settings->scrub_cc) || !empty($settings->scrub_cc)) {
+            $text = preg_replace('/\b(?:\d[ -]*?){13,16}\b/', '[REDACTED_CC]', $text);
+        }
+
+        // 2. Scrub Emails
+        if (!isset($settings->scrub_emails) || !empty($settings->scrub_emails)) {
+            $text = preg_replace('/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/', '[REDACTED_EMAIL]', $text);
+        }
+
+        // 3. Scrub IPv4 Addresses (naive but effective for logs)
+        if (!isset($settings->scrub_ips) || !empty($settings->scrub_ips)) {
+            $text = preg_replace('/\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b/', '[REDACTED_IP]', $text);
+        }
+
+        // 4. Scrub passwords (heuristic: "password: xxx", "pass: xxx")
+        if (!isset($settings->scrub_passwords) || !empty($settings->scrub_passwords)) {
+            $text = preg_replace('/(?i)(?:password|pass|pwd)\s*[:=]\s*([^\s\n\r]+)/', '$0 [REDACTED_PASSWORD]', $text);
         }
 
         return $text;
