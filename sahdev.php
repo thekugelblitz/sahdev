@@ -155,6 +155,9 @@ function sahdev_activate()
                     $table->integer('tools_request_retry_count')->default(3);
                     $table->integer('tools_cron_max_per_run')->default(10);
                     $table->string('tools_cron_statuses', 512)->nullable();
+                    $table->text('tools_filter_domains')->nullable();
+                    $table->text('tools_filter_ips')->nullable();
+                    $table->text('tools_filter_emails')->nullable();
                     $table->timestamp('tools_cron_last_run_at')->nullable();
                     $table->string('tools_cron_last_message', 512)->nullable();
                     $table->timestamp('tools_execution_cron_lock_until')->nullable();
@@ -204,6 +207,9 @@ function sahdev_activate()
                     $table->integer('tools_request_retry_count')->default(3);
                     $table->integer('tools_cron_max_per_run')->default(10);
                     $table->string('tools_cron_statuses', 512)->nullable();
+                    $table->text('tools_filter_domains')->nullable();
+                    $table->text('tools_filter_ips')->nullable();
+                    $table->text('tools_filter_emails')->nullable();
                     $table->timestamp('tools_cron_last_run_at')->nullable();
                     $table->string('tools_cron_last_message', 512)->nullable();
                     $table->timestamp('tools_execution_cron_lock_until')->nullable();
@@ -239,6 +245,9 @@ function sahdev_activate()
                 'tools_request_retry_count' => 3,
                 'tools_cron_max_per_run' => 10,
                 'tools_cron_statuses' => 'Customer-Reply, Awaiting Reply, Open',
+                'tools_filter_domains' => '*.nslookup.io,*.whynopadlock.com,*.google.com,*.gstatic.com',
+                'tools_filter_ips' => '',
+                'tools_filter_emails' => '',
                 'created_at' => \Carbon\Carbon::now(),
                 'updated_at' => \Carbon\Carbon::now(),
             ]);
@@ -577,6 +586,9 @@ function sahdev_activate()
                 $table->integer('tools_request_retry_count')->default(3);
                 $table->integer('tools_cron_max_per_run')->default(10);
                 $table->string('tools_cron_statuses', 512)->nullable();
+                $table->text('tools_filter_domains')->nullable();
+                $table->text('tools_filter_ips')->nullable();
+                $table->text('tools_filter_emails')->nullable();
                 $table->timestamp('tools_cron_last_run_at')->nullable();
                 $table->string('tools_cron_last_message', 512)->nullable();
                 $table->timestamp('tools_execution_cron_lock_until')->nullable();

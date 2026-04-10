@@ -410,6 +410,9 @@ class ToolsExecutionService
                         $table->integer('tools_request_retry_count')->default(3);
                         $table->integer('tools_cron_max_per_run')->default(10);
                         $table->string('tools_cron_statuses', 512)->nullable();
+                        $table->text('tools_filter_domains')->nullable();
+                        $table->text('tools_filter_ips')->nullable();
+                        $table->text('tools_filter_emails')->nullable();
                         $table->timestamp('tools_cron_last_run_at')->nullable();
                         $table->string('tools_cron_last_message', 512)->nullable();
                         $table->timestamp('tools_execution_cron_lock_until')->nullable();
@@ -513,17 +516,21 @@ class ToolsExecutionService
         if (!empty($heuristic)) {
             $parsed = $this->mergeSuggestions($heuristic, $parsed, 8);
         }
+        $parsed = $this->enforceIntentPolicy($context, $parsed);
         if (empty($parsed)) {
-            $fallbackTarget = $this->inferTargetFromContext($context);
-            if ($fallbackTarget !== '') {
-                return [[
-                    'method' => 'GET',
-                    'path' => '/dns/{domain}',
-                    'path_params' => ['domain' => $fallbackTarget],
-                    'query' => ['type' => 'A'],
-                    'body' => new \stdClass(),
-                    'reason' => 'Fallback DNS validation for ticket domain',
-                ]];
+            $parsed = $this->enforceIntentPolicy($context, $heuristic);
+            if (empty($parsed)) {
+                $fallbackTarget = $this->inferTargetFromContext($context);
+                if ($fallbackTarget !== '') {
+                    return [[
+                        'method' => 'GET',
+                        'path' => '/dns/{domain}',
+                        'path_params' => ['domain' => $fallbackTarget],
+                        'query' => ['type' => 'A'],
+                        'body' => new \stdClass(),
+                        'reason' => 'Fallback DNS validation for ticket domain',
+                    ]];
+                }
             }
         }
         return $parsed;
@@ -536,6 +543,10 @@ class ToolsExecutionService
         $messages = $context['messages'] ?? [];
         $intent = $this->detectIntent($context);
         $entities = $this->extractEntitiesFromContext($context);
+        $settings = $this->settings();
+        $excludedDomainPatterns = $this->compilePatterns((string) ($settings->tools_filter_domains ?? ''));
+        $excludedIpPatterns = $this->compilePatterns((string) ($settings->tools_filter_ips ?? ''));
+        $excludedEmailPatterns = $this->compilePatterns((string) ($settings->tools_filter_emails ?? ''));
         $lastMsgs = [];
         foreach (array_slice($messages, -6) as $m) {
             $role = !empty($m['admin']) ? 'ADMIN' : 'CLIENT';
@@ -556,6 +567,11 @@ class ToolsExecutionService
             . "- Domains: " . implode(', ', $entities['domains']) . "\n"
             . "- IPs: " . implode(', ', $entities['ips']) . "\n"
             . "- URLs: " . implode(', ', $entities['urls']) . "\n\n"
+            . "Explicitly excluded patterns:\n"
+            . "- Domain patterns: " . implode(', ', $excludedDomainPatterns) . "\n"
+            . "- IP patterns: " . implode(', ', $excludedIpPatterns) . "\n"
+            . "- Email patterns: " . implode(', ', $excludedEmailPatterns) . "\n"
+            . "Never choose entities matching excluded patterns.\n\n"
             . "Ticket subject: {$subject}\n"
             . "Client services/server info:\n{$services}\n"
             . "Conversation:\n{$text}\n\n"
@@ -725,6 +741,7 @@ class ToolsExecutionService
 
     private function extractEntitiesFromContext(array $context): array
     {
+        $settings = $this->settings();
         $subject = (string) ($context['subject'] ?? '');
         $services = (string) ($context['services_summary'] ?? '');
         $messages = $context['messages'] ?? [];
@@ -741,9 +758,11 @@ class ToolsExecutionService
         $ips = array_values(array_unique(array_filter($ipMatches[0] ?? [])));
         $domains = array_values(array_unique(array_filter(array_map('strtolower', $domainMatches[1] ?? []))));
         $urls = array_values(array_unique(array_filter($urlMatches[0] ?? [])));
-
-        $domains = array_values(array_filter($domains, function ($d) {
-            return !preg_match('/^(whynopadlock\.com|nslookup\.io)$/', $d);
+        $domains = array_values(array_filter($domains, function ($d) use ($settings) {
+            return !$this->isNoiseDomain($d, (array) $settings);
+        }));
+        $ips = array_values(array_filter($ips, function ($ip) use ($settings) {
+            return !$this->isFilteredIp($ip, (array) $settings);
         }));
 
         return [
@@ -757,7 +776,8 @@ class ToolsExecutionService
     {
         $intent = $this->detectIntent($context);
         $entities = $this->extractEntitiesFromContext($context);
-        $domains = $entities['domains'];
+        $latestDomains = $this->extractLatestClientDomains($context);
+        $domains = array_values(array_unique(array_merge($latestDomains, $entities['domains'])));
         $ips = $entities['ips'];
         $out = [];
 
@@ -781,6 +801,16 @@ class ToolsExecutionService
                         'query' => [],
                         'body' => [],
                         'reason' => 'Inspect SSL state for unresolved domain',
+                    ];
+                }
+                foreach (array_slice($domains, 0, 2) as $d) {
+                    $out[] = [
+                        'method' => 'GET',
+                        'path' => '/dnssec/{domain}',
+                        'path_params' => ['domain' => $d],
+                        'query' => [],
+                        'body' => [],
+                        'reason' => 'Validate DNS security posture impacting certificate trust chain',
                     ];
                 }
             }
@@ -824,6 +854,147 @@ class ToolsExecutionService
             }
         }
         return $params;
+    }
+
+    private function isNoiseDomain(string $domain, array $settings = []): bool
+    {
+        $d = strtolower(trim($domain));
+        if ($d === '') {
+            return true;
+        }
+        $noiseSuffixes = [
+            'nslookup.io',
+            'whynopadlock.com',
+            'google.com',
+            'googleapis.com',
+            'gstatic.com',
+            'replicate.com',
+        ];
+        foreach ($noiseSuffixes as $suffix) {
+            if ($d === $suffix || substr($d, -strlen('.' . $suffix)) === '.' . $suffix) {
+                return true;
+            }
+        }
+        $customPatterns = $this->compilePatterns((string) ($settings['tools_filter_domains'] ?? ''));
+        if ($this->matchesAnyPattern($d, $customPatterns)) {
+            return true;
+        }
+        return false;
+    }
+
+    private function extractLatestClientDomains(array $context): array
+    {
+        $msgs = $context['messages'] ?? [];
+        $latestClient = '';
+        for ($i = count($msgs) - 1; $i >= 0; $i--) {
+            if (empty($msgs[$i]['admin'])) {
+                $latestClient = (string) ($msgs[$i]['message'] ?? '');
+                break;
+            }
+        }
+        if ($latestClient === '') {
+            return [];
+        }
+        preg_match_all('/\b([a-z0-9][a-z0-9.-]*\.[a-z]{2,})\b/i', $latestClient, $matches);
+        $domains = array_values(array_unique(array_filter(array_map('strtolower', $matches[1] ?? []))));
+        $settings = (array) $this->settings();
+        $domains = array_values(array_filter($domains, function ($d) use ($settings) {
+            return !$this->isNoiseDomain($d, $settings);
+        }));
+        return array_slice($domains, 0, 6);
+    }
+
+    private function enforceIntentPolicy(array $context, array $suggestions): array
+    {
+        $intent = $this->detectIntent($context);
+        $entities = $this->extractEntitiesFromContext($context);
+        $settings = (array) $this->settings();
+        $allowedDomains = array_flip($entities['domains']);
+        $allowedIps = array_flip($entities['ips']);
+
+        $pathAllow = [
+            'ssl' => ['/ssl/{target}', '/dns/{domain}', '/dns-propagation/{domain}', '/dnssec/{domain}', '/headers/{target}'],
+            'dns' => ['/dns/{domain}', '/dns-propagation/{domain}', '/dnssec/{domain}', '/recon/dns/{domain}', '/whois/{domain}'],
+            'network' => ['/ping/{host}', '/traceroute/{host}', '/mtr/{target}', '/reverse/{ip}', '/asn/{ip}', '/geoip/{ip}'],
+        ];
+        $allowedPaths = $pathAllow[$intent] ?? [];
+        if (empty($allowedPaths)) {
+            return array_slice($this->dedupeSuggestions($suggestions), 0, 5);
+        }
+
+        $out = [];
+        foreach ($suggestions as $s) {
+            $path = (string) ($s['path'] ?? '');
+            if (!in_array($path, $allowedPaths, true)) {
+                continue;
+            }
+            $pp = is_array($s['path_params'] ?? null) ? $s['path_params'] : [];
+            $domain = strtolower((string) ($pp['domain'] ?? $pp['target'] ?? $pp['host'] ?? ''));
+            $ip = (string) ($pp['ip'] ?? $pp['target'] ?? $pp['host'] ?? '');
+
+            if ($domain !== '' && !$this->isNoiseDomain($domain, $settings)) {
+                if (empty($allowedDomains) || isset($allowedDomains[$domain])) {
+                    $out[] = $s;
+                    continue;
+                }
+            }
+            if ($ip !== '' && preg_match('/^\d{1,3}(\.\d{1,3}){3}$/', $ip)) {
+                if ($this->isFilteredIp($ip, $settings)) {
+                    continue;
+                }
+                if (empty($allowedIps) || isset($allowedIps[$ip])) {
+                    $out[] = $s;
+                    continue;
+                }
+            }
+        }
+
+        if (empty($out)) {
+            $out = $this->buildDeterministicSuggestions($context);
+        }
+        return array_slice($this->dedupeSuggestions($out), 0, 5);
+    }
+
+    private function isFilteredIp(string $ip, array $settings): bool
+    {
+        $patterns = $this->compilePatterns((string) ($settings['tools_filter_ips'] ?? ''));
+        if (empty($patterns)) {
+            return false;
+        }
+        return $this->matchesAnyPattern(trim($ip), $patterns);
+    }
+
+    private function compilePatterns(string $raw): array
+    {
+        $lines = preg_split('/[\r\n,]+/', $raw);
+        if (!is_array($lines)) {
+            return [];
+        }
+        $out = [];
+        foreach ($lines as $line) {
+            $p = strtolower(trim($line));
+            if ($p === '') {
+                continue;
+            }
+            $out[] = $p;
+        }
+        return array_values(array_unique($out));
+    }
+
+    private function matchesAnyPattern(string $value, array $patterns): bool
+    {
+        $val = strtolower(trim($value));
+        foreach ($patterns as $pattern) {
+            $pattern = strtolower(trim((string) $pattern));
+            if ($pattern === '') {
+                continue;
+            }
+            $regex = '/^' . str_replace(['\*', '\?'], ['.*', '.'], preg_quote($pattern, '/')) . '$/i';
+            if (preg_match($regex, $val)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private function dedupeSuggestions(array $items): array

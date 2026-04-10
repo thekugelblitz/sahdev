@@ -3404,6 +3404,9 @@ class AdminController
                 $table->integer('tools_request_retry_count')->default(3);
                 $table->integer('tools_cron_max_per_run')->default(10);
                 $table->string('tools_cron_statuses', 512)->nullable();
+                $table->text('tools_filter_domains')->nullable();
+                $table->text('tools_filter_ips')->nullable();
+                $table->text('tools_filter_emails')->nullable();
             });
         }
 
@@ -3417,6 +3420,9 @@ class AdminController
             $retry = max(0, min(3, (int) ($_POST['tools_request_retry_count'] ?? 3)));
             $maxPerRun = max(1, min(50, (int) ($_POST['tools_cron_max_per_run'] ?? 10)));
             $statuses = trim((string) ($_POST['tools_cron_statuses'] ?? 'Customer-Reply, Awaiting Reply, Open'));
+            $filterDomains = trim((string) ($_POST['tools_filter_domains'] ?? ''));
+            $filterIps = trim((string) ($_POST['tools_filter_ips'] ?? ''));
+            $filterEmails = trim((string) ($_POST['tools_filter_emails'] ?? ''));
 
             $update = [
                 'tools_execution_enabled' => $enabled,
@@ -3426,6 +3432,9 @@ class AdminController
                 'tools_request_retry_count' => $retry,
                 'tools_cron_max_per_run' => $maxPerRun,
                 'tools_cron_statuses' => $statuses,
+                'tools_filter_domains' => $filterDomains,
+                'tools_filter_ips' => $filterIps,
+                'tools_filter_emails' => $filterEmails,
                 'updated_at' => \Carbon\Carbon::now(),
             ];
 
@@ -3474,6 +3483,29 @@ class AdminController
                 <div class="form-group">
                     <label>Ticket statuses for cron</label>
                     <input type="text" class="form-control" name="tools_cron_statuses" value="<?php echo htmlspecialchars((string) ($settings->tools_cron_statuses ?? 'Customer-Reply, Awaiting Reply, Open')); ?>">
+                </div>
+                <div class="row">
+                    <div class="col-md-4">
+                        <div class="form-group">
+                            <label>Domain filter patterns (wildcards)</label>
+                            <textarea class="form-control" rows="4" name="tools_filter_domains" placeholder="*.nslookup.io&#10;*.whynopadlock.com"><?php echo htmlspecialchars((string) ($settings->tools_filter_domains ?? '*.nslookup.io,*.whynopadlock.com')); ?></textarea>
+                            <small class="text-muted">Comma or newline separated. Supports * and ? wildcards.</small>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="form-group">
+                            <label>IP filter patterns (wildcards)</label>
+                            <textarea class="form-control" rows="4" name="tools_filter_ips" placeholder="127.*&#10;10.0.*"><?php echo htmlspecialchars((string) ($settings->tools_filter_ips ?? '')); ?></textarea>
+                            <small class="text-muted">Use for internal/noise IP ranges.</small>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="form-group">
+                            <label>Email filter patterns (wildcards)</label>
+                            <textarea class="form-control" rows="4" name="tools_filter_emails" placeholder="*@example.com"><?php echo htmlspecialchars((string) ($settings->tools_filter_emails ?? '')); ?></textarea>
+                            <small class="text-muted">Reserved for future email-entity planning.</small>
+                        </div>
+                    </div>
                 </div>
                 <button type="submit" name="save_tools_settings" value="1" class="btn btn-primary"><i class="fas fa-save"></i> Save Tools Settings</button>
             </form>
