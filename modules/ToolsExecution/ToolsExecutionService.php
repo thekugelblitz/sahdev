@@ -540,6 +540,26 @@ class ToolsExecutionService
     {
         $subject = (string) ($context['subject'] ?? '');
         $services = (string) ($context['services_summary'] ?? '');
+        $attachmentsText = trim((string) ($context['attachments_text'] ?? ''));
+        if (strlen($attachmentsText) > 3000) {
+            $attachmentsText = substr($attachmentsText, 0, 3000) . "\n...[attachments text truncated]";
+        }
+        $imageSources = [];
+        $attachmentsImages = $context['attachments_images'] ?? [];
+        if (is_array($attachmentsImages)) {
+            foreach (array_slice($attachmentsImages, 0, 8) as $img) {
+                $src = '';
+                if (is_array($img)) {
+                    $src = (string) ($img['source'] ?? '');
+                } elseif (is_string($img)) {
+                    $src = $img;
+                }
+                $src = trim($src);
+                if ($src !== '') {
+                    $imageSources[] = $src;
+                }
+            }
+        }
         $messages = $context['messages'] ?? [];
         $intent = $this->detectIntent($context);
         $entities = $this->extractEntitiesFromContext($context);
@@ -575,6 +595,8 @@ class ToolsExecutionService
             . "Ticket subject: {$subject}\n"
             . "Client services/server info:\n{$services}\n"
             . "Conversation:\n{$text}\n\n"
+            . "Attachment extracted text:\n" . ($attachmentsText !== '' ? $attachmentsText : '[none]') . "\n\n"
+            . "Attachment image sources:\n" . (!empty($imageSources) ? implode("\n", $imageSources) : '[none]') . "\n\n"
             . "OpenAPI operations:\n{$openApi}\n\n"
             . "Output example: {\"tools\":[{\"method\":\"GET\",\"path\":\"/dns/{domain}\",\"path_params\":{\"domain\":\"example.com\"},\"query\":{\"type\":\"A\"},\"body\":{},\"reason\":\"Verify DNS record\"}]}";
     }
