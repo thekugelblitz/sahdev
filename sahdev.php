@@ -150,9 +150,9 @@ function sahdev_activate()
                     $table->boolean('tools_execution_enabled')->default(0);
                     $table->string('tools_api_base_url', 255)->default('https://toolsapi.2hs.in');
                     $table->text('tools_api_key_encrypted')->nullable();
-                    $table->integer('tools_max_tools_per_ticket')->default(3);
-                    $table->integer('tools_request_timeout_sec')->default(20);
-                    $table->integer('tools_request_retry_count')->default(1);
+                    $table->integer('tools_max_tools_per_ticket')->default(50);
+                    $table->integer('tools_request_timeout_sec')->default(60);
+                    $table->integer('tools_request_retry_count')->default(3);
                     $table->integer('tools_cron_max_per_run')->default(10);
                     $table->string('tools_cron_statuses', 512)->nullable();
                     $table->timestamp('tools_cron_last_run_at')->nullable();
@@ -199,9 +199,9 @@ function sahdev_activate()
                     $table->boolean('tools_execution_enabled')->default(0);
                     $table->string('tools_api_base_url', 255)->default('https://toolsapi.2hs.in');
                     $table->text('tools_api_key_encrypted')->nullable();
-                    $table->integer('tools_max_tools_per_ticket')->default(3);
-                    $table->integer('tools_request_timeout_sec')->default(20);
-                    $table->integer('tools_request_retry_count')->default(1);
+                    $table->integer('tools_max_tools_per_ticket')->default(50);
+                    $table->integer('tools_request_timeout_sec')->default(60);
+                    $table->integer('tools_request_retry_count')->default(3);
                     $table->integer('tools_cron_max_per_run')->default(10);
                     $table->string('tools_cron_statuses', 512)->nullable();
                     $table->timestamp('tools_cron_last_run_at')->nullable();
@@ -234,9 +234,9 @@ function sahdev_activate()
                 'cron_insights_max_per_run' => 20,
                 'tools_execution_enabled' => 0,
                 'tools_api_base_url' => 'https://toolsapi.2hs.in',
-                'tools_max_tools_per_ticket' => 3,
-                'tools_request_timeout_sec' => 20,
-                'tools_request_retry_count' => 1,
+                'tools_max_tools_per_ticket' => 50,
+                'tools_request_timeout_sec' => 60,
+                'tools_request_retry_count' => 3,
                 'tools_cron_max_per_run' => 10,
                 'tools_cron_statuses' => 'Customer-Reply, Awaiting Reply, Open',
                 'created_at' => \Carbon\Carbon::now(),
@@ -572,9 +572,9 @@ function sahdev_activate()
                 $table->boolean('tools_execution_enabled')->default(0);
                 $table->string('tools_api_base_url', 255)->default('https://toolsapi.2hs.in');
                 $table->text('tools_api_key_encrypted')->nullable();
-                $table->integer('tools_max_tools_per_ticket')->default(3);
-                $table->integer('tools_request_timeout_sec')->default(20);
-                $table->integer('tools_request_retry_count')->default(1);
+                $table->integer('tools_max_tools_per_ticket')->default(50);
+                $table->integer('tools_request_timeout_sec')->default(60);
+                $table->integer('tools_request_retry_count')->default(3);
                 $table->integer('tools_cron_max_per_run')->default(10);
                 $table->string('tools_cron_statuses', 512)->nullable();
                 $table->timestamp('tools_cron_last_run_at')->nullable();

@@ -205,9 +205,9 @@ class ToolsExecutionService
 
         $baseUrl = rtrim((string) ($settings->tools_api_base_url ?: self::DEFAULT_BASE_URL), '/');
         $allowed = $this->allowedOperations();
-        $maxTools = max(1, min(8, (int) ($settings->tools_max_tools_per_ticket ?? 3)));
-        $timeout = max(5, min(60, (int) ($settings->tools_request_timeout_sec ?? 20)));
-        $retry = max(0, min(2, (int) ($settings->tools_request_retry_count ?? 1)));
+        $maxTools = max(1, min(50, (int) ($settings->tools_max_tools_per_ticket ?? 50)));
+        $timeout = max(5, min(60, (int) ($settings->tools_request_timeout_sec ?? 60)));
+        $retry = max(0, min(3, (int) ($settings->tools_request_retry_count ?? 3)));
 
         $picked = array_slice($suggestions, 0, $maxTools);
         foreach ($picked as $item) {
