@@ -149,6 +149,7 @@ function sahdev_activate()
                 Capsule::schema()->table('tblsahdev_settings', function ($table) {
                     $table->boolean('tools_execution_enabled')->default(0);
                     $table->string('tools_api_base_url', 255)->default('https://toolsapi.2hs.in');
+                    $table->string('tools_openapi_url', 2048)->default('https://toolsapi.2hs.in/openapi.json');
                     $table->text('tools_api_key_encrypted')->nullable();
                     $table->integer('tools_max_tools_per_ticket')->default(50);
                     $table->integer('tools_request_timeout_sec')->default(60);
@@ -204,6 +205,7 @@ function sahdev_activate()
                     $table->text('insights_cron_cli_command')->nullable();
                     $table->boolean('tools_execution_enabled')->default(0);
                     $table->string('tools_api_base_url', 255)->default('https://toolsapi.2hs.in');
+                    $table->string('tools_openapi_url', 2048)->default('https://toolsapi.2hs.in/openapi.json');
                     $table->text('tools_api_key_encrypted')->nullable();
                     $table->integer('tools_max_tools_per_ticket')->default(50);
                     $table->integer('tools_request_timeout_sec')->default(60);
@@ -246,6 +248,7 @@ function sahdev_activate()
                 'cron_insights_max_per_run' => 20,
                 'tools_execution_enabled' => 0,
                 'tools_api_base_url' => 'https://toolsapi.2hs.in',
+                'tools_openapi_url' => 'https://toolsapi.2hs.in/openapi.json',
                 'tools_max_tools_per_ticket' => 50,
                 'tools_request_timeout_sec' => 60,
                 'tools_request_retry_count' => 3,
@@ -587,6 +590,13 @@ function sahdev_activate()
                 $table->integer('max_tokens_fallback')->default(4096);
             });
         }
+        try {
+            Capsule::table('tblsahdev_settings')->select('tools_openapi_url')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                $table->string('tools_openapi_url', 2048)->default('https://toolsapi.2hs.in/openapi.json');
+            });
+        }
 
         // Migrate: tools execution settings if missing (upgrade-safe)
         try {
@@ -595,6 +605,7 @@ function sahdev_activate()
             Capsule::schema()->table('tblsahdev_settings', function ($table) {
                 $table->boolean('tools_execution_enabled')->default(0);
                 $table->string('tools_api_base_url', 255)->default('https://toolsapi.2hs.in');
+                $table->string('tools_openapi_url', 2048)->default('https://toolsapi.2hs.in/openapi.json');
                 $table->text('tools_api_key_encrypted')->nullable();
                 $table->integer('tools_max_tools_per_ticket')->default(50);
                 $table->integer('tools_request_timeout_sec')->default(60);

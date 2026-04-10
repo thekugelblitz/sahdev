@@ -13,6 +13,7 @@ require_once dirname(__DIR__, 2) . '/lib/TicketDataExtractor.php';
 class ToolsExecutionService
 {
     public const DEFAULT_BASE_URL = 'https://toolsapi.2hs.in';
+    public const DEFAULT_OPENAPI_URL = 'https://toolsapi.2hs.in/openapi.json';
     private const OPENAPI_REF_FILE = 'toolsapi-2hs-in-openapi.json';
     private const TASK_LOCK_KEY = 'tools_execution_cron_lock_until';
 
@@ -437,6 +438,7 @@ class ToolsExecutionService
                     Capsule::schema()->table('tblsahdev_settings', function ($table) {
                         $table->boolean('tools_execution_enabled')->default(0);
                         $table->string('tools_api_base_url', 255)->default('https://toolsapi.2hs.in');
+                        $table->string('tools_openapi_url', 2048)->default(self::DEFAULT_OPENAPI_URL);
                         $table->text('tools_api_key_encrypted')->nullable();
                         $table->integer('tools_max_tools_per_ticket')->default(50);
                         $table->integer('tools_request_timeout_sec')->default(60);
@@ -508,6 +510,16 @@ class ToolsExecutionService
                 Capsule::schema()->table('tblsahdev_settings', function ($table) {
                     $table->boolean('tools_normalize_enabled')->default(1);
                     $table->boolean('tools_include_raw_fallback')->default(1);
+                });
+            } catch (\Throwable $ignored) {
+            }
+        }
+        try {
+            Capsule::table('tblsahdev_settings')->select('tools_openapi_url')->first();
+        } catch (\Throwable $e) {
+            try {
+                Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                    $table->string('tools_openapi_url', 2048)->default(self::DEFAULT_OPENAPI_URL);
                 });
             } catch (\Throwable $ignored) {
             }
@@ -674,13 +686,8 @@ class ToolsExecutionService
 
     private function loadOpenApiPathSummary(): string
     {
-        $root = dirname(__DIR__, 2);
-        $file = $root . DIRECTORY_SEPARATOR . self::OPENAPI_REF_FILE;
-        if (!is_file($file)) {
-            return '';
-        }
-        $raw = @file_get_contents($file);
-        if ($raw === false) {
+        $raw = $this->loadOpenApiRaw();
+        if ($raw === '') {
             return '';
         }
         $json = json_decode($raw, true);
@@ -705,12 +712,10 @@ class ToolsExecutionService
 
     private function allowedOperations(): array
     {
-        $root = dirname(__DIR__, 2);
-        $file = $root . DIRECTORY_SEPARATOR . self::OPENAPI_REF_FILE;
-        if (!is_file($file)) {
+        $raw = $this->loadOpenApiRaw();
+        if ($raw === '') {
             return [];
         }
-        $raw = @file_get_contents($file);
         $json = json_decode((string) $raw, true);
         if (!is_array($json) || !isset($json['paths'])) {
             return [];
@@ -725,6 +730,35 @@ class ToolsExecutionService
             }
         }
         return $allowed;
+    }
+
+    private function loadOpenApiRaw(): string
+    {
+        // Prefer admin-configured OpenAPI URL so future endpoint changes
+        // can be handled without code deployment.
+        try {
+            $settings = $this->settings();
+            $url = trim((string) ($settings->tools_openapi_url ?? ''));
+            if ($url === '') {
+                $url = self::DEFAULT_OPENAPI_URL;
+            }
+            if (preg_match('#^https?://#i', $url)) {
+                $remote = @file_get_contents($url);
+                if (is_string($remote) && trim($remote) !== '') {
+                    return $remote;
+                }
+            }
+        } catch (\Throwable $e) {
+            // Fall through to local reference file.
+        }
+
+        $root = dirname(__DIR__, 2);
+        $file = $root . DIRECTORY_SEPARATOR . self::OPENAPI_REF_FILE;
+        if (!is_file($file)) {
+            return '';
+        }
+        $local = @file_get_contents($file);
+        return is_string($local) ? $local : '';
     }
 
     private function isAllowedOperation(array $allowed, string $method, string $path): bool

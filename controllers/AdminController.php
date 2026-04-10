@@ -3449,6 +3449,7 @@ class AdminController
             Capsule::schema()->table('tblsahdev_settings', function ($table) {
                 $table->boolean('tools_execution_enabled')->default(0);
                 $table->string('tools_api_base_url', 255)->default('https://toolsapi.2hs.in');
+                $table->string('tools_openapi_url', 2048)->default('https://toolsapi.2hs.in/openapi.json');
                 $table->text('tools_api_key_encrypted')->nullable();
                 $table->integer('tools_max_tools_per_ticket')->default(50);
                 $table->integer('tools_request_timeout_sec')->default(60);
@@ -3493,12 +3494,20 @@ class AdminController
                 $table->boolean('tools_include_raw_fallback')->default(1);
             });
         }
+        try {
+            Capsule::table('tblsahdev_settings')->select('tools_openapi_url')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                $table->string('tools_openapi_url', 2048)->default('https://toolsapi.2hs.in/openapi.json');
+            });
+        }
 
         $successMessage = '';
         if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_tools_settings'])) {
             check_token("WHMCS.admin.default");
             $enabled = !empty($_POST['tools_execution_enabled']) ? 1 : 0;
             $baseUrl = trim((string) ($_POST['tools_api_base_url'] ?? 'https://toolsapi.2hs.in'));
+            $openApiUrl = trim((string) ($_POST['tools_openapi_url'] ?? 'https://toolsapi.2hs.in/openapi.json'));
             $maxTools = max(1, min(50, (int) ($_POST['tools_max_tools_per_ticket'] ?? 50)));
             $timeout = max(5, min(60, (int) ($_POST['tools_request_timeout_sec'] ?? 60)));
             $retry = max(0, min(3, (int) ($_POST['tools_request_retry_count'] ?? 3)));
@@ -3513,6 +3522,7 @@ class AdminController
             $update = [
                 'tools_execution_enabled' => $enabled,
                 'tools_api_base_url' => $baseUrl !== '' ? $baseUrl : 'https://toolsapi.2hs.in',
+                'tools_openapi_url' => $openApiUrl !== '' ? $openApiUrl : 'https://toolsapi.2hs.in/openapi.json',
                 'tools_max_tools_per_ticket' => $maxTools,
                 'tools_request_timeout_sec' => $timeout,
                 'tools_request_retry_count' => $retry,
@@ -3547,7 +3557,7 @@ class AdminController
         ?>
         <div class="sahdev-page-container">
             <h2 style="margin-top:0;"><i class="fas fa-tools" style="color:#0d6efd;"></i> Tools Execution</h2>
-            <p class="text-muted">Configure automatic AI-selected tool execution using the production endpoint <code>https://toolsapi.2hs.in/openapi.json</code>.</p>
+            <p class="text-muted">Configure automatic AI-selected tool execution. You can edit both API base URL and OpenAPI spec URL.</p>
             <form method="post" action="<?php echo $actionUrl; ?>">
                 <?php echo $csrfToken; ?>
                 <div class="checkbox">
@@ -3562,6 +3572,11 @@ class AdminController
                 <div class="form-group">
                     <label>Tools API Base URL</label>
                     <input type="text" class="form-control" name="tools_api_base_url" value="<?php echo htmlspecialchars((string) ($settings->tools_api_base_url ?? 'https://toolsapi.2hs.in')); ?>">
+                </div>
+                <div class="form-group">
+                    <label>Tools OpenAPI URL</label>
+                    <input type="text" class="form-control" name="tools_openapi_url" value="<?php echo htmlspecialchars((string) ($settings->tools_openapi_url ?? 'https://toolsapi.2hs.in/openapi.json')); ?>">
+                    <small class="text-muted">Used to fetch allowed operations and build AI tool-selection prompt.</small>
                 </div>
                 <div class="form-group">
                     <label>Tools API Key</label>
