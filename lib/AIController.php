@@ -184,7 +184,7 @@ class AIController
         ];
     }
 
-    public function getAnalysis(string $tone = null, string $customInstruction = null, bool $forceRegenerate = false, bool $forceFallback = false, string $intent = 'AUTO', bool $useSummaryToggle = true, bool $includeHistoricalContext = false, string $technicalContext = '', ?int $overrideProviderId = null): array
+    public function getAnalysis(string $tone = null, string $customInstruction = null, bool $forceRegenerate = false, bool $forceFallback = false, string $intent = 'AUTO', bool $useSummaryToggle = true, bool $includeHistoricalContext = false, string $technicalContext = '', ?int $overrideProviderId = null, bool $includeToolsContext = true): array
     {
         // 1. Rate Limit Check
         $this->checkRateLimit();
@@ -212,9 +212,11 @@ class AIController
             $customInstruction = empty($customInstruction) ? $techInstruction : $customInstruction . "\n\n" . $techInstruction;
         }
 
-        $toolContext = \Sahdev\Modules\ToolsExecution\ToolsExecutionService::buildPromptContextBlock($this->ticketId);
-        if ($toolContext !== '') {
-            $customInstruction = empty($customInstruction) ? $toolContext : $customInstruction . "\n\n" . $toolContext;
+        if ($includeToolsContext) {
+            $toolContext = \Sahdev\Modules\ToolsExecution\ToolsExecutionService::buildPromptContextBlock($this->ticketId);
+            if ($toolContext !== '') {
+                $customInstruction = empty($customInstruction) ? $toolContext : $customInstruction . "\n\n" . $toolContext;
+            }
         }
 
         // Inject Quality Scorer Schema if enabled
@@ -422,7 +424,7 @@ class AIController
         );
     }
 
-    public function getPayload(string $tone = null, string $customInstruction = null, bool $forceRegenerate = false, string $intent = 'AUTO', bool $useSummaryToggle = true, bool $includeHistoricalContext = false, string $technicalContext = '', ?int $overrideProviderId = null): array
+    public function getPayload(string $tone = null, string $customInstruction = null, bool $forceRegenerate = false, string $intent = 'AUTO', bool $useSummaryToggle = true, bool $includeHistoricalContext = false, string $technicalContext = '', ?int $overrideProviderId = null, bool $includeToolsContext = true): array
     {
         // 1. Rate Limit Check
         $this->checkRateLimit();
@@ -453,9 +455,11 @@ class AIController
             $customInstruction = empty($customInstruction) ? $techInstruction : $customInstruction . "\n\n" . $techInstruction;
         }
 
-        $toolContext = \Sahdev\Modules\ToolsExecution\ToolsExecutionService::buildPromptContextBlock($this->ticketId);
-        if ($toolContext !== '') {
-            $customInstruction = empty($customInstruction) ? $toolContext : $customInstruction . "\n\n" . $toolContext;
+        if ($includeToolsContext) {
+            $toolContext = \Sahdev\Modules\ToolsExecution\ToolsExecutionService::buildPromptContextBlock($this->ticketId);
+            if ($toolContext !== '') {
+                $customInstruction = empty($customInstruction) ? $toolContext : $customInstruction . "\n\n" . $toolContext;
+            }
         }
 
         // Inject Quality Scorer Schema if enabled

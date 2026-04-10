@@ -74,6 +74,8 @@ try {
     
     $includeHistoryRaw = $_POST['include_historical_context'] ?? '0';
     $includeHistory = ($includeHistoryRaw === '1' || $includeHistoryRaw === 'true' || $includeHistoryRaw === 'on' || $includeHistoryRaw === true);
+    $includeToolsRaw = $_POST['include_tools_context'] ?? '1';
+    $includeTools = ($includeToolsRaw === '1' || $includeToolsRaw === 'true' || $includeToolsRaw === 'on' || $includeToolsRaw === true);
 
     $overrideProviderId = (int) ($_POST['override_provider_id'] ?? 0);
     $overrideProviderId = $overrideProviderId > 0 ? $overrideProviderId : null;
@@ -93,7 +95,7 @@ try {
     $controller = new \Sahdev\Lib\AIController($ticketId, $adminId);
 
     if ($action === 'get_payload') {
-        $response = $controller->getPayload($tone, $instruction, $forceRegenerate, $intent, $useSummary, $includeHistory, $technicalContext, $overrideProviderId);
+        $response = $controller->getPayload($tone, $instruction, $forceRegenerate, $intent, $useSummary, $includeHistory, $technicalContext, $overrideProviderId, $includeTools);
     } elseif ($action === 'save_response') {
         $hashSignature = $_POST['hash_signature'] ?? '';
         $aiResponseRaw = $_POST['ai_response'] ?? '{}';
@@ -130,7 +132,7 @@ try {
         $response = $controller->rewriteReply($draftText, $tone ?: 'Professional', $instruction);
     } elseif ($action === 'auto_analyze') {
         // Feature: Auto-load AI Snapshot on ticket page load (always cached-first, no rate limit penalty on hit)
-        $response = $controller->getAnalysis($tone, $instruction, false, false, $intent, $useSummary, $includeHistory, $technicalContext, $overrideProviderId);
+        $response = $controller->getAnalysis($tone, $instruction, false, false, $intent, $useSummary, $includeHistory, $technicalContext, $overrideProviderId, $includeTools);
     } elseif ($action === 'generate_summary') {
         // Feature: AI Ticket Summarizer — generate and save a condensed summary
         $response = $controller->generateSummary();
@@ -477,7 +479,7 @@ try {
         $response = ['status' => 'success', 'result' => $manual, 'summary' => $summary];
     } else {
         // Default analyze_ticket (server-side generation)
-        $response = $controller->getAnalysis($tone, $instruction, $forceRegenerate, $forceFallback, $intent, $useSummary, $includeHistory, $technicalContext, $overrideProviderId);
+        $response = $controller->getAnalysis($tone, $instruction, $forceRegenerate, $forceFallback, $intent, $useSummary, $includeHistory, $technicalContext, $overrideProviderId, $includeTools);
     }
 
     // Clean any prior output to prevent malformed JSON

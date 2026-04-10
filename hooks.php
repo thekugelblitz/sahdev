@@ -221,6 +221,9 @@ function sahdev_inject_ticket_panel($vars)
                 <label style="font-weight: 600; font-size: 13px; margin: 0; cursor: pointer; color: #6f42c1;" title="If checked, the AI will use the condensed ticket summary instead of reading the full message history (if a summary exists).">
                     <input type="checkbox" id="sahdev_use_summary" value="1" checked style="vertical-align: middle; margin: 0 4px 0 0;"> Feed Summary (if available)
                 </label>
+                <label style="font-weight: 600; font-size: 13px; margin: 0; cursor: pointer; color: #0d6efd;" title="If checked, latest tool execution evidence will be added to AI prompt context for this generation.">
+                    <input type="checkbox" id="sahdev_include_tools_context" value="1" checked style="vertical-align: middle; margin: 0 4px 0 0;"> Include Tool Evidence
+                </label>
                 <div>
                     <button type="button" id="btn-sahdev-analyze" class="btn btn-primary" style="font-weight: 600;">
                         <i class="fas fa-magic"></i> Analyze & Generate Reply
@@ -680,6 +683,7 @@ HTML;
                 technical_context: $('#sahdev_technical_context').val(),
                 intent: $('#sahdev_intent').val(),
                 use_summary: $('#sahdev_use_summary').length && !$('#sahdev_use_summary').is(':checked') ? 0 : 1,
+                include_tools_context: $('#sahdev_include_tools_context').length && !$('#sahdev_include_tools_context').is(':checked') ? 0 : 1,
                 include_historical_context: $('#sahdev_include_history').is(':checked') ? 1 : 0,
                 token: $('input[name="token"]').val(),
                 force_regenerate: isRegenerate ? 'true' : 'false',
