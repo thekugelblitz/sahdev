@@ -18,6 +18,7 @@ class ToolsExecutionService
 
     public static function isEnabled(): bool
     {
+        self::ensureSchema();
         $settings = Capsule::table('tblsahdev_settings')->first();
         return !empty($settings) && (int) ($settings->tools_execution_enabled ?? 0) === 1;
     }
@@ -36,6 +37,7 @@ class ToolsExecutionService
 
     public static function getLatestRunSummary(int $ticketId): ?array
     {
+        self::ensureSchema();
         $row = Capsule::table('tblsahdev_tool_suggestions')
             ->where('ticket_id', $ticketId)
             ->orderBy('id', 'desc')
@@ -117,6 +119,7 @@ class ToolsExecutionService
 
     private function run(bool $verbose = false): array
     {
+        self::ensureSchema();
         $result = [
             'queued' => 0,
             'processed' => 0,
@@ -161,6 +164,7 @@ class ToolsExecutionService
 
     private function processTicket(int $ticketId, int $adminId, bool $force): array
     {
+        self::ensureSchema();
         $settings = $this->settings();
         if (empty($settings) || (int) ($settings->tools_execution_enabled ?? 0) !== 1) {
             throw new \Exception('Tools execution disabled.');
@@ -258,7 +262,73 @@ class ToolsExecutionService
 
     private function settings()
     {
+        self::ensureSchema();
         return Capsule::table('tblsahdev_settings')->first();
+    }
+
+    private static function ensureSchema(): void
+    {
+        try {
+            if (Capsule::schema()->hasTable('tblsahdev_settings')) {
+                try {
+                    Capsule::table('tblsahdev_settings')->select('tools_execution_enabled')->first();
+                } catch (\Throwable $e) {
+                    Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                        $table->boolean('tools_execution_enabled')->default(0);
+                        $table->string('tools_api_base_url', 255)->default('https://toolsapi.2hs.in');
+                        $table->text('tools_api_key_encrypted')->nullable();
+                        $table->integer('tools_max_tools_per_ticket')->default(50);
+                        $table->integer('tools_request_timeout_sec')->default(60);
+                        $table->integer('tools_request_retry_count')->default(3);
+                        $table->integer('tools_cron_max_per_run')->default(10);
+                        $table->string('tools_cron_statuses', 512)->nullable();
+                        $table->timestamp('tools_cron_last_run_at')->nullable();
+                        $table->string('tools_cron_last_message', 512)->nullable();
+                        $table->timestamp('tools_execution_cron_lock_until')->nullable();
+                    });
+                }
+            }
+        } catch (\Throwable $e) {
+            // Never hard-fail on schema guard.
+        }
+
+        try {
+            if (!Capsule::schema()->hasTable('tblsahdev_tool_suggestions')) {
+                Capsule::schema()->create('tblsahdev_tool_suggestions', function ($table) {
+                    $table->increments('id');
+                    $table->integer('ticket_id')->unsigned()->index();
+                    $table->timestamp('ticket_last_reply_at')->nullable();
+                    $table->string('status', 32)->default('suggested');
+                    $table->string('model_name', 255)->nullable();
+                    $table->longText('suggestions_json')->nullable();
+                    $table->longText('ai_prompt_excerpt')->nullable();
+                    $table->timestamps();
+                });
+            }
+        } catch (\Throwable $e) {
+            // Never hard-fail on schema guard.
+        }
+
+        try {
+            if (!Capsule::schema()->hasTable('tblsahdev_tool_runs')) {
+                Capsule::schema()->create('tblsahdev_tool_runs', function ($table) {
+                    $table->increments('id');
+                    $table->integer('suggestion_id')->unsigned()->index();
+                    $table->integer('ticket_id')->unsigned()->index();
+                    $table->string('method', 16);
+                    $table->string('path', 1024);
+                    $table->longText('request_query_json')->nullable();
+                    $table->longText('request_body_json')->nullable();
+                    $table->string('status', 32)->default('ok');
+                    $table->integer('http_status')->nullable();
+                    $table->longText('response_body')->nullable();
+                    $table->text('error_message')->nullable();
+                    $table->timestamps();
+                });
+            }
+        } catch (\Throwable $e) {
+            // Never hard-fail on schema guard.
+        }
     }
 
     private function queueTickets(array $statuses, int $maxPerRun): array
