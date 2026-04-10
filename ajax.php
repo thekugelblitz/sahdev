@@ -51,7 +51,7 @@ if ($intensity > 3) {
 $ticketNotRequiredActions = [
     'search_canned_responses', 'generate_canned_template', 'save_canned_response', 'save_kb_article', 'delete_audit_entries',
     'get_analytics', 'get_ticket_insights', 'trigger_cron_run', 'get_insights_queue', 'analyze_single_insight',
-    'test_whmcs_cron_http', 'run_tools_queue',
+    'test_whmcs_cron_http', 'run_tools_queue', 'get_tools_operations',
 ];
 if (!$ticketId && !in_array($action, $ticketNotRequiredActions)) {
     header('HTTP/1.1 400 Bad Request');
@@ -458,6 +458,23 @@ try {
     } elseif ($action === 'run_tools_queue') {
         $result = \Sahdev\Modules\ToolsExecution\ToolsExecutionService::runCron(true);
         $response = ['status' => 'success', 'result' => $result];
+    } elseif ($action === 'get_tools_operations') {
+        $ops = \Sahdev\Modules\ToolsExecution\ToolsExecutionService::listOperations();
+        $smart = \Sahdev\Modules\ToolsExecution\ToolsExecutionService::inferSmartValues((int) $ticketId, (int) $adminId);
+        $response = ['status' => 'success', 'operations' => $ops, 'smart' => $smart];
+    } elseif ($action === 'run_manual_tool') {
+        $runTicketId = (int) ($_POST['ticket_id'] ?? 0);
+        $method = (string) ($_POST['method'] ?? 'GET');
+        $path = (string) ($_POST['path'] ?? '');
+        $pathParamsRaw = $_POST['path_params'] ?? '{}';
+        $queryRaw = $_POST['query'] ?? '{}';
+        $bodyRaw = $_POST['body'] ?? '{}';
+        $pathParams = is_array($pathParamsRaw) ? $pathParamsRaw : (json_decode((string) $pathParamsRaw, true) ?: []);
+        $query = is_array($queryRaw) ? $queryRaw : (json_decode((string) $queryRaw, true) ?: []);
+        $body = is_array($bodyRaw) ? $bodyRaw : (json_decode((string) $bodyRaw, true) ?: []);
+        $manual = \Sahdev\Modules\ToolsExecution\ToolsExecutionService::runManualTool($runTicketId, (int) $adminId, $method, $path, $pathParams, $query, $body);
+        $summary = \Sahdev\Modules\ToolsExecution\ToolsExecutionService::getLatestRunSummary($runTicketId);
+        $response = ['status' => 'success', 'result' => $manual, 'summary' => $summary];
     } else {
         // Default analyze_ticket (server-side generation)
         $response = $controller->getAnalysis($tone, $instruction, $forceRegenerate, $forceFallback, $intent, $useSummary, $includeHistory, $technicalContext, $overrideProviderId);

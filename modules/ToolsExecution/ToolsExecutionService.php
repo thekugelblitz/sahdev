@@ -35,6 +35,134 @@ class ToolsExecutionService
         return $service->processTicket($ticketId, $adminId, $force);
     }
 
+    public static function listOperations(): array
+    {
+        self::ensureSchema();
+        $service = new self();
+        $allowed = $service->allowedOperations();
+        $ops = [];
+        foreach ($allowed as $row) {
+            [$method, $path] = explode(' ', $row, 2);
+            $ops[] = ['method' => strtoupper($method), 'path' => $path];
+        }
+        return $ops;
+    }
+
+    public static function inferSmartValues(int $ticketId, int $adminId = 0): array
+    {
+        self::ensureSchema();
+        $extractor = new \Sahdev\Lib\TicketDataExtractor($ticketId, $adminId);
+        $ctx = $extractor->getContext(false);
+        $blob = trim(
+            (string) ($ctx['subject'] ?? '') . "\n" .
+            (string) ($ctx['services_summary'] ?? '') . "\n" .
+            implode("\n", array_map(function ($m) {
+                return (string) ($m['message'] ?? '');
+            }, array_slice((array) ($ctx['messages'] ?? []), -10)))
+        );
+
+        preg_match_all('/\b(?:\d{1,3}\.){3}\d{1,3}\b/', $blob, $ipMatches);
+        preg_match_all('/\b([a-z0-9][a-z0-9-]*\.[a-z]{2,})\b/i', $blob, $domainMatches);
+        preg_match_all('/\bhttps?:\/\/[^\s<>"\']+/i', $blob, $urlMatches);
+
+        $ips = array_values(array_unique($ipMatches[0] ?? []));
+        $domains = array_values(array_unique(array_map('strtolower', $domainMatches[1] ?? [])));
+        $urls = array_values(array_unique($urlMatches[0] ?? []));
+
+        return [
+            'ips' => array_slice($ips, 0, 20),
+            'domains' => array_slice($domains, 0, 20),
+            'urls' => array_slice($urls, 0, 20),
+            'default_domain' => $domains[0] ?? '',
+            'default_ip' => $ips[0] ?? '',
+            'default_url' => $urls[0] ?? '',
+        ];
+    }
+
+    public static function runManualTool(
+        int $ticketId,
+        int $adminId,
+        string $method,
+        string $path,
+        array $pathParams = [],
+        array $query = [],
+        array $body = []
+    ): array {
+        self::ensureSchema();
+        $service = new self();
+        $settings = $service->settings();
+        if (empty($settings) || (int) ($settings->tools_execution_enabled ?? 0) !== 1) {
+            throw new \Exception('Tools execution disabled.');
+        }
+        $apiKeyEncrypted = (string) ($settings->tools_api_key_encrypted ?? '');
+        $apiKey = $apiKeyEncrypted !== '' ? decrypt($apiKeyEncrypted) : '';
+        if ($apiKey === '') {
+            throw new \Exception('Tools API key missing.');
+        }
+
+        $method = strtoupper(trim($method));
+        if (!in_array($method, ['GET', 'POST'], true)) {
+            throw new \Exception('Unsupported method.');
+        }
+        $path = trim($path);
+        if ($path === '') {
+            throw new \Exception('Path is required.');
+        }
+
+        $allowed = $service->allowedOperations();
+        if (!$service->isAllowedOperation($allowed, $method, $path)) {
+            throw new \Exception('Operation is not allowed by OpenAPI allowlist.');
+        }
+
+        $finalPath = $service->applyPathParams($path, $pathParams);
+        $baseUrl = rtrim((string) ($settings->tools_api_base_url ?: self::DEFAULT_BASE_URL), '/');
+        $url = $baseUrl . $finalPath;
+        $timeout = max(5, min(60, (int) ($settings->tools_request_timeout_sec ?? 60)));
+
+        $ticket = Capsule::table('tbltickets')->where('id', $ticketId)->first();
+        $lastReply = (string) ($ticket->lastreply ?? '');
+        $suggestionId = Capsule::table('tblsahdev_tool_suggestions')->insertGetId([
+            'ticket_id' => $ticketId,
+            'ticket_last_reply_at' => $lastReply !== '' ? $lastReply : null,
+            'status' => 'manual',
+            'model_name' => 'manual-admin',
+            'suggestions_json' => json_encode([[
+                'method' => $method,
+                'path' => $path,
+                'path_params' => $pathParams,
+                'query' => $query,
+                'body' => $body,
+                'reason' => 'Manual admin tool execution',
+            ]]),
+            'ai_prompt_excerpt' => 'Manual tool execution from ticket page',
+            'created_at' => Carbon::now(),
+            'updated_at' => Carbon::now(),
+        ]);
+
+        $exec = $service->executeHttp($url, $method, $apiKey, $query, $body, $timeout);
+        Capsule::table('tblsahdev_tool_runs')->insert([
+            'suggestion_id' => $suggestionId,
+            'ticket_id' => $ticketId,
+            'method' => $method,
+            'path' => $finalPath,
+            'request_query_json' => json_encode($query),
+            'request_body_json' => json_encode($body),
+            'status' => $exec['status'],
+            'http_status' => (int) ($exec['http_status'] ?? 0),
+            'response_body' => (string) ($exec['body'] ?? ''),
+            'error_message' => (string) ($exec['error'] ?? ''),
+            'created_at' => Carbon::now(),
+            'updated_at' => Carbon::now(),
+        ]);
+
+        Capsule::table('tblsahdev_tool_suggestions')->where('id', $suggestionId)->update([
+            'status' => 'manual-executed',
+            'updated_at' => Carbon::now(),
+        ]);
+
+        return ['status' => 'success', 'suggestion_id' => $suggestionId, 'execution' => $exec];
+    }
+
     public static function getLatestRunSummary(int $ticketId): ?array
     {
         self::ensureSchema();
@@ -499,15 +627,16 @@ class ToolsExecutionService
     {
         $payload = null;
         if (is_array($raw)) {
-            $payload = $raw['tools'] ?? $raw;
-        } elseif (is_string($raw)) {
-            $clean = trim((string) $raw);
-            $clean = preg_replace('/```(?:json)?/i', '', $clean);
-            $clean = str_replace('```', '', (string) $clean);
-            $decoded = json_decode((string) $clean, true);
-            if (is_array($decoded)) {
-                $payload = $decoded['tools'] ?? $decoded;
+            if (isset($raw['tools'])) {
+                $payload = $raw['tools'];
+            } elseif (!empty($raw) && is_string(reset($raw))) {
+                $joined = implode('', array_map('strval', $raw));
+                $payload = $this->decodeToolsFromJsonText($joined);
+            } else {
+                $payload = $raw;
             }
+        } elseif (is_string($raw)) {
+            $payload = $this->decodeToolsFromJsonText((string) $raw);
         }
 
         if (!is_array($payload)) {
@@ -534,6 +663,28 @@ class ToolsExecutionService
             ];
         }
         return $out;
+    }
+
+    private function decodeToolsFromJsonText(string $text)
+    {
+        $clean = trim($text);
+        $clean = preg_replace('/```(?:json)?/i', '', $clean);
+        $clean = str_replace('```', '', (string) $clean);
+        $decoded = json_decode((string) $clean, true);
+        if (is_array($decoded)) {
+            return $decoded['tools'] ?? $decoded;
+        }
+
+        $first = strpos($clean, '{');
+        $last = strrpos($clean, '}');
+        if ($first !== false && $last !== false && $last > $first) {
+            $slice = substr($clean, $first, $last - $first + 1);
+            $decoded = json_decode($slice, true);
+            if (is_array($decoded)) {
+                return $decoded['tools'] ?? $decoded;
+            }
+        }
+        return null;
     }
 
     private function executeHttp(string $url, string $method, string $apiKey, array $query, array $body, int $timeout): array

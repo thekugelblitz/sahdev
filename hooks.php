@@ -238,6 +238,28 @@ function sahdev_inject_ticket_panel($vars)
                     <i class="fas fa-sync"></i> Re-run Tool Execution
                 </button>
                 <div id="sahdev-tools-status" class="text-muted" style="font-size:12px; margin-top:6px;"></div>
+                <div id="sahdev-tools-panel" style="margin-top:8px; border:1px solid #e5e7eb; border-radius:6px; padding:10px; background:#fafafa;">
+                    <label style="font-weight:600; margin-bottom:4px; display:block;">Latest Tool Output (editable before AI run)</label>
+                    <textarea id="sahdev-tools-output-edit" class="form-control" rows="6" placeholder="Tool output will appear here..."></textarea>
+                    <div style="margin-top:6px; display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+                        <button type="button" id="btn-sahdev-append-tools-context" class="btn btn-default btn-xs">
+                            <i class="fas fa-plus-circle"></i> Append output to Technical Context
+                        </button>
+                        <span id="sahdev-tools-meta" class="text-muted" style="font-size:11px;"></span>
+                    </div>
+                    <hr style="margin:10px 0;">
+                    <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+                        <select id="sahdev-manual-tool-op" class="form-control input-sm" style="max-width:320px;">
+                            <option value="">Select Tool Operation...</option>
+                        </select>
+                        <input type="text" id="sahdev-manual-path-params" class="form-control input-sm" style="max-width:260px;" placeholder='Path params JSON e.g. {"domain":"example.com"}'>
+                        <input type="text" id="sahdev-manual-query" class="form-control input-sm" style="max-width:260px;" placeholder='Query JSON e.g. {"type":"A"}'>
+                        <button type="button" id="btn-sahdev-manual-tool-run" class="btn btn-info btn-xs">
+                            <i class="fas fa-play"></i> Run Selected Tool
+                        </button>
+                    </div>
+                    <div class="text-muted" style="font-size:11px; margin-top:4px;">Smart values auto-fill from ticket subject/services/replies. You can edit JSON before running.</div>
+                </div>
             </div>
         </form>
 
@@ -687,6 +709,21 @@ HTML;
             });
         });
 
+        function buildToolOutputText(summary) {
+            if (!summary) return '';
+            var lines = [];
+            lines.push('Status: ' + (summary.status || 'unknown'));
+            var runs = summary.runs || [];
+            for (var i = 0; i < runs.length; i++) {
+                var r = runs[i] || {};
+                lines.push('[' + (r.method || '') + ' ' + (r.path || '') + '] status=' + (r.status || '') + ' http=' + (r.http_status || 0));
+                if (r.response_body) lines.push(String(r.response_body));
+                if (r.error_message) lines.push('ERROR: ' + r.error_message);
+                lines.push('---');
+            }
+            return lines.join('\n');
+        }
+
         function refreshToolsStatus() {
             var reqData = {
                 action: 'get_tools_ticket_status',
@@ -703,6 +740,8 @@ HTML;
                     var s = res.summary;
                     var runs = (s.runs || []).length;
                     $('#sahdev-tools-status').text('Latest tools run: ' + (s.status || 'unknown') + ' | calls: ' + runs + ' | at: ' + (s.updated_at || 'n/a'));
+                    $('#sahdev-tools-output-edit').val(buildToolOutputText(s));
+                    $('#sahdev-tools-meta').text('Suggestion ID: ' + (s.suggestion_id || '-') + ' | calls stored: ' + runs);
                 }
             });
         }
@@ -727,6 +766,8 @@ HTML;
                         var summary = res.summary || {};
                         var runs = (summary.runs || []).length;
                         $('#sahdev-tools-status').text('Tool execution complete. Status: ' + (summary.status || 'ok') + ' | calls: ' + runs);
+                        $('#sahdev-tools-output-edit').val(buildToolOutputText(summary));
+                        $('#sahdev-tools-meta').text('Suggestion ID: ' + (summary.suggestion_id || '-') + ' | calls stored: ' + runs);
                     } else {
                         $('#sahdev-tools-status').text('Tool execution failed: ' + (res && res.message ? res.message : 'unknown error'));
                     }
@@ -738,7 +779,93 @@ HTML;
             });
         });
 
+        $(document).on('click', '#btn-sahdev-append-tools-context', function() {
+            var txt = ($('#sahdev-tools-output-edit').val() || '').trim();
+            if (!txt) return;
+            var existing = ($('#sahdev_technical_context').val() || '').trim();
+            var merged = existing ? (existing + "\n\n=== MANUALLY CURATED TOOL OUTPUT ===\n" + txt) : ("=== MANUALLY CURATED TOOL OUTPUT ===\n" + txt);
+            $('#sahdev_technical_context').val(merged);
+            $('#sahdev-tools-status').text('Tool output appended to Technical Context.');
+        });
+
+        function loadToolOperations() {
+            var reqData = {
+                action: 'get_tools_operations',
+                ticket_id: $('#sahdev_ticket_id').val(),
+                token: $('input[name="token"]').val()
+            };
+            $.ajax({
+                url: sahdevAjaxUrl,
+                type: 'POST',
+                data: reqData,
+                dataType: 'json',
+                success: function(res) {
+                    if (!res || res.status !== 'success') return;
+                    var ops = res.operations || [];
+                    var $sel = $('#sahdev-manual-tool-op');
+                    $sel.empty().append('<option value="">Select Tool Operation...</option>');
+                    for (var i = 0; i < ops.length; i++) {
+                        var op = ops[i];
+                        var label = (op.method || 'GET') + ' ' + (op.path || '');
+                        $sel.append('<option value="' + label.replace(/"/g, '&quot;') + '">' + label + '</option>');
+                    }
+                    var smart = res.smart || {};
+                    var pathParams = {};
+                    if (smart.default_domain) pathParams.domain = smart.default_domain;
+                    if (smart.default_ip) pathParams.ip = smart.default_ip;
+                    if (smart.default_url) pathParams.target = smart.default_url;
+                    $('#sahdev-manual-path-params').val(JSON.stringify(pathParams));
+                    $('#sahdev-manual-query').val('{}');
+                }
+            });
+        }
+
+        $(document).on('click', '#btn-sahdev-manual-tool-run', function() {
+            var op = $('#sahdev-manual-tool-op').val() || '';
+            if (!op) {
+                $('#sahdev-tools-status').text('Select a tool operation first.');
+                return;
+            }
+            var splitAt = op.indexOf(' ');
+            var method = splitAt > 0 ? op.substring(0, splitAt) : 'GET';
+            var path = splitAt > 0 ? op.substring(splitAt + 1) : op;
+            var pathParams = $('#sahdev-manual-path-params').val() || '{}';
+            var query = $('#sahdev-manual-query').val() || '{}';
+            $('#sahdev-tools-status').text('Running manual tool execution...');
+            $.ajax({
+                url: sahdevAjaxUrl,
+                type: 'POST',
+                dataType: 'json',
+                data: {
+                    action: 'run_manual_tool',
+                    ticket_id: $('#sahdev_ticket_id').val(),
+                    method: method,
+                    path: path,
+                    path_params: pathParams,
+                    query: query,
+                    body: '{}',
+                    token: $('input[name="token"]').val()
+                },
+                success: function(res) {
+                    if (res && res.status === 'success') {
+                        var summary = res.summary || {};
+                        var runs = (summary.runs || []).length;
+                        $('#sahdev-tools-status').text('Manual tool run saved. Total calls: ' + runs);
+                        $('#sahdev-tools-output-edit').val(buildToolOutputText(summary));
+                        $('#sahdev-tools-meta').text('Suggestion ID: ' + (summary.suggestion_id || '-') + ' | calls stored: ' + runs);
+                    } else {
+                        $('#sahdev-tools-status').text('Manual tool run failed: ' + (res && res.message ? res.message : 'unknown error'));
+                    }
+                },
+                error: function(xhr) {
+                    var msg = xhr && xhr.responseJSON && xhr.responseJSON.message ? xhr.responseJSON.message : ('HTTP ' + xhr.status);
+                    $('#sahdev-tools-status').text('Manual tool run failed: ' + msg);
+                }
+            });
+        });
+
         refreshToolsStatus();
+        loadToolOperations();
         
         function executeBackendGoogleCall(baseReqData, $btn) {
             var reqData = Object.assign({ action: 'analyze_ticket' }, baseReqData);
