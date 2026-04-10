@@ -425,6 +425,7 @@ class AdminController
             'summaries' => ['label' => '<i class="fas fa-file-alt"></i> Ticket Summaries', 'url' => $base . '&action=summaries'],
             'canned_responses' => ['label' => '<i class="fas fa-save"></i> Canned Responses', 'url' => $base . '&action=canned_responses'],
             'intents' => ['label' => '<i class="fas fa-bullseye"></i> Intents Manager', 'url' => $base . '&action=intents'],
+            'tools' => ['label' => '<i class="fas fa-tools"></i> Tools Execution', 'url' => $base . '&action=tools'],
             'ticket_insights' => ['label' => '<i class="fas fa-brain"></i> Ticket Insights', 'url' => $base . '&action=ticket_insights'],
             'analytics' => ['label' => '<i class="fas fa-chart-line"></i> Analytics', 'url' => $base . '&action=analytics'],
             'audit_trail' => ['label' => '<i class="fas fa-history"></i> Audit Trail', 'url' => $base . '&action=audit_trail'],
@@ -3382,6 +3383,101 @@ class AdminController
         })();
         </script>
 
+        <?php
+        return ob_get_clean();
+    }
+
+    /**
+     * Tools Execution settings tab.
+     */
+    public function tools()
+    {
+        try {
+            Capsule::table('tblsahdev_settings')->select('tools_execution_enabled')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                $table->boolean('tools_execution_enabled')->default(0);
+                $table->string('tools_api_base_url', 255)->default('https://toolsapi.2hs.in');
+                $table->text('tools_api_key_encrypted')->nullable();
+                $table->integer('tools_max_tools_per_ticket')->default(3);
+                $table->integer('tools_request_timeout_sec')->default(20);
+                $table->integer('tools_request_retry_count')->default(1);
+                $table->integer('tools_cron_max_per_run')->default(10);
+                $table->string('tools_cron_statuses', 512)->nullable();
+            });
+        }
+
+        $successMessage = '';
+        if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_tools_settings'])) {
+            check_token("WHMCS.admin.default");
+            $enabled = !empty($_POST['tools_execution_enabled']) ? 1 : 0;
+            $baseUrl = trim((string) ($_POST['tools_api_base_url'] ?? 'https://toolsapi.2hs.in'));
+            $maxTools = max(1, min(8, (int) ($_POST['tools_max_tools_per_ticket'] ?? 3)));
+            $timeout = max(5, min(60, (int) ($_POST['tools_request_timeout_sec'] ?? 20)));
+            $retry = max(0, min(2, (int) ($_POST['tools_request_retry_count'] ?? 1)));
+            $maxPerRun = max(1, min(50, (int) ($_POST['tools_cron_max_per_run'] ?? 10)));
+            $statuses = trim((string) ($_POST['tools_cron_statuses'] ?? 'Customer-Reply, Awaiting Reply, Open'));
+
+            $update = [
+                'tools_execution_enabled' => $enabled,
+                'tools_api_base_url' => $baseUrl !== '' ? $baseUrl : 'https://toolsapi.2hs.in',
+                'tools_max_tools_per_ticket' => $maxTools,
+                'tools_request_timeout_sec' => $timeout,
+                'tools_request_retry_count' => $retry,
+                'tools_cron_max_per_run' => $maxPerRun,
+                'tools_cron_statuses' => $statuses,
+                'updated_at' => \Carbon\Carbon::now(),
+            ];
+
+            $newKey = trim((string) ($_POST['tools_api_key'] ?? ''));
+            if ($newKey !== '') {
+                $update['tools_api_key_encrypted'] = encrypt($newKey);
+            }
+
+            Capsule::table('tblsahdev_settings')->where('id', 1)->update($update);
+            $successMessage = 'Tools execution settings saved.';
+        }
+
+        $settings = Capsule::table('tblsahdev_settings')->first();
+        $csrfToken = generate_token('form');
+        $actionUrl = htmlspecialchars($this->moduleVars['modulelink'] . '&action=tools');
+
+        ob_start();
+        if ($successMessage !== '') {
+            echo '<div class="alert alert-success"><i class="fas fa-check-circle"></i> ' . htmlspecialchars($successMessage) . '</div>';
+        }
+        echo $this->getNavigationMarkup('tools');
+        ?>
+        <div class="sahdev-page-container">
+            <h2 style="margin-top:0;"><i class="fas fa-tools" style="color:#0d6efd;"></i> Tools Execution</h2>
+            <p class="text-muted">Configure automatic AI-selected tool execution using the production endpoint <code>https://toolsapi.2hs.in/openapi.json</code>.</p>
+            <form method="post" action="<?php echo $actionUrl; ?>">
+                <input type="hidden" name="token" value="<?php echo htmlspecialchars($csrfToken); ?>">
+                <div class="checkbox">
+                    <label><input type="checkbox" name="tools_execution_enabled" <?php echo !empty($settings->tools_execution_enabled) ? 'checked' : ''; ?>> Enable tools execution module</label>
+                </div>
+                <div class="form-group">
+                    <label>Tools API Base URL</label>
+                    <input type="text" class="form-control" name="tools_api_base_url" value="<?php echo htmlspecialchars((string) ($settings->tools_api_base_url ?? 'https://toolsapi.2hs.in')); ?>">
+                </div>
+                <div class="form-group">
+                    <label>Tools API Key</label>
+                    <input type="password" class="form-control" name="tools_api_key" placeholder="Enter new key to update">
+                    <small class="text-muted">Stored encrypted. Leave blank to keep current key.</small>
+                </div>
+                <div class="row">
+                    <div class="col-md-3"><div class="form-group"><label>Max tools per ticket</label><input type="number" min="1" max="8" class="form-control" name="tools_max_tools_per_ticket" value="<?php echo (int) ($settings->tools_max_tools_per_ticket ?? 3); ?>"></div></div>
+                    <div class="col-md-3"><div class="form-group"><label>Request timeout (sec)</label><input type="number" min="5" max="60" class="form-control" name="tools_request_timeout_sec" value="<?php echo (int) ($settings->tools_request_timeout_sec ?? 20); ?>"></div></div>
+                    <div class="col-md-3"><div class="form-group"><label>Retry count</label><input type="number" min="0" max="2" class="form-control" name="tools_request_retry_count" value="<?php echo (int) ($settings->tools_request_retry_count ?? 1); ?>"></div></div>
+                    <div class="col-md-3"><div class="form-group"><label>Cron max per run</label><input type="number" min="1" max="50" class="form-control" name="tools_cron_max_per_run" value="<?php echo (int) ($settings->tools_cron_max_per_run ?? 10); ?>"></div></div>
+                </div>
+                <div class="form-group">
+                    <label>Ticket statuses for cron</label>
+                    <input type="text" class="form-control" name="tools_cron_statuses" value="<?php echo htmlspecialchars((string) ($settings->tools_cron_statuses ?? 'Customer-Reply, Awaiting Reply, Open')); ?>">
+                </div>
+                <button type="submit" name="save_tools_settings" value="1" class="btn btn-primary"><i class="fas fa-save"></i> Save Tools Settings</button>
+            </form>
+        </div>
         <?php
         return ob_get_clean();
     }

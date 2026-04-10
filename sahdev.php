@@ -141,6 +141,25 @@ function sahdev_activate()
                     $table->integer('max_images')->default(3);
                 });
             }
+
+            // Migrate: tools execution settings if missing
+            try {
+                Capsule::table('tblsahdev_settings')->select('tools_execution_enabled')->first();
+            } catch (\Exception $e) {
+                Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                    $table->boolean('tools_execution_enabled')->default(0);
+                    $table->string('tools_api_base_url', 255)->default('https://toolsapi.2hs.in');
+                    $table->text('tools_api_key_encrypted')->nullable();
+                    $table->integer('tools_max_tools_per_ticket')->default(3);
+                    $table->integer('tools_request_timeout_sec')->default(20);
+                    $table->integer('tools_request_retry_count')->default(1);
+                    $table->integer('tools_cron_max_per_run')->default(10);
+                    $table->string('tools_cron_statuses', 512)->nullable();
+                    $table->timestamp('tools_cron_last_run_at')->nullable();
+                    $table->string('tools_cron_last_message', 512)->nullable();
+                    $table->timestamp('tools_execution_cron_lock_until')->nullable();
+                });
+            }
         } catch (\Exception $e) {
             Capsule::schema()->create(
                 'tblsahdev_settings',
@@ -177,6 +196,17 @@ function sahdev_activate()
                     $table->string('insights_cron_last_message', 512)->nullable();
                     $table->string('insights_cron_http_url', 2048)->nullable();
                     $table->text('insights_cron_cli_command')->nullable();
+                    $table->boolean('tools_execution_enabled')->default(0);
+                    $table->string('tools_api_base_url', 255)->default('https://toolsapi.2hs.in');
+                    $table->text('tools_api_key_encrypted')->nullable();
+                    $table->integer('tools_max_tools_per_ticket')->default(3);
+                    $table->integer('tools_request_timeout_sec')->default(20);
+                    $table->integer('tools_request_retry_count')->default(1);
+                    $table->integer('tools_cron_max_per_run')->default(10);
+                    $table->string('tools_cron_statuses', 512)->nullable();
+                    $table->timestamp('tools_cron_last_run_at')->nullable();
+                    $table->string('tools_cron_last_message', 512)->nullable();
+                    $table->timestamp('tools_execution_cron_lock_until')->nullable();
                     $table->timestamps(); // creates created_at, updated_at
                 }
             );
@@ -202,6 +232,13 @@ function sahdev_activate()
                 'cron_insights_enabled' => 1,
                 'cron_insights_interval_hours' => 6,
                 'cron_insights_max_per_run' => 20,
+                'tools_execution_enabled' => 0,
+                'tools_api_base_url' => 'https://toolsapi.2hs.in',
+                'tools_max_tools_per_ticket' => 3,
+                'tools_request_timeout_sec' => 20,
+                'tools_request_retry_count' => 1,
+                'tools_cron_max_per_run' => 10,
+                'tools_cron_statuses' => 'Customer-Reply, Awaiting Reply, Open',
                 'created_at' => \Carbon\Carbon::now(),
                 'updated_at' => \Carbon\Carbon::now(),
             ]);
@@ -524,6 +561,61 @@ function sahdev_activate()
         } catch (\Exception $e) {
             Capsule::schema()->table('tblsahdev_settings', function ($table) {
                 $table->longText('task_provider_map')->nullable();
+            });
+        }
+
+        // Migrate: tools execution settings if missing (upgrade-safe)
+        try {
+            Capsule::table('tblsahdev_settings')->select('tools_execution_enabled')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                $table->boolean('tools_execution_enabled')->default(0);
+                $table->string('tools_api_base_url', 255)->default('https://toolsapi.2hs.in');
+                $table->text('tools_api_key_encrypted')->nullable();
+                $table->integer('tools_max_tools_per_ticket')->default(3);
+                $table->integer('tools_request_timeout_sec')->default(20);
+                $table->integer('tools_request_retry_count')->default(1);
+                $table->integer('tools_cron_max_per_run')->default(10);
+                $table->string('tools_cron_statuses', 512)->nullable();
+                $table->timestamp('tools_cron_last_run_at')->nullable();
+                $table->string('tools_cron_last_message', 512)->nullable();
+                $table->timestamp('tools_execution_cron_lock_until')->nullable();
+            });
+        }
+
+        // Create tool suggestion table
+        try {
+            Capsule::table('tblsahdev_tool_suggestions')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->create('tblsahdev_tool_suggestions', function ($table) {
+                $table->increments('id');
+                $table->integer('ticket_id')->unsigned()->index();
+                $table->timestamp('ticket_last_reply_at')->nullable();
+                $table->string('status', 32)->default('suggested');
+                $table->string('model_name', 255)->nullable();
+                $table->longText('suggestions_json')->nullable();
+                $table->longText('ai_prompt_excerpt')->nullable();
+                $table->timestamps();
+            });
+        }
+
+        // Create tool run table
+        try {
+            Capsule::table('tblsahdev_tool_runs')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->create('tblsahdev_tool_runs', function ($table) {
+                $table->increments('id');
+                $table->integer('suggestion_id')->unsigned()->index();
+                $table->integer('ticket_id')->unsigned()->index();
+                $table->string('method', 16);
+                $table->string('path', 1024);
+                $table->longText('request_query_json')->nullable();
+                $table->longText('request_body_json')->nullable();
+                $table->string('status', 32)->default('ok');
+                $table->integer('http_status')->nullable();
+                $table->longText('response_body')->nullable();
+                $table->text('error_message')->nullable();
+                $table->timestamps();
             });
         }
 

@@ -51,7 +51,7 @@ if ($intensity > 3) {
 $ticketNotRequiredActions = [
     'search_canned_responses', 'generate_canned_template', 'save_canned_response', 'save_kb_article', 'delete_audit_entries',
     'get_analytics', 'get_ticket_insights', 'trigger_cron_run', 'get_insights_queue', 'analyze_single_insight',
-    'test_whmcs_cron_http',
+    'test_whmcs_cron_http', 'run_tools_queue',
 ];
 if (!$ticketId && !in_array($action, $ticketNotRequiredActions)) {
     header('HTTP/1.1 400 Bad Request');
@@ -65,6 +65,7 @@ try {
     require_once __DIR__ . '/lib/LMStudioAIProvider.php';
     require_once __DIR__ . '/lib/TicketDataExtractor.php';
     require_once __DIR__ . '/lib/AIController.php';
+    require_once __DIR__ . '/modules/ToolsExecution/ToolsExecutionService.php';
 
     $forceRegenerate = !empty($_POST['force_regenerate']) && $_POST['force_regenerate'] === 'true';
     $forceFallback = !empty($_POST['force_fallback']) && $_POST['force_fallback'] === 'true';
@@ -436,6 +437,27 @@ try {
         } else {
             $response = ['status' => 'success', 'message' => "No tickets needed analysis right now (found: {$found}).", 'result' => $result];
         }
+    } elseif ($action === 'run_tools_for_ticket') {
+        $runTicketId = (int) ($_POST['ticket_id'] ?? 0);
+        $force = !empty($_POST['force']) && $_POST['force'] === '1';
+        if ($runTicketId <= 0) {
+            $response = ['status' => 'error', 'message' => 'Missing ticket_id'];
+        } else {
+            $result = \Sahdev\Modules\ToolsExecution\ToolsExecutionService::runTicket($runTicketId, (int) $adminId, $force);
+            $summary = \Sahdev\Modules\ToolsExecution\ToolsExecutionService::getLatestRunSummary($runTicketId);
+            $response = ['status' => 'success', 'result' => $result, 'summary' => $summary];
+        }
+    } elseif ($action === 'get_tools_ticket_status') {
+        $runTicketId = (int) ($_POST['ticket_id'] ?? 0);
+        if ($runTicketId <= 0) {
+            $response = ['status' => 'error', 'message' => 'Missing ticket_id'];
+        } else {
+            $summary = \Sahdev\Modules\ToolsExecution\ToolsExecutionService::getLatestRunSummary($runTicketId);
+            $response = ['status' => 'success', 'summary' => $summary];
+        }
+    } elseif ($action === 'run_tools_queue') {
+        $result = \Sahdev\Modules\ToolsExecution\ToolsExecutionService::runCron(true);
+        $response = ['status' => 'success', 'result' => $result];
     } else {
         // Default analyze_ticket (server-side generation)
         $response = $controller->getAnalysis($tone, $instruction, $forceRegenerate, $forceFallback, $intent, $useSummary, $includeHistory, $technicalContext, $overrideProviderId);

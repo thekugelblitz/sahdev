@@ -11,6 +11,7 @@ require_once __DIR__ . '/LMStudioAIProvider.php';
 require_once __DIR__ . '/ReplicateAIProvider.php';
 require_once __DIR__ . '/TicketDataExtractor.php';
 require_once __DIR__ . '/TaskProviderResolver.php';
+require_once dirname(__DIR__) . '/modules/ToolsExecution/ToolsExecutionService.php';
 
 class AIController
 {
@@ -209,6 +210,11 @@ class AIController
         if (!empty($technicalContext)) {
             $techInstruction = "=== TECHNICAL CONTEXT PROVIDED BY ADMIN ===\n" . $technicalContext;
             $customInstruction = empty($customInstruction) ? $techInstruction : $customInstruction . "\n\n" . $techInstruction;
+        }
+
+        $toolContext = \Sahdev\Modules\ToolsExecution\ToolsExecutionService::buildPromptContextBlock($this->ticketId);
+        if ($toolContext !== '') {
+            $customInstruction = empty($customInstruction) ? $toolContext : $customInstruction . "\n\n" . $toolContext;
         }
 
         // Inject Quality Scorer Schema if enabled
@@ -442,6 +448,11 @@ class AIController
         if (!empty($technicalContext)) {
             $techInstruction = "=== TECHNICAL CONTEXT PROVIDED BY ADMIN ===\n" . $technicalContext;
             $customInstruction = empty($customInstruction) ? $techInstruction : $customInstruction . "\n\n" . $techInstruction;
+        }
+
+        $toolContext = \Sahdev\Modules\ToolsExecution\ToolsExecutionService::buildPromptContextBlock($this->ticketId);
+        if ($toolContext !== '') {
+            $customInstruction = empty($customInstruction) ? $toolContext : $customInstruction . "\n\n" . $toolContext;
         }
 
         // Inject Quality Scorer Schema if enabled

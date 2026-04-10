@@ -230,6 +230,15 @@ function sahdev_inject_ticket_panel($vars)
                     </button>
                 </div>
             </div>
+            <div class="form-group" style="margin-top:8px;">
+                <button type="button" id="btn-sahdev-run-tools" class="btn btn-default btn-sm">
+                    <i class="fas fa-tools"></i> Run Tool Execution
+                </button>
+                <button type="button" id="btn-sahdev-rerun-tools" class="btn btn-warning btn-sm" style="margin-left:6px;">
+                    <i class="fas fa-sync"></i> Re-run Tool Execution
+                </button>
+                <div id="sahdev-tools-status" class="text-muted" style="font-size:12px; margin-top:6px;"></div>
+            </div>
         </form>
 
         <!-- Rewrite It: Expand Admin Draft from Editor -->
@@ -677,6 +686,59 @@ HTML;
                 }
             });
         });
+
+        function refreshToolsStatus() {
+            var reqData = {
+                action: 'get_tools_ticket_status',
+                ticket_id: $('#sahdev_ticket_id').val(),
+                token: $('input[name="token"]').val()
+            };
+            $.ajax({
+                url: sahdevAjaxUrl,
+                type: 'POST',
+                data: reqData,
+                dataType: 'json',
+                success: function(res) {
+                    if (!res || res.status !== 'success' || !res.summary) return;
+                    var s = res.summary;
+                    var runs = (s.runs || []).length;
+                    $('#sahdev-tools-status').text('Latest tools run: ' + (s.status || 'unknown') + ' | calls: ' + runs + ' | at: ' + (s.updated_at || 'n/a'));
+                }
+            });
+        }
+
+        $(document).on('click', '#btn-sahdev-run-tools, #btn-sahdev-rerun-tools', function(e) {
+            e.preventDefault();
+            var isRerun = $(this).attr('id') === 'btn-sahdev-rerun-tools';
+            $('#sahdev-tools-status').text((isRerun ? 'Re-running' : 'Running') + ' tool execution...');
+            var reqData = {
+                action: 'run_tools_for_ticket',
+                ticket_id: $('#sahdev_ticket_id').val(),
+                force: isRerun ? '1' : '0',
+                token: $('input[name="token"]').val()
+            };
+            $.ajax({
+                url: sahdevAjaxUrl,
+                type: 'POST',
+                data: reqData,
+                dataType: 'json',
+                success: function(res) {
+                    if (res && res.status === 'success') {
+                        var summary = res.summary || {};
+                        var runs = (summary.runs || []).length;
+                        $('#sahdev-tools-status').text('Tool execution complete. Status: ' + (summary.status || 'ok') + ' | calls: ' + runs);
+                    } else {
+                        $('#sahdev-tools-status').text('Tool execution failed: ' + (res && res.message ? res.message : 'unknown error'));
+                    }
+                },
+                error: function(xhr) {
+                    var msg = xhr && xhr.responseJSON && xhr.responseJSON.message ? xhr.responseJSON.message : ('HTTP ' + xhr.status);
+                    $('#sahdev-tools-status').text('Tool execution failed: ' + msg);
+                }
+            });
+        });
+
+        refreshToolsStatus();
         
         function executeBackendGoogleCall(baseReqData, $btn) {
             var reqData = Object.assign({ action: 'analyze_ticket' }, baseReqData);
@@ -2082,9 +2144,11 @@ add_hook('CronJob', 1, function () {
         require_once $moduleDir . '/lib/TicketDataExtractor.php';
         require_once $moduleDir . '/lib/AIController.php';
         require_once $moduleDir . '/lib/CronProcessor.php';
+    require_once $moduleDir . '/modules/ToolsExecution/ToolsExecutionService.php';
 
         $processor = new \Sahdev\Lib\CronProcessor();
         $processor->run();
+        \Sahdev\Modules\ToolsExecution\ToolsExecutionService::runCron(false);
     } catch (\Throwable $e) {
         // Silently swallow — never crash the WHMCS cron
     }
