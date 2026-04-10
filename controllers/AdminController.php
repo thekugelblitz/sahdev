@@ -3410,6 +3410,29 @@ class AdminController
             });
         }
 
+        // Upgrade-safe: ensure newer filter columns exist even on partially migrated installs
+        try {
+            Capsule::table('tblsahdev_settings')->select('tools_filter_domains')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                $table->text('tools_filter_domains')->nullable();
+            });
+        }
+        try {
+            Capsule::table('tblsahdev_settings')->select('tools_filter_ips')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                $table->text('tools_filter_ips')->nullable();
+            });
+        }
+        try {
+            Capsule::table('tblsahdev_settings')->select('tools_filter_emails')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                $table->text('tools_filter_emails')->nullable();
+            });
+        }
+
         $successMessage = '';
         if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_tools_settings'])) {
             check_token("WHMCS.admin.default");
