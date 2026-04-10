@@ -3508,6 +3508,15 @@ class AdminController
         $insightsCronAnalyzed = $settings ? (int) ($settings->insights_cron_last_analyzed ?? 0) : 0;
         $insightsCronSkipped = $settings ? (int) ($settings->insights_cron_last_skipped ?? 0) : 0;
         $insightsCronMsg = $settings && !empty($settings->insights_cron_last_message) ? (string) $settings->insights_cron_last_message : '';
+        $whmcsStatuses = [];
+        try {
+            $whmcsStatuses = Capsule::table('tblticketstatuses')
+                ->orderBy('sortorder', 'asc')
+                ->pluck('title')
+                ->toArray();
+        } catch (\Exception $e) {
+            $whmcsStatuses = [];
+        }
 
         $csrfToken = generate_token("form");
         $actionUrl = htmlspecialchars($this->moduleVars['modulelink'] . '&action=cron_center');
@@ -3569,7 +3578,23 @@ class AdminController
                         <div class="col-md-3"><div class="form-group"><label><input type="checkbox" name="cron_insights_enabled" value="1" <?php echo $cronEnabled ? 'checked' : ''; ?>> Enable cron ticket insights</label></div></div>
                         <div class="col-md-3"><div class="form-group"><label>Re-analyze interval</label><select name="cron_insights_interval_hours" class="form-control"><?php foreach ($intervalOptions as $val => $label): ?><option value="<?php echo $val; ?>" <?php echo ($cronInterval == $val) ? 'selected' : ''; ?>><?php echo htmlspecialchars($label); ?></option><?php endforeach; ?></select></div></div>
                         <div class="col-md-3"><div class="form-group"><label>Max tickets per run</label><input type="number" name="cron_insights_max_per_run" class="form-control" min="1" max="100" value="<?php echo (int) $cronMax; ?>"></div></div>
-                        <div class="col-md-3"><div class="form-group"><label>Statuses</label><input type="text" name="cron_insights_statuses" class="form-control" value="<?php echo htmlspecialchars($cronStatuses); ?>"></div></div>
+                        <div class="col-md-3"><div class="form-group"><label>Statuses</label><input type="text" name="cron_insights_statuses" class="form-control" value="<?php echo htmlspecialchars($cronStatuses); ?>">
+                        <?php if (!empty($whmcsStatuses)): ?>
+                            <small class="text-muted" style="display:block; margin-top:4px;">
+                                Existing statuses:
+                                <?php foreach ($whmcsStatuses as $ws): ?>
+                                    <code style="cursor:pointer; margin-right:4px;" onclick="
+                                        var f=document.querySelector('[name=cron_insights_statuses]');
+                                        var v=(f && f.value ? f.value.trim() : '');
+                                        var s='<?php echo addslashes(htmlspecialchars($ws)); ?>';
+                                        if (f) { f.value = v ? v + ', ' + s : s; }
+                                    " title="Click to append"><?php echo htmlspecialchars($ws); ?></code>
+                                <?php endforeach; ?>
+                            </small>
+                        <?php else: ?>
+                            <small class="text-muted" style="display:block; margin-top:4px;">Comma-separated statuses.</small>
+                        <?php endif; ?>
+                        </div></div>
                     </div>
                     <div class="form-group"><label>HTTP cron URL (override)</label><input type="text" name="insights_cron_http_url" class="form-control" value="<?php echo htmlspecialchars($cronHttpSaved); ?>"></div>
                     <div class="form-group"><label>CLI cron command (reference)</label><textarea name="insights_cron_cli_command" class="form-control" rows="2"><?php echo htmlspecialchars($cronCliSaved); ?></textarea></div>
