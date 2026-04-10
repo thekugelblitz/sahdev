@@ -370,6 +370,9 @@ class AIController
             'rewrite_reply'        => '',  // built dynamically in rewriteReply
             'score_reply'          => "You are an expert QA Manager scoring support replies. Output strictly a single raw JSON object matching the requested schema.",
             'canned_template'      => "Rewrite the following support ticket reply into a reusable, generalized canned response template.\n- Remove any specific client names, domain names, IP addresses, or highly specific dates.\n- Replace removed specifics with general placeholders like [Client Name], [Domain], [IP Address].\n- Make the tone professional and helpful.\n- DO NOT include any JSON wrapping or preamble, just the raw text template.\n\n=== DRAFT TO GENERALIZE ===\n",
+            'tools_evidence_system' => "You are a technical evidence normalizer for hosting support. Convert raw network diagnostic outputs into concise, factual findings. Never fabricate values.",
+            'tools_evidence_user' => "Normalize the following raw tool output for support staff:\n\n{{RAW_TOOL_OUTPUT}}",
+            'tools_reply_context_wrapper' => "=== TOOLS EXECUTION RESULTS (AUTO-RUN) ===\n{{TOOLS_EVIDENCE}}",
         ];
 
         // Merge with DB values (DB wins over hardcoded defaults)
@@ -1582,6 +1585,23 @@ class AIController
                 $estimatedCost = ($totalTokens / 1000000) * 0.50;
             }
 
+            // 6. Tools normalization metrics (best-effort, non-fatal)
+            $toolsNorm = [
+                'total_tool_runs' => 0,
+                'normalized_runs' => 0,
+                'raw_fallback_runs' => 0,
+                'normalization_errors' => 0,
+            ];
+            try {
+                if (Capsule::schema()->hasTable('tblsahdev_tool_runs')) {
+                    $toolsNorm['total_tool_runs'] = (int) Capsule::table('tblsahdev_tool_runs')->count();
+                    $toolsNorm['normalized_runs'] = (int) Capsule::table('tblsahdev_tool_runs')->where('normalization_status', 'normalized')->count();
+                    $toolsNorm['raw_fallback_runs'] = (int) Capsule::table('tblsahdev_tool_runs')->where('normalization_status', 'raw_fallback')->count();
+                    $toolsNorm['normalization_errors'] = (int) Capsule::table('tblsahdev_tool_runs')->whereNotNull('normalization_error')->where('normalization_error', '!=', '')->count();
+                }
+            } catch (\Exception $ignored) {
+            }
+
             return [
                 'status' => 'success',
                 'data' => [
@@ -1601,7 +1621,8 @@ class AIController
                         'time_saved_minutes' => $timeSavedMinutes,
                         'time_saved_string' => $timeSavedString,
                         'estimated_cost_usd' => round($estimatedCost, 4)
-                    ]
+                    ],
+                    'tools_normalization' => $toolsNorm,
                 ]
             ];
         } catch (\Exception $e) {

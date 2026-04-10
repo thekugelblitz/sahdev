@@ -140,6 +140,7 @@ class ToolsExecutionService
         ]);
 
         $exec = $service->executeHttp($url, $method, $apiKey, $query, $body, $timeout);
+        $normalized = $service->normalizeOutput($method, $finalPath, (string) ($exec['body'] ?? ''), (array) $settings);
         Capsule::table('tblsahdev_tool_runs')->insert([
             'suggestion_id' => $suggestionId,
             'ticket_id' => $ticketId,
@@ -150,6 +151,10 @@ class ToolsExecutionService
             'status' => $exec['status'],
             'http_status' => (int) ($exec['http_status'] ?? 0),
             'response_body' => (string) ($exec['body'] ?? ''),
+            'normalized_summary' => (string) ($normalized['summary'] ?? ''),
+            'normalized_json' => (string) ($normalized['json'] ?? ''),
+            'normalization_status' => (string) ($normalized['status'] ?? 'raw'),
+            'normalization_error' => (string) ($normalized['error'] ?? ''),
             'error_message' => (string) ($exec['error'] ?? ''),
             'created_at' => Carbon::now(),
             'updated_at' => Carbon::now(),
@@ -230,19 +235,34 @@ class ToolsExecutionService
                 $path = (string) ($run->path ?? '');
                 $statusCode = (int) ($run->http_status ?? 0);
                 $status = (string) ($run->status ?? 'unknown');
-                $body = (string) ($run->response_body ?? '');
-                $body = trim($body);
-                if (strlen($body) > 1500) {
-                    $body = substr($body, 0, 1500) . '... [truncated]';
-                }
                 $lines[] = "- {$method} {$path} => status={$status}, http={$statusCode}";
+                $readable = trim((string) ($run->normalized_summary ?? ''));
+                if ($readable !== '') {
+                    $lines[] = "  readable: " . $readable;
+                }
+                $body = trim((string) ($run->response_body ?? ''));
                 if ($body !== '') {
-                    $lines[] = "  response: " . $body;
+                    if (strlen($body) > 1200) {
+                        $body = substr($body, 0, 1200) . '... [truncated]';
+                    }
+                    $lines[] = "  raw: " . $body;
                 }
             }
         }
 
-        return implode("\n", $lines);
+        $body = implode("\n", $lines);
+        try {
+            $tpl = Capsule::table('tblsahdev_prompt_templates')
+                ->where('prompt_key', 'tools_reply_context_wrapper')
+                ->value('content');
+            if (is_string($tpl) && trim($tpl) !== '') {
+                return str_replace('{{TOOLS_EVIDENCE}}', $body, $tpl);
+            }
+        } catch (\Throwable $e) {
+            // Non-fatal: default wrapper below.
+        }
+
+        return $body;
     }
 
     private function run(bool $verbose = false): array
@@ -361,6 +381,7 @@ class ToolsExecutionService
                 $exec = $this->executeHttp($url, $method, $apiKey, $query, $body, $timeout);
                 $attempt++;
             } while ($attempt <= $retry && $exec['status'] === 'error');
+            $normalized = $this->normalizeOutput($method, $finalPath, (string) ($exec['body'] ?? ''), (array) $settings);
 
             Capsule::table('tblsahdev_tool_runs')->insert([
                 'suggestion_id' => $suggestionId,
@@ -372,6 +393,10 @@ class ToolsExecutionService
                 'status' => $exec['status'],
                 'http_status' => (int) ($exec['http_status'] ?? 0),
                 'response_body' => (string) ($exec['body'] ?? ''),
+                'normalized_summary' => (string) ($normalized['summary'] ?? ''),
+                'normalized_json' => (string) ($normalized['json'] ?? ''),
+                'normalization_status' => (string) ($normalized['status'] ?? 'raw'),
+                'normalization_error' => (string) ($normalized['error'] ?? ''),
                 'error_message' => (string) ($exec['error'] ?? ''),
                 'created_at' => Carbon::now(),
                 'updated_at' => Carbon::now(),
@@ -413,6 +438,8 @@ class ToolsExecutionService
                         $table->text('tools_filter_domains')->nullable();
                         $table->text('tools_filter_ips')->nullable();
                         $table->text('tools_filter_emails')->nullable();
+                        $table->boolean('tools_normalize_enabled')->default(1);
+                        $table->boolean('tools_include_raw_fallback')->default(1);
                         $table->timestamp('tools_cron_last_run_at')->nullable();
                         $table->string('tools_cron_last_message', 512)->nullable();
                         $table->timestamp('tools_execution_cron_lock_until')->nullable();
@@ -453,12 +480,44 @@ class ToolsExecutionService
                     $table->string('status', 32)->default('ok');
                     $table->integer('http_status')->nullable();
                     $table->longText('response_body')->nullable();
+                    $table->longText('normalized_summary')->nullable();
+                    $table->longText('normalized_json')->nullable();
+                    $table->string('normalization_status', 32)->nullable();
+                    $table->text('normalization_error')->nullable();
                     $table->text('error_message')->nullable();
                     $table->timestamps();
                 });
             }
         } catch (\Throwable $e) {
             // Never hard-fail on schema guard.
+        }
+
+        // Upgrade-safe settings columns
+        try {
+            Capsule::table('tblsahdev_settings')->select('tools_normalize_enabled')->first();
+        } catch (\Throwable $e) {
+            try {
+                Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                    $table->boolean('tools_normalize_enabled')->default(1);
+                    $table->boolean('tools_include_raw_fallback')->default(1);
+                });
+            } catch (\Throwable $ignored) {
+            }
+        }
+
+        // Upgrade-safe output normalization columns
+        try {
+            Capsule::table('tblsahdev_tool_runs')->select('normalized_summary')->first();
+        } catch (\Throwable $e) {
+            try {
+                Capsule::schema()->table('tblsahdev_tool_runs', function ($table) {
+                    $table->longText('normalized_summary')->nullable();
+                    $table->longText('normalized_json')->nullable();
+                    $table->string('normalization_status', 32)->nullable();
+                    $table->text('normalization_error')->nullable();
+                });
+            } catch (\Throwable $ignored) {
+            }
         }
     }
 
@@ -1074,6 +1133,74 @@ class ToolsExecutionService
             'body' => is_string($resp) ? $resp : '',
             'error' => $error,
         ];
+    }
+
+    private function normalizeOutput(string $method, string $path, string $rawBody, array $settings): array
+    {
+        $normalizeEnabled = !array_key_exists('tools_normalize_enabled', $settings) || (int) ($settings['tools_normalize_enabled'] ?? 1) === 1;
+        $includeRawFallback = !array_key_exists('tools_include_raw_fallback', $settings) || (int) ($settings['tools_include_raw_fallback'] ?? 1) === 1;
+        if (!$normalizeEnabled) {
+            return ['status' => 'disabled', 'summary' => '', 'json' => '', 'error' => ''];
+        }
+
+        try {
+            $decoded = json_decode($rawBody, true);
+            $summary = '';
+            $normalized = [];
+
+            if (is_array($decoded)) {
+                if (strpos($path, '/ssl/') === 0) {
+                    $summary = sprintf(
+                        'SSL check on target: valid=%s, expires_in_days=%s.',
+                        isset($decoded['is_valid']) ? (string) json_encode($decoded['is_valid']) : 'unknown',
+                        isset($decoded['days_remaining']) ? (string) $decoded['days_remaining'] : 'unknown'
+                    );
+                    $normalized = [
+                        'type' => 'ssl',
+                        'is_valid' => $decoded['is_valid'] ?? null,
+                        'days_remaining' => $decoded['days_remaining'] ?? null,
+                        'issuer' => $decoded['issuer'] ?? null,
+                    ];
+                } elseif (strpos($path, '/dns/') === 0) {
+                    $records = $decoded['records'] ?? [];
+                    $count = is_array($records) ? count($records) : 0;
+                    $summary = 'DNS check: records_found=' . $count . '.';
+                    $normalized = ['type' => 'dns', 'records_found' => $count];
+                } else {
+                    $keys = array_slice(array_keys($decoded), 0, 10);
+                    $summary = 'Parsed tool response fields: ' . implode(', ', $keys) . '.';
+                    $normalized = ['type' => 'generic', 'keys' => $keys];
+                }
+            } else {
+                $trimmed = trim($rawBody);
+                if ($trimmed !== '') {
+                    $summary = 'Non-JSON response excerpt: ' . substr($trimmed, 0, 400);
+                    $normalized = ['type' => 'text', 'excerpt' => substr($trimmed, 0, 1000)];
+                }
+            }
+
+            if ($summary === '' && $includeRawFallback) {
+                $summary = 'Raw output fallback: ' . substr(trim($rawBody), 0, 500);
+                return ['status' => 'raw_fallback', 'summary' => $summary, 'json' => '', 'error' => 'empty-normalization'];
+            }
+
+            return [
+                'status' => 'normalized',
+                'summary' => $summary,
+                'json' => !empty($normalized) ? json_encode($normalized) : '',
+                'error' => '',
+            ];
+        } catch (\Throwable $e) {
+            if ($includeRawFallback) {
+                return [
+                    'status' => 'raw_fallback',
+                    'summary' => 'Raw output fallback due to normalization error: ' . substr(trim($rawBody), 0, 500),
+                    'json' => '',
+                    'error' => $e->getMessage(),
+                ];
+            }
+            return ['status' => 'error', 'summary' => '', 'json' => '', 'error' => $e->getMessage()];
+        }
     }
 
     private function applyPathParams(string $path, array $pathParams): string

@@ -158,6 +158,8 @@ function sahdev_activate()
                     $table->text('tools_filter_domains')->nullable();
                     $table->text('tools_filter_ips')->nullable();
                     $table->text('tools_filter_emails')->nullable();
+                    $table->boolean('tools_normalize_enabled')->default(1);
+                    $table->boolean('tools_include_raw_fallback')->default(1);
                     $table->timestamp('tools_cron_last_run_at')->nullable();
                     $table->string('tools_cron_last_message', 512)->nullable();
                     $table->timestamp('tools_execution_cron_lock_until')->nullable();
@@ -210,6 +212,8 @@ function sahdev_activate()
                     $table->text('tools_filter_domains')->nullable();
                     $table->text('tools_filter_ips')->nullable();
                     $table->text('tools_filter_emails')->nullable();
+                    $table->boolean('tools_normalize_enabled')->default(1);
+                    $table->boolean('tools_include_raw_fallback')->default(1);
                     $table->timestamp('tools_cron_last_run_at')->nullable();
                     $table->string('tools_cron_last_message', 512)->nullable();
                     $table->timestamp('tools_execution_cron_lock_until')->nullable();
@@ -248,6 +252,8 @@ function sahdev_activate()
                 'tools_filter_domains' => '*.nslookup.io,*.whynopadlock.com,*.google.com,*.gstatic.com',
                 'tools_filter_ips' => '',
                 'tools_filter_emails' => '',
+                'tools_normalize_enabled' => 1,
+                'tools_include_raw_fallback' => 1,
                 'created_at' => \Carbon\Carbon::now(),
                 'updated_at' => \Carbon\Carbon::now(),
             ]);
@@ -589,6 +595,8 @@ function sahdev_activate()
                 $table->text('tools_filter_domains')->nullable();
                 $table->text('tools_filter_ips')->nullable();
                 $table->text('tools_filter_emails')->nullable();
+                $table->boolean('tools_normalize_enabled')->default(1);
+                $table->boolean('tools_include_raw_fallback')->default(1);
                 $table->timestamp('tools_cron_last_run_at')->nullable();
                 $table->string('tools_cron_last_message', 512)->nullable();
                 $table->timestamp('tools_execution_cron_lock_until')->nullable();
@@ -626,8 +634,31 @@ function sahdev_activate()
                 $table->string('status', 32)->default('ok');
                 $table->integer('http_status')->nullable();
                 $table->longText('response_body')->nullable();
+                $table->longText('normalized_summary')->nullable();
+                $table->longText('normalized_json')->nullable();
+                $table->string('normalization_status', 32)->nullable();
+                $table->text('normalization_error')->nullable();
                 $table->text('error_message')->nullable();
                 $table->timestamps();
+            });
+        }
+
+        try {
+            Capsule::table('tblsahdev_settings')->select('tools_normalize_enabled')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                $table->boolean('tools_normalize_enabled')->default(1);
+                $table->boolean('tools_include_raw_fallback')->default(1);
+            });
+        }
+        try {
+            Capsule::table('tblsahdev_tool_runs')->select('normalized_summary')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->table('tblsahdev_tool_runs', function ($table) {
+                $table->longText('normalized_summary')->nullable();
+                $table->longText('normalized_json')->nullable();
+                $table->string('normalization_status', 32)->nullable();
+                $table->text('normalization_error')->nullable();
             });
         }
 

@@ -248,10 +248,10 @@ class AdminController
             ]);
         }
 
-        // 9. Ensure cron insights prompt templates exist (migration for existing installs)
+        // 9. Ensure missing prompt templates exist (migration for existing installs)
         try {
             $defs = $this->getDefaultPromptDefinitions();
-            foreach (['cron_insights_system', 'cron_insights'] as $pkey) {
+            foreach (['cron_insights_system', 'cron_insights', 'tools_evidence_system', 'tools_evidence_user', 'tools_reply_context_wrapper'] as $pkey) {
                 $exists = Capsule::table('tblsahdev_prompt_templates')
                     ->where('prompt_key', $pkey)
                     ->exists();
@@ -384,6 +384,21 @@ class AdminController
                 'label'       => 'Ticket Insights (Cron) — User prompt',
                 'description' => 'User-turn prompt for the background cron that analyzes tickets (sentiment, urgency, tone, TICKET_SUMMARY, TAGS for WHMCS Tag Cloud). Placeholders: {{CLIENT_NAME}}, {{DEPARTMENT}}, {{SUBJECT}}, {{MESSAGES}}. Pair with “Ticket Insights — System”.',
                 'content'     => "=== TASK ===\nAnalyze the support ticket conversation below and output ONLY a valid JSON object exactly matching this schema. No extra text.\n\n=== SCHEMA ===\n{\n  \"SENTIMENT_SCORE\": <integer 1-10, where 1=very satisfied/calm and 10=extremely frustrated/angry>,\n  \"SENTIMENT_LABEL\": <\"Satisfied\" | \"Neutral\" | \"Frustrated\" | \"Angry\">,\n  \"URGENCY\": <\"Low\" | \"Medium\" | \"High\" | \"Critical\">,\n  \"CLIENT_TONE\": <one of: \"Polite\", \"Neutral\", \"Impatient\", \"Demanding\", \"Angry\", \"Threatening\", \"Confused\", \"Appreciative\">,\n  \"TICKET_SUMMARY\": <string: 3-6 sentence plain-text summary of the entire ticket conversation, what the issue is, current status, and what is needed>,\n  \"TAGS\": <JSON array of 2-6 short topic slugs for the WHMCS Tag Cloud. Rules: each string must start with the prefix ai- (examples: ai-billing, ai-ssl, ai-dns, ai-outage, ai-email, ai-abuse); after ai- use only lowercase letters, digits, and hyphens; no spaces; pick themes that match this ticket (product area, failure type, billing, security, abuse, email, DNS, etc.)>\n}\n\n=== URGENCY GUIDE ===\nCritical = service is completely down or data is at risk\nHigh = major disruption, client explicitly escalating or threatening to leave\nMedium = functional issue affecting daily operations\nLow = informational question or minor inconvenience\n\n=== TICKET DATA ===\nClient: {{CLIENT_NAME}}\nDepartment: {{DEPARTMENT}}\nSubject: {{SUBJECT}}\n\n=== CONVERSATION ===\n{{MESSAGES}}",
+            ],
+            'tools_evidence_system' => [
+                'label'       => 'Tools Evidence — System Prompt',
+                'description' => 'System prompt for optional tool-output normalization. Keep this strict and concise; used as a safe enhancement and not required for reply generation.',
+                'content'     => "You are a technical evidence normalizer for hosting support. Convert raw network diagnostic outputs into concise, factual findings. Never fabricate values. If data is missing or unclear, state unknown. Output plain text only.",
+            ],
+            'tools_evidence_user' => [
+                'label'       => 'Tools Evidence — User Prompt',
+                'description' => 'Template for converting raw tool API output into readable evidence. Placeholder: {{RAW_TOOL_OUTPUT}}.',
+                'content'     => "Normalize the following raw tool output for support staff.\n\nRequirements:\n- Keep only high-signal findings.\n- Mention errors/timeouts explicitly.\n- Use max 4 bullets.\n\nRaw output:\n{{RAW_TOOL_OUTPUT}}",
+            ],
+            'tools_reply_context_wrapper' => [
+                'label'       => 'Tools Reply Context Wrapper',
+                'description' => 'Template wrapper injected into reply generation custom instructions. Placeholder: {{TOOLS_EVIDENCE}}.',
+                'content'     => "=== TOOLS EXECUTION RESULTS (AUTO-RUN) ===\n{{TOOLS_EVIDENCE}}",
             ],
         ];
     }
@@ -2058,6 +2073,9 @@ class AdminController
                 'canned_template'      => ['{{DRAFT}}'],
                 'cron_insights_system' => [],
                 'cron_insights'        => ['{{CLIENT_NAME}}','{{DEPARTMENT}}','{{SUBJECT}}','{{MESSAGES}}'],
+                'tools_evidence_system' => [],
+                'tools_evidence_user' => ['{{RAW_TOOL_OUTPUT}}'],
+                'tools_reply_context_wrapper' => ['{{TOOLS_EVIDENCE}}'],
             ];
             $keyIcons = [
                 'system_default'       => 'fas fa-robot',
@@ -2069,6 +2087,9 @@ class AdminController
                 'canned_template'      => 'fas fa-clone',
                 'cron_insights_system' => 'fas fa-user-shield',
                 'cron_insights'        => 'fas fa-clock',
+                'tools_evidence_system' => 'fas fa-filter',
+                'tools_evidence_user' => 'fas fa-stream',
+                'tools_reply_context_wrapper' => 'fas fa-box-open',
             ];
             $orderedKeys = [
                 'system_default',
@@ -2080,6 +2101,9 @@ class AdminController
                 'canned_template',
                 'cron_insights_system',
                 'cron_insights',
+                'tools_evidence_system',
+                'tools_evidence_user',
+                'tools_reply_context_wrapper',
             ];
             foreach ($orderedKeys as $key):
                 if (!isset($templates[$key])) continue;
@@ -2572,6 +2596,7 @@ class AdminController
         $actionsByType = $analyticsData['action_breakdown'] ?? [];
         $scores = $analyticsData['quality'] ?? [];
         $roi = $analyticsData['roi'] ?? ['time_saved_string' => '0h 0m', 'estimated_cost_usd' => 0.00];
+        $toolsNorm = $analyticsData['tools_normalization'] ?? [];
         ?>
         <?php echo $this->getNavigationMarkup('analytics'); ?>
         <div class="sahdev-page-container">
@@ -2619,6 +2644,15 @@ class AdminController
                         <p style="margin:0; font-size:12px; color: #991b1b; margin-top: 5px;">Based on aggregated provider costs.</p>
                     </div>
                 </div>
+            </div>
+
+            <hr style="margin: 30px 0;">
+            <h4 style="margin-bottom: 16px;">Tools Evidence Quality</h4>
+            <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                <span style="background:#f8fafc; padding:8px 14px; border-radius:999px;">Total Runs: <strong><?php echo number_format((int) ($toolsNorm['total_tool_runs'] ?? 0)); ?></strong></span>
+                <span style="background:#ecfeff; padding:8px 14px; border-radius:999px;">Normalized: <strong><?php echo number_format((int) ($toolsNorm['normalized_runs'] ?? 0)); ?></strong></span>
+                <span style="background:#fff7ed; padding:8px 14px; border-radius:999px;">Raw Fallback: <strong><?php echo number_format((int) ($toolsNorm['raw_fallback_runs'] ?? 0)); ?></strong></span>
+                <span style="background:#fef2f2; padding:8px 14px; border-radius:999px;">Normalization Errors: <strong><?php echo number_format((int) ($toolsNorm['normalization_errors'] ?? 0)); ?></strong></span>
             </div>
 
             <hr style="margin: 30px 0;">
@@ -3407,6 +3441,8 @@ class AdminController
                 $table->text('tools_filter_domains')->nullable();
                 $table->text('tools_filter_ips')->nullable();
                 $table->text('tools_filter_emails')->nullable();
+                $table->boolean('tools_normalize_enabled')->default(1);
+                $table->boolean('tools_include_raw_fallback')->default(1);
             });
         }
 
@@ -3432,6 +3468,14 @@ class AdminController
                 $table->text('tools_filter_emails')->nullable();
             });
         }
+        try {
+            Capsule::table('tblsahdev_settings')->select('tools_normalize_enabled')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                $table->boolean('tools_normalize_enabled')->default(1);
+                $table->boolean('tools_include_raw_fallback')->default(1);
+            });
+        }
 
         $successMessage = '';
         if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_tools_settings'])) {
@@ -3446,6 +3490,8 @@ class AdminController
             $filterDomains = trim((string) ($_POST['tools_filter_domains'] ?? ''));
             $filterIps = trim((string) ($_POST['tools_filter_ips'] ?? ''));
             $filterEmails = trim((string) ($_POST['tools_filter_emails'] ?? ''));
+            $normalizeEnabled = !empty($_POST['tools_normalize_enabled']) ? 1 : 0;
+            $includeRawFallback = !empty($_POST['tools_include_raw_fallback']) ? 1 : 0;
 
             $update = [
                 'tools_execution_enabled' => $enabled,
@@ -3458,6 +3504,8 @@ class AdminController
                 'tools_filter_domains' => $filterDomains,
                 'tools_filter_ips' => $filterIps,
                 'tools_filter_emails' => $filterEmails,
+                'tools_normalize_enabled' => $normalizeEnabled,
+                'tools_include_raw_fallback' => $includeRawFallback,
                 'updated_at' => \Carbon\Carbon::now(),
             ];
 
@@ -3487,6 +3535,12 @@ class AdminController
                 <?php echo $csrfToken; ?>
                 <div class="checkbox">
                     <label><input type="checkbox" name="tools_execution_enabled" <?php echo !empty($settings->tools_execution_enabled) ? 'checked' : ''; ?>> Enable tools execution module</label>
+                </div>
+                <div class="checkbox">
+                    <label><input type="checkbox" name="tools_normalize_enabled" <?php echo !array_key_exists('tools_normalize_enabled', (array) $settings) || !empty($settings->tools_normalize_enabled) ? 'checked' : ''; ?>> Enable normalized readable evidence layer</label>
+                </div>
+                <div class="checkbox" style="margin-top:-6px;">
+                    <label><input type="checkbox" name="tools_include_raw_fallback" <?php echo !array_key_exists('tools_include_raw_fallback', (array) $settings) || !empty($settings->tools_include_raw_fallback) ? 'checked' : ''; ?>> Always fallback to raw tool output if normalization fails</label>
                 </div>
                 <div class="form-group">
                     <label>Tools API Base URL</label>

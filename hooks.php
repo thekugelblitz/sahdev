@@ -717,7 +717,10 @@ HTML;
             for (var i = 0; i < runs.length; i++) {
                 var r = runs[i] || {};
                 lines.push('[' + (r.method || '') + ' ' + (r.path || '') + '] status=' + (r.status || '') + ' http=' + (r.http_status || 0));
-                if (r.response_body) lines.push(String(r.response_body));
+                if (r.normalized_summary) lines.push('READABLE: ' + String(r.normalized_summary));
+                if (r.normalization_status) lines.push('NORMALIZATION STATUS: ' + String(r.normalization_status));
+                if (r.response_body) lines.push('RAW: ' + String(r.response_body));
+                if (r.normalization_error) lines.push('NORMALIZATION ERROR: ' + String(r.normalization_error));
                 if (r.error_message) lines.push('ERROR: ' + r.error_message);
                 lines.push('---');
             }
