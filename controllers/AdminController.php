@@ -441,6 +441,7 @@ class AdminController
             'canned_responses' => ['label' => '<i class="fas fa-save"></i> Canned Responses', 'url' => $base . '&action=canned_responses'],
             'intents' => ['label' => '<i class="fas fa-bullseye"></i> Intents Manager', 'url' => $base . '&action=intents'],
             'tools' => ['label' => '<i class="fas fa-tools"></i> Tools Execution', 'url' => $base . '&action=tools'],
+            'cron_center' => ['label' => '<i class="fas fa-clock"></i> Separate Cron', 'url' => $base . '&action=cron_center'],
             'ticket_insights' => ['label' => '<i class="fas fa-brain"></i> Ticket Insights', 'url' => $base . '&action=ticket_insights'],
             'analytics' => ['label' => '<i class="fas fa-chart-line"></i> Analytics', 'url' => $base . '&action=analytics'],
             'audit_trail' => ['label' => '<i class="fas fa-history"></i> Audit Trail', 'url' => $base . '&action=audit_trail'],
@@ -2960,201 +2961,15 @@ class AdminController
 
         <div class="sahdev-page-container">
 
-            <!-- Result message box shown after "Run Analysis Now" -->
-            <div id="sahdev-cron-msg" class="alert" style="display:none; margin-bottom:16px;"></div>
-
             <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #eee; padding-bottom: 15px; margin-bottom: 25px;">
                 <div>
                     <h2 style="margin: 0 0 4px 0;"><i class="fas fa-brain" style="color:#0d6efd;"></i> Ticket Insights</h2>
-                    <p class="text-muted" style="margin:0; font-size:13px;">AI-powered sentiment, urgency, and tone analysis for configured ticket statuses. Runs automatically alongside the WHMCS cron.</p>
-                </div>
-                <div>
-                    <button type="button" id="sahdev-trigger-cron" class="btn btn-primary" style="gap: 6px; display:inline-flex; align-items:center;">
-                        <i class="fas fa-play-circle"></i> Run Analysis Now
-                    </button>
+                    <p class="text-muted" style="margin:0; font-size:13px;">AI-powered sentiment, urgency, and tone analysis for configured ticket statuses.</p>
                 </div>
             </div>
-
-            <!-- Automatic cron health (WHMCS CronJob hook) -->
-            <div class="panel panel-default" style="margin-bottom:22px;">
-                <div class="panel-heading" style="font-weight:600;">
-                    <i class="fas fa-heartbeat" style="color:#0d6efd;"></i> Automatic batch (WHMCS cron)
-                </div>
-                <div class="panel-body" style="font-size:13px;">
-                    <p style="margin-top:0; color:#495057;">
-                        Ticket Insights runs inside WHMCS when <strong>crons/cron.php</strong> executes (same schedule as your other WHMCS automation).
-                        Each run processes up to <strong><?php echo (int) $cronMax; ?></strong> queued tickets (see <em>Max Tickets per Cron Run</em> below).
-                    </p>
-                    <?php if ($cronNeverRan): ?>
-                        <div class="alert alert-warning" style="margin-bottom:12px;">
-                            <strong>No automatic run recorded yet.</strong>
-                            If you just enabled the feature, wait for the next cron tick. Otherwise confirm a system scheduler is calling
-                            <code><?php echo htmlspecialchars($cronUrlHint); ?></code>
-                            (or your host’s equivalent) at least every few minutes.
-                        </div>
-                    <?php elseif ($cronIsStale): ?>
-                        <div class="alert alert-warning" style="margin-bottom:12px;">
-                            <strong>Last automatic run was more than <?php echo (int) $cronStaleHours; ?> hours ago.</strong>
-                            Check that WHMCS cron is still firing and that PHP is not blocking long requests.
-                        </div>
-                    <?php else: ?>
-                        <div class="alert alert-success" style="margin-bottom:12px;">
-                            <strong>Recent cron activity recorded.</strong>
-                            <?php if ($cronLastCarbon): ?>
-                                Last batch: <strong><?php echo htmlspecialchars($cronLastCarbon->toDateTimeString()); ?></strong>
-                            <?php endif; ?>
-                        </div>
-                    <?php endif; ?>
-                    <table class="table table-condensed" style="margin-bottom:0; background:#f8f9fa;">
-                        <tbody>
-                            <tr>
-                                <td style="width:40%; border-top:none;"><strong>Last run</strong></td>
-                                <td style="border-top:none;">
-                                    <?php echo $cronLastCarbon ? htmlspecialchars($cronLastCarbon->toDateTimeString()) : '—'; ?>
-                                </td>
-                            </tr>
-                            <tr>
-                                <td><strong>Tickets in batch</strong></td>
-                                <td><?php echo (int) $insightsCronFound; ?></td>
-                            </tr>
-                            <tr>
-                                <td><strong>Analyzed OK</strong></td>
-                                <td><?php echo (int) $insightsCronAnalyzed; ?></td>
-                            </tr>
-                            <tr>
-                                <td><strong>Failed in batch</strong></td>
-                                <td><?php echo (int) $insightsCronSkipped; ?></td>
-                            </tr>
-                            <tr>
-                                <td><strong>Summary</strong></td>
-                                <td><?php echo $insightsCronMsg !== '' ? htmlspecialchars($insightsCronMsg) : '—'; ?></td>
-                            </tr>
-                        </tbody>
-                    </table>
-                    <p class="text-muted" style="margin:12px 0 0; font-size:12px;">
-                        Manual <em>Run Analysis Now</em> does not update this card — only the WHMCS <code>CronJob</code> hook does, so this is your signal that scheduled batching is alive.
-                    </p>
-                </div>
-            </div>
-
-            <!-- Settings Card -->
-            <div style="background:#fff; border:1px solid #e9ecef; border-radius:8px; padding:24px; margin-bottom:28px; box-shadow:0 1px 4px rgba(0,0,0,0.05);">
-                <h4 style="margin-top:0; margin-bottom:18px; font-size:16px;"><i class="fas fa-sliders-h" style="color:#6c757d;"></i> Cron Settings</h4>
-
-                <form method="post" action="<?php echo $actionUrl; ?>">
-                    <?php echo $csrfToken; ?>
-                    <input type="hidden" name="save_insights_settings" value="1">
-
-                    <div style="display:flex; gap:24px; flex-wrap:wrap; align-items:flex-end;">
-                        <div class="form-group" style="min-width:220px;">
-                            <label style="font-weight:600; display:block; margin-bottom:6px;">
-                                <i class="fas fa-toggle-on" style="color:#0d6efd;"></i> Enable Cron Ticket Analysis
-                            </label>
-                            <div class="form-check" style="margin-top:4px;">
-                                <input type="checkbox" class="form-check-input" name="cron_insights_enabled" id="cron_insights_enabled" value="1"
-                                    <?php echo $cronEnabled ? 'checked' : ''; ?>>
-                                <label class="form-check-label" for="cron_insights_enabled" style="font-weight:400;">
-                                    Analyze Awaiting Reply tickets on each WHMCS cron run
-                                </label>
-                            </div>
-                        </div>
-
-                        <div class="form-group" style="min-width:200px;">
-                            <label style="font-weight:600; display:block; margin-bottom:6px;">
-                                <i class="fas fa-clock" style="color:#0d6efd;"></i> Re-analyze Interval
-                            </label>
-                            <select name="cron_insights_interval_hours" class="form-control" style="max-width:180px;">
-                                <?php foreach ($intervalOptions as $val => $label): ?>
-                                    <option value="<?php echo $val; ?>" <?php echo ($cronInterval == $val) ? 'selected' : ''; ?>>
-                                        <?php echo htmlspecialchars($label); ?>
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
-                            <small class="text-muted">Skip tickets analyzed more recently than this.</small>
-                        </div>
-
-                        <div class="form-group" style="min-width:200px;">
-                            <label style="font-weight:600; display:block; margin-bottom:6px;">
-                                <i class="fas fa-layer-group" style="color:#0d6efd;"></i> Max Tickets per Cron Run
-                            </label>
-                            <input type="number" name="cron_insights_max_per_run" class="form-control" value="<?php echo (int)$cronMax; ?>"
-                                min="1" max="100" style="max-width:120px;">
-                            <small class="text-muted">Cap per execution to avoid timeouts.</small>
-                        </div>
-
-                        <div class="form-group" style="min-width:280px; flex:1;">
-                            <label style="font-weight:600; display:block; margin-bottom:6px;">
-                                <i class="fas fa-tags" style="color:#0d6efd;"></i> Ticket Statuses to Analyze
-                            </label>
-                            <input type="text" name="cron_insights_statuses" class="form-control"
-                                value="<?php echo htmlspecialchars($cronStatuses); ?>"
-                                placeholder="Customer-Reply, Awaiting Reply, Open">
-                            <?php if (!empty($whmcsStatuses)): ?>
-                                <small class="text-muted">
-                                    Your WHMCS statuses:
-                                    <?php foreach ($whmcsStatuses as $ws): ?>
-                                        <code style="cursor:pointer; margin-right:4px;" onclick="
-                                            var f=document.querySelector('[name=cron_insights_statuses]');
-                                            var v=f.value.trim();
-                                            f.value = v ? v+', <?php echo addslashes(htmlspecialchars($ws)); ?>' : '<?php echo addslashes(htmlspecialchars($ws)); ?>';
-                                        " title="Click to append"><?php echo htmlspecialchars($ws); ?></code>
-                                    <?php endforeach; ?>
-                                    <em>(click any to append)</em>
-                                </small>
-                            <?php else: ?>
-                                <small class="text-muted">Comma-separated. When a client replies in WHMCS the ticket status typically becomes <code>Customer-Reply</code>.</small>
-                            <?php endif; ?>
-                        </div>
-
-                        <div style="width:100%; flex-basis:100%; border-top:1px solid #eee; margin-top:8px; padding-top:18px;">
-                            <h5 style="margin:0 0 14px; font-size:14px;"><i class="fas fa-link" style="color:#6c757d;"></i> WHMCS cron URL &amp; CLI path</h5>
-                            <p class="text-muted" style="font-size:12px; margin:-6px 0 12px;">
-                                Many installs move <code>cron.php</code> outside the default <code>/crons/</code> folder. Set the <strong>full HTTP URL</strong> you use to trigger the cron (include <code>https://</code> and any token query string from WHMCS),
-                                and/or paste your <strong>CLI</strong> line for your own records (e.g. cPanel EA-PHP path to a non-standard cron directory).
-                            </p>
-                            <div class="form-group" style="max-width:920px;">
-                                <label style="font-weight:600;">HTTP cron URL (override)</label>
-                                <input type="text" name="insights_cron_http_url" class="form-control" autocomplete="off"
-                                    value="<?php echo htmlspecialchars($cronHttpSaved); ?>"
-                                    placeholder="<?php echo htmlspecialchars($whmcsCronDefaultHttp ?: 'https://your-domain.com/path/to/cron.php'); ?>">
-                                <small class="text-muted">
-                                    Leave blank to use WHMCS <strong>SystemURL</strong> + <code>/crons/cron.php</code>
-                                    (detected: <code><?php echo htmlspecialchars($whmcsCronDefaultHttp ?: '—'); ?></code>).
-                                </small>
-                            </div>
-                            <div class="form-group" style="max-width:920px;">
-                                <label style="font-weight:600;">CLI / crontab command (reference)</label>
-                                <textarea name="insights_cron_cli_command" class="form-control" rows="2" style="font-family:monospace;font-size:12px;"
-                                    placeholder="/opt/cpanel/ea-php82/root/usr/bin/php -q /home/user/secops/crons/cron.php"><?php echo htmlspecialchars($cronCliSaved); ?></textarea>
-                                <small class="text-muted">Not executed by Sahdev — stored so operators see the real server path (e.g. security-hardened cron folder).</small>
-                            </div>
-                            <div class="form-group" style="margin-bottom:8px;">
-                                <button type="button" id="sahdev-test-cron-http" class="btn btn-default btn-sm">
-                                    <i class="fas fa-vial"></i> Test HTTP cron URL
-                                </button>
-                                <button type="button" id="sahdev-debug-insights-cron" class="btn btn-info btn-sm" style="margin-left:6px;">
-                                    <i class="fas fa-bug"></i> Debug Ticket Insights batch
-                                </button>
-                            </div>
-                            <pre id="sahdev-cron-debug-out" style="display:none; max-height:280px; overflow:auto; font-size:11px; padding:12px; background:#212529; color:#f8f9fa; border-radius:6px; margin-top:8px; white-space:pre-wrap;"></pre>
-                        </div>
-
-                        <div class="form-group" style="align-self:flex-end;">
-                            <button type="submit" class="btn btn-success">
-                                <i class="fas fa-save"></i> Save Settings
-                            </button>
-                        </div>
-                    </div>
-                </form>
-
-                <div style="margin-top:16px; padding:12px 16px; background:#f8f9fa; border-radius:6px; font-size:13px; color:#495057; border-left:3px solid #0d6efd;">
-                    <strong>Smart re-analysis:</strong> A ticket is only re-analyzed when a <strong>new reply or note is added</strong> since the last analysis
-                    (detected via WHMCS's <code>lastreply</code> field). Tickets with no new activity are never re-processed — saving AI tokens.
-                    The <em>Re-analyze Interval</em> acts as a <strong>minimum cooldown</strong>: even if a new reply exists, the same ticket won't be re-sent
-                    more than once per <strong><?php echo (int)$cronInterval; ?> hour(s)</strong> (prevents rapid re-analysis on busy tickets).
-                    Up to <strong><?php echo (int)$cronMax; ?></strong> tickets are processed per cron run.
-                    <br>Edit prompts in <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink'] . '&action=prompt_manager'); ?>">Prompt Manager</a>: <code>cron_insights_system</code> (persona) and <code>cron_insights</code> (user prompt + JSON schema).
-                </div>
+            <div class="alert alert-info" style="margin-bottom:22px;">
+                Cron configuration, setup instructions, and cron testing have been moved to
+                <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink'] . '&action=cron_center'); ?>"><strong>Separate Cron</strong></a>.
             </div>
 
             <!-- Insights Table -->
@@ -3175,7 +2990,7 @@ class AdminController
                     <div style="text-align:center; padding:40px; color:#6c757d;">
                         <i class="fas fa-inbox" style="font-size:36px; margin-bottom:12px; display:block; opacity:0.4;"></i>
                         <p style="margin:0;">No tickets have been analyzed yet.</p>
-                        <p style="font-size:13px; margin-top:6px;">Click <strong>Run Analysis Now</strong> above or wait for the next WHMCS cron run.</p>
+                        <p style="font-size:13px; margin-top:6px;">Run cron from the <strong>Separate Cron</strong> section, or wait for your scheduled server cron run.</p>
                     </div>
                 <?php else: ?>
                     <div style="overflow-x:auto;">
@@ -3558,6 +3373,12 @@ class AdminController
         <div class="sahdev-page-container">
             <h2 style="margin-top:0;"><i class="fas fa-tools" style="color:#0d6efd;"></i> Tools Execution</h2>
             <p class="text-muted">Configure automatic AI-selected tool execution. You can edit both API base URL and OpenAPI spec URL.</p>
+            <div class="alert alert-info" style="margin-bottom:14px;">
+                <strong><i class="fas fa-clock"></i> Separate Sahdev Cron (recommended)</strong><br>
+                Run this command from server cron:
+                <code>php /path/to/whmcs/modules/addons/sahdev/cron/sahdev-cron.php</code><br>
+                Suggested frequency: <strong>every 5 minutes</strong> (default), or <strong>every 1 minute</strong> for high-volume queues.
+            </div>
             <form method="post" action="<?php echo $actionUrl; ?>">
                 <?php echo $csrfToken; ?>
                 <div class="checkbox">
@@ -3619,6 +3440,188 @@ class AdminController
                 <button type="submit" name="save_tools_settings" value="1" class="btn btn-primary"><i class="fas fa-save"></i> Save Tools Settings</button>
             </form>
         </div>
+        <?php
+        return ob_get_clean();
+    }
+
+    /**
+     * Dedicated cron setup + testing page.
+     */
+    public function cron_center()
+    {
+        $successMessage = '';
+        $errorMessage = '';
+
+        try {
+            Capsule::table('tblsahdev_settings')->select('cron_insights_enabled')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                $table->boolean('cron_insights_enabled')->default(1);
+                $table->integer('cron_insights_interval_hours')->default(6);
+                $table->integer('cron_insights_max_per_run')->default(20);
+                $table->string('cron_insights_statuses', 512)->nullable();
+            });
+        }
+        try {
+            Capsule::table('tblsahdev_settings')->select('insights_cron_http_url')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                $table->string('insights_cron_http_url', 2048)->nullable();
+                $table->text('insights_cron_cli_command')->nullable();
+            });
+        }
+
+        if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_insights_settings'])) {
+            check_token("WHMCS.admin.default");
+            $enabled       = !empty($_POST['cron_insights_enabled']) ? 1 : 0;
+            $intervalHours = max(1, (int) ($_POST['cron_insights_interval_hours'] ?? 6));
+            $maxPerRun     = max(1, min(100, (int) ($_POST['cron_insights_max_per_run'] ?? 20)));
+            $rawStatuses   = $_POST['cron_insights_statuses'] ?? '';
+            $statuses      = implode(', ', array_filter(array_map('trim', explode(',', (string) $rawStatuses))));
+            $cronHttpUrl   = substr(trim((string) ($_POST['insights_cron_http_url'] ?? '')), 0, 2048);
+            $cronCliCmd    = trim((string) ($_POST['insights_cron_cli_command'] ?? ''));
+
+            Capsule::table('tblsahdev_settings')->where('id', 1)->update([
+                'cron_insights_enabled'        => $enabled,
+                'cron_insights_interval_hours' => $intervalHours,
+                'cron_insights_max_per_run'    => $maxPerRun,
+                'cron_insights_statuses'       => $statuses ?: null,
+                'insights_cron_http_url'       => $cronHttpUrl !== '' ? $cronHttpUrl : null,
+                'insights_cron_cli_command'    => $cronCliCmd !== '' ? $cronCliCmd : null,
+                'updated_at'                   => \Carbon\Carbon::now(),
+            ]);
+            $successMessage = 'Cron settings saved.';
+        }
+
+        $settings = Capsule::table('tblsahdev_settings')->first();
+        $cronEnabled = $settings ? (int) ($settings->cron_insights_enabled ?? 1) : 1;
+        $cronInterval = $settings ? (int) ($settings->cron_insights_interval_hours ?? 6) : 6;
+        $cronMax = $settings ? (int) ($settings->cron_insights_max_per_run ?? 20) : 20;
+        $cronStatuses = ($settings && !empty($settings->cron_insights_statuses))
+            ? (string) $settings->cron_insights_statuses
+            : 'Customer-Reply, Awaiting Reply, Open';
+        $cronHttpSaved = ($settings && !empty($settings->insights_cron_http_url)) ? (string) $settings->insights_cron_http_url : '';
+        $cronCliSaved = ($settings && !empty($settings->insights_cron_cli_command)) ? (string) $settings->insights_cron_cli_command : '';
+
+        $insightsCronLastAt = $settings ? (string) ($settings->insights_cron_last_run_at ?? '') : '';
+        $insightsCronFound = $settings ? (int) ($settings->insights_cron_last_found ?? 0) : 0;
+        $insightsCronAnalyzed = $settings ? (int) ($settings->insights_cron_last_analyzed ?? 0) : 0;
+        $insightsCronSkipped = $settings ? (int) ($settings->insights_cron_last_skipped ?? 0) : 0;
+        $insightsCronMsg = $settings && !empty($settings->insights_cron_last_message) ? (string) $settings->insights_cron_last_message : '';
+
+        $csrfToken = generate_token("form");
+        $actionUrl = htmlspecialchars($this->moduleVars['modulelink'] . '&action=cron_center');
+        $ajaxUrlBase = htmlspecialchars($this->moduleVars['modulelink']);
+        $intervalOptions = [1 => '1 hour', 3 => '3 hours', 6 => '6 hours', 12 => '12 hours', 24 => '24 hours'];
+
+        ob_start();
+        if ($successMessage !== '') {
+            echo '<div class="alert alert-success"><i class="fas fa-check-circle"></i> ' . htmlspecialchars($successMessage) . '</div>';
+        }
+        if ($errorMessage !== '') {
+            echo '<div class="alert alert-danger"><i class="fas fa-exclamation-circle"></i> ' . htmlspecialchars($errorMessage) . '</div>';
+        }
+        echo $this->getNavigationMarkup('cron_center');
+        ?>
+        <div class="sahdev-page-container">
+            <h2 style="margin-top:0;"><i class="fas fa-clock" style="color:#0d6efd;"></i> Separate Cron</h2>
+            <p class="text-muted">Configure, test, and monitor Sahdev cron execution from one place.</p>
+
+            <div id="sahdev-cron-msg" class="alert" style="display:none; margin-bottom:16px;"></div>
+
+            <div class="alert alert-info">
+                <strong>Recommended server cron</strong><br>
+                <code>*/5 * * * * /usr/bin/php -q /path/to/whmcs/modules/addons/sahdev/cron/sahdev-cron.php >/dev/null 2>&1</code><br>
+                Use every <strong>1 minute</strong> only for high-volume queues.
+            </div>
+
+            <div style="margin-bottom:12px;">
+                <button type="button" id="sahdev-trigger-cron" class="btn btn-primary">
+                    <i class="fas fa-play-circle"></i> Run Analysis Now
+                </button>
+                <button type="button" id="sahdev-debug-insights-cron" class="btn btn-info" style="margin-left:6px;">
+                    <i class="fas fa-bug"></i> Debug Ticket Insights Batch
+                </button>
+                <button type="button" id="sahdev-test-cron-http" class="btn btn-default" style="margin-left:6px;">
+                    <i class="fas fa-vial"></i> Test HTTP Cron URL
+                </button>
+            </div>
+            <pre id="sahdev-cron-debug-out" style="display:none; max-height:280px; overflow:auto; font-size:11px; padding:12px; background:#212529; color:#f8f9fa; border-radius:6px; white-space:pre-wrap;"></pre>
+
+            <div style="background:#fff; border:1px solid #e9ecef; border-radius:8px; padding:18px; margin-top:14px;">
+                <table class="table table-condensed" style="margin-bottom:0;">
+                    <tbody>
+                        <tr><td style="width:240px;"><strong>Last run</strong></td><td><?php echo $insightsCronLastAt !== '' ? htmlspecialchars($insightsCronLastAt) : '—'; ?></td></tr>
+                        <tr><td><strong>Tickets in batch</strong></td><td><?php echo (int) $insightsCronFound; ?></td></tr>
+                        <tr><td><strong>Analyzed OK</strong></td><td><?php echo (int) $insightsCronAnalyzed; ?></td></tr>
+                        <tr><td><strong>Failed in batch</strong></td><td><?php echo (int) $insightsCronSkipped; ?></td></tr>
+                        <tr><td><strong>Summary</strong></td><td><?php echo $insightsCronMsg !== '' ? htmlspecialchars($insightsCronMsg) : '—'; ?></td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div style="background:#fff; border:1px solid #e9ecef; border-radius:8px; padding:24px; margin-top:16px;">
+                <h4 style="margin-top:0;">Cron Settings</h4>
+                <form method="post" action="<?php echo $actionUrl; ?>">
+                    <?php echo $csrfToken; ?>
+                    <input type="hidden" name="save_insights_settings" value="1">
+                    <div class="row">
+                        <div class="col-md-3"><div class="form-group"><label><input type="checkbox" name="cron_insights_enabled" value="1" <?php echo $cronEnabled ? 'checked' : ''; ?>> Enable cron ticket insights</label></div></div>
+                        <div class="col-md-3"><div class="form-group"><label>Re-analyze interval</label><select name="cron_insights_interval_hours" class="form-control"><?php foreach ($intervalOptions as $val => $label): ?><option value="<?php echo $val; ?>" <?php echo ($cronInterval == $val) ? 'selected' : ''; ?>><?php echo htmlspecialchars($label); ?></option><?php endforeach; ?></select></div></div>
+                        <div class="col-md-3"><div class="form-group"><label>Max tickets per run</label><input type="number" name="cron_insights_max_per_run" class="form-control" min="1" max="100" value="<?php echo (int) $cronMax; ?>"></div></div>
+                        <div class="col-md-3"><div class="form-group"><label>Statuses</label><input type="text" name="cron_insights_statuses" class="form-control" value="<?php echo htmlspecialchars($cronStatuses); ?>"></div></div>
+                    </div>
+                    <div class="form-group"><label>HTTP cron URL (override)</label><input type="text" name="insights_cron_http_url" class="form-control" value="<?php echo htmlspecialchars($cronHttpSaved); ?>"></div>
+                    <div class="form-group"><label>CLI cron command (reference)</label><textarea name="insights_cron_cli_command" class="form-control" rows="2"><?php echo htmlspecialchars($cronCliSaved); ?></textarea></div>
+                    <button type="submit" class="btn btn-success"><i class="fas fa-save"></i> Save Cron Settings</button>
+                </form>
+            </div>
+        </div>
+        <script>
+        (function(){
+            var ajaxUrl = <?php echo json_encode($ajaxUrlBase . '&sahdev_act=ajax_handler'); ?>;
+            var tokenEl = document.querySelector('input[name="token"]');
+            var token = tokenEl ? tokenEl.value : '';
+            var msg = document.getElementById('sahdev-cron-msg');
+            var out = document.getElementById('sahdev-cron-debug-out');
+            function post(action, extra){
+                var data = Object.assign({ action: action, token: token }, extra || {});
+                return jQuery.post(ajaxUrl, data, null, 'json');
+            }
+            function show(kind, text){
+                if (!msg) return;
+                msg.style.display = 'block';
+                msg.className = 'alert ' + (kind === 'ok' ? 'alert-success' : 'alert-danger');
+                msg.textContent = text;
+            }
+            jQuery(document).on('click', '#sahdev-trigger-cron', function(){
+                post('trigger_cron_run').done(function(res){
+                    show((res && res.status === 'success') ? 'ok' : 'err', (res && (res.message || 'Cron trigger completed.')) || 'Cron trigger failed.');
+                }).fail(function(xhr){
+                    show('err', 'Cron trigger failed: HTTP ' + (xhr && xhr.status ? xhr.status : 'error'));
+                });
+            });
+            jQuery(document).on('click', '#sahdev-test-cron-http', function(){
+                var urlField = document.querySelector('[name="insights_cron_http_url"]');
+                var testUrl = urlField ? urlField.value : '';
+                post('test_whmcs_cron_http', { test_url: testUrl }).done(function(res){
+                    var ok = res && res.status === 'success';
+                    show(ok ? 'ok' : 'err', (res && (res.message || res.status)) || 'HTTP cron test finished.');
+                    if (out) { out.style.display = 'block'; out.textContent = JSON.stringify(res, null, 2); }
+                }).fail(function(xhr){
+                    show('err', 'HTTP cron test failed: HTTP ' + (xhr && xhr.status ? xhr.status : 'error'));
+                });
+            });
+            jQuery(document).on('click', '#sahdev-debug-insights-cron', function(){
+                post('get_insights_queue').done(function(res){
+                    if (out) { out.style.display = 'block'; out.textContent = JSON.stringify(res, null, 2); }
+                    show((res && res.status === 'success') ? 'ok' : 'err', (res && res.status === 'success') ? 'Queue fetched.' : 'Queue fetch failed.');
+                }).fail(function(xhr){
+                    show('err', 'Queue debug failed: HTTP ' + (xhr && xhr.status ? xhr.status : 'error'));
+                });
+            });
+        })();
+        </script>
         <?php
         return ob_get_clean();
     }
