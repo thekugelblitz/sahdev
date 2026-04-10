@@ -590,6 +590,14 @@ class AdminController
                 $table->longText('task_provider_map')->nullable();
             });
         }
+        // Token fallback when model/global token value is unavailable.
+        try {
+            Capsule::table('tblsahdev_settings')->select('max_tokens_fallback')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                $table->integer('max_tokens_fallback')->default(4096);
+            });
+        }
 
         // Handle form submission
         if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_settings'])) {
@@ -599,6 +607,7 @@ class AdminController
             $fallbackProviderId = (int) ($_POST['fallback_provider_id'] ?? 0);
             $temperature = (float) ($_POST['temperature'] ?? 0.70);
             $maxTokens = (int) ($_POST['max_tokens'] ?? 2048);
+            $maxTokensFallback = max(4096, (int) ($_POST['max_tokens_fallback'] ?? 4096));
             $toneDefault = $_POST['tone_default'] ?? 'Professional';
             $autoAnalyzeOnLoad = !empty($_POST['auto_analyze_on_load']) ? 1 : 0;
             
@@ -646,6 +655,7 @@ class AdminController
                     'fallback_provider_id' => $fallbackProviderId ?: null,
                     'temperature' => $temperature,
                     'max_tokens' => $maxTokens,
+                    'max_tokens_fallback' => $maxTokensFallback,
                     'tone_default' => $toneDefault,
                     'max_messages' => $maxMessages,
                     'max_attachment_chars' => $maxAttachmentChars,
@@ -677,6 +687,7 @@ class AdminController
                 'fallback_provider_id' => null,
                 'temperature' => 0.70,
                 'max_tokens' => 2048,
+                'max_tokens_fallback' => 4096,
                 'tone_default' => 'Professional',
                 'max_messages' => 10,
                 'max_attachment_chars' => 5000,
@@ -802,6 +813,12 @@ class AdminController
                         <label style="font-weight: 600; display: block; margin-bottom: 5px;">Max Tokens</label>
                         <input type="number" step="1" min="1" name="max_tokens" class="form-control"
                             value="<?php echo htmlspecialchars($settings->max_tokens); ?>">
+                    </div>
+                    <div class="form-group" style="flex: 1;">
+                        <label style="font-weight: 600; display: block; margin-bottom: 5px;">Token Fallback (minimum)</label>
+                        <input type="number" step="1" min="4096" name="max_tokens_fallback" class="form-control"
+                            value="<?php echo htmlspecialchars((int) ($settings->max_tokens_fallback ?? 4096)); ?>">
+                        <small class="text-muted">Used when max_tokens is missing/unavailable (cron/tools fallback).</small>
                     </div>
                 </div>
 

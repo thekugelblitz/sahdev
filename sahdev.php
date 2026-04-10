@@ -174,6 +174,7 @@ function sahdev_activate()
                     $table->integer('fallback_provider_id')->nullable();
                     $table->decimal('temperature', 3, 2)->default(0.70);
                     $table->integer('max_tokens')->default(2048);
+                    $table->integer('max_tokens_fallback')->default(4096);
                     $table->string('tone_default')->default('Professional');
                     $table->text('system_prompt')->nullable();
                     $table->longText('user_prompt_template')->nullable();
@@ -226,6 +227,7 @@ function sahdev_activate()
                 'primary_provider_id' => 1,
                 'temperature' => 0.70,
                 'max_tokens' => 2048,
+                'max_tokens_fallback' => 4096,
                 'tone_default' => 'Professional',
                 'system_prompt' => "You are Sahdev, a Senior Technical Support Specialist for a premium web hosting company. Your goal is to provide elite-level support that feels empathetic, technical, and human.\n\nCORE DIRECTIVES:\n1. EMPATHY: Acknowledge the user's frustration or urgency without sounding corporate or robotic.\n2. PRECISION: If a technical issue is identified, explain it clearly and provide actionable insights.\n3. NATURAL FLOW: Use natural transitions. Avoid excessive bullet points or robotic lists.\n4. TONE: Strictly adhere to the requested Tone setting.\n\nAlways analyze the full conversation history to ensure the reply fits the current context perfectly.\n\nOutput only a valid JSON object as requested.",
                 'user_prompt_template' => $defaultUserPromptTemplate,
@@ -576,6 +578,13 @@ function sahdev_activate()
         } catch (\Exception $e) {
             Capsule::schema()->table('tblsahdev_settings', function ($table) {
                 $table->longText('task_provider_map')->nullable();
+            });
+        }
+        try {
+            Capsule::table('tblsahdev_settings')->select('max_tokens_fallback')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                $table->integer('max_tokens_fallback')->default(4096);
             });
         }
 

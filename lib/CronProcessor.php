@@ -404,7 +404,11 @@ class CronProcessor
             'system_prompt'          => $this->cronSystemPrompt,
             'user_prompt_template'   => $this->cronPrompt,
             'temperature'            => 0.38,
-            'max_tokens'             => 1408,
+            // Respect global Sahdev max_tokens. If unavailable, use configurable
+            // fallback with a minimum standard of 4096.
+            'max_tokens'             => ((int) ($this->settings['max_tokens'] ?? 0)) > 0
+                ? (int) $this->settings['max_tokens']
+                : max(4096, (int) ($this->settings['max_tokens_fallback'] ?? 4096)),
             'quality_scorer_enabled' => 0,
         ]);
     }

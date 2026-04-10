@@ -576,7 +576,11 @@ class ToolsExecutionService
             'system_prompt' => $system,
             'user_prompt_template' => '{{MESSAGES}}',
             'temperature' => 0.2,
-            'max_tokens' => 1200,
+            // Keep tools suggestion generation aligned with global Sahdev max_tokens.
+            // If unavailable, use configurable fallback with a minimum standard of 4096.
+            'max_tokens' => ((int) ($settings->max_tokens ?? 0)) > 0
+                ? (int) $settings->max_tokens
+                : max(4096, (int) ($settings->max_tokens_fallback ?? 4096)),
         ];
         $raw = $provider->generateResponse($fakeContext, $callSettings, 'Professional', '');
         $parsed = $this->parseSuggestions($raw, $context);
