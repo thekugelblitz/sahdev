@@ -485,6 +485,7 @@ class ToolsExecutionService
 
     private function generateSuggestions(array $context, $settings): array
     {
+        $heuristic = $this->buildDeterministicSuggestions($context);
         $provider = $this->initPrimaryProvider($settings);
         $prompt = $this->buildSuggestionPrompt($context);
         $system = "You are a network/support triage planner. Return strict JSON only.";
@@ -508,7 +509,10 @@ class ToolsExecutionService
             'max_tokens' => 1200,
         ];
         $raw = $provider->generateResponse($fakeContext, $callSettings, 'Professional', '');
-        $parsed = $this->parseSuggestions($raw);
+        $parsed = $this->parseSuggestions($raw, $context);
+        if (!empty($heuristic)) {
+            $parsed = $this->mergeSuggestions($heuristic, $parsed, 8);
+        }
         if (empty($parsed)) {
             $fallbackTarget = $this->inferTargetFromContext($context);
             if ($fallbackTarget !== '') {
@@ -530,6 +534,8 @@ class ToolsExecutionService
         $subject = (string) ($context['subject'] ?? '');
         $services = (string) ($context['services_summary'] ?? '');
         $messages = $context['messages'] ?? [];
+        $intent = $this->detectIntent($context);
+        $entities = $this->extractEntitiesFromContext($context);
         $lastMsgs = [];
         foreach (array_slice($messages, -6) as $m) {
             $role = !empty($m['admin']) ? 'ADMIN' : 'CLIENT';
@@ -541,7 +547,15 @@ class ToolsExecutionService
         return "Pick the best 1-3 diagnostic tool API calls for this ticket.\n"
             . "Return JSON object with key tools as array.\n"
             . "Each item fields: method, path, path_params(object), query(object), body(object), reason.\n"
-            . "Only use paths present in OpenAPI list below.\n\n"
+            . "Only use paths present in OpenAPI list below.\n"
+            . "CRITICAL: prioritize unresolved client asks from latest CLIENT messages. Do not repeat stale/admin-already-answered checks.\n"
+            . "CRITICAL: use ONLY entities listed under 'Candidate entities' unless there is a very clear reason.\n"
+            . "CRITICAL: return 1-5 tools maximum, high signal only, avoid spam.\n\n"
+            . "Detected intent: {$intent}\n"
+            . "Candidate entities:\n"
+            . "- Domains: " . implode(', ', $entities['domains']) . "\n"
+            . "- IPs: " . implode(', ', $entities['ips']) . "\n"
+            . "- URLs: " . implode(', ', $entities['urls']) . "\n\n"
             . "Ticket subject: {$subject}\n"
             . "Client services/server info:\n{$services}\n"
             . "Conversation:\n{$text}\n\n"
@@ -623,7 +637,7 @@ class ToolsExecutionService
         return false;
     }
 
-    private function parseSuggestions($raw): array
+    private function parseSuggestions($raw, array $context = []): array
     {
         $payload = null;
         if (is_array($raw)) {
@@ -644,6 +658,7 @@ class ToolsExecutionService
         }
 
         $out = [];
+        $entities = $this->extractEntitiesFromContext($context);
         foreach ($payload as $item) {
             if (!is_array($item)) {
                 continue;
@@ -656,13 +671,13 @@ class ToolsExecutionService
             $out[] = [
                 'method' => $method,
                 'path' => $path,
-                'path_params' => is_array($item['path_params'] ?? null) ? $item['path_params'] : [],
+                'path_params' => $this->normalizePathParams($path, is_array($item['path_params'] ?? null) ? $item['path_params'] : [], $entities),
                 'query' => is_array($item['query'] ?? null) ? $item['query'] : [],
                 'body' => is_array($item['body'] ?? null) ? $item['body'] : [],
                 'reason' => (string) ($item['reason'] ?? ''),
             ];
         }
-        return $out;
+        return $this->dedupeSuggestions($out);
     }
 
     private function decodeToolsFromJsonText(string $text)
@@ -685,6 +700,154 @@ class ToolsExecutionService
             }
         }
         return null;
+    }
+
+    private function detectIntent(array $context): string
+    {
+        $subject = strtolower((string) ($context['subject'] ?? ''));
+        $msgs = $context['messages'] ?? [];
+        $latest = strtolower((string) ($msgs ? end($msgs)['message'] : ''));
+        $blob = $subject . "\n" . $latest;
+        if (preg_match('/ssl|certificate|padlock|https/', $blob)) {
+            return 'ssl';
+        }
+        if (preg_match('/dns|nameserver|propagation|mx|txt|cname/', $blob)) {
+            return 'dns';
+        }
+        if (preg_match('/ping|latency|packet|route|traceroute|network/', $blob)) {
+            return 'network';
+        }
+        if (preg_match('/invoice|billing|payment|renew/', $blob)) {
+            return 'billing';
+        }
+        return 'general';
+    }
+
+    private function extractEntitiesFromContext(array $context): array
+    {
+        $subject = (string) ($context['subject'] ?? '');
+        $services = (string) ($context['services_summary'] ?? '');
+        $messages = $context['messages'] ?? [];
+        $lastMsgs = [];
+        foreach (array_slice($messages, -12) as $m) {
+            $lastMsgs[] = (string) ($m['message'] ?? '');
+        }
+        $blob = $subject . "\n" . $services . "\n" . implode("\n", $lastMsgs);
+
+        preg_match_all('/\b(?:\d{1,3}\.){3}\d{1,3}\b/', $blob, $ipMatches);
+        preg_match_all('/\b([a-z0-9][a-z0-9.-]*\.[a-z]{2,})\b/i', $blob, $domainMatches);
+        preg_match_all('/\bhttps?:\/\/[^\s<>"\']+/i', $blob, $urlMatches);
+
+        $ips = array_values(array_unique(array_filter($ipMatches[0] ?? [])));
+        $domains = array_values(array_unique(array_filter(array_map('strtolower', $domainMatches[1] ?? []))));
+        $urls = array_values(array_unique(array_filter($urlMatches[0] ?? [])));
+
+        $domains = array_values(array_filter($domains, function ($d) {
+            return !preg_match('/^(whynopadlock\.com|nslookup\.io)$/', $d);
+        }));
+
+        return [
+            'domains' => array_slice($domains, 0, 20),
+            'ips' => array_slice($ips, 0, 20),
+            'urls' => array_slice($urls, 0, 20),
+        ];
+    }
+
+    private function buildDeterministicSuggestions(array $context): array
+    {
+        $intent = $this->detectIntent($context);
+        $entities = $this->extractEntitiesFromContext($context);
+        $domains = $entities['domains'];
+        $ips = $entities['ips'];
+        $out = [];
+
+        if ($intent === 'ssl' || $intent === 'dns') {
+            foreach (array_slice($domains, 0, 3) as $d) {
+                $out[] = [
+                    'method' => 'GET',
+                    'path' => '/dns/{domain}',
+                    'path_params' => ['domain' => $d],
+                    'query' => ['type' => 'A'],
+                    'body' => [],
+                    'reason' => 'Check domain DNS resolution for SSL eligibility',
+                ];
+            }
+            if ($intent === 'ssl') {
+                foreach (array_slice($domains, 0, 2) as $d) {
+                    $out[] = [
+                        'method' => 'GET',
+                        'path' => '/ssl/{target}',
+                        'path_params' => ['target' => $d],
+                        'query' => [],
+                        'body' => [],
+                        'reason' => 'Inspect SSL state for unresolved domain',
+                    ];
+                }
+            }
+        }
+
+        if ($intent === 'network' && !empty($ips)) {
+            foreach (array_slice($ips, 0, 2) as $ip) {
+                $out[] = [
+                    'method' => 'GET',
+                    'path' => '/ping/{host}',
+                    'path_params' => ['host' => $ip],
+                    'query' => ['count' => 4],
+                    'body' => [],
+                    'reason' => 'Baseline network reachability check',
+                ];
+            }
+        }
+
+        return $this->dedupeSuggestions($out);
+    }
+
+    private function normalizePathParams(string $path, array $params, array $entities): array
+    {
+        if (!preg_match_all('/\{([^}]+)\}/', $path, $matches)) {
+            return $params;
+        }
+        $placeholders = $matches[1] ?? [];
+        foreach ($placeholders as $ph) {
+            if (!isset($params[$ph]) || trim((string) $params[$ph]) === '') {
+                if (in_array($ph, ['domain'], true) && !empty($entities['domains'])) {
+                    $params[$ph] = $entities['domains'][0];
+                } elseif (in_array($ph, ['ip'], true) && !empty($entities['ips'])) {
+                    $params[$ph] = $entities['ips'][0];
+                } elseif (in_array($ph, ['target', 'host', 'url'], true)) {
+                    if (!empty($entities['domains'])) {
+                        $params[$ph] = $entities['domains'][0];
+                    } elseif (!empty($entities['ips'])) {
+                        $params[$ph] = $entities['ips'][0];
+                    }
+                }
+            }
+        }
+        return $params;
+    }
+
+    private function dedupeSuggestions(array $items): array
+    {
+        $seen = [];
+        $out = [];
+        foreach ($items as $item) {
+            $method = strtoupper((string) ($item['method'] ?? 'GET'));
+            $path = (string) ($item['path'] ?? '');
+            $params = $item['path_params'] ?? [];
+            $key = $method . '|' . $path . '|' . md5(json_encode($params));
+            if (isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+            $out[] = $item;
+        }
+        return $out;
+    }
+
+    private function mergeSuggestions(array $a, array $b, int $max): array
+    {
+        $merged = $this->dedupeSuggestions(array_merge($a, $b));
+        return array_slice($merged, 0, max(1, $max));
     }
 
     private function executeHttp(string $url, string $method, string $apiKey, array $query, array $body, int $timeout): array
