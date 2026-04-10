@@ -208,6 +208,14 @@ class ToolsExecutionService
         if (!$summary) {
             return '';
         }
+        $includeRawFallback = true;
+        try {
+            $settings = Capsule::table('tblsahdev_settings')->first();
+            if ($settings) {
+                $includeRawFallback = !isset($settings->tools_include_raw_fallback) || (int) $settings->tools_include_raw_fallback === 1;
+            }
+        } catch (\Throwable $e) {
+        }
 
         $lines = [];
         $lines[] = "=== TOOLS EXECUTION RESULTS (AUTO-RUN) ===";
@@ -241,7 +249,7 @@ class ToolsExecutionService
                     $lines[] = "  readable: " . $readable;
                 }
                 $body = trim((string) ($run->response_body ?? ''));
-                if ($body !== '') {
+                if ($body !== '' && $readable === '' && $includeRawFallback) {
                     if (strlen($body) > 1200) {
                         $body = substr($body, 0, 1200) . '... [truncated]';
                     }
@@ -1150,25 +1158,60 @@ class ToolsExecutionService
 
             if (is_array($decoded)) {
                 if (strpos($path, '/ssl/') === 0) {
-                    $summary = sprintf(
-                        'SSL check on target: valid=%s, expires_in_days=%s.',
-                        isset($decoded['is_valid']) ? (string) json_encode($decoded['is_valid']) : 'unknown',
-                        isset($decoded['days_remaining']) ? (string) $decoded['days_remaining'] : 'unknown'
-                    );
+                    $valid = isset($decoded['is_valid']) ? (string) json_encode($decoded['is_valid']) : 'unknown';
+                    $days = isset($decoded['days_remaining']) ? (string) $decoded['days_remaining'] : 'unknown';
+                    $cn = (string) ($decoded['subject']['commonName'] ?? '');
+                    $issuer = (string) ($decoded['issuer']['commonName'] ?? '');
+                    $sanCount = is_array($decoded['san'] ?? null) ? count($decoded['san']) : 0;
+                    $summary = 'SSL: valid=' . $valid . ', expires_in_days=' . $days
+                        . ($cn !== '' ? ', cn=' . $cn : '')
+                        . ($issuer !== '' ? ', issuer=' . $issuer : '')
+                        . ($sanCount > 0 ? ', san_count=' . $sanCount : '')
+                        . '.';
                     $normalized = [
                         'type' => 'ssl',
                         'is_valid' => $decoded['is_valid'] ?? null,
                         'days_remaining' => $decoded['days_remaining'] ?? null,
+                        'common_name' => $cn,
                         'issuer' => $decoded['issuer'] ?? null,
+                        'san_count' => $sanCount,
                     ];
                 } elseif (strpos($path, '/dns/') === 0) {
                     $records = $decoded['records'] ?? [];
                     $count = is_array($records) ? count($records) : 0;
-                    $summary = 'DNS check: records_found=' . $count . '.';
-                    $normalized = ['type' => 'dns', 'records_found' => $count];
+                    $samples = [];
+                    if (is_array($records)) {
+                        foreach (array_slice($records, 0, 3) as $rec) {
+                            if (!is_array($rec)) {
+                                continue;
+                            }
+                            $rtype = (string) ($rec['type'] ?? '');
+                            $rvalue = (string) ($rec['value'] ?? '');
+                            if ($rtype !== '' || $rvalue !== '') {
+                                $samples[] = trim($rtype . ':' . $rvalue, ':');
+                            }
+                        }
+                    }
+                    $summary = 'DNS: records_found=' . $count . (empty($samples) ? '' : ', sample=' . implode(' | ', $samples)) . '.';
+                    $normalized = ['type' => 'dns', 'records_found' => $count, 'sample_records' => $samples];
+                } elseif (strpos($path, '/dnssec/') === 0) {
+                    $enabled = isset($decoded['dnssec_enabled']) ? (string) json_encode($decoded['dnssec_enabled']) : 'unknown';
+                    $hasDs = isset($decoded['has_ds_record']) ? (string) json_encode($decoded['has_ds_record']) : 'unknown';
+                    $hasKey = isset($decoded['has_dnskey_record']) ? (string) json_encode($decoded['has_dnskey_record']) : 'unknown';
+                    $algs = is_array($decoded['algorithms'] ?? null) ? implode(',', $decoded['algorithms']) : '';
+                    $summary = 'DNSSEC: enabled=' . $enabled . ', has_ds=' . $hasDs . ', has_dnskey=' . $hasKey
+                        . ($algs !== '' ? ', algorithms=' . $algs : '')
+                        . '.';
+                    $normalized = [
+                        'type' => 'dnssec',
+                        'dnssec_enabled' => $decoded['dnssec_enabled'] ?? null,
+                        'has_ds_record' => $decoded['has_ds_record'] ?? null,
+                        'has_dnskey_record' => $decoded['has_dnskey_record'] ?? null,
+                        'algorithms' => $decoded['algorithms'] ?? [],
+                    ];
                 } else {
                     $keys = array_slice(array_keys($decoded), 0, 10);
-                    $summary = 'Parsed tool response fields: ' . implode(', ', $keys) . '.';
+                    $summary = 'Readable extraction: fields=' . implode(', ', $keys) . '.';
                     $normalized = ['type' => 'generic', 'keys' => $keys];
                 }
             } else {

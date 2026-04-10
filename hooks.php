@@ -239,7 +239,15 @@ function sahdev_inject_ticket_panel($vars)
                 </button>
                 <div id="sahdev-tools-status" class="text-muted" style="font-size:12px; margin-top:6px;"></div>
                 <div id="sahdev-tools-panel" style="margin-top:8px; border:1px solid #e5e7eb; border-radius:6px; padding:10px; background:#fafafa;">
-                    <label style="font-weight:600; margin-bottom:4px; display:block;">Latest Tool Output (editable before AI run)</label>
+                    <label style="font-weight:600; margin-bottom:4px; display:block;">Latest Tool Evidence (editable before AI run)</label>
+                    <div style="margin-bottom:6px; display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+                        <label for="sahdev-tools-view-mode" style="font-size:12px; margin:0;">View</label>
+                        <select id="sahdev-tools-view-mode" class="form-control input-sm" style="max-width:180px;">
+                            <option value="readable" selected>Readable</option>
+                            <option value="raw">Raw</option>
+                            <option value="both">Readable + Raw</option>
+                        </select>
+                    </div>
                     <textarea id="sahdev-tools-output-edit" class="form-control" rows="6" placeholder="Tool output will appear here..."></textarea>
                     <div style="margin-top:6px; display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
                         <button type="button" id="btn-sahdev-append-tools-context" class="btn btn-default btn-xs">
@@ -709,18 +717,26 @@ HTML;
             });
         });
 
-        function buildToolOutputText(summary) {
+        function buildToolOutputText(summary, viewMode) {
             if (!summary) return '';
+            var mode = viewMode || 'readable';
             var lines = [];
             lines.push('Status: ' + (summary.status || 'unknown'));
             var runs = summary.runs || [];
             for (var i = 0; i < runs.length; i++) {
                 var r = runs[i] || {};
                 lines.push('[' + (r.method || '') + ' ' + (r.path || '') + '] status=' + (r.status || '') + ' http=' + (r.http_status || 0));
-                if (r.normalized_summary) lines.push('READABLE: ' + String(r.normalized_summary));
-                if (r.normalization_status) lines.push('NORMALIZATION STATUS: ' + String(r.normalization_status));
-                if (r.response_body) lines.push('RAW: ' + String(r.response_body));
-                if (r.normalization_error) lines.push('NORMALIZATION ERROR: ' + String(r.normalization_error));
+                var readable = r.normalized_summary ? String(r.normalized_summary) : '';
+                var raw = r.response_body ? String(r.response_body) : '';
+                if (mode === 'readable') {
+                    lines.push('READABLE: ' + (readable || '(not available; raw fallback will be used for AI context)'));
+                } else if (mode === 'raw') {
+                    if (raw) lines.push('RAW: ' + raw);
+                } else {
+                    if (readable) lines.push('READABLE: ' + readable);
+                    if (raw) lines.push('RAW: ' + raw);
+                }
+                if (r.normalization_error) lines.push('READABLE EXTRACTION NOTE: ' + String(r.normalization_error));
                 if (r.error_message) lines.push('ERROR: ' + r.error_message);
                 lines.push('---');
             }
@@ -743,7 +759,7 @@ HTML;
                     var s = res.summary;
                     var runs = (s.runs || []).length;
                     $('#sahdev-tools-status').text('Latest tools run: ' + (s.status || 'unknown') + ' | calls: ' + runs + ' | at: ' + (s.updated_at || 'n/a'));
-                    $('#sahdev-tools-output-edit').val(buildToolOutputText(s));
+                    $('#sahdev-tools-output-edit').val(buildToolOutputText(s, $('#sahdev-tools-view-mode').val()));
                     $('#sahdev-tools-meta').text('Suggestion ID: ' + (s.suggestion_id || '-') + ' | calls stored: ' + runs);
                 }
             });
@@ -769,7 +785,7 @@ HTML;
                         var summary = res.summary || {};
                         var runs = (summary.runs || []).length;
                         $('#sahdev-tools-status').text('Tool execution complete. Status: ' + (summary.status || 'ok') + ' | calls: ' + runs);
-                        $('#sahdev-tools-output-edit').val(buildToolOutputText(summary));
+                        $('#sahdev-tools-output-edit').val(buildToolOutputText(summary, $('#sahdev-tools-view-mode').val()));
                         $('#sahdev-tools-meta').text('Suggestion ID: ' + (summary.suggestion_id || '-') + ' | calls stored: ' + runs);
                     } else {
                         $('#sahdev-tools-status').text('Tool execution failed: ' + (res && res.message ? res.message : 'unknown error'));
@@ -854,7 +870,7 @@ HTML;
                         var summary = res.summary || {};
                         var runs = (summary.runs || []).length;
                         $('#sahdev-tools-status').text('Manual tool run saved. Total calls: ' + runs);
-                        $('#sahdev-tools-output-edit').val(buildToolOutputText(summary));
+                        $('#sahdev-tools-output-edit').val(buildToolOutputText(summary, $('#sahdev-tools-view-mode').val()));
                         $('#sahdev-tools-meta').text('Suggestion ID: ' + (summary.suggestion_id || '-') + ' | calls stored: ' + runs);
                     } else {
                         $('#sahdev-tools-status').text('Manual tool run failed: ' + (res && res.message ? res.message : 'unknown error'));
@@ -869,6 +885,9 @@ HTML;
 
         refreshToolsStatus();
         loadToolOperations();
+        $(document).on('change', '#sahdev-tools-view-mode', function() {
+            refreshToolsStatus();
+        });
         
         function executeBackendGoogleCall(baseReqData, $btn) {
             var reqData = Object.assign({ action: 'analyze_ticket' }, baseReqData);

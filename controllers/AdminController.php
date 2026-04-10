@@ -387,7 +387,7 @@ class AdminController
             ],
             'tools_evidence_system' => [
                 'label'       => 'Tools Evidence — System Prompt',
-                'description' => 'System prompt for optional tool-output normalization. Keep this strict and concise; used as a safe enhancement and not required for reply generation.',
+                'description' => 'System prompt for optional readable evidence extraction from tool outputs. Keep this strict and concise; used as a safe enhancement and not required for reply generation.',
                 'content'     => "You are a technical evidence normalizer for hosting support. Convert raw network diagnostic outputs into concise, factual findings. Never fabricate values. If data is missing or unclear, state unknown. Output plain text only.",
             ],
             'tools_evidence_user' => [
@@ -2650,9 +2650,9 @@ class AdminController
             <h4 style="margin-bottom: 16px;">Tools Evidence Quality</h4>
             <div style="display:flex; gap:10px; flex-wrap:wrap;">
                 <span style="background:#f8fafc; padding:8px 14px; border-radius:999px;">Total Runs: <strong><?php echo number_format((int) ($toolsNorm['total_tool_runs'] ?? 0)); ?></strong></span>
-                <span style="background:#ecfeff; padding:8px 14px; border-radius:999px;">Normalized: <strong><?php echo number_format((int) ($toolsNorm['normalized_runs'] ?? 0)); ?></strong></span>
+                <span style="background:#ecfeff; padding:8px 14px; border-radius:999px;">Readable Extracted: <strong><?php echo number_format((int) ($toolsNorm['normalized_runs'] ?? 0)); ?></strong></span>
                 <span style="background:#fff7ed; padding:8px 14px; border-radius:999px;">Raw Fallback: <strong><?php echo number_format((int) ($toolsNorm['raw_fallback_runs'] ?? 0)); ?></strong></span>
-                <span style="background:#fef2f2; padding:8px 14px; border-radius:999px;">Normalization Errors: <strong><?php echo number_format((int) ($toolsNorm['normalization_errors'] ?? 0)); ?></strong></span>
+                <span style="background:#fef2f2; padding:8px 14px; border-radius:999px;">Readable Extraction Errors: <strong><?php echo number_format((int) ($toolsNorm['normalization_errors'] ?? 0)); ?></strong></span>
             </div>
 
             <hr style="margin: 30px 0;">
@@ -3537,10 +3537,10 @@ class AdminController
                     <label><input type="checkbox" name="tools_execution_enabled" <?php echo !empty($settings->tools_execution_enabled) ? 'checked' : ''; ?>> Enable tools execution module</label>
                 </div>
                 <div class="checkbox">
-                    <label><input type="checkbox" name="tools_normalize_enabled" <?php echo !array_key_exists('tools_normalize_enabled', (array) $settings) || !empty($settings->tools_normalize_enabled) ? 'checked' : ''; ?>> Enable normalized readable evidence layer</label>
+                    <label><input type="checkbox" name="tools_normalize_enabled" <?php echo !array_key_exists('tools_normalize_enabled', (array) $settings) || !empty($settings->tools_normalize_enabled) ? 'checked' : ''; ?>> Enable readable evidence extraction layer</label>
                 </div>
                 <div class="checkbox" style="margin-top:-6px;">
-                    <label><input type="checkbox" name="tools_include_raw_fallback" <?php echo !array_key_exists('tools_include_raw_fallback', (array) $settings) || !empty($settings->tools_include_raw_fallback) ? 'checked' : ''; ?>> Always fallback to raw tool output if normalization fails</label>
+                    <label><input type="checkbox" name="tools_include_raw_fallback" <?php echo !array_key_exists('tools_include_raw_fallback', (array) $settings) || !empty($settings->tools_include_raw_fallback) ? 'checked' : ''; ?>> Always fallback to raw tool output if readable extraction fails</label>
                 </div>
                 <div class="form-group">
                     <label>Tools API Base URL</label>
