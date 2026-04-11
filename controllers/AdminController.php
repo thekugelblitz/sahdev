@@ -449,6 +449,7 @@ class AdminController
             'ticket_insights' => ['label' => '<i class="fas fa-brain"></i> Ticket Insights', 'url' => $base . '&action=ticket_insights'],
             'analytics' => ['label' => '<i class="fas fa-chart-line"></i> Analytics', 'url' => $base . '&action=analytics'],
             'audit_trail' => ['label' => '<i class="fas fa-history"></i> Audit Trail', 'url' => $base . '&action=audit_trail'],
+            'module_logs' => ['label' => '<i class="fas fa-clipboard-list"></i> Module log', 'url' => $base . '&action=module_logs'],
         ];
 
         $html = '<style>
@@ -780,6 +781,27 @@ class AdminController
             });
         }
 
+        try {
+            Capsule::table('tblsahdev_settings')->select('scrub_phones')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                $table->boolean('scrub_phones')->default(1);
+            });
+        }
+
+        try {
+            Capsule::table('tblsahdev_module_logs')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->create('tblsahdev_module_logs', function ($table) {
+                $table->increments('id');
+                $table->string('level', 16)->index();
+                $table->string('source', 128)->index();
+                $table->text('message');
+                $table->integer('ticket_id')->unsigned()->nullable()->index();
+                $table->timestamp('created_at')->useCurrent()->index();
+            });
+        }
+
         // Handle form submission
         if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_settings'])) {
             check_token("WHMCS.admin.default"); // Verify CSRF
@@ -805,6 +827,7 @@ class AdminController
             $scrubCc = !empty($_POST['scrub_cc']) ? 1 : 0;
             $scrubIps = !empty($_POST['scrub_ips']) ? 1 : 0;
             $scrubPasswords = !empty($_POST['scrub_passwords']) ? 1 : 0;
+            $scrubPhones = !empty($_POST['scrub_phones']) ? 1 : 0;
             $qualityScorerEnabled = !empty($_POST['quality_scorer_enabled']) ? 1 : 0;
             $autoTagging = !empty($_POST['auto_tagging']) ? 1 : 0;
             $customAttachmentsDir = trim($_POST['custom_attachments_dir'] ?? '');
@@ -858,6 +881,7 @@ class AdminController
                     'scrub_cc' => $scrubCc,
                     'scrub_ips' => $scrubIps,
                     'scrub_passwords' => $scrubPasswords,
+                    'scrub_phones' => $scrubPhones,
                     'quality_scorer_enabled' => $qualityScorerEnabled,
                     'auto_tagging' => $autoTagging,
                     'custom_attachments_dir' => $customAttachmentsDir,
@@ -898,6 +922,7 @@ class AdminController
                 'scrub_cc' => 1,
                 'scrub_ips' => 1,
                 'scrub_passwords' => 1,
+                'scrub_phones' => 1,
                 'quality_scorer_enabled' => 1,
                 'auto_tagging' => 0,
                 'task_provider_map' => null,
@@ -1199,6 +1224,7 @@ class AdminController
                             <label><input type="checkbox" name="scrub_cc" value="1" <?php echo (!isset($settings->scrub_cc) || !empty($settings->scrub_cc)) ? 'checked' : ''; ?>> <i class="fas fa-credit-card text-muted"></i> Credit Cards</label>
                             <label><input type="checkbox" name="scrub_ips" value="1" <?php echo (!isset($settings->scrub_ips) || !empty($settings->scrub_ips)) ? 'checked' : ''; ?>> <i class="fas fa-network-wired text-muted"></i> IPv4</label>
                             <label><input type="checkbox" name="scrub_passwords" value="1" <?php echo (!isset($settings->scrub_passwords) || !empty($settings->scrub_passwords)) ? 'checked' : ''; ?>> <i class="fas fa-key text-muted"></i> Passwords</label>
+                            <label><input type="checkbox" name="scrub_phones" value="1" <?php echo (!isset($settings->scrub_phones) || !empty($settings->scrub_phones)) ? 'checked' : ''; ?>> <i class="fas fa-phone text-muted"></i> Phone numbers</label>
                         </div>
                         <p class="text-muted" style="margin-top: 8px; margin-bottom: 0; font-size:13px;">
                             When enabled, Sahdev will automatically use regex to strip out selected sensitive information before sending the ticket context to the AI model. Essential context structure remains intact.
@@ -2663,6 +2689,134 @@ class AdminController
                     <?php endif; ?>
                 </tbody>
             </table>
+        </div>
+        <?php
+        return ob_get_clean();
+    }
+
+    /**
+     * Sahdev module diagnostic log (enrichment failures, etc.).
+     */
+    public function module_logs()
+    {
+        $successMessage = '';
+
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            check_token("WHMCS.admin.default");
+            $action = $_POST['module_log_action'] ?? '';
+
+            if ($action === 'delete_range') {
+                $days = (int) ($_POST['delete_days'] ?? 0);
+                if ($days > 0 && Capsule::schema()->hasTable('tblsahdev_module_logs')) {
+                    $cutoffDate = \Carbon\Carbon::now()->subDays($days);
+                    $deleted = Capsule::table('tblsahdev_module_logs')
+                        ->where('created_at', '<', $cutoffDate)
+                        ->delete();
+                    $successMessage = "Deleted {$deleted} module log entries older than {$days} days.";
+                }
+            } elseif ($action === 'delete_single') {
+                $id = (int) ($_POST['log_id'] ?? 0);
+                if ($id > 0 && Capsule::schema()->hasTable('tblsahdev_module_logs')) {
+                    Capsule::table('tblsahdev_module_logs')->where('id', $id)->delete();
+                    $successMessage = 'Log entry deleted.';
+                }
+            }
+        }
+
+        $logs = null;
+        if (Capsule::schema()->hasTable('tblsahdev_module_logs')) {
+            $logs = Capsule::table('tblsahdev_module_logs')
+                ->leftJoin('tbltickets', 'tblsahdev_module_logs.ticket_id', '=', 'tbltickets.id')
+                ->select(
+                    'tblsahdev_module_logs.*',
+                    'tbltickets.tid as ticket_mask'
+                )
+                ->orderBy('tblsahdev_module_logs.id', 'desc')
+                ->limit(500)
+                ->get();
+        }
+
+        $csrfToken = generate_token("form");
+        $actionUrl = htmlspecialchars($this->moduleVars['modulelink']) . '&action=module_logs';
+
+        ob_start();
+        ?>
+        <?php echo $this->getNavigationMarkup('module_logs'); ?>
+        <div class="sahdev-page-container">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom: 20px;">
+                <div>
+                    <h2 style="margin:0 0 6px 0;">Module diagnostic log</h2>
+                    <p class="text-muted" style="margin:0; font-size:13px;">
+                        Warnings and errors from Sahdev internals (e.g. account context enrichment). Does not include full AI prompts.
+                    </p>
+                </div>
+                <div style="background:#fff3cd; padding:10px 15px; border-radius:6px; border:1px solid #ffc107;">
+                    <form method="post" action="<?php echo $actionUrl; ?>" class="form-inline" style="margin:0;" onsubmit="return confirm('Permanently delete old module log rows?');">
+                        <?php echo $csrfToken; ?>
+                        <input type="hidden" name="module_log_action" value="delete_range">
+                        <label style="margin-right:10px; font-weight:600;">Prune:</label>
+                        <select name="delete_days" class="form-control input-sm" style="margin-right:10px;">
+                            <option value="7">Older than 7 days</option>
+                            <option value="15">Older than 15 days</option>
+                            <option value="30" selected>Older than 30 days</option>
+                            <option value="90">Older than 90 days</option>
+                        </select>
+                        <button type="submit" class="btn btn-sm btn-warning">Prune now</button>
+                    </form>
+                </div>
+            </div>
+
+            <?php if (!empty($successMessage)): ?>
+                <div class="alert alert-success"><i class="fas fa-check-circle"></i> <?php echo htmlspecialchars($successMessage); ?></div>
+            <?php endif; ?>
+
+            <?php if (!Capsule::schema()->hasTable('tblsahdev_module_logs')): ?>
+                <div class="alert alert-info">Table <code>tblsahdev_module_logs</code> is not present yet. Save module settings or re-run module activation to create it.</div>
+            <?php else: ?>
+            <table class="table table-bordered table-striped" style="font-size:12px;">
+                <thead style="background:#f8f9fa;">
+                    <tr>
+                        <th width="90">ID</th>
+                        <th width="100">Level</th>
+                        <th width="200">Source</th>
+                        <th width="120">Ticket</th>
+                        <th>Message</th>
+                        <th width="160">Time</th>
+                        <th width="90"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if ($logs === null || $logs->isEmpty()): ?>
+                        <tr><td colspan="7" class="text-center text-muted py-4">No module log entries yet.</td></tr>
+                    <?php else: ?>
+                        <?php foreach ($logs as $log): ?>
+                            <tr>
+                                <td><?php echo (int) $log->id; ?></td>
+                                <td><span class="label <?php echo ($log->level === 'error') ? 'label-danger' : 'label-warning'; ?>"><?php echo htmlspecialchars($log->level ?? ''); ?></span></td>
+                                <td style="word-break:break-all;"><?php echo htmlspecialchars($log->source ?? ''); ?></td>
+                                <td>
+                                    <?php if (!empty($log->ticket_id)): ?>
+                                        <a href="supporttickets.php?action=view&id=<?php echo (int) $log->ticket_id; ?>" target="_blank">#<?php echo htmlspecialchars($log->ticket_mask ?? $log->ticket_id); ?></a>
+                                    <?php else: ?>
+                                        <span class="text-muted">—</span>
+                                    <?php endif; ?>
+                                </td>
+                                <td style="word-break:break-word; white-space:pre-wrap; font-family:monospace; font-size:11px;"><?php echo htmlspecialchars($log->message ?? ''); ?></td>
+                                <td class="text-muted" style="font-size:11px;"><?php echo htmlspecialchars((string) ($log->created_at ?? '')); ?></td>
+                                <td>
+                                    <form method="post" action="<?php echo $actionUrl; ?>" style="display:inline;">
+                                        <?php echo $csrfToken; ?>
+                                        <input type="hidden" name="module_log_action" value="delete_single">
+                                        <input type="hidden" name="log_id" value="<?php echo (int) $log->id; ?>">
+                                        <button type="submit" class="btn btn-xs btn-default" onclick="return confirm('Delete this row?');"><i class="fas fa-trash text-danger"></i></button>
+                                    </form>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                </tbody>
+            </table>
+            <?php endif; ?>
         </div>
         <?php
         return ob_get_clean();

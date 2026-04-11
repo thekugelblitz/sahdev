@@ -4,6 +4,8 @@ namespace Sahdev\Lib;
 
 use WHMCS\Database\Capsule;
 
+require_once __DIR__ . '/ModuleLogger.php';
+
 /**
  * Read-only WHMCS account snippets for AI context (userid-scoped).
  * Each subsection is isolated in try/catch so failures never break the ticket panel.
@@ -36,6 +38,7 @@ class ClientAccountEnrichment
                     $parts[] = $s;
                 }
             } catch (\Throwable $e) {
+                self::logSectionFailure('invoices', $e, $ticketIdForScope);
             }
         }
 
@@ -46,6 +49,7 @@ class ClientAccountEnrichment
                     $parts[] = $s;
                 }
             } catch (\Throwable $e) {
+                self::logSectionFailure('domains', $e, $ticketIdForScope);
             }
         }
 
@@ -56,6 +60,7 @@ class ClientAccountEnrichment
                     $parts[] = $s;
                 }
             } catch (\Throwable $e) {
+                self::logSectionFailure('addons', $e, $ticketIdForScope);
             }
         }
 
@@ -67,6 +72,7 @@ class ClientAccountEnrichment
                     $parts[] = $s;
                 }
             } catch (\Throwable $e) {
+                self::logSectionFailure('custom_fields', $e, $ticketIdForScope);
             }
         }
 
@@ -77,6 +83,7 @@ class ClientAccountEnrichment
                     $parts[] = $s;
                 }
             } catch (\Throwable $e) {
+                self::logSectionFailure('client_notes', $e, $ticketIdForScope);
             }
         }
 
@@ -91,6 +98,15 @@ class ClientAccountEnrichment
         }
 
         return $out;
+    }
+
+    private static function logSectionFailure(string $section, \Throwable $e, ?int $ticketId): void
+    {
+        $msg = $e->getMessage();
+        if (strlen($msg) > 500) {
+            $msg = substr($msg, 0, 497) . '...';
+        }
+        ModuleLogger::warning('ClientAccountEnrichment.' . $section, $msg, $ticketId);
     }
 
     private static function hasTable(string $name): bool

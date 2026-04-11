@@ -5,6 +5,7 @@ namespace Sahdev\Lib;
 use WHMCS\Database\Capsule;
 
 require_once __DIR__ . '/ClientAccountEnrichment.php';
+require_once __DIR__ . '/ModuleLogger.php';
 
 class TicketDataExtractor
 {
@@ -142,6 +143,12 @@ class TicketDataExtractor
                     $summary = ($summary !== '' ? $summary . "\n\n" : '') . $extra;
                 }
             } catch (\Throwable $e) {
+                $tid = isset($ticket->id) ? (int) $ticket->id : null;
+                ModuleLogger::warning(
+                    'TicketDataExtractor.enrichment',
+                    substr($e->getMessage(), 0, 500),
+                    $tid
+                );
             }
         }
 
@@ -551,6 +558,18 @@ class TicketDataExtractor
         // 2. Scrub Emails
         if (!isset($settings->scrub_emails) || !empty($settings->scrub_emails)) {
             $text = preg_replace('/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/', '[REDACTED_EMAIL]', $text);
+        }
+
+        // 2b. Phone numbers (heuristic; may false-positive on long numeric IDs — disable via scrub_phones)
+        if (!isset($settings->scrub_phones) || !empty($settings->scrub_phones)) {
+            // E.164-style: + then 8–15 digits (first digit after + not 0)
+            $text = preg_replace('/\+[1-9]\d{7,14}(?=\D|\z)/', '[REDACTED_PHONE]', $text);
+            // US/CA style: optional +1, area code, 7 more digits with common separators
+            $text = preg_replace(
+                '/(?<!\d)(?:\+?1[-.\s]{0,2})?\(?[0-9]{3}\)?[-.\s]?[0-9]{3}[-.\s]?[0-9]{4}(?!\d)/',
+                '[REDACTED_PHONE]',
+                $text
+            );
         }
 
         // 3. Scrub IPv4 Addresses (naive but effective for logs)

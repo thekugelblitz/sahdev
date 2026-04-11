@@ -158,6 +158,27 @@ function sahdev_activate()
                 });
             }
 
+            try {
+                Capsule::table('tblsahdev_settings')->select('scrub_phones')->first();
+            } catch (\Exception $e) {
+                Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                    $table->boolean('scrub_phones')->default(1);
+                });
+            }
+
+            try {
+                Capsule::table('tblsahdev_module_logs')->first();
+            } catch (\Exception $e) {
+                Capsule::schema()->create('tblsahdev_module_logs', function ($table) {
+                    $table->increments('id');
+                    $table->string('level', 16)->index();
+                    $table->string('source', 128)->index();
+                    $table->text('message');
+                    $table->integer('ticket_id')->unsigned()->nullable()->index();
+                    $table->timestamp('created_at')->useCurrent()->index();
+                });
+            }
+
             // Migrate: tools execution settings if missing
             try {
                 Capsule::table('tblsahdev_settings')->select('tools_execution_enabled')->first();
@@ -244,6 +265,7 @@ function sahdev_activate()
                     $table->boolean('context_enrichment_custom_fields')->default(1);
                     $table->boolean('context_enrichment_client_notes')->default(0);
                     $table->text('context_enrichment_custom_field_allowlist')->nullable();
+                    $table->boolean('scrub_phones')->default(1);
                     $table->timestamps(); // creates created_at, updated_at
                 }
             );
@@ -290,6 +312,7 @@ function sahdev_activate()
                 'context_enrichment_addons' => 1,
                 'context_enrichment_custom_fields' => 1,
                 'context_enrichment_client_notes' => 0,
+                'scrub_phones' => 1,
                 'created_at' => \Carbon\Carbon::now(),
                 'updated_at' => \Carbon\Carbon::now(),
             ]);
@@ -715,6 +738,27 @@ function sahdev_activate()
                 $table->boolean('context_enrichment_custom_fields')->default(1);
                 $table->boolean('context_enrichment_client_notes')->default(0);
                 $table->text('context_enrichment_custom_field_allowlist')->nullable();
+            });
+        }
+
+        try {
+            Capsule::table('tblsahdev_settings')->select('scrub_phones')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                $table->boolean('scrub_phones')->default(1);
+            });
+        }
+
+        try {
+            Capsule::table('tblsahdev_module_logs')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->create('tblsahdev_module_logs', function ($table) {
+                $table->increments('id');
+                $table->string('level', 16)->index();
+                $table->string('source', 128)->index();
+                $table->text('message');
+                $table->integer('ticket_id')->unsigned()->nullable()->index();
+                $table->timestamp('created_at')->useCurrent()->index();
             });
         }
         try {
