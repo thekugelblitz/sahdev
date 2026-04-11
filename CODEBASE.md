@@ -69,6 +69,7 @@ sahdev/                          ← WHMCS module root (modules/addons/sahdev/)
 │   ├── LMStudioAIProvider.php   ← OpenAI-compatible local/remote API implementation
 │   ├── ReplicateAIProvider.php  ← Replicate.com Predictions API implementation
 │   ├── TicketDataExtractor.php  ← Secure WHMCS ticket context extractor
+│   ├── AdminPreferences.php     ← Per-admin feature flags, default provider/tone; used by ajax + hooks
 │   └── AIController.php         ← Core orchestrator: all public feature methods
 ├── controllers/
 │   └── AdminController.php      ← Admin backend UI: settings, providers, prompt manager, analytics
@@ -591,6 +592,18 @@ One row per AI provider configuration.
 | `created_at`, `updated_at` | timestamps | — |
 
 > **Security:** API keys are stored using WHMCS `encrypt()` and decrypted at runtime with `decrypt()`.
+
+---
+
+### `tblsahdev_admin_preferences`
+
+Per WHMCS admin (`admin_id` PK → `tbladmins.id`). Stores JSON in `preferences_json`: default AI provider id, optional tone override, and per-feature booleans (see `lib/AdminPreferences.php`). Organization-wide toggles in `tblsahdev_settings` are a ceiling — staff cannot enable a feature the org disabled. Enforced in `ajax.php` and reflected on the ticket panel in `hooks.php`. Admin UI: **Addons → Sahdev → My Preferences** (`AdminController::my_preferences`).
+
+| Column | Type | Description |
+|---|---|---|
+| `admin_id` | int PK | WHMCS admin user id |
+| `preferences_json` | longtext | JSON preferences blob |
+| `created_at`, `updated_at` | timestamps | — |
 
 ---
 

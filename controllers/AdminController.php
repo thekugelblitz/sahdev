@@ -6,6 +6,7 @@ use WHMCS\Database\Capsule;
 use Sahdev\Lib\TaskProviderResolver;
 
 require_once dirname(__DIR__) . '/lib/TaskProviderResolver.php';
+require_once dirname(__DIR__) . '/lib/AdminPreferences.php';
 
 class AdminController
 {
@@ -22,6 +23,8 @@ class AdminController
      */
     private function ensureSchemaIntegrity()
     {
+        \Sahdev\Lib\AdminPreferences::ensureSchema();
+
         // 1. Ensure Summaries Table Exists
         try {
             Capsule::table('tblsahdev_summaries')->first();
@@ -434,6 +437,7 @@ class AdminController
         $base = htmlspecialchars($this->moduleVars['modulelink']);
         $tabs = [
             'settings' => ['label' => '<i class="fas fa-cog"></i> General Settings', 'url' => $base],
+            'my_preferences' => ['label' => '<i class="fas fa-user-cog"></i> My Preferences', 'url' => $base . '&action=my_preferences'],
             'providers' => ['label' => '<i class="fas fa-microchip"></i> AI Providers', 'url' => $base . '&action=providers'],
             'knowledgebase' => ['label' => '<i class="fas fa-book"></i> Knowledgebase', 'url' => $base . '&action=knowledgebase'],
             'prompt_manager' => ['label' => '<i class="fas fa-magic"></i> Prompt Manager', 'url' => $base . '&action=prompt_manager'],
@@ -503,6 +507,167 @@ class AdminController
         $html .= '</div>';
 
         return $html;
+    }
+
+    /**
+     * Per-admin preferences (default model, tone, feature opt-outs). Own row only.
+     *
+     * @return string
+     */
+    public function my_preferences()
+    {
+        $adminId = (int) ($_SESSION['adminid'] ?? 0);
+        if ($adminId <= 0) {
+            return '<div class="alert alert-danger">Not logged in.</div>';
+        }
+
+        \Sahdev\Lib\AdminPreferences::ensureSchema();
+        $settings = Capsule::table('tblsahdev_settings')->first();
+        $settingsArr = $settings ? (array) $settings : [];
+        $prefs = \Sahdev\Lib\AdminPreferences::load($adminId);
+
+        $successMessage = '';
+        $errorMessage = '';
+
+        if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_my_preferences'])) {
+            check_token('WHMCS.admin.default');
+            try {
+                $toneRaw = trim((string) ($_POST['tone_default'] ?? ''));
+                $toneDefault = $toneRaw === '' ? null : $toneRaw;
+
+                $incoming = [
+                    'default_provider_id' => (int) ($_POST['default_provider_id'] ?? 0),
+                    'tone_default'        => $toneDefault,
+                    'features'            => [],
+                ];
+                foreach (\Sahdev\Lib\AdminPreferences::allFeatureKeys() as $k) {
+                    $incoming['features'][$k] = \Sahdev\Lib\AdminPreferences::globalAllowsFeature($k, $settingsArr)
+                        ? !empty($_POST['feature_' . $k])
+                        : false;
+                }
+                \Sahdev\Lib\AdminPreferences::save($adminId, $incoming);
+                $successMessage = 'Your preferences have been saved.';
+                $prefs = \Sahdev\Lib\AdminPreferences::load($adminId);
+            } catch (\Throwable $e) {
+                $errorMessage = $e->getMessage();
+            }
+        }
+
+        $providers = Capsule::table('tblsahdev_providers')
+            ->where('is_active', 1)
+            ->orderBy('name')
+            ->get();
+
+        $csrfToken = generate_token('form');
+        $actionUrl = htmlspecialchars($this->moduleVars['modulelink']) . '&action=my_preferences';
+
+        $featureLabels = [
+            \Sahdev\Lib\AdminPreferences::FEATURE_TICKET_AI          => 'Ticket analysis & reply (main panel, snapshot)',
+            \Sahdev\Lib\AdminPreferences::FEATURE_SUMMARIZER         => 'AI ticket summarizer',
+            \Sahdev\Lib\AdminPreferences::FEATURE_HISTORICAL_CONTEXT  => 'Historical client context (memory)',
+            \Sahdev\Lib\AdminPreferences::FEATURE_REWRITE             => 'Expand & polish draft (rewrite)',
+            \Sahdev\Lib\AdminPreferences::FEATURE_QUALITY_SCORE       => 'Score admin draft (quality)',
+            \Sahdev\Lib\AdminPreferences::FEATURE_CANNED_KB          => 'Canned responses & KB search',
+            \Sahdev\Lib\AdminPreferences::FEATURE_TOOLS               => 'Tools execution (diagnostics)',
+            \Sahdev\Lib\AdminPreferences::FEATURE_TICKET_INSIGHTS     => 'Ticket insights (list badges / bulk fetch)',
+            \Sahdev\Lib\AdminPreferences::FEATURE_ANALYTICS          => 'Analytics page data',
+            \Sahdev\Lib\AdminPreferences::FEATURE_AUDIT_DELETE        => 'Deleting audit trail entries (bulk cleanup)',
+        ];
+
+        ob_start();
+        ?>
+        <?php echo $this->getNavigationMarkup('my_preferences'); ?>
+        <div class="sahdev-page-container">
+            <h2 style="margin-bottom:10px;"><i class="fas fa-user-cog"></i> My Sahdev preferences</h2>
+            <p class="text-muted" style="margin-bottom:20px;">
+                Organization-wide settings under <strong>General Settings</strong> must enable a feature before you can use it.
+                Here you can choose your default AI model and tone, and turn off Sahdev features you do not need for your own account.
+            </p>
+
+            <?php if ($successMessage !== ''): ?>
+                <div class="alert alert-success"><?php echo htmlspecialchars($successMessage); ?></div>
+            <?php endif; ?>
+            <?php if ($errorMessage !== ''): ?>
+                <div class="alert alert-danger"><?php echo htmlspecialchars($errorMessage); ?></div>
+            <?php endif; ?>
+
+            <form method="post" action="<?php echo $actionUrl; ?>">
+                <?php echo $csrfToken; ?>
+                <input type="hidden" name="save_my_preferences" value="1">
+
+                <div class="panel panel-default" style="margin-bottom:20px;">
+                    <div class="panel-heading"><strong>Defaults on ticket view</strong></div>
+                    <div class="panel-body">
+                        <div class="form-group">
+                            <label>Default AI provider for ticket analysis</label>
+                            <select name="default_provider_id" class="form-control" style="max-width:520px;">
+                                <option value="0"<?php echo ((int) ($prefs['default_provider_id'] ?? 0) <= 0) ? ' selected' : ''; ?>>Use organization routing (task map / primary)</option>
+                                <?php foreach ($providers as $p): ?>
+                                    <option value="<?php echo (int) $p->id; ?>"<?php echo ((int) ($prefs['default_provider_id'] ?? 0) === (int) $p->id) ? ' selected' : ''; ?>>
+                                        <?php echo htmlspecialchars($p->name . ' — ' . ($p->model_name ?? '')); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                            <p class="help-block">Pre-selects the model dropdown on support tickets. You can still change it per request.</p>
+                        </div>
+                        <div class="form-group">
+                            <label>Default tone</label>
+                            <select name="tone_default" class="form-control" style="max-width:320px;">
+                                <option value=""<?php echo ($prefs['tone_default'] === null || $prefs['tone_default'] === '') ? ' selected' : ''; ?>>Inherit organization default</option>
+                                <option value="Professional"<?php echo (($prefs['tone_default'] ?? '') === 'Professional') ? ' selected' : ''; ?>>Professional</option>
+                                <option value="Technical"<?php echo (($prefs['tone_default'] ?? '') === 'Technical') ? ' selected' : ''; ?>>Technical</option>
+                                <option value="Friendly"<?php echo (($prefs['tone_default'] ?? '') === 'Friendly') ? ' selected' : ''; ?>>Friendly</option>
+                                <option value="Strict"<?php echo (($prefs['tone_default'] ?? '') === 'Strict') ? ' selected' : ''; ?>>Strict</option>
+                                <option value="Custom"<?php echo (($prefs['tone_default'] ?? '') === 'Custom') ? ' selected' : ''; ?>>Custom</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel panel-default">
+                    <div class="panel-heading"><strong>Features visible to me</strong></div>
+                    <div class="panel-body">
+                        <p class="text-muted" style="margin-bottom:15px;">Uncheck to hide a capability from your ticket UI and block its AJAX actions. Does not affect other staff or background cron jobs.</p>
+                        <table class="table table-striped" style="max-width:900px;">
+                            <thead>
+                                <tr>
+                                    <th>Feature</th>
+                                    <th style="width:120px;">Enabled for me</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach (\Sahdev\Lib\AdminPreferences::allFeatureKeys() as $key): ?>
+                                    <?php
+                                    $globOn = \Sahdev\Lib\AdminPreferences::globalAllowsFeature($key, $settingsArr);
+                                    $checked = !empty($prefs['features'][$key]);
+                                    $disabled = !$globOn ? ' disabled' : '';
+                                    ?>
+                                    <tr>
+                                        <td>
+                                            <?php echo htmlspecialchars($featureLabels[$key] ?? $key); ?>
+                                            <?php if (!$globOn): ?>
+                                                <br><span class="label label-default">Disabled organization-wide — enable under General Settings first</span>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td class="text-center">
+                                            <input type="hidden" name="feature_<?php echo htmlspecialchars($key); ?>" value="0">
+                                            <input type="checkbox" name="feature_<?php echo htmlspecialchars($key); ?>" value="1"<?php echo $checked ? ' checked' : ''; ?><?php echo $disabled; ?>>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                        <p class="help-block text-muted" style="margin-top:12px;">
+                            <i class="fas fa-info-circle"></i> Cron-based ticket insights and tools queue are not controlled here.
+                        </p>
+                        <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Save preferences</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+        <?php
+
+        return ob_get_clean();
     }
 
     /**
@@ -2597,6 +2762,18 @@ class AdminController
      */
     public function analytics()
     {
+        $adminId = (int) ($_SESSION['adminid'] ?? 0);
+        $settings = Capsule::table('tblsahdev_settings')->first();
+        if ($adminId > 0 && !\Sahdev\Lib\AdminPreferences::featureEnabled(
+            \Sahdev\Lib\AdminPreferences::FEATURE_ANALYTICS,
+            $adminId,
+            $settings
+        )) {
+            return $this->getNavigationMarkup('analytics')
+                . '<div class="sahdev-page-container"><div class="alert alert-warning">You have disabled Analytics for your account under <a href="'
+                . htmlspecialchars($this->moduleVars['modulelink']) . '&action=my_preferences">My Preferences</a>.</div></div>';
+        }
+
         ob_start();
         
         // Fetch real analytics data

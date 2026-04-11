@@ -711,6 +711,22 @@ function sahdev_activate()
             });
         }
 
+        // Per-admin preferences (features, default provider, tone) — JSON in preferences_json
+        try {
+            if (!Capsule::schema()->hasTable('tblsahdev_admin_preferences')) {
+                Capsule::schema()->create('tblsahdev_admin_preferences', function ($table) {
+                    $table->integer('admin_id')->unsigned()->primary();
+                    $table->longText('preferences_json')->nullable();
+                    $table->timestamps();
+                });
+            }
+        } catch (\Exception $e) {
+            // Concurrent activation or "table already exists": continue if table is present
+            if (!Capsule::schema()->hasTable('tblsahdev_admin_preferences')) {
+                throw $e;
+            }
+        }
+
         // Create tblsahdev_intents
         try {
             Capsule::table('tblsahdev_intents')->first();
@@ -848,7 +864,13 @@ function sahdev_upgrade($vars)
 {
     $version = $vars['version'];
 
-    // Run SQL updates for different versions...
+    // Ensure new tables exist after uploading files (without requiring re-activate)
+    try {
+        require_once __DIR__ . '/lib/AdminPreferences.php';
+        \Sahdev\Lib\AdminPreferences::ensureSchema();
+    } catch (\Throwable $e) {
+        // Non-fatal; ticket/ajax/admin paths also run ensureSchema
+    }
 }
 
 /**
