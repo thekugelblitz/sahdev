@@ -7,6 +7,7 @@ use Carbon\Carbon;
 
 require_once __DIR__ . '/TaskProviderResolver.php';
 require_once __DIR__ . '/WhmcsTicketTagHelper.php';
+require_once __DIR__ . '/TicketDataExtractor.php';
 
 /**
  * CronProcessor
@@ -462,12 +463,24 @@ class CronProcessor
             ];
         }
 
+        $scrub = !empty($this->settings['compliance_mode']) || !empty($this->settings['pii_scrub_enabled']);
+        $globalMax = (int) ($this->settings['context_enrichment_max_chars'] ?? 2500);
+        $cronServicesCap = min(800, max(300, $globalMax));
+
+        $servicesSummary = '';
+        try {
+            $extractor = new TicketDataExtractor($ticketId, null);
+            $servicesSummary = $extractor->buildServicesSummaryForTicket($ticket, $scrub, $cronServicesCap);
+        } catch (\Throwable $e) {
+            $servicesSummary = '';
+        }
+
         return [
             'subject'            => $ticket->title,
             'priority'           => $ticket->urgency,
             'department'         => $department,
             'client_name'        => $clientName,
-            'services_summary'   => '',
+            'services_summary'   => $servicesSummary,
             'messages'           => $messages,
             'attachments_text'   => '',
             'attachments_images' => [],

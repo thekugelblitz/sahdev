@@ -4,6 +4,8 @@ namespace Sahdev\Lib;
 
 use WHMCS\Database\Capsule;
 
+require_once __DIR__ . '/ClientAccountEnrichment.php';
+
 class TicketDataExtractor
 {
     private $ticketId;
@@ -61,7 +63,7 @@ class TicketDataExtractor
 
         // 2. Fetch Client Info
         $context['client_name'] = $this->extractClientName($ticket);
-        $context['services_summary'] = $this->extractClientServices($ticket->userid);
+        $context['services_summary'] = $this->buildServicesSummaryBlock($ticket, $scrubPII, null);
 
         // 3. Fetch Message History (Replies + Original Message)
         $context['messages'] = $this->extractMessages($ticket);
@@ -99,6 +101,68 @@ class TicketDataExtractor
         }
 
         return $context;
+    }
+
+    /**
+     * Hosting lines plus optional account enrichment; optional max length override (e.g. cron cap).
+     */
+    public function buildServicesSummaryForTicket(\stdClass $ticket, bool $scrubPII, ?int $maxCharsOverride = null): string
+    {
+        return $this->buildServicesSummaryBlock($ticket, $scrubPII, $maxCharsOverride);
+    }
+
+    /**
+     * @param \stdClass $ticket Ticket row (needs id, userid)
+     * @param int|null $maxCharsOverride When set, caps length after scrub (e.g. cron uses min(800, settings)).
+     */
+    private function buildServicesSummaryBlock(\stdClass $ticket, bool $scrubPII, ?int $maxCharsOverride = null): string
+    {
+        $settings = null;
+        try {
+            $settings = Capsule::table('tblsahdev_settings')->first();
+        } catch (\Throwable $e) {
+        }
+
+        $userid = (int) $ticket->userid;
+        $summary = $this->extractClientServices($userid);
+
+        if ($settings && !empty($settings->context_enrichment_enabled) && $userid > 0) {
+            try {
+                $opts = [
+                    'context_enrichment_enabled' => true,
+                    'context_enrichment_invoices' => !empty($settings->context_enrichment_invoices),
+                    'context_enrichment_domains' => !empty($settings->context_enrichment_domains),
+                    'context_enrichment_addons' => !empty($settings->context_enrichment_addons),
+                    'context_enrichment_custom_fields' => !empty($settings->context_enrichment_custom_fields),
+                    'context_enrichment_client_notes' => !empty($settings->context_enrichment_client_notes),
+                    'context_enrichment_custom_field_allowlist' => $settings->context_enrichment_custom_field_allowlist ?? null,
+                ];
+                $extra = ClientAccountEnrichment::build($userid, $opts, (int) $ticket->id);
+                if ($extra !== '') {
+                    $summary = ($summary !== '' ? $summary . "\n\n" : '') . $extra;
+                }
+            } catch (\Throwable $e) {
+            }
+        }
+
+        if ($scrubPII) {
+            $summary = $this->scrubPII($summary);
+        }
+
+        $maxChars = 2500;
+        if ($settings !== null && isset($settings->context_enrichment_max_chars)) {
+            $maxChars = (int) $settings->context_enrichment_max_chars;
+        }
+        $maxChars = max(500, min(20000, $maxChars));
+        if ($maxCharsOverride !== null) {
+            $maxChars = max(300, min(20000, $maxCharsOverride));
+        }
+
+        if (strlen($summary) > $maxChars) {
+            $summary = substr($summary, 0, $maxChars) . "\n[truncated]";
+        }
+
+        return $summary;
     }
 
     private function extractAdminSignature(): string

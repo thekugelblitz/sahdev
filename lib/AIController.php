@@ -249,6 +249,9 @@ class AIController
         $hashData = serialize([
             $context['subject'],
             $context['messages'], // Includes full message history
+            $context['services_summary'] ?? '',
+            $context['department'] ?? '',
+            $context['client_name'] ?? '',
             $tone,
             $customInstruction,
             $intent,
@@ -521,6 +524,9 @@ class AIController
         $hashData = serialize([
             $context['subject'],
             $context['messages'],
+            $context['services_summary'] ?? '',
+            $context['department'] ?? '',
+            $context['client_name'] ?? '',
             $tone,
             $customInstruction,
             $intent,

@@ -142,6 +142,22 @@ function sahdev_activate()
                 });
             }
 
+            // Migrate: account context enrichment settings if missing
+            try {
+                Capsule::table('tblsahdev_settings')->select('context_enrichment_enabled')->first();
+            } catch (\Exception $e) {
+                Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                    $table->boolean('context_enrichment_enabled')->default(1);
+                    $table->integer('context_enrichment_max_chars')->default(2500);
+                    $table->boolean('context_enrichment_invoices')->default(1);
+                    $table->boolean('context_enrichment_domains')->default(1);
+                    $table->boolean('context_enrichment_addons')->default(1);
+                    $table->boolean('context_enrichment_custom_fields')->default(1);
+                    $table->boolean('context_enrichment_client_notes')->default(0);
+                    $table->text('context_enrichment_custom_field_allowlist')->nullable();
+                });
+            }
+
             // Migrate: tools execution settings if missing
             try {
                 Capsule::table('tblsahdev_settings')->select('tools_execution_enabled')->first();
@@ -220,6 +236,14 @@ function sahdev_activate()
                     $table->timestamp('tools_cron_last_run_at')->nullable();
                     $table->string('tools_cron_last_message', 512)->nullable();
                     $table->timestamp('tools_execution_cron_lock_until')->nullable();
+                    $table->boolean('context_enrichment_enabled')->default(1);
+                    $table->integer('context_enrichment_max_chars')->default(2500);
+                    $table->boolean('context_enrichment_invoices')->default(1);
+                    $table->boolean('context_enrichment_domains')->default(1);
+                    $table->boolean('context_enrichment_addons')->default(1);
+                    $table->boolean('context_enrichment_custom_fields')->default(1);
+                    $table->boolean('context_enrichment_client_notes')->default(0);
+                    $table->text('context_enrichment_custom_field_allowlist')->nullable();
                     $table->timestamps(); // creates created_at, updated_at
                 }
             );
@@ -259,6 +283,13 @@ function sahdev_activate()
                 'tools_filter_emails' => '',
                 'tools_normalize_enabled' => 1,
                 'tools_include_raw_fallback' => 1,
+                'context_enrichment_enabled' => 1,
+                'context_enrichment_max_chars' => 2500,
+                'context_enrichment_invoices' => 1,
+                'context_enrichment_domains' => 1,
+                'context_enrichment_addons' => 1,
+                'context_enrichment_custom_fields' => 1,
+                'context_enrichment_client_notes' => 0,
                 'created_at' => \Carbon\Carbon::now(),
                 'updated_at' => \Carbon\Carbon::now(),
             ]);
@@ -669,6 +700,21 @@ function sahdev_activate()
             Capsule::schema()->table('tblsahdev_settings', function ($table) {
                 $table->boolean('tools_normalize_enabled')->default(1);
                 $table->boolean('tools_include_raw_fallback')->default(1);
+            });
+        }
+
+        try {
+            Capsule::table('tblsahdev_settings')->select('context_enrichment_enabled')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                $table->boolean('context_enrichment_enabled')->default(1);
+                $table->integer('context_enrichment_max_chars')->default(2500);
+                $table->boolean('context_enrichment_invoices')->default(1);
+                $table->boolean('context_enrichment_domains')->default(1);
+                $table->boolean('context_enrichment_addons')->default(1);
+                $table->boolean('context_enrichment_custom_fields')->default(1);
+                $table->boolean('context_enrichment_client_notes')->default(0);
+                $table->text('context_enrichment_custom_field_allowlist')->nullable();
             });
         }
         try {

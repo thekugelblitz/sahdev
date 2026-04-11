@@ -765,6 +765,21 @@ class AdminController
             });
         }
 
+        try {
+            Capsule::table('tblsahdev_settings')->select('context_enrichment_enabled')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                $table->boolean('context_enrichment_enabled')->default(1);
+                $table->integer('context_enrichment_max_chars')->default(2500);
+                $table->boolean('context_enrichment_invoices')->default(1);
+                $table->boolean('context_enrichment_domains')->default(1);
+                $table->boolean('context_enrichment_addons')->default(1);
+                $table->boolean('context_enrichment_custom_fields')->default(1);
+                $table->boolean('context_enrichment_client_notes')->default(0);
+                $table->text('context_enrichment_custom_field_allowlist')->nullable();
+            });
+        }
+
         // Handle form submission
         if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_settings'])) {
             check_token("WHMCS.admin.default"); // Verify CSRF
@@ -793,6 +808,15 @@ class AdminController
             $qualityScorerEnabled = !empty($_POST['quality_scorer_enabled']) ? 1 : 0;
             $autoTagging = !empty($_POST['auto_tagging']) ? 1 : 0;
             $customAttachmentsDir = trim($_POST['custom_attachments_dir'] ?? '');
+
+            $contextEnrichmentEnabled = !empty($_POST['context_enrichment_enabled']) ? 1 : 0;
+            $contextEnrichmentMaxChars = max(500, min(20000, (int) ($_POST['context_enrichment_max_chars'] ?? 2500)));
+            $contextEnrichmentInvoices = !empty($_POST['context_enrichment_invoices']) ? 1 : 0;
+            $contextEnrichmentDomains = !empty($_POST['context_enrichment_domains']) ? 1 : 0;
+            $contextEnrichmentAddons = !empty($_POST['context_enrichment_addons']) ? 1 : 0;
+            $contextEnrichmentCustomFields = !empty($_POST['context_enrichment_custom_fields']) ? 1 : 0;
+            $contextEnrichmentClientNotes = !empty($_POST['context_enrichment_client_notes']) ? 1 : 0;
+            $contextEnrichmentCustomFieldAllowlist = trim($_POST['context_enrichment_custom_field_allowlist'] ?? '');
 
             $taskProviderMap = [];
             $taskMapRaw = $_POST['task_provider_map'] ?? [];
@@ -838,6 +862,14 @@ class AdminController
                     'auto_tagging' => $autoTagging,
                     'custom_attachments_dir' => $customAttachmentsDir,
                     'task_provider_map' => $taskProviderMapJson,
+                    'context_enrichment_enabled' => $contextEnrichmentEnabled,
+                    'context_enrichment_max_chars' => $contextEnrichmentMaxChars,
+                    'context_enrichment_invoices' => $contextEnrichmentInvoices,
+                    'context_enrichment_domains' => $contextEnrichmentDomains,
+                    'context_enrichment_addons' => $contextEnrichmentAddons,
+                    'context_enrichment_custom_fields' => $contextEnrichmentCustomFields,
+                    'context_enrichment_client_notes' => $contextEnrichmentClientNotes,
+                    'context_enrichment_custom_field_allowlist' => $contextEnrichmentCustomFieldAllowlist === '' ? null : $contextEnrichmentCustomFieldAllowlist,
                     'updated_at' => \Carbon\Carbon::now(),
                 ]
             );
@@ -869,6 +901,14 @@ class AdminController
                 'quality_scorer_enabled' => 1,
                 'auto_tagging' => 0,
                 'task_provider_map' => null,
+                'context_enrichment_enabled' => 1,
+                'context_enrichment_max_chars' => 2500,
+                'context_enrichment_invoices' => 1,
+                'context_enrichment_domains' => 1,
+                'context_enrichment_addons' => 1,
+                'context_enrichment_custom_fields' => 1,
+                'context_enrichment_client_notes' => 0,
+                'context_enrichment_custom_field_allowlist' => null,
             ];
         }
 
@@ -1025,6 +1065,42 @@ class AdminController
                                     value="<?php echo htmlspecialchars($settings->max_images ?? 3); ?>">
                                 <small class="text-muted">Number of recent images to send (Requires Gemini/GPT-4o).</small>
                             </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel panel-default" style="margin-bottom: 25px; border-left: 4px solid #5c4d7d;">
+                    <div class="panel-heading" style="background: #f7f5fc;">
+                        <h4 style="margin: 0; font-size: 15px; color:#3d3554;"><i class="fas fa-id-card"></i> Account context enrichment (read-only) <span class="label label-default" style="font-size: 11px; vertical-align: middle; margin-left: 6px;">WHMCS data</span></h4>
+                    </div>
+                    <div class="panel-body">
+                        <p class="text-muted" style="margin-top: 0; font-size: 13px;">
+                            Append bounded, read-only client account snippets (invoices, domains, addons, optional custom fields) to the <strong>Services</strong> block sent to the AI. Scoped by the ticket&rsquo;s client ID only; guest tickets are skipped.
+                        </p>
+                        <div class="checkbox" style="margin-top: 0;">
+                            <label style="font-weight: 600; font-size: 14px;">
+                                <input type="checkbox" name="context_enrichment_enabled" value="1" <?php echo !empty($settings->context_enrichment_enabled) ? 'checked' : ''; ?>>
+                                &nbsp;Enable account context enrichment
+                            </label>
+                        </div>
+                        <div class="form-group" style="margin-top: 12px; max-width: 280px;">
+                            <label style="font-weight: 600;">Max characters (entire services block)</label>
+                            <input type="number" name="context_enrichment_max_chars" class="form-control" min="500" max="20000" step="100"
+                                value="<?php echo htmlspecialchars((string) ($settings->context_enrichment_max_chars ?? 2500)); ?>">
+                        </div>
+                        <p style="font-weight: 600; margin: 16px 0 8px;">Include in enrichment</p>
+                        <div class="row" style="display: flex; flex-wrap: wrap; gap: 12px 24px;">
+                            <div class="checkbox" style="margin: 0;"><label><input type="checkbox" name="context_enrichment_invoices" value="1" <?php echo !empty($settings->context_enrichment_invoices) ? 'checked' : ''; ?>> Recent invoices</label></div>
+                            <div class="checkbox" style="margin: 0;"><label><input type="checkbox" name="context_enrichment_domains" value="1" <?php echo !empty($settings->context_enrichment_domains) ? 'checked' : ''; ?>> Domains</label></div>
+                            <div class="checkbox" style="margin: 0;"><label><input type="checkbox" name="context_enrichment_addons" value="1" <?php echo !empty($settings->context_enrichment_addons) ? 'checked' : ''; ?>> Hosting addons</label></div>
+                            <div class="checkbox" style="margin: 0;"><label><input type="checkbox" name="context_enrichment_custom_fields" value="1" <?php echo !empty($settings->context_enrichment_custom_fields) ? 'checked' : ''; ?>> Custom fields (filtered)</label></div>
+                            <div class="checkbox" style="margin: 0;"><label><input type="checkbox" name="context_enrichment_client_notes" value="1" <?php echo !empty($settings->context_enrichment_client_notes) ? 'checked' : ''; ?>> Staff client notes (internal)</label></div>
+                        </div>
+                        <div class="form-group" style="margin-top: 14px;">
+                            <label style="font-weight: 600;">Custom field allowlist (optional)</label>
+                            <input type="text" name="context_enrichment_custom_field_allowlist" class="form-control" placeholder="e.g. VAT Number, 12, Company Name"
+                                value="<?php echo htmlspecialchars((string) ($settings->context_enrichment_custom_field_allowlist ?? '')); ?>">
+                            <small class="text-muted">Comma-separated field names or numeric field IDs. If empty, only safe filtered fields are included.</small>
                         </div>
                     </div>
                 </div>
