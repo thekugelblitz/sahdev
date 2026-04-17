@@ -165,6 +165,109 @@ class TicketDataExtractor
         return implode("\n", $summary);
     }
 
+    /**
+     * Build context for admin-side ticket open page where no ticket thread exists yet.
+     */
+    public function getOpenContextForUser(int $userId, bool $scrubPII = false): array
+    {
+        if ($userId <= 0) {
+            throw new \Exception("Invalid client user id.");
+        }
+
+        $client = Capsule::table('tblclients')
+            ->select('id', 'firstname', 'lastname', 'companyname', 'email')
+            ->where('id', $userId)
+            ->first();
+
+        if (!$client) {
+            throw new \Exception("Client not found.");
+        }
+
+        $fullName = trim(($client->firstname ?? '') . ' ' . ($client->lastname ?? ''));
+        $clientName = $fullName !== '' ? $fullName : ('Client #' . $userId);
+        $companyName = trim((string) ($client->companyname ?? ''));
+
+        $openInvoices = Capsule::table('tblinvoices')
+            ->where('userid', $userId)
+            ->whereIn('status', ['Unpaid', 'Payment Pending', 'Collections'])
+            ->count();
+        $overdueInvoices = Capsule::table('tblinvoices')
+            ->where('userid', $userId)
+            ->where('status', 'Unpaid')
+            ->where('duedate', '<', date('Y-m-d'))
+            ->count();
+
+        $recentInvoices = Capsule::table('tblinvoices')
+            ->where('userid', $userId)
+            ->orderBy('date', 'desc')
+            ->limit(5)
+            ->select('id', 'status', 'total', 'date', 'duedate')
+            ->get();
+
+        $invoiceLines = [];
+        foreach ($recentInvoices as $inv) {
+            $invoiceLines[] = "- #{$inv->id} | {$inv->status} | {$inv->total} | Date: {$inv->date} | Due: {$inv->duedate}";
+        }
+
+        $servicesSummary = $this->extractClientServices($userId);
+
+        $domainRows = Capsule::table('tbldomains')
+            ->where('userid', $userId)
+            ->orderBy('id', 'desc')
+            ->limit(5)
+            ->select('domain', 'status', 'nextduedate')
+            ->get();
+
+        $domainSummary = [];
+        foreach ($domainRows as $row) {
+            $domainSummary[] = "- {$row->domain} ({$row->status}) next due: {$row->nextduedate}";
+        }
+
+        $contextText = "=== CLIENT ACCOUNT SNAPSHOT ===\n";
+        $contextText .= "Client ID: {$userId}\n";
+        $contextText .= "Client Name: {$clientName}\n";
+        if ($companyName !== '') {
+            $contextText .= "Company: {$companyName}\n";
+        }
+        $contextText .= "Open/Collection Invoices: {$openInvoices}\n";
+        $contextText .= "Overdue Invoices: {$overdueInvoices}\n\n";
+
+        $contextText .= "=== ACTIVE SERVICES ===\n";
+        $contextText .= ($servicesSummary !== '' ? $servicesSummary : "No active services.") . "\n\n";
+
+        $contextText .= "=== RECENT INVOICES ===\n";
+        $contextText .= (!empty($invoiceLines) ? implode("\n", $invoiceLines) : "No recent invoices found.") . "\n\n";
+
+        $contextText .= "=== RECENT DOMAINS ===\n";
+        $contextText .= (!empty($domainSummary) ? implode("\n", $domainSummary) : "No domains found.") . "\n\n";
+
+        $contextText .= "=== ADMIN REQUEST ===\n";
+        $contextText .= "Use this account context plus admin instruction to craft a human support reply. There is no existing ticket thread in this mode.\n";
+
+        $context = [
+            'subject' => 'Admin Ticket Open Draft Context',
+            'priority' => 'Medium',
+            'department' => 'General Support',
+            'client_name' => $clientName,
+            'services_summary' => $servicesSummary,
+            'attachments_text' => '',
+            'attachments_images' => [],
+            'messages' => [[
+                'date' => date('Y-m-d H:i:s'),
+                'message' => $contextText,
+                'admin' => false,
+            ]],
+            'admin_signature' => $this->extractAdminSignature(),
+        ];
+
+        if ($scrubPII) {
+            $context['client_name'] = $this->scrubPII($context['client_name']);
+            $context['messages'][0]['message'] = $this->scrubPII($context['messages'][0]['message']);
+        }
+
+        return $context;
+    }
+
     private function extractMessages($ticket): array
     {
         $messages = [];

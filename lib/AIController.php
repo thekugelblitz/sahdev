@@ -574,6 +574,161 @@ class AIController
         ];
     }
 
+    public function getOpenContextPayload(int $userId, string $tone = null, string $customInstruction = null, bool $forceRegenerate = false, string $intent = 'AUTO', string $technicalContext = '', ?int $overrideProviderId = null, bool $includeToolsContext = false): array
+    {
+        $this->checkRateLimit();
+
+        $stack        = $this->getProviderStackForTask(TaskProviderResolver::TASK_TICKET_REPLY, $overrideProviderId);
+        $callSettings = $stack['call_settings'];
+
+        $scrubPII = !empty($this->settings['compliance_mode']) || !empty($this->settings['pii_scrub_enabled']);
+        $extractor = new TicketDataExtractor($this->ticketId, $this->adminId);
+        $context = $extractor->getOpenContextForUser($userId, $scrubPII);
+
+        if (!$tone) {
+            $tone = $this->settings['tone_default'];
+        }
+
+        $customInstruction = $this->composeInstructionForIntent($intent, $customInstruction, $technicalContext);
+        if ($includeToolsContext && $this->ticketId > 0) {
+            $toolContext = \Sahdev\Modules\ToolsExecution\ToolsExecutionService::buildPromptContextBlock($this->ticketId);
+            if ($toolContext !== '') {
+                $customInstruction = empty($customInstruction) ? $toolContext : $customInstruction . "\n\n" . $toolContext;
+            }
+        }
+        if (!empty($this->settings['quality_scorer_enabled'])) {
+            $scorerInstruction = "=== QUALITY SCORER REQUIREMENT ===\nYou MUST evaluate the overall quality of the CLIENT_REPLY and output the precise fields in your JSON root:\n\"SCORE\": int (0-100 overall rating)\n\"CLARITY\": int (0-100)\n\"TONE_SCORE\": int (0-100)\n\"COMPLETENESS\": int (0-100)\n\"REPLY_NOTES\": \"string (brief explanation of the scores)\"\nMake sure the response is strict JSON.";
+            $customInstruction = empty($customInstruction) ? $scorerInstruction : $customInstruction . "\n\n" . $scorerInstruction;
+        }
+
+        $systemPrompt = $this->settings['system_prompt'];
+        $hashData = serialize([
+            'open_context',
+            $userId,
+            $context['subject'] ?? '',
+            $context['messages'],
+            $tone,
+            $customInstruction,
+            $intent,
+            $callSettings['model_name'],
+            $systemPrompt
+        ]);
+        $hashSignature = hash('sha256', $hashData);
+
+        return [
+            'status'               => 'success',
+            'cached'               => false,
+            'hash_signature'       => $hashSignature,
+            'effective_provider_id' => $stack['effective_provider_id'],
+            'providers'            => TaskProviderResolver::listActiveProvidersForRouting(),
+            'provider'             => ($callSettings['provider_type'] ?? '') === 'lmstudio' ? 'lmstudio' : ((($callSettings['provider_type'] ?? '') === 'replicate') ? 'replicate' : 'google'),
+            'api_url'              => $callSettings['api_url'] ?? '',
+            'api_key'              => $callSettings['api_key'] ?? '',
+            'model'                => $callSettings['model_name'],
+            'temperature'          => (float) $this->settings['temperature'],
+            'max_tokens'           => (int) $this->settings['max_tokens'],
+            'system_prompt'        => $systemPrompt,
+            'user_prompt_template' => $this->settings['user_prompt_template'] ?? null,
+            'context'              => $context,
+            'tone'                 => $tone,
+            'custom_instruction'   => $customInstruction,
+            'intent'               => $intent,
+            'has_fallback'         => $stack['fallback'] !== null,
+            'fallback_api_key'     => ($stack['fallback_call_settings']['fallback_api_key'] ?? $this->settings['fallback_api_key']) ?? '',
+            'summary_used'         => false,
+            'summary_available'    => false,
+            'message_count'        => count($context['messages'] ?? []),
+            'summarizer_threshold' => (int) ($this->settings['summarizer_threshold'] ?? 15),
+        ];
+    }
+
+    public function getOpenContextAnalysis(int $userId, string $tone = null, string $customInstruction = null, bool $forceRegenerate = false, bool $forceFallback = false, string $intent = 'AUTO', string $technicalContext = '', ?int $overrideProviderId = null, bool $includeToolsContext = false): array
+    {
+        $this->checkRateLimit();
+
+        $scrubPII = !empty($this->settings['compliance_mode']) || !empty($this->settings['pii_scrub_enabled']);
+        $extractor = new TicketDataExtractor($this->ticketId, $this->adminId);
+        $context = $extractor->getOpenContextForUser($userId, $scrubPII);
+
+        if (!$tone) {
+            $tone = $this->settings['tone_default'];
+        }
+
+        $customInstruction = $this->composeInstructionForIntent($intent, $customInstruction, $technicalContext);
+        if ($includeToolsContext && $this->ticketId > 0) {
+            $toolContext = \Sahdev\Modules\ToolsExecution\ToolsExecutionService::buildPromptContextBlock($this->ticketId);
+            if ($toolContext !== '') {
+                $customInstruction = empty($customInstruction) ? $toolContext : $customInstruction . "\n\n" . $toolContext;
+            }
+        }
+        if (!empty($this->settings['quality_scorer_enabled'])) {
+            $scorerInstruction = "=== QUALITY SCORER REQUIREMENT ===\nYou MUST evaluate the overall quality of the CLIENT_REPLY and output the precise fields in your JSON root:\n\"SCORE\": int (0-100 overall rating)\n\"CLARITY\": int (0-100)\n\"TONE_SCORE\": int (0-100)\n\"COMPLETENESS\": int (0-100)\n\"REPLY_NOTES\": \"string (brief explanation of the scores)\"\nMake sure the response is strict JSON.";
+            $customInstruction = empty($customInstruction) ? $scorerInstruction : $customInstruction . "\n\n" . $scorerInstruction;
+        }
+
+        $stack = $this->getProviderStackForTask(TaskProviderResolver::TASK_TICKET_REPLY, $overrideProviderId);
+        $callSettings = $stack['call_settings'];
+        $startTime = microtime(true);
+
+        if ($forceFallback && $stack['fallback']) {
+            $fbSettings     = $stack['fallback_call_settings'] ?? $this->mergeSettingsForProviderRow($this->settings, $stack['fallback_row']);
+            $response       = $stack['fallback']->generateResponse($context, $fbSettings, $tone, $customInstruction);
+            $activeProvider = $stack['fallback'];
+        } else {
+            try {
+                $response = $stack['primary']->generateResponse($context, $callSettings, $tone, $customInstruction);
+                $activeProvider = $stack['primary'];
+            } catch (\Exception $e) {
+                if ($stack['fallback'] && $stack['fallback_row']) {
+                    $fbSettings    = $stack['fallback_call_settings'] ?? $this->mergeSettingsForProviderRow($this->settings, $stack['fallback_row']);
+                    $response      = $stack['fallback']->generateResponse($context, $fbSettings, $tone, $customInstruction);
+                    $activeProvider = $stack['fallback'];
+                } else {
+                    throw $e;
+                }
+            }
+        }
+
+        $executionTimeMs = round((microtime(true) - $startTime) * 1000);
+        $tokenUsage = $activeProvider->getLastTokenUsage();
+        $tokenDetails = $activeProvider->getLastTokenDetails();
+
+        $providerName = $activeProvider instanceof AIProviderInterface ? $activeProvider->getName() : 'Unknown';
+        $fullPrompt = json_encode([
+            'system' => $this->settings['system_prompt'],
+            'tone' => $tone,
+            'instruction' => $customInstruction,
+            'context' => $context,
+            'mode' => 'open_context',
+            'user_id' => $userId,
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+        $this->logAuditEntry('analysis_open_context', $fullPrompt, json_encode($response), $tokenUsage, $executionTimeMs, $providerName);
+        $this->incrementRateLimit();
+
+        return [
+            'status' => 'success',
+            'data' => $response,
+            'cached' => false,
+            'execution_time_ms' => $executionTimeMs,
+            'tokens_used' => $tokenUsage,
+            'tokens_details' => $tokenDetails
+        ];
+    }
+
+    private function composeInstructionForIntent(string $intent, ?string $customInstruction, ?string $technicalContext = ''): string
+    {
+        $result = (string) ($customInstruction ?? '');
+        $intentDirective = $this->buildIntentDirective($intent);
+        if (!empty($intentDirective)) {
+            $result = empty($result) ? $intentDirective : $intentDirective . "\n\n" . $result;
+        }
+        if (!empty($technicalContext)) {
+            $techInstruction = "=== TECHNICAL CONTEXT PROVIDED BY ADMIN ===\n" . $technicalContext;
+            $result = empty($result) ? $techInstruction : $result . "\n\n" . $techInstruction;
+        }
+        return $result;
+    }
+
     public function saveResponse(string $hashSignature, array $response, int $tokenUsage, int $executionTimeMs, array $tokenDetails = []): array
     {
         // Cache the successful result
@@ -1262,7 +1417,11 @@ class AIController
                 ->first();
 
             if ($intentRecord && !empty($intentRecord->directive)) {
-                return $intentRecord->directive;
+                $directive = (string) $intentRecord->directive;
+                if (strtoupper(trim($intent)) === 'ABUSE_REPORT') {
+                    $directive .= "\n\nWHITE-LABEL ENFORCEMENT: Do not expose upstream vendor/provider names, partner brands, or third-party internal identities. If source details are uncertain, rewrite neutrally as 'our infrastructure team' or 'our upstream network partner' without naming brands. Keep response human, policy-aware, and suitable for abuse report follow-up conversations.";
+                }
+                return $directive;
             }
         } catch (\Exception $e) {
             // Fallback gracefully if table not ready or error

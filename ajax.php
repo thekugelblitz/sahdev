@@ -31,6 +31,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 $action = $_POST['action'] ?? '';
 $ticketId = (int) ($_POST['ticket_id'] ?? 0);
+$userId = (int) ($_POST['userid'] ?? 0);
 $tone = strip_tags($_POST['tone'] ?? '');
 $instruction = strip_tags($_POST['instruction'] ?? '');
 $intensity = (int) ($_POST['intensity'] ?? 3);
@@ -52,6 +53,7 @@ $ticketNotRequiredActions = [
     'search_canned_responses', 'generate_canned_template', 'save_canned_response', 'save_kb_article', 'delete_audit_entries',
     'get_analytics', 'get_ticket_insights', 'trigger_cron_run', 'get_insights_queue', 'analyze_single_insight',
     'test_whmcs_cron_http', 'run_tools_queue', 'get_tools_operations',
+    'get_open_payload', 'analyze_open_context',
 ];
 if (!$ticketId && !in_array($action, $ticketNotRequiredActions)) {
     header('HTTP/1.1 400 Bad Request');
@@ -94,7 +96,17 @@ try {
 
     $controller = new \Sahdev\Lib\AIController($ticketId, $adminId);
 
-    if ($action === 'get_payload') {
+    if ($action === 'get_open_payload') {
+        if ($userId <= 0) {
+            throw new \Exception('Missing or invalid userid.');
+        }
+        $response = $controller->getOpenContextPayload($userId, $tone, $instruction, $forceRegenerate, $intent, $technicalContext, $overrideProviderId, $includeTools);
+    } elseif ($action === 'analyze_open_context') {
+        if ($userId <= 0) {
+            throw new \Exception('Missing or invalid userid.');
+        }
+        $response = $controller->getOpenContextAnalysis($userId, $tone, $instruction, $forceRegenerate, false, $intent, $technicalContext, $overrideProviderId, $includeTools);
+    } elseif ($action === 'get_payload') {
         $response = $controller->getPayload($tone, $instruction, $forceRegenerate, $intent, $useSummary, $includeHistory, $technicalContext, $overrideProviderId, $includeTools);
     } elseif ($action === 'save_response') {
         $hashSignature = $_POST['hash_signature'] ?? '';

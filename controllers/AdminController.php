@@ -245,6 +245,15 @@ class AdminController
                     'created_at' => \Carbon\Carbon::now(),
                     'updated_at' => \Carbon\Carbon::now()
                 ],
+                [
+                    'intent_key' => 'ABUSE_REPORT',
+                    'label'      => 'Abuse Report',
+                    'directive'  => 'REPLY INTENT — ABUSE REPORT: The admin is handling abuse, phishing, spam, malware, copyright, or policy reports. Write CLIENT_REPLY as a calm, human, policy-aware message that acknowledges the report, requests missing evidence when needed, outlines next review steps, and sets realistic follow-up expectations. Continue the conversation naturally and avoid abrupt closure.',
+                    'is_active'  => 1,
+                    'sort_order' => 80,
+                    'created_at' => \Carbon\Carbon::now(),
+                    'updated_at' => \Carbon\Carbon::now()
+                ],
             ]);
         }
 
@@ -1377,6 +1386,15 @@ class AdminController
                         'created_at' => \Carbon\Carbon::now(),
                         'updated_at' => \Carbon\Carbon::now()
                     ],
+                    [
+                        'intent_key' => 'ABUSE_REPORT',
+                        'label'      => 'Abuse Report',
+                        'directive'  => 'REPLY INTENT — ABUSE REPORT: The admin is handling abuse, phishing, spam, malware, copyright, or policy reports. Write CLIENT_REPLY as a calm, human, policy-aware message that acknowledges the report, requests missing evidence when needed, outlines next review steps, and sets realistic follow-up expectations. Continue the conversation naturally and avoid abrupt closure.',
+                        'is_active'  => 1,
+                        'sort_order' => 80,
+                        'created_at' => \Carbon\Carbon::now(),
+                        'updated_at' => \Carbon\Carbon::now()
+                    ],
                 ]);
                 $successMessage = empty($successMessage) ? "Database seeded with default intents." : $successMessage;
             }
@@ -1474,6 +1492,7 @@ class AdminController
                     'GUIDE'        => '🗺️ ',
                     'OUT_OF_SCOPE' => '🚫 ',
                     'DUPLICATE'    => '🔁 ',
+                    'ABUSE_REPORT' => '🛡️ ',
                 ];
             ?>
 

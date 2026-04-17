@@ -4,10 +4,12 @@ use WHMCS\Database\Capsule;
 
 function sahdev_inject_ticket_panel($vars)
 {
-    // Ensure we are viewing a specific ticket
-    $ticketId = (int) $vars['ticketid'];
-    if (!$ticketId)
+    $ticketId = (int) ($vars['ticketid'] ?? 0);
+    $contextUserId = (int) ($vars['userid'] ?? ($_GET['userid'] ?? 0));
+    if ($ticketId <= 0 && $contextUserId <= 0) {
         return '';
+    }
+    $isOpenContextMode = $ticketId <= 0 ? 'true' : 'false';
 
     // Verify admin isLoggedIn via WHMCS helper, strictly
     $adminId = $_SESSION['adminid'] ?? null;
@@ -100,6 +102,7 @@ function sahdev_inject_ticket_panel($vars)
         'GUIDE'        => '🗺️ ',
         'OUT_OF_SCOPE' => '🚫 ',
         'DUPLICATE'    => '🔁 ',
+        'ABUSE_REPORT' => '🛡️ ',
     ];
 
     // Load active intents from DB, ordered by sort_order
@@ -148,6 +151,8 @@ function sahdev_inject_ticket_panel($vars)
         <form id="sahdev-ai-form">
             {$csrfToken}
             <input type="hidden" id="sahdev_ticket_id" value="{$ticketId}">
+            <input type="hidden" id="sahdev_context_user_id" value="{$contextUserId}">
+            <input type="hidden" id="sahdev_is_open_context_mode" value="{$isOpenContextMode}">
             <input type="hidden" id="sahdev_intent" value="{$defaultIntentVal}">
 
             <!-- Intent Selector -->
@@ -677,6 +682,7 @@ HTML;
             
             var baseReqData = {
                 ticket_id: $('#sahdev_ticket_id').val(),
+                userid: $('#sahdev_context_user_id').val(),
                 tone: $('#sahdev_tone').val(),
                 intensity: $('#sahdev_intensity').val(),
                 instruction: $('#sahdev_instruction').val(),
@@ -690,7 +696,9 @@ HTML;
                 override_provider_id: $('#sahdev_override_provider').val() || '0'
             };
 
-            var payloadReqData = Object.assign({ action: 'get_payload' }, baseReqData);
+            var isOpenContextMode = ($('#sahdev_is_open_context_mode').val() === 'true');
+            var payloadAction = isOpenContextMode ? 'get_open_payload' : 'get_payload';
+            var payloadReqData = Object.assign({ action: payloadAction }, baseReqData);
 
             $.ajax({
                 url: sahdevAjaxUrl,
@@ -894,7 +902,9 @@ HTML;
         });
         
         function executeBackendGoogleCall(baseReqData, $btn) {
-            var reqData = Object.assign({ action: 'analyze_ticket' }, baseReqData);
+            var isOpenContextMode = ($('#sahdev_is_open_context_mode').val() === 'true');
+            var backendAction = isOpenContextMode ? 'analyze_open_context' : 'analyze_ticket';
+            var reqData = Object.assign({ action: backendAction }, baseReqData);
             $.ajax({
                 url: sahdevAjaxUrl,
                 type: 'POST',
@@ -1031,6 +1041,13 @@ HTML;
         function saveResponseToBackend(hashSignature, aiResponseObj, tokensUsed, execTime, baseReqData, $btn, tokenDetails) {
             // Encode as base64 to avoid backend framework sanitization destroying newlines and quotes
             var base64Json = btoa(unescape(encodeURIComponent(JSON.stringify(aiResponseObj))));
+
+            var isOpenContextMode = ($('#sahdev_is_open_context_mode').val() === 'true');
+            if (isOpenContextMode) {
+                $btn.prop('disabled', false);
+                renderSahdevResults(aiResponseObj, tokensUsed, execTime, tokenDetails);
+                return;
+            }
 
             var reqData = Object.assign({ 
                 action: 'save_response',
@@ -2271,6 +2288,18 @@ add_hook('AdminAreaViewTicketPage', 1, function ($vars) {
         return '';
 
     return sahdev_inject_ticket_panel($vars);
+});
+
+add_hook('AdminAreaFooterOutput', 1, function ($vars) {
+    $filename = strtolower((string) ($vars['filename'] ?? ''));
+    $action = strtolower(trim((string) ($_GET['action'] ?? '')));
+    $userId = (int) ($_GET['userid'] ?? 0);
+
+    if ($filename !== 'supporttickets.php' || $action !== 'open' || $userId <= 0) {
+        return '';
+    }
+
+    return sahdev_inject_ticket_panel(['userid' => $userId]);
 });
 
 // ---------------------------------------------------------------------------
