@@ -747,6 +747,42 @@ HTML;
     });
 
     $(document).ready(function() {
+        (function relocateOpenContextPanel() {
+            var isOpenContextMode = ($('#sahdev_is_open_context_mode').val() === 'true');
+            if (!isOpenContextMode) return;
+
+            var $panel = $('#sahdev-ai-panel');
+            if (!$panel.length) return;
+
+            // Try to anchor near the open-ticket form (not at page footer)
+            var $anchor = null;
+            var anchorSelectors = [
+                'form[action*="supporttickets"] .btn.btn-primary',
+                '#openTicketForm',
+                'form[action*="supporttickets.php"]',
+                'form:has(input[name="subject"])',
+                'textarea[name="message"]'
+            ];
+
+            for (var i = 0; i < anchorSelectors.length; i++) {
+                var $match = $(anchorSelectors[i]).first();
+                if ($match.length) {
+                    $anchor = $match;
+                    break;
+                }
+            }
+
+            if ($anchor && $anchor.length) {
+                if ($anchor.is('textarea')) {
+                    $panel.insertBefore($anchor.closest('.form-group').length ? $anchor.closest('.form-group') : $anchor);
+                } else if ($anchor.is('form')) {
+                    $panel.prependTo($anchor);
+                } else {
+                    $panel.insertBefore($anchor.closest('form').length ? $anchor.closest('form') : $anchor);
+                }
+            }
+        })();
+
         $(document).on('click', '#btn-sahdev-analyze, #btn-sahdev-regenerate', function(e) {
             e.preventDefault();
             console.log("Sahdev AI Button Clicked", $(this).attr('id'));
