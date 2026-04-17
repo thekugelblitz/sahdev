@@ -260,6 +260,26 @@ class AdminController
             ]);
         }
 
+        // Backward-compatible migration: ensure ABUSE_REPORT exists even on previously seeded installs
+        try {
+            $abuseExists = Capsule::table('tblsahdev_intents')
+                ->where('intent_key', 'ABUSE_REPORT')
+                ->exists();
+            if (!$abuseExists) {
+                Capsule::table('tblsahdev_intents')->insert([
+                    'intent_key' => 'ABUSE_REPORT',
+                    'label'      => 'Abuse Report',
+                    'directive'  => 'REPLY INTENT — ABUSE REPORT: The admin is handling abuse, phishing, spam, malware, copyright, or policy reports. Write CLIENT_REPLY as a calm, human, policy-aware message that acknowledges the report, requests missing evidence when needed, outlines next review steps, and sets realistic follow-up expectations. Continue the conversation naturally and avoid abrupt closure.',
+                    'is_active'  => 1,
+                    'sort_order' => 80,
+                    'created_at' => \Carbon\Carbon::now(),
+                    'updated_at' => \Carbon\Carbon::now(),
+                ]);
+            }
+        } catch (\Exception $e) {
+            // Keep admin module resilient even if migration attempt fails
+        }
+
         // 9. Ensure missing prompt templates exist (migration for existing installs)
         try {
             $defs = $this->getDefaultPromptDefinitions();

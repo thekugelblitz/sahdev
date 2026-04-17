@@ -165,6 +165,24 @@ function sahdev_inject_ticket_panel($vars)
     // Load active intents from DB, ordered by sort_order
     $intentsList = [];
     try {
+        // Backward-compatible migration: ensure ABUSE_REPORT exists on older installs
+        if (Capsule::schema()->hasTable('tblsahdev_intents')) {
+            $abuseExists = Capsule::table('tblsahdev_intents')
+                ->where('intent_key', 'ABUSE_REPORT')
+                ->exists();
+            if (!$abuseExists) {
+                Capsule::table('tblsahdev_intents')->insert([
+                    'intent_key' => 'ABUSE_REPORT',
+                    'label' => 'Abuse Report',
+                    'directive' => 'REPLY INTENT — ABUSE REPORT: The admin is handling abuse, phishing, spam, malware, copyright, or policy reports. Write CLIENT_REPLY as a calm, human, policy-aware message that acknowledges the report, requests missing evidence when needed, outlines next review steps, and sets realistic follow-up expectations. Continue the conversation naturally and avoid abrupt closure.',
+                    'is_active' => 1,
+                    'sort_order' => 80,
+                    'created_at' => \Carbon\Carbon::now(),
+                    'updated_at' => \Carbon\Carbon::now(),
+                ]);
+            }
+        }
+
         $intentsList = Capsule::table('tblsahdev_intents')
             ->where('is_active', 1)
             ->orderBy('sort_order', 'asc')
@@ -2351,12 +2369,38 @@ add_hook('AdminAreaViewTicketPage', 1, function ($vars) {
     return sahdev_inject_ticket_panel($vars);
 });
 
-add_hook('AdminAreaFooterOutput', 1, function ($vars) {
-    $filename = strtolower((string) ($vars['filename'] ?? ''));
+function sahdev_is_admin_ticket_open_page(?array $vars = null): bool
+{
     $action = strtolower(trim((string) ($_GET['action'] ?? '')));
     $userId = (int) ($_GET['userid'] ?? 0);
+    if ($action === 'open' && $userId > 0) {
+        return true;
+    }
 
-    if ($filename !== 'supporttickets.php' || $action !== 'open' || $userId <= 0) {
+    $filename = strtolower((string) (($vars['filename'] ?? '') ?: basename($_SERVER['SCRIPT_NAME'] ?? '')));
+    if ($filename === 'supporttickets.php' && $userId > 0) {
+        return true;
+    }
+
+    // WHMCS 8+ routed admin pages can be index.php with rp path.
+    if ($filename === 'index.php') {
+        $rp = strtolower((string) ($_GET['rp'] ?? ''));
+        if ($rp !== '' && strpos($rp, 'support') !== false && strpos($rp, 'ticket') !== false && strpos($rp, 'open') !== false && $userId > 0) {
+            return true;
+        }
+    }
+
+    $uri = strtolower((string) ($_SERVER['REQUEST_URI'] ?? ''));
+    if ($userId > 0 && strpos($uri, 'support') !== false && strpos($uri, 'ticket') !== false && strpos($uri, 'open') !== false) {
+        return true;
+    }
+
+    return false;
+}
+
+add_hook('AdminAreaFooterOutput', 1, function ($vars) {
+    $userId = (int) ($_GET['userid'] ?? 0);
+    if ($userId <= 0 || !sahdev_is_admin_ticket_open_page($vars)) {
         return '';
     }
 
