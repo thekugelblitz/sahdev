@@ -751,22 +751,41 @@ HTML;
             var isOpenContextMode = ($('#sahdev_is_open_context_mode').val() === 'true');
             if (!isOpenContextMode) return;
 
-            var $panel = $('#sahdev-ai-panel');
-            if (!$panel.length) return;
-            $panel.css({ width: '100%', marginTop: '0' });
+            var blockSelectors = [
+                '#sahdev-ai-panel',
+                '#sahdev-snapshot-outer',
+                '#sahdev-summarizer-outer',
+                '#sahdev-canned-outer',
+                '#sahdev-history-outer'
+            ];
+            var $blocks = $();
+            for (var b = 0; b < blockSelectors.length; b++) {
+                var $blk = $(blockSelectors[b]);
+                if ($blk.length) {
+                    $blocks = $blocks.add($blk.first());
+                }
+            }
+            if (!$blocks.length) return;
+
+            $('#sahdev-ai-panel').css({ width: '100%', marginTop: '0' });
 
             // Strictly relocate inside main content area; avoid sidebar forms.
             var $main = $('#contentarea, #content, .contentarea').first();
             if (!$main.length) {
                 $main = $('body');
             }
+            var $stack = $('#sahdev-open-context-stack');
+            if (!$stack.length) {
+                $stack = $('<div id="sahdev-open-context-stack" style="margin:10px 0 15px 0;"></div>');
+            }
+            $stack.append($blocks);
 
             var $heading = $main.find('h1, h2, h3').filter(function() {
                 return ($(this).text() || '').toLowerCase().indexOf('open new ticket') !== -1;
             }).first();
 
             if ($heading.length) {
-                $panel.insertAfter($heading);
+                $stack.insertAfter($heading);
                 return;
             }
 
@@ -776,12 +795,12 @@ HTML;
             }).first();
 
             if ($ticketForm.length) {
-                $panel.insertBefore($ticketForm);
+                $stack.insertBefore($ticketForm);
                 return;
             }
 
             // Fallback: keep panel near top of main content (still better than footer/sidebar)
-            $main.prepend($panel);
+            $main.prepend($stack);
         })();
 
         $(document).on('click', '#btn-sahdev-analyze, #btn-sahdev-regenerate', function(e) {
