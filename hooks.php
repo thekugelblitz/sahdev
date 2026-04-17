@@ -753,34 +753,35 @@ HTML;
 
             var $panel = $('#sahdev-ai-panel');
             if (!$panel.length) return;
+            $panel.css({ width: '100%', marginTop: '0' });
 
-            // Try to anchor near the open-ticket form (not at page footer)
-            var $anchor = null;
-            var anchorSelectors = [
-                'form[action*="supporttickets"] .btn.btn-primary',
-                '#openTicketForm',
-                'form[action*="supporttickets.php"]',
-                'form:has(input[name="subject"])',
-                'textarea[name="message"]'
-            ];
-
-            for (var i = 0; i < anchorSelectors.length; i++) {
-                var $match = $(anchorSelectors[i]).first();
-                if ($match.length) {
-                    $anchor = $match;
-                    break;
-                }
+            // Strictly relocate inside main content area; avoid sidebar forms.
+            var $main = $('#contentarea, #content, .contentarea').first();
+            if (!$main.length) {
+                $main = $('body');
             }
 
-            if ($anchor && $anchor.length) {
-                if ($anchor.is('textarea')) {
-                    $panel.insertBefore($anchor.closest('.form-group').length ? $anchor.closest('.form-group') : $anchor);
-                } else if ($anchor.is('form')) {
-                    $panel.prependTo($anchor);
-                } else {
-                    $panel.insertBefore($anchor.closest('form').length ? $anchor.closest('form') : $anchor);
-                }
+            var $heading = $main.find('h1, h2, h3').filter(function() {
+                return ($(this).text() || '').toLowerCase().indexOf('open new ticket') !== -1;
+            }).first();
+
+            if ($heading.length) {
+                $panel.insertAfter($heading);
+                return;
             }
+
+            var $ticketForm = $main.find('form').filter(function() {
+                var $f = $(this);
+                return $f.find('input[name="subject"], textarea[name="message"], select[name="deptid"]').length > 0;
+            }).first();
+
+            if ($ticketForm.length) {
+                $panel.insertBefore($ticketForm);
+                return;
+            }
+
+            // Fallback: keep panel near top of main content (still better than footer/sidebar)
+            $main.prepend($panel);
         })();
 
         $(document).on('click', '#btn-sahdev-analyze, #btn-sahdev-regenerate', function(e) {
