@@ -142,6 +142,43 @@ function sahdev_activate()
                 });
             }
 
+            // Migrate: account context enrichment settings if missing
+            try {
+                Capsule::table('tblsahdev_settings')->select('context_enrichment_enabled')->first();
+            } catch (\Exception $e) {
+                Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                    $table->boolean('context_enrichment_enabled')->default(1);
+                    $table->integer('context_enrichment_max_chars')->default(2500);
+                    $table->boolean('context_enrichment_invoices')->default(1);
+                    $table->boolean('context_enrichment_domains')->default(1);
+                    $table->boolean('context_enrichment_addons')->default(1);
+                    $table->boolean('context_enrichment_custom_fields')->default(1);
+                    $table->boolean('context_enrichment_client_notes')->default(0);
+                    $table->text('context_enrichment_custom_field_allowlist')->nullable();
+                });
+            }
+
+            try {
+                Capsule::table('tblsahdev_settings')->select('scrub_phones')->first();
+            } catch (\Exception $e) {
+                Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                    $table->boolean('scrub_phones')->default(1);
+                });
+            }
+
+            try {
+                Capsule::table('tblsahdev_module_logs')->first();
+            } catch (\Exception $e) {
+                Capsule::schema()->create('tblsahdev_module_logs', function ($table) {
+                    $table->increments('id');
+                    $table->string('level', 16)->index();
+                    $table->string('source', 128)->index();
+                    $table->text('message');
+                    $table->integer('ticket_id')->unsigned()->nullable()->index();
+                    $table->timestamp('created_at')->useCurrent()->index();
+                });
+            }
+
             // Migrate: tools execution settings if missing
             try {
                 Capsule::table('tblsahdev_settings')->select('tools_execution_enabled')->first();
@@ -220,6 +257,15 @@ function sahdev_activate()
                     $table->timestamp('tools_cron_last_run_at')->nullable();
                     $table->string('tools_cron_last_message', 512)->nullable();
                     $table->timestamp('tools_execution_cron_lock_until')->nullable();
+                    $table->boolean('context_enrichment_enabled')->default(1);
+                    $table->integer('context_enrichment_max_chars')->default(2500);
+                    $table->boolean('context_enrichment_invoices')->default(1);
+                    $table->boolean('context_enrichment_domains')->default(1);
+                    $table->boolean('context_enrichment_addons')->default(1);
+                    $table->boolean('context_enrichment_custom_fields')->default(1);
+                    $table->boolean('context_enrichment_client_notes')->default(0);
+                    $table->text('context_enrichment_custom_field_allowlist')->nullable();
+                    $table->boolean('scrub_phones')->default(1);
                     $table->timestamps(); // creates created_at, updated_at
                 }
             );
@@ -259,6 +305,14 @@ function sahdev_activate()
                 'tools_filter_emails' => '',
                 'tools_normalize_enabled' => 1,
                 'tools_include_raw_fallback' => 1,
+                'context_enrichment_enabled' => 1,
+                'context_enrichment_max_chars' => 2500,
+                'context_enrichment_invoices' => 1,
+                'context_enrichment_domains' => 1,
+                'context_enrichment_addons' => 1,
+                'context_enrichment_custom_fields' => 1,
+                'context_enrichment_client_notes' => 0,
+                'scrub_phones' => 1,
                 'created_at' => \Carbon\Carbon::now(),
                 'updated_at' => \Carbon\Carbon::now(),
             ]);
@@ -671,6 +725,42 @@ function sahdev_activate()
                 $table->boolean('tools_include_raw_fallback')->default(1);
             });
         }
+
+        try {
+            Capsule::table('tblsahdev_settings')->select('context_enrichment_enabled')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                $table->boolean('context_enrichment_enabled')->default(1);
+                $table->integer('context_enrichment_max_chars')->default(2500);
+                $table->boolean('context_enrichment_invoices')->default(1);
+                $table->boolean('context_enrichment_domains')->default(1);
+                $table->boolean('context_enrichment_addons')->default(1);
+                $table->boolean('context_enrichment_custom_fields')->default(1);
+                $table->boolean('context_enrichment_client_notes')->default(0);
+                $table->text('context_enrichment_custom_field_allowlist')->nullable();
+            });
+        }
+
+        try {
+            Capsule::table('tblsahdev_settings')->select('scrub_phones')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                $table->boolean('scrub_phones')->default(1);
+            });
+        }
+
+        try {
+            Capsule::table('tblsahdev_module_logs')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->create('tblsahdev_module_logs', function ($table) {
+                $table->increments('id');
+                $table->string('level', 16)->index();
+                $table->string('source', 128)->index();
+                $table->text('message');
+                $table->integer('ticket_id')->unsigned()->nullable()->index();
+                $table->timestamp('created_at')->useCurrent()->index();
+            });
+        }
         try {
             Capsule::table('tblsahdev_tool_runs')->select('normalized_summary')->first();
         } catch (\Exception $e) {
@@ -709,6 +799,22 @@ function sahdev_activate()
                 $table->integer('fallback_provider_id')->nullable();
                 $table->timestamps();
             });
+        }
+
+        // Per-admin preferences (features, default provider, tone) — JSON in preferences_json
+        try {
+            if (!Capsule::schema()->hasTable('tblsahdev_admin_preferences')) {
+                Capsule::schema()->create('tblsahdev_admin_preferences', function ($table) {
+                    $table->integer('admin_id')->unsigned()->primary();
+                    $table->longText('preferences_json')->nullable();
+                    $table->timestamps();
+                });
+            }
+        } catch (\Exception $e) {
+            // Concurrent activation or "table already exists": continue if table is present
+            if (!Capsule::schema()->hasTable('tblsahdev_admin_preferences')) {
+                throw $e;
+            }
         }
 
         // Create tblsahdev_intents
@@ -857,7 +963,13 @@ function sahdev_upgrade($vars)
 {
     $version = $vars['version'];
 
-    // Run SQL updates for different versions...
+    // Ensure new tables exist after uploading files (without requiring re-activate)
+    try {
+        require_once __DIR__ . '/lib/AdminPreferences.php';
+        \Sahdev\Lib\AdminPreferences::ensureSchema();
+    } catch (\Throwable $e) {
+        // Non-fatal; ticket/ajax/admin paths also run ensureSchema
+    }
 }
 
 /**

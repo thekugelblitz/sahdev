@@ -132,6 +132,44 @@ class AIController
     }
 
     /**
+     * System prompt for ticket reply / analysis: base setting + knowledgebase/*.txt + optional historical client context.
+     */
+    private function buildReplySystemPrompt(bool $includeHistoricalContext): string
+    {
+        $systemPrompt = $this->settings['system_prompt'] ?? '';
+
+        $kbPath = dirname(__DIR__) . '/knowledgebase';
+        if (is_dir($kbPath)) {
+            $kbRules = '';
+            $dir = new \DirectoryIterator($kbPath);
+            foreach ($dir as $fileinfo) {
+                if (!$fileinfo->isDot() && $fileinfo->getExtension() === 'txt') {
+                    $content = @file_get_contents($fileinfo->getPathname());
+                    if ($content) {
+                        $kbRules .= "\n--- Rule: {$fileinfo->getFilename()} ---\n" . trim($content) . "\n";
+                    }
+                }
+            }
+            if ($kbRules !== '') {
+                $systemPrompt .= "\n\n=== RULES & KNOWLEDGEBASE ===\n" .
+                    "The following facts, rules, and guidelines MUST be strictly adhered to when crafting the CLIENT_REPLY:\n" .
+                    $kbRules;
+            }
+        }
+
+        if ($includeHistoricalContext) {
+            $historicalContext = $this->getHistoricalContext();
+            if ($historicalContext) {
+                $systemPrompt .= "\n\n=== HISTORICAL CLIENT CONTEXT ===\n" .
+                    "The following is an AI-generated summary of the client's past tickets. Use this to understand their history and tailor your response if their past issues are related to the current ticket:\n" .
+                    $historicalContext;
+            }
+        }
+
+        return $systemPrompt;
+    }
+
+    /**
      * Resolved primary + global fallback instances and merged call settings for a task.
      *
      * @return array{
@@ -244,16 +282,21 @@ class AIController
 
         $stack        = $this->getProviderStackForTask(TaskProviderResolver::TASK_TICKET_REPLY, $overrideProviderId);
         $callSettings = $stack['call_settings'];
+        $effectiveSystemPrompt = $this->buildReplySystemPrompt($includeHistoricalContext);
+        $callSettings['system_prompt'] = $effectiveSystemPrompt;
 
-        // 3. Hash Generation for Cache (resolved model + global system prompt)
+        // 3. Hash Generation for Cache (resolved model + effective system prompt)
         $hashData = serialize([
             $context['subject'],
             $context['messages'], // Includes full message history
+            $context['services_summary'] ?? '',
+            $context['department'] ?? '',
+            $context['client_name'] ?? '',
             $tone,
             $customInstruction,
             $intent,
             $callSettings['model_name'],
-            $this->settings['system_prompt']
+            $effectiveSystemPrompt
         ]);
         $hashSignature = hash('sha256', $hashData);
 
@@ -278,6 +321,7 @@ class AIController
 
         if ($forceFallback && $stack['fallback']) {
             $fbSettings     = $stack['fallback_call_settings'] ?? $this->mergeSettingsForProviderRow($this->settings, $stack['fallback_row']);
+            $fbSettings['system_prompt'] = $effectiveSystemPrompt;
             $response       = $stack['fallback']->generateResponse($context, $fbSettings, $tone, $customInstruction);
             $activeProvider = $stack['fallback'];
         } else {
@@ -290,6 +334,7 @@ class AIController
                 if ($stack['fallback'] && $stack['fallback_row']) {
                     $fallbackStart = microtime(true);
                     $fbSettings    = $stack['fallback_call_settings'] ?? $this->mergeSettingsForProviderRow($this->settings, $stack['fallback_row']);
+                    $fbSettings['system_prompt'] = $effectiveSystemPrompt;
 
                     try {
                         $response       = $stack['fallback']->generateResponse($context, $fbSettings, $tone, $customInstruction);
@@ -335,7 +380,7 @@ class AIController
         // 6b. Log Audit Trail
         $providerName = $activeProvider instanceof AIProviderInterface ? $activeProvider->getName() : 'Unknown';
         $fullPrompt = json_encode([
-            'system' => $this->settings['system_prompt'],
+            'system' => $effectiveSystemPrompt,
             'tone' => $tone,
             'instruction' => $customInstruction,
             'context' => $context
@@ -485,42 +530,15 @@ class AIController
             }
         }
 
-        $systemPrompt = $this->settings['system_prompt'];
-
-        // Append Knowledgebase Rules
-        $kbPath = dirname(__DIR__) . '/knowledgebase';
-        if (is_dir($kbPath)) {
-            $kbRules = "";
-            $dir = new \DirectoryIterator($kbPath);
-            foreach ($dir as $fileinfo) {
-                if (!$fileinfo->isDot() && $fileinfo->getExtension() === 'txt') {
-                    $content = @file_get_contents($fileinfo->getPathname());
-                    if ($content) {
-                        $kbRules .= "\n--- Rule: {$fileinfo->getFilename()} ---\n" . trim($content) . "\n";
-                    }
-                }
-            }
-            if (!empty($kbRules)) {
-                $systemPrompt .= "\n\n=== RULES & KNOWLEDGEBASE ===\n" .
-                    "The following facts, rules, and guidelines MUST be strictly adhered to when crafting the CLIENT_REPLY:\n" .
-                    $kbRules;
-            }
-        }
-
-        // Feature: Inject Historical Client Context (Memory)
-        if ($includeHistoricalContext) {
-            $historicalContext = $this->getHistoricalContext();
-            if ($historicalContext) {
-                $systemPrompt .= "\n\n=== HISTORICAL CLIENT CONTEXT ===\n" .
-                    "The following is an AI-generated summary of the client's past tickets. Use this to understand their history and tailor your response if their past issues are related to the current ticket:\n" .
-                    $historicalContext;
-            }
-        }
+        $systemPrompt = $this->buildReplySystemPrompt($includeHistoricalContext);
 
         // 3. Hash generation for Cache checking
         $hashData = serialize([
             $context['subject'],
             $context['messages'],
+            $context['services_summary'] ?? '',
+            $context['department'] ?? '',
+            $context['client_name'] ?? '',
             $tone,
             $customInstruction,
             $intent,

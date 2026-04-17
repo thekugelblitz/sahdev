@@ -6,6 +6,7 @@ use WHMCS\Database\Capsule;
 use Sahdev\Lib\TaskProviderResolver;
 
 require_once dirname(__DIR__) . '/lib/TaskProviderResolver.php';
+require_once dirname(__DIR__) . '/lib/AdminPreferences.php';
 
 class AdminController
 {
@@ -22,6 +23,8 @@ class AdminController
      */
     private function ensureSchemaIntegrity()
     {
+        \Sahdev\Lib\AdminPreferences::ensureSchema();
+
         // 1. Ensure Summaries Table Exists
         try {
             Capsule::table('tblsahdev_summaries')->first();
@@ -443,6 +446,7 @@ class AdminController
         $base = htmlspecialchars($this->moduleVars['modulelink']);
         $tabs = [
             'settings' => ['label' => '<i class="fas fa-cog"></i> General Settings', 'url' => $base],
+            'my_preferences' => ['label' => '<i class="fas fa-user-cog"></i> My Preferences', 'url' => $base . '&action=my_preferences'],
             'providers' => ['label' => '<i class="fas fa-microchip"></i> AI Providers', 'url' => $base . '&action=providers'],
             'knowledgebase' => ['label' => '<i class="fas fa-book"></i> Knowledgebase', 'url' => $base . '&action=knowledgebase'],
             'prompt_manager' => ['label' => '<i class="fas fa-magic"></i> Prompt Manager', 'url' => $base . '&action=prompt_manager'],
@@ -454,6 +458,7 @@ class AdminController
             'ticket_insights' => ['label' => '<i class="fas fa-brain"></i> Ticket Insights', 'url' => $base . '&action=ticket_insights'],
             'analytics' => ['label' => '<i class="fas fa-chart-line"></i> Analytics', 'url' => $base . '&action=analytics'],
             'audit_trail' => ['label' => '<i class="fas fa-history"></i> Audit Trail', 'url' => $base . '&action=audit_trail'],
+            'module_logs' => ['label' => '<i class="fas fa-clipboard-list"></i> Module log', 'url' => $base . '&action=module_logs'],
         ];
 
         $html = '<style>
@@ -512,6 +517,167 @@ class AdminController
         $html .= '</div>';
 
         return $html;
+    }
+
+    /**
+     * Per-admin preferences (default model, tone, feature opt-outs). Own row only.
+     *
+     * @return string
+     */
+    public function my_preferences()
+    {
+        $adminId = (int) ($_SESSION['adminid'] ?? 0);
+        if ($adminId <= 0) {
+            return '<div class="alert alert-danger">Not logged in.</div>';
+        }
+
+        \Sahdev\Lib\AdminPreferences::ensureSchema();
+        $settings = Capsule::table('tblsahdev_settings')->first();
+        $settingsArr = $settings ? (array) $settings : [];
+        $prefs = \Sahdev\Lib\AdminPreferences::load($adminId);
+
+        $successMessage = '';
+        $errorMessage = '';
+
+        if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_my_preferences'])) {
+            check_token('WHMCS.admin.default');
+            try {
+                $toneRaw = trim((string) ($_POST['tone_default'] ?? ''));
+                $toneDefault = $toneRaw === '' ? null : $toneRaw;
+
+                $incoming = [
+                    'default_provider_id' => (int) ($_POST['default_provider_id'] ?? 0),
+                    'tone_default'        => $toneDefault,
+                    'features'            => [],
+                ];
+                foreach (\Sahdev\Lib\AdminPreferences::allFeatureKeys() as $k) {
+                    $incoming['features'][$k] = \Sahdev\Lib\AdminPreferences::globalAllowsFeature($k, $settingsArr)
+                        ? !empty($_POST['feature_' . $k])
+                        : false;
+                }
+                \Sahdev\Lib\AdminPreferences::save($adminId, $incoming);
+                $successMessage = 'Your preferences have been saved.';
+                $prefs = \Sahdev\Lib\AdminPreferences::load($adminId);
+            } catch (\Throwable $e) {
+                $errorMessage = $e->getMessage();
+            }
+        }
+
+        $providers = Capsule::table('tblsahdev_providers')
+            ->where('is_active', 1)
+            ->orderBy('name')
+            ->get();
+
+        $csrfToken = generate_token('form');
+        $actionUrl = htmlspecialchars($this->moduleVars['modulelink']) . '&action=my_preferences';
+
+        $featureLabels = [
+            \Sahdev\Lib\AdminPreferences::FEATURE_TICKET_AI          => 'Ticket analysis & reply (main panel, snapshot)',
+            \Sahdev\Lib\AdminPreferences::FEATURE_SUMMARIZER         => 'AI ticket summarizer',
+            \Sahdev\Lib\AdminPreferences::FEATURE_HISTORICAL_CONTEXT  => 'Historical client context (memory)',
+            \Sahdev\Lib\AdminPreferences::FEATURE_REWRITE             => 'Expand & polish draft (rewrite)',
+            \Sahdev\Lib\AdminPreferences::FEATURE_QUALITY_SCORE       => 'Score admin draft (quality)',
+            \Sahdev\Lib\AdminPreferences::FEATURE_CANNED_KB          => 'Canned responses & KB search',
+            \Sahdev\Lib\AdminPreferences::FEATURE_TOOLS               => 'Tools execution (diagnostics)',
+            \Sahdev\Lib\AdminPreferences::FEATURE_TICKET_INSIGHTS     => 'Ticket insights (list badges / bulk fetch)',
+            \Sahdev\Lib\AdminPreferences::FEATURE_ANALYTICS          => 'Analytics page data',
+            \Sahdev\Lib\AdminPreferences::FEATURE_AUDIT_DELETE        => 'Deleting audit trail entries (bulk cleanup)',
+        ];
+
+        ob_start();
+        ?>
+        <?php echo $this->getNavigationMarkup('my_preferences'); ?>
+        <div class="sahdev-page-container">
+            <h2 style="margin-bottom:10px;"><i class="fas fa-user-cog"></i> My Sahdev preferences</h2>
+            <p class="text-muted" style="margin-bottom:20px;">
+                Organization-wide settings under <strong>General Settings</strong> must enable a feature before you can use it.
+                Here you can choose your default AI model and tone, and turn off Sahdev features you do not need for your own account.
+            </p>
+
+            <?php if ($successMessage !== ''): ?>
+                <div class="alert alert-success"><?php echo htmlspecialchars($successMessage); ?></div>
+            <?php endif; ?>
+            <?php if ($errorMessage !== ''): ?>
+                <div class="alert alert-danger"><?php echo htmlspecialchars($errorMessage); ?></div>
+            <?php endif; ?>
+
+            <form method="post" action="<?php echo $actionUrl; ?>">
+                <?php echo $csrfToken; ?>
+                <input type="hidden" name="save_my_preferences" value="1">
+
+                <div class="panel panel-default" style="margin-bottom:20px;">
+                    <div class="panel-heading"><strong>Defaults on ticket view</strong></div>
+                    <div class="panel-body">
+                        <div class="form-group">
+                            <label>Default AI provider for ticket analysis</label>
+                            <select name="default_provider_id" class="form-control" style="max-width:520px;">
+                                <option value="0"<?php echo ((int) ($prefs['default_provider_id'] ?? 0) <= 0) ? ' selected' : ''; ?>>Use organization routing (task map / primary)</option>
+                                <?php foreach ($providers as $p): ?>
+                                    <option value="<?php echo (int) $p->id; ?>"<?php echo ((int) ($prefs['default_provider_id'] ?? 0) === (int) $p->id) ? ' selected' : ''; ?>>
+                                        <?php echo htmlspecialchars($p->name . ' — ' . ($p->model_name ?? '')); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                            <p class="help-block">Pre-selects the model dropdown on support tickets. You can still change it per request.</p>
+                        </div>
+                        <div class="form-group">
+                            <label>Default tone</label>
+                            <select name="tone_default" class="form-control" style="max-width:320px;">
+                                <option value=""<?php echo ($prefs['tone_default'] === null || $prefs['tone_default'] === '') ? ' selected' : ''; ?>>Inherit organization default</option>
+                                <option value="Professional"<?php echo (($prefs['tone_default'] ?? '') === 'Professional') ? ' selected' : ''; ?>>Professional</option>
+                                <option value="Technical"<?php echo (($prefs['tone_default'] ?? '') === 'Technical') ? ' selected' : ''; ?>>Technical</option>
+                                <option value="Friendly"<?php echo (($prefs['tone_default'] ?? '') === 'Friendly') ? ' selected' : ''; ?>>Friendly</option>
+                                <option value="Strict"<?php echo (($prefs['tone_default'] ?? '') === 'Strict') ? ' selected' : ''; ?>>Strict</option>
+                                <option value="Custom"<?php echo (($prefs['tone_default'] ?? '') === 'Custom') ? ' selected' : ''; ?>>Custom</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel panel-default">
+                    <div class="panel-heading"><strong>Features visible to me</strong></div>
+                    <div class="panel-body">
+                        <p class="text-muted" style="margin-bottom:15px;">Uncheck to hide a capability from your ticket UI and block its AJAX actions. Does not affect other staff or background cron jobs.</p>
+                        <table class="table table-striped" style="max-width:900px;">
+                            <thead>
+                                <tr>
+                                    <th>Feature</th>
+                                    <th style="width:120px;">Enabled for me</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach (\Sahdev\Lib\AdminPreferences::allFeatureKeys() as $key): ?>
+                                    <?php
+                                    $globOn = \Sahdev\Lib\AdminPreferences::globalAllowsFeature($key, $settingsArr);
+                                    $checked = !empty($prefs['features'][$key]);
+                                    $disabled = !$globOn ? ' disabled' : '';
+                                    ?>
+                                    <tr>
+                                        <td>
+                                            <?php echo htmlspecialchars($featureLabels[$key] ?? $key); ?>
+                                            <?php if (!$globOn): ?>
+                                                <br><span class="label label-default">Disabled organization-wide — enable under General Settings first</span>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td class="text-center">
+                                            <input type="hidden" name="feature_<?php echo htmlspecialchars($key); ?>" value="0">
+                                            <input type="checkbox" name="feature_<?php echo htmlspecialchars($key); ?>" value="1"<?php echo $checked ? ' checked' : ''; ?><?php echo $disabled; ?>>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                        <p class="help-block text-muted" style="margin-top:12px;">
+                            <i class="fas fa-info-circle"></i> Cron-based ticket insights and tools queue are not controlled here.
+                        </p>
+                        <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Save preferences</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+        <?php
+
+        return ob_get_clean();
     }
 
     /**
@@ -609,6 +775,42 @@ class AdminController
             });
         }
 
+        try {
+            Capsule::table('tblsahdev_settings')->select('context_enrichment_enabled')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                $table->boolean('context_enrichment_enabled')->default(1);
+                $table->integer('context_enrichment_max_chars')->default(2500);
+                $table->boolean('context_enrichment_invoices')->default(1);
+                $table->boolean('context_enrichment_domains')->default(1);
+                $table->boolean('context_enrichment_addons')->default(1);
+                $table->boolean('context_enrichment_custom_fields')->default(1);
+                $table->boolean('context_enrichment_client_notes')->default(0);
+                $table->text('context_enrichment_custom_field_allowlist')->nullable();
+            });
+        }
+
+        try {
+            Capsule::table('tblsahdev_settings')->select('scrub_phones')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                $table->boolean('scrub_phones')->default(1);
+            });
+        }
+
+        try {
+            Capsule::table('tblsahdev_module_logs')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->create('tblsahdev_module_logs', function ($table) {
+                $table->increments('id');
+                $table->string('level', 16)->index();
+                $table->string('source', 128)->index();
+                $table->text('message');
+                $table->integer('ticket_id')->unsigned()->nullable()->index();
+                $table->timestamp('created_at')->useCurrent()->index();
+            });
+        }
+
         // Handle form submission
         if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_settings'])) {
             check_token("WHMCS.admin.default"); // Verify CSRF
@@ -634,9 +836,19 @@ class AdminController
             $scrubCc = !empty($_POST['scrub_cc']) ? 1 : 0;
             $scrubIps = !empty($_POST['scrub_ips']) ? 1 : 0;
             $scrubPasswords = !empty($_POST['scrub_passwords']) ? 1 : 0;
+            $scrubPhones = !empty($_POST['scrub_phones']) ? 1 : 0;
             $qualityScorerEnabled = !empty($_POST['quality_scorer_enabled']) ? 1 : 0;
             $autoTagging = !empty($_POST['auto_tagging']) ? 1 : 0;
             $customAttachmentsDir = trim($_POST['custom_attachments_dir'] ?? '');
+
+            $contextEnrichmentEnabled = !empty($_POST['context_enrichment_enabled']) ? 1 : 0;
+            $contextEnrichmentMaxChars = max(500, min(20000, (int) ($_POST['context_enrichment_max_chars'] ?? 2500)));
+            $contextEnrichmentInvoices = !empty($_POST['context_enrichment_invoices']) ? 1 : 0;
+            $contextEnrichmentDomains = !empty($_POST['context_enrichment_domains']) ? 1 : 0;
+            $contextEnrichmentAddons = !empty($_POST['context_enrichment_addons']) ? 1 : 0;
+            $contextEnrichmentCustomFields = !empty($_POST['context_enrichment_custom_fields']) ? 1 : 0;
+            $contextEnrichmentClientNotes = !empty($_POST['context_enrichment_client_notes']) ? 1 : 0;
+            $contextEnrichmentCustomFieldAllowlist = trim($_POST['context_enrichment_custom_field_allowlist'] ?? '');
 
             $taskProviderMap = [];
             $taskMapRaw = $_POST['task_provider_map'] ?? [];
@@ -678,10 +890,19 @@ class AdminController
                     'scrub_cc' => $scrubCc,
                     'scrub_ips' => $scrubIps,
                     'scrub_passwords' => $scrubPasswords,
+                    'scrub_phones' => $scrubPhones,
                     'quality_scorer_enabled' => $qualityScorerEnabled,
                     'auto_tagging' => $autoTagging,
                     'custom_attachments_dir' => $customAttachmentsDir,
                     'task_provider_map' => $taskProviderMapJson,
+                    'context_enrichment_enabled' => $contextEnrichmentEnabled,
+                    'context_enrichment_max_chars' => $contextEnrichmentMaxChars,
+                    'context_enrichment_invoices' => $contextEnrichmentInvoices,
+                    'context_enrichment_domains' => $contextEnrichmentDomains,
+                    'context_enrichment_addons' => $contextEnrichmentAddons,
+                    'context_enrichment_custom_fields' => $contextEnrichmentCustomFields,
+                    'context_enrichment_client_notes' => $contextEnrichmentClientNotes,
+                    'context_enrichment_custom_field_allowlist' => $contextEnrichmentCustomFieldAllowlist === '' ? null : $contextEnrichmentCustomFieldAllowlist,
                     'updated_at' => \Carbon\Carbon::now(),
                 ]
             );
@@ -710,9 +931,18 @@ class AdminController
                 'scrub_cc' => 1,
                 'scrub_ips' => 1,
                 'scrub_passwords' => 1,
+                'scrub_phones' => 1,
                 'quality_scorer_enabled' => 1,
                 'auto_tagging' => 0,
                 'task_provider_map' => null,
+                'context_enrichment_enabled' => 1,
+                'context_enrichment_max_chars' => 2500,
+                'context_enrichment_invoices' => 1,
+                'context_enrichment_domains' => 1,
+                'context_enrichment_addons' => 1,
+                'context_enrichment_custom_fields' => 1,
+                'context_enrichment_client_notes' => 0,
+                'context_enrichment_custom_field_allowlist' => null,
             ];
         }
 
@@ -873,6 +1103,42 @@ class AdminController
                     </div>
                 </div>
 
+                <div class="panel panel-default" style="margin-bottom: 25px; border-left: 4px solid #5c4d7d;">
+                    <div class="panel-heading" style="background: #f7f5fc;">
+                        <h4 style="margin: 0; font-size: 15px; color:#3d3554;"><i class="fas fa-id-card"></i> Account context enrichment (read-only) <span class="label label-default" style="font-size: 11px; vertical-align: middle; margin-left: 6px;">WHMCS data</span></h4>
+                    </div>
+                    <div class="panel-body">
+                        <p class="text-muted" style="margin-top: 0; font-size: 13px;">
+                            Append bounded, read-only client account snippets (invoices, domains, addons, optional custom fields) to the <strong>Services</strong> block sent to the AI. Scoped by the ticket&rsquo;s client ID only; guest tickets are skipped.
+                        </p>
+                        <div class="checkbox" style="margin-top: 0;">
+                            <label style="font-weight: 600; font-size: 14px;">
+                                <input type="checkbox" name="context_enrichment_enabled" value="1" <?php echo !empty($settings->context_enrichment_enabled) ? 'checked' : ''; ?>>
+                                &nbsp;Enable account context enrichment
+                            </label>
+                        </div>
+                        <div class="form-group" style="margin-top: 12px; max-width: 280px;">
+                            <label style="font-weight: 600;">Max characters (entire services block)</label>
+                            <input type="number" name="context_enrichment_max_chars" class="form-control" min="500" max="20000" step="100"
+                                value="<?php echo htmlspecialchars((string) ($settings->context_enrichment_max_chars ?? 2500)); ?>">
+                        </div>
+                        <p style="font-weight: 600; margin: 16px 0 8px;">Include in enrichment</p>
+                        <div class="row" style="display: flex; flex-wrap: wrap; gap: 12px 24px;">
+                            <div class="checkbox" style="margin: 0;"><label><input type="checkbox" name="context_enrichment_invoices" value="1" <?php echo !empty($settings->context_enrichment_invoices) ? 'checked' : ''; ?>> Recent invoices</label></div>
+                            <div class="checkbox" style="margin: 0;"><label><input type="checkbox" name="context_enrichment_domains" value="1" <?php echo !empty($settings->context_enrichment_domains) ? 'checked' : ''; ?>> Domains</label></div>
+                            <div class="checkbox" style="margin: 0;"><label><input type="checkbox" name="context_enrichment_addons" value="1" <?php echo !empty($settings->context_enrichment_addons) ? 'checked' : ''; ?>> Hosting addons</label></div>
+                            <div class="checkbox" style="margin: 0;"><label><input type="checkbox" name="context_enrichment_custom_fields" value="1" <?php echo !empty($settings->context_enrichment_custom_fields) ? 'checked' : ''; ?>> Custom fields (filtered)</label></div>
+                            <div class="checkbox" style="margin: 0;"><label><input type="checkbox" name="context_enrichment_client_notes" value="1" <?php echo !empty($settings->context_enrichment_client_notes) ? 'checked' : ''; ?>> Staff client notes (internal)</label></div>
+                        </div>
+                        <div class="form-group" style="margin-top: 14px;">
+                            <label style="font-weight: 600;">Custom field allowlist (optional)</label>
+                            <input type="text" name="context_enrichment_custom_field_allowlist" class="form-control" placeholder="e.g. VAT Number, 12, Company Name"
+                                value="<?php echo htmlspecialchars((string) ($settings->context_enrichment_custom_field_allowlist ?? '')); ?>">
+                            <small class="text-muted">Comma-separated field names or numeric field IDs. If empty, only safe filtered fields are included.</small>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- AI Snapshot Feature Toggle -->
                 <div class="panel panel-default" style="margin-bottom: 25px; border-left: 4px solid #0d6efd;">
                     <div class="panel-heading" style="background: #f0f5ff;">
@@ -967,6 +1233,7 @@ class AdminController
                             <label><input type="checkbox" name="scrub_cc" value="1" <?php echo (!isset($settings->scrub_cc) || !empty($settings->scrub_cc)) ? 'checked' : ''; ?>> <i class="fas fa-credit-card text-muted"></i> Credit Cards</label>
                             <label><input type="checkbox" name="scrub_ips" value="1" <?php echo (!isset($settings->scrub_ips) || !empty($settings->scrub_ips)) ? 'checked' : ''; ?>> <i class="fas fa-network-wired text-muted"></i> IPv4</label>
                             <label><input type="checkbox" name="scrub_passwords" value="1" <?php echo (!isset($settings->scrub_passwords) || !empty($settings->scrub_passwords)) ? 'checked' : ''; ?>> <i class="fas fa-key text-muted"></i> Passwords</label>
+                            <label><input type="checkbox" name="scrub_phones" value="1" <?php echo (!isset($settings->scrub_phones) || !empty($settings->scrub_phones)) ? 'checked' : ''; ?>> <i class="fas fa-phone text-muted"></i> Phone numbers</label>
                         </div>
                         <p class="text-muted" style="margin-top: 8px; margin-bottom: 0; font-size:13px;">
                             When enabled, Sahdev will automatically use regex to strip out selected sensitive information before sending the ticket context to the AI model. Essential context structure remains intact.
@@ -2447,6 +2714,134 @@ class AdminController
     }
 
     /**
+     * Sahdev module diagnostic log (enrichment failures, etc.).
+     */
+    public function module_logs()
+    {
+        $successMessage = '';
+
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            check_token("WHMCS.admin.default");
+            $action = $_POST['module_log_action'] ?? '';
+
+            if ($action === 'delete_range') {
+                $days = (int) ($_POST['delete_days'] ?? 0);
+                if ($days > 0 && Capsule::schema()->hasTable('tblsahdev_module_logs')) {
+                    $cutoffDate = \Carbon\Carbon::now()->subDays($days);
+                    $deleted = Capsule::table('tblsahdev_module_logs')
+                        ->where('created_at', '<', $cutoffDate)
+                        ->delete();
+                    $successMessage = "Deleted {$deleted} module log entries older than {$days} days.";
+                }
+            } elseif ($action === 'delete_single') {
+                $id = (int) ($_POST['log_id'] ?? 0);
+                if ($id > 0 && Capsule::schema()->hasTable('tblsahdev_module_logs')) {
+                    Capsule::table('tblsahdev_module_logs')->where('id', $id)->delete();
+                    $successMessage = 'Log entry deleted.';
+                }
+            }
+        }
+
+        $logs = null;
+        if (Capsule::schema()->hasTable('tblsahdev_module_logs')) {
+            $logs = Capsule::table('tblsahdev_module_logs')
+                ->leftJoin('tbltickets', 'tblsahdev_module_logs.ticket_id', '=', 'tbltickets.id')
+                ->select(
+                    'tblsahdev_module_logs.*',
+                    'tbltickets.tid as ticket_mask'
+                )
+                ->orderBy('tblsahdev_module_logs.id', 'desc')
+                ->limit(500)
+                ->get();
+        }
+
+        $csrfToken = generate_token("form");
+        $actionUrl = htmlspecialchars($this->moduleVars['modulelink']) . '&action=module_logs';
+
+        ob_start();
+        ?>
+        <?php echo $this->getNavigationMarkup('module_logs'); ?>
+        <div class="sahdev-page-container">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom: 20px;">
+                <div>
+                    <h2 style="margin:0 0 6px 0;">Module diagnostic log</h2>
+                    <p class="text-muted" style="margin:0; font-size:13px;">
+                        Warnings and errors from Sahdev internals (e.g. account context enrichment). Does not include full AI prompts.
+                    </p>
+                </div>
+                <div style="background:#fff3cd; padding:10px 15px; border-radius:6px; border:1px solid #ffc107;">
+                    <form method="post" action="<?php echo $actionUrl; ?>" class="form-inline" style="margin:0;" onsubmit="return confirm('Permanently delete old module log rows?');">
+                        <?php echo $csrfToken; ?>
+                        <input type="hidden" name="module_log_action" value="delete_range">
+                        <label style="margin-right:10px; font-weight:600;">Prune:</label>
+                        <select name="delete_days" class="form-control input-sm" style="margin-right:10px;">
+                            <option value="7">Older than 7 days</option>
+                            <option value="15">Older than 15 days</option>
+                            <option value="30" selected>Older than 30 days</option>
+                            <option value="90">Older than 90 days</option>
+                        </select>
+                        <button type="submit" class="btn btn-sm btn-warning">Prune now</button>
+                    </form>
+                </div>
+            </div>
+
+            <?php if (!empty($successMessage)): ?>
+                <div class="alert alert-success"><i class="fas fa-check-circle"></i> <?php echo htmlspecialchars($successMessage); ?></div>
+            <?php endif; ?>
+
+            <?php if (!Capsule::schema()->hasTable('tblsahdev_module_logs')): ?>
+                <div class="alert alert-info">Table <code>tblsahdev_module_logs</code> is not present yet. Save module settings or re-run module activation to create it.</div>
+            <?php else: ?>
+            <table class="table table-bordered table-striped" style="font-size:12px;">
+                <thead style="background:#f8f9fa;">
+                    <tr>
+                        <th width="90">ID</th>
+                        <th width="100">Level</th>
+                        <th width="200">Source</th>
+                        <th width="120">Ticket</th>
+                        <th>Message</th>
+                        <th width="160">Time</th>
+                        <th width="90"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if ($logs === null || $logs->isEmpty()): ?>
+                        <tr><td colspan="7" class="text-center text-muted py-4">No module log entries yet.</td></tr>
+                    <?php else: ?>
+                        <?php foreach ($logs as $log): ?>
+                            <tr>
+                                <td><?php echo (int) $log->id; ?></td>
+                                <td><span class="label <?php echo ($log->level === 'error') ? 'label-danger' : 'label-warning'; ?>"><?php echo htmlspecialchars($log->level ?? ''); ?></span></td>
+                                <td style="word-break:break-all;"><?php echo htmlspecialchars($log->source ?? ''); ?></td>
+                                <td>
+                                    <?php if (!empty($log->ticket_id)): ?>
+                                        <a href="supporttickets.php?action=view&id=<?php echo (int) $log->ticket_id; ?>" target="_blank">#<?php echo htmlspecialchars($log->ticket_mask ?? $log->ticket_id); ?></a>
+                                    <?php else: ?>
+                                        <span class="text-muted">—</span>
+                                    <?php endif; ?>
+                                </td>
+                                <td style="word-break:break-word; white-space:pre-wrap; font-family:monospace; font-size:11px;"><?php echo htmlspecialchars($log->message ?? ''); ?></td>
+                                <td class="text-muted" style="font-size:11px;"><?php echo htmlspecialchars((string) ($log->created_at ?? '')); ?></td>
+                                <td>
+                                    <form method="post" action="<?php echo $actionUrl; ?>" style="display:inline;">
+                                        <?php echo $csrfToken; ?>
+                                        <input type="hidden" name="module_log_action" value="delete_single">
+                                        <input type="hidden" name="log_id" value="<?php echo (int) $log->id; ?>">
+                                        <button type="submit" class="btn btn-xs btn-default" onclick="return confirm('Delete this row?');"><i class="fas fa-trash text-danger"></i></button>
+                                    </form>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                </tbody>
+            </table>
+            <?php endif; ?>
+        </div>
+        <?php
+        return ob_get_clean();
+    }
+
+    /**
      * Canned Responses Manager View
      *
      * @return string
@@ -2616,6 +3011,18 @@ class AdminController
      */
     public function analytics()
     {
+        $adminId = (int) ($_SESSION['adminid'] ?? 0);
+        $settings = Capsule::table('tblsahdev_settings')->first();
+        if ($adminId > 0 && !\Sahdev\Lib\AdminPreferences::featureEnabled(
+            \Sahdev\Lib\AdminPreferences::FEATURE_ANALYTICS,
+            $adminId,
+            $settings
+        )) {
+            return $this->getNavigationMarkup('analytics')
+                . '<div class="sahdev-page-container"><div class="alert alert-warning">You have disabled Analytics for your account under <a href="'
+                . htmlspecialchars($this->moduleVars['modulelink']) . '&action=my_preferences">My Preferences</a>.</div></div>';
+        }
+
         ob_start();
         
         // Fetch real analytics data

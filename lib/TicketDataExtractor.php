@@ -4,6 +4,9 @@ namespace Sahdev\Lib;
 
 use WHMCS\Database\Capsule;
 
+require_once __DIR__ . '/ClientAccountEnrichment.php';
+require_once __DIR__ . '/ModuleLogger.php';
+
 class TicketDataExtractor
 {
     private $ticketId;
@@ -61,7 +64,7 @@ class TicketDataExtractor
 
         // 2. Fetch Client Info
         $context['client_name'] = $this->extractClientName($ticket);
-        $context['services_summary'] = $this->extractClientServices($ticket->userid);
+        $context['services_summary'] = $this->buildServicesSummaryBlock($ticket, $scrubPII, null);
 
         // 3. Fetch Message History (Replies + Original Message)
         $context['messages'] = $this->extractMessages($ticket);
@@ -99,6 +102,74 @@ class TicketDataExtractor
         }
 
         return $context;
+    }
+
+    /**
+     * Hosting lines plus optional account enrichment; optional max length override (e.g. cron cap).
+     */
+    public function buildServicesSummaryForTicket(\stdClass $ticket, bool $scrubPII, ?int $maxCharsOverride = null): string
+    {
+        return $this->buildServicesSummaryBlock($ticket, $scrubPII, $maxCharsOverride);
+    }
+
+    /**
+     * @param \stdClass $ticket Ticket row (needs id, userid)
+     * @param int|null $maxCharsOverride When set, caps length after scrub (e.g. cron uses min(800, settings)).
+     */
+    private function buildServicesSummaryBlock(\stdClass $ticket, bool $scrubPII, ?int $maxCharsOverride = null): string
+    {
+        $settings = null;
+        try {
+            $settings = Capsule::table('tblsahdev_settings')->first();
+        } catch (\Throwable $e) {
+        }
+
+        $userid = (int) $ticket->userid;
+        $summary = $this->extractClientServices($userid);
+
+        if ($settings && !empty($settings->context_enrichment_enabled) && $userid > 0) {
+            try {
+                $opts = [
+                    'context_enrichment_enabled' => true,
+                    'context_enrichment_invoices' => !empty($settings->context_enrichment_invoices),
+                    'context_enrichment_domains' => !empty($settings->context_enrichment_domains),
+                    'context_enrichment_addons' => !empty($settings->context_enrichment_addons),
+                    'context_enrichment_custom_fields' => !empty($settings->context_enrichment_custom_fields),
+                    'context_enrichment_client_notes' => !empty($settings->context_enrichment_client_notes),
+                    'context_enrichment_custom_field_allowlist' => $settings->context_enrichment_custom_field_allowlist ?? null,
+                ];
+                $extra = ClientAccountEnrichment::build($userid, $opts, (int) $ticket->id);
+                if ($extra !== '') {
+                    $summary = ($summary !== '' ? $summary . "\n\n" : '') . $extra;
+                }
+            } catch (\Throwable $e) {
+                $tid = isset($ticket->id) ? (int) $ticket->id : null;
+                ModuleLogger::warning(
+                    'TicketDataExtractor.enrichment',
+                    substr($e->getMessage(), 0, 500),
+                    $tid
+                );
+            }
+        }
+
+        if ($scrubPII) {
+            $summary = $this->scrubPII($summary);
+        }
+
+        $maxChars = 2500;
+        if ($settings !== null && isset($settings->context_enrichment_max_chars)) {
+            $maxChars = (int) $settings->context_enrichment_max_chars;
+        }
+        $maxChars = max(500, min(20000, $maxChars));
+        if ($maxCharsOverride !== null) {
+            $maxChars = max(300, min(20000, $maxCharsOverride));
+        }
+
+        if (strlen($summary) > $maxChars) {
+            $summary = substr($summary, 0, $maxChars) . "\n[truncated]";
+        }
+
+        return $summary;
     }
 
     private function extractAdminSignature(): string
@@ -590,6 +661,18 @@ class TicketDataExtractor
         // 2. Scrub Emails
         if (!isset($settings->scrub_emails) || !empty($settings->scrub_emails)) {
             $text = preg_replace('/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/', '[REDACTED_EMAIL]', $text);
+        }
+
+        // 2b. Phone numbers (heuristic; may false-positive on long numeric IDs — disable via scrub_phones)
+        if (!isset($settings->scrub_phones) || !empty($settings->scrub_phones)) {
+            // E.164-style: + then 8–15 digits (first digit after + not 0)
+            $text = preg_replace('/\+[1-9]\d{7,14}(?=\D|\z)/', '[REDACTED_PHONE]', $text);
+            // US/CA style: optional +1, area code, 7 more digits with common separators
+            $text = preg_replace(
+                '/(?<!\d)(?:\+?1[-.\s]{0,2})?\(?[0-9]{3}\)?[-.\s]?[0-9]{3}[-.\s]?[0-9]{4}(?!\d)/',
+                '[REDACTED_PHONE]',
+                $text
+            );
         }
 
         // 3. Scrub IPv4 Addresses (naive but effective for logs)

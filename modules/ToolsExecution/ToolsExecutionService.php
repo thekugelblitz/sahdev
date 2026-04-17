@@ -525,6 +525,51 @@ class ToolsExecutionService
             }
         }
 
+        try {
+            Capsule::table('tblsahdev_settings')->select('context_enrichment_enabled')->first();
+        } catch (\Throwable $e) {
+            try {
+                Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                    $table->boolean('context_enrichment_enabled')->default(1);
+                    $table->integer('context_enrichment_max_chars')->default(2500);
+                    $table->boolean('context_enrichment_invoices')->default(1);
+                    $table->boolean('context_enrichment_domains')->default(1);
+                    $table->boolean('context_enrichment_addons')->default(1);
+                    $table->boolean('context_enrichment_custom_fields')->default(1);
+                    $table->boolean('context_enrichment_client_notes')->default(0);
+                    $table->text('context_enrichment_custom_field_allowlist')->nullable();
+                });
+            } catch (\Throwable $ignored) {
+            }
+        }
+
+        try {
+            Capsule::table('tblsahdev_settings')->select('scrub_phones')->first();
+        } catch (\Throwable $e) {
+            try {
+                Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                    $table->boolean('scrub_phones')->default(1);
+                });
+            } catch (\Throwable $ignored) {
+            }
+        }
+
+        try {
+            Capsule::table('tblsahdev_module_logs')->first();
+        } catch (\Throwable $e) {
+            try {
+                Capsule::schema()->create('tblsahdev_module_logs', function ($table) {
+                    $table->increments('id');
+                    $table->string('level', 16)->index();
+                    $table->string('source', 128)->index();
+                    $table->text('message');
+                    $table->integer('ticket_id')->unsigned()->nullable()->index();
+                    $table->timestamp('created_at')->useCurrent()->index();
+                });
+            } catch (\Throwable $ignored) {
+            }
+        }
+
         // Upgrade-safe output normalization columns
         try {
             Capsule::table('tblsahdev_tool_runs')->select('normalized_summary')->first();

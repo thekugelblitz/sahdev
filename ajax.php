@@ -66,6 +66,7 @@ try {
     require_once __DIR__ . '/lib/GoogleAIProvider.php';
     require_once __DIR__ . '/lib/LMStudioAIProvider.php';
     require_once __DIR__ . '/lib/TicketDataExtractor.php';
+    require_once __DIR__ . '/lib/AdminPreferences.php';
     require_once __DIR__ . '/lib/AIController.php';
     require_once __DIR__ . '/modules/ToolsExecution/ToolsExecutionService.php';
 
@@ -79,8 +80,8 @@ try {
     $includeToolsRaw = $_POST['include_tools_context'] ?? '1';
     $includeTools = ($includeToolsRaw === '1' || $includeToolsRaw === 'true' || $includeToolsRaw === 'on' || $includeToolsRaw === true);
 
-    $overrideProviderId = (int) ($_POST['override_provider_id'] ?? 0);
-    $overrideProviderId = $overrideProviderId > 0 ? $overrideProviderId : null;
+    $postOverrideProviderId = (int) ($_POST['override_provider_id'] ?? 0);
+    $postOverrideProviderId = $postOverrideProviderId > 0 ? $postOverrideProviderId : null;
 
     // Auto-migration for overwrites without reactivation, specifically for AJAX calls
     try {
@@ -91,6 +92,28 @@ try {
         require_once __DIR__ . '/sahdev.php';
         if (function_exists('sahdev_activate')) {
             sahdev_activate();
+        }
+    }
+
+    \Sahdev\Lib\AdminPreferences::ensureSchema();
+    $settingsRow = \WHMCS\Database\Capsule::table('tblsahdev_settings')->first();
+    $settingsArray = $settingsRow ? (array) $settingsRow : [];
+
+    $overrideProviderId = \Sahdev\Lib\AdminPreferences::mergeEffectiveOverride(
+        $postOverrideProviderId,
+        (int) $adminId,
+        $settingsArray
+    );
+
+    $actionMap = \Sahdev\Lib\AdminPreferences::actionFeatureMap();
+    if (!in_array($action, \Sahdev\Lib\AdminPreferences::unguardedActions(), true)) {
+        $featureKey = $actionMap[$action] ?? \Sahdev\Lib\AdminPreferences::FEATURE_TICKET_AI;
+        try {
+            \Sahdev\Lib\AdminPreferences::assertFeatureOrThrow($featureKey, (int) $adminId, $settingsRow);
+        } catch (\RuntimeException $e) {
+            header('HTTP/1.1 403 Forbidden');
+            echo json_encode(['status' => 'error', 'message' => $e->getMessage()]);
+            exit;
         }
     }
 
@@ -177,7 +200,7 @@ try {
         $days = (int) ($_POST['days'] ?? 30);
         if ($days > 0) {
             $cutoffDate = \Carbon\Carbon::now()->subDays($days);
-            $deleted = Capsule::table('tblsahdev_audit_trail')
+            $deleted = \WHMCS\Database\Capsule::table('tblsahdev_audit_trail')
                 ->where('created_at', '<', $cutoffDate)
                 ->delete();
             $response = ['status' => 'success', 'message' => "Deleted {$deleted} audit entries.", 'deleted_count' => $deleted];

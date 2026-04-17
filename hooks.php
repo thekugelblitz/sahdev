@@ -28,9 +28,63 @@ function sahdev_inject_ticket_panel($vars)
     // Needs to append into the "viewticket" page typically above replies or side sidebar
     // AdminAreaViewTicketPage hook outputs raw HTML onto the ticket view
 
-    // Load Tone Defaults from DB
+    // Load Tone Defaults from DB + per-admin preferences
     $settings = Capsule::table('tblsahdev_settings')->first();
-    $defaultTone = $settings ? $settings->tone_default : 'Professional';
+    require_once __DIR__ . '/lib/AdminPreferences.php';
+    \Sahdev\Lib\AdminPreferences::ensureSchema();
+    $adminPrefs = \Sahdev\Lib\AdminPreferences::load((int) $adminId);
+
+    $defaultTone = 'Professional';
+    if ($adminPrefs['tone_default'] !== null && $adminPrefs['tone_default'] !== '') {
+        $defaultTone = $adminPrefs['tone_default'];
+    } elseif ($settings && !empty($settings->tone_default)) {
+        $defaultTone = (string) $settings->tone_default;
+    }
+
+    $featTicketAi = \Sahdev\Lib\AdminPreferences::isFeatureEnabledForUi(
+        \Sahdev\Lib\AdminPreferences::FEATURE_TICKET_AI,
+        (int) $adminId,
+        $settings
+    );
+    $featTools = \Sahdev\Lib\AdminPreferences::isFeatureEnabledForUi(
+        \Sahdev\Lib\AdminPreferences::FEATURE_TOOLS,
+        (int) $adminId,
+        $settings
+    );
+    $featSummarizer = \Sahdev\Lib\AdminPreferences::isFeatureEnabledForUi(
+        \Sahdev\Lib\AdminPreferences::FEATURE_SUMMARIZER,
+        (int) $adminId,
+        $settings
+    );
+    $featCannedKb = \Sahdev\Lib\AdminPreferences::isFeatureEnabledForUi(
+        \Sahdev\Lib\AdminPreferences::FEATURE_CANNED_KB,
+        (int) $adminId,
+        $settings
+    );
+    $featHistorical = \Sahdev\Lib\AdminPreferences::isFeatureEnabledForUi(
+        \Sahdev\Lib\AdminPreferences::FEATURE_HISTORICAL_CONTEXT,
+        (int) $adminId,
+        $settings
+    );
+    $featRewrite = \Sahdev\Lib\AdminPreferences::isFeatureEnabledForUi(
+        \Sahdev\Lib\AdminPreferences::FEATURE_REWRITE,
+        (int) $adminId,
+        $settings
+    );
+    $featQuality = \Sahdev\Lib\AdminPreferences::isFeatureEnabledForUi(
+        \Sahdev\Lib\AdminPreferences::FEATURE_QUALITY_SCORE,
+        (int) $adminId,
+        $settings
+    );
+
+    $coreAiWrapStyle = $featTicketAi ? '' : 'display:none !important;';
+    $toolsSectionStyle = $featTools ? '' : 'display:none !important;';
+    $summarizerOuterStyle = $featSummarizer ? '' : 'display:none !important;';
+    $cannedOuterStyle = $featCannedKb ? '' : 'display:none !important;';
+    $historyOuterStyle = $featHistorical ? '' : 'display:none !important;';
+    $rewriteBtnStyle = $featRewrite ? '' : 'display:none !important;';
+    $cannedKbBtnsStyle = $featCannedKb ? '' : 'display:none !important;';
+    $snapshotOuterExtraStyle = $featTicketAi ? '' : 'display:none !important;';
 
     // Inline migration: ensure auto_analyze_on_load column exists on older installs
     try {
@@ -43,8 +97,8 @@ function sahdev_inject_ticket_panel($vars)
         $settings = Capsule::table('tblsahdev_settings')->first();
     }
 
-    $autoAnalyzeEnabled = $settings && !empty($settings->auto_analyze_on_load) ? 'true' : 'false';
-    $qualityScorerEnabled = $settings && !empty($settings->quality_scorer_enabled) ? 'true' : 'false';
+    $autoAnalyzeEnabled = ($settings && !empty($settings->auto_analyze_on_load) && $featTicketAi) ? 'true' : 'false';
+    $qualityScorerEnabled = ($settings && !empty($settings->quality_scorer_enabled) && $featQuality) ? 'true' : 'false';
 
     $routingProviders = [];
     try {
@@ -69,12 +123,15 @@ function sahdev_inject_ticket_panel($vars)
     }
     $defaultTicketOptionLabelEsc = htmlspecialchars($defaultTicketOptionLabel, ENT_QUOTES, 'UTF-8');
 
+    $adminDefaultPid = (int) ($adminPrefs['default_provider_id'] ?? 0);
     $providerOptionsHtml = '';
     foreach ($routingProviders as $rp) {
         $rid    = (int) $rp->id;
         $rlabel = htmlspecialchars($rp->name . ' — ' . ($rp->model_name ?? ''), ENT_QUOTES, 'UTF-8');
-        $providerOptionsHtml .= '<option value="' . $rid . '">' . $rlabel . '</option>';
+        $optSel = ($adminDefaultPid > 0 && $rid === $adminDefaultPid) ? ' selected' : '';
+        $providerOptionsHtml .= '<option value="' . $rid . '"' . $optSel . '>' . $rlabel . '</option>';
     }
+    $emptyRoutingSel = ($adminDefaultPid <= 0) ? ' selected' : '';
 
     $isSel = function ($val, $current) {
         return $val === $current ? 'selected' : '';
@@ -87,11 +144,11 @@ function sahdev_inject_ticket_panel($vars)
     $toneSelCustom       = $isSel('Custom', $defaultTone);
 
     $modelSelectHtml = '<select id="sahdev_override_provider" class="form-control" style="max-width: 520px; color: #212529; background-color: #fff;">'
-        . '<option value="">' . $defaultTicketOptionLabelEsc . '</option>'
+        . '<option value=""' . $emptyRoutingSel . '>' . $defaultTicketOptionLabelEsc . '</option>'
         . $providerOptionsHtml
         . '</select>';
 
-    $scoreBtnStyle = $qualityScorerEnabled === 'true' ? '' : 'display: none;';
+    $scoreBtnStyle = ($qualityScorerEnabled === 'true') ? '' : 'display: none;';
 
     // Hardcode emojis for well known intents, since some DBs don't support utf8mb4 emojis natively
     $intentIconMap = [
@@ -143,7 +200,9 @@ function sahdev_inject_ticket_panel($vars)
     $htmlPanel = <<<HTML
 <div class="panel panel-info" id="sahdev-ai-panel" style="margin-top: 20px; border-color: #0d6efd;">
     <div class="panel-heading" style="background-color: #0d6efd; color: white; display: flex; justify-content: space-between; align-items: center; cursor: pointer;" onclick="$('#sahdev-ai-body').slideToggle();">
-        <h3 class="panel-title"><i class="fas fa-robot"></i> Sahdev AI Ticket Intelligence</h3>
+        <h3 class="panel-title" style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;"><i class="fas fa-robot"></i> Sahdev AI Ticket Intelligence
+            <a href="addonmodules.php?module=sahdev&amp;action=my_preferences" style="font-size:12px;color:#e7f1ff;font-weight:500;" onclick="event.stopPropagation();">My preferences</a>
+        </h3>
         <i class="fas fa-chevron-down"></i>
     </div>
     <div class="panel-body" id="sahdev-ai-body" style="display: none; background: #f8f9fa;">
@@ -155,6 +214,7 @@ function sahdev_inject_ticket_panel($vars)
             <input type="hidden" id="sahdev_is_open_context_mode" value="{$isOpenContextMode}">
             <input type="hidden" id="sahdev_intent" value="{$defaultIntentVal}">
 
+            <div id="sahdev-core-ai-wrap" style="{$coreAiWrapStyle}">
             <!-- Intent Selector -->
             <div class="form-group" style="margin-bottom: 12px;">
                 <label style="font-weight: 600; margin-bottom: 6px; display: block;"><i class="fas fa-bullseye"></i> Reply Intent</label>
@@ -238,7 +298,8 @@ function sahdev_inject_ticket_panel($vars)
                     </button>
                 </div>
             </div>
-            <div class="form-group" style="margin-top:8px;">
+            </div>
+            <div class="form-group" style="margin-top:8px;{$toolsSectionStyle}">
                 <button type="button" id="btn-sahdev-run-tools" class="btn btn-default btn-sm">
                     <i class="fas fa-tools"></i> Run Tool Execution
                 </button>
@@ -284,16 +345,16 @@ function sahdev_inject_ticket_panel($vars)
             <label style="font-weight: 700; font-size: 13px; margin-bottom: 6px; display: block;"><i class="fas fa-pen-nib" style="color:#17a2b8;"></i> ✍️ Expand &amp; Polish My Draft Reply</label>
             <p class="text-muted" style="font-size: 12px; margin-bottom: 8px;">Write a short rough reply in the editor below first, then click <strong>Rewrite It</strong> — Sahdev will expand it into a complete, professional reply and put it right back in the editor.</p>
             <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-                <button type="button" id="btn-sahdev-rewrite" class="btn btn-info btn-sm" style="font-weight: 600;">
+                <button type="button" id="btn-sahdev-rewrite" class="btn btn-info btn-sm" style="font-weight: 600;{$rewriteBtnStyle}">
                     <i class="fas fa-pen-nib"></i> Rewrite It
                 </button>
                 <button type="button" id="btn-sahdev-score-draft" class="btn btn-default btn-sm" style="font-weight: 600; {$scoreBtnStyle}" title="Get AI feedback on your manual draft before sending">
                     <i class="fas fa-tachometer-alt"></i> Score Admin Draft
                 </button>
-                <button type="button" id="btn-sahdev-save-canned" class="btn btn-warning btn-sm" style="font-weight: 600; margin-left: auto;" title="Save your draft as a reusable Canned Response">
+                <button type="button" id="btn-sahdev-save-canned" class="btn btn-warning btn-sm" style="font-weight: 600; margin-left: auto;{$cannedKbBtnsStyle}" title="Save your draft as a reusable Canned Response">
                     <i class="fas fa-save"></i> Save as Canned
                 </button>
-                <button type="button" id="btn-sahdev-save-kb" class="btn btn-primary btn-sm" style="font-weight: 600;" title="Stores a KB-style draft in Sahdev (tblsahdev_canned_responses only). Does not write to WHMCS core tables.">
+                <button type="button" id="btn-sahdev-save-kb" class="btn btn-primary btn-sm" style="font-weight: 600;{$cannedKbBtnsStyle}" title="Stores a KB-style draft in Sahdev (tblsahdev_canned_responses only). Does not write to WHMCS core tables.">
                     <i class="fas fa-book"></i> Save KB draft
                 </button>
                 <span id="sahdev-rewrite-status" class="label label-default" style="display: none; font-size: 12px; cursor: help; padding: 5px 8px;"></span>
@@ -308,13 +369,13 @@ function sahdev_inject_ticket_panel($vars)
         </div>
 
         <!-- Loading Indicator -->
-        <div id="sahdev-loading" style="display: none; text-align: center; padding: 20px;">
+        <div id="sahdev-loading" style="display: none; text-align: center; padding: 20px;{$coreAiWrapStyle}">
             <i class="fas fa-spinner fa-spin fa-2x"></i>
             <p style="margin-top: 10px;">Sahdev AI is analyzing ticket data securely...</p>
         </div>
 
         <!-- Output sections -->
-        <div id="sahdev-results" style="display: none; margin-top: 20px;">
+        <div id="sahdev-results" style="display: none; margin-top: 20px;{$coreAiWrapStyle}">
             
             <div class="row">
                 <!-- Left Column: internal analysis -->
@@ -371,13 +432,13 @@ function sahdev_inject_ticket_panel($vars)
             </div>
         </div>
 
-        <div id="sahdev-error" class="alert alert-danger" style="display: none; margin-top: 20px;"></div>
+        <div id="sahdev-error" class="alert alert-danger" style="display: none; margin-top: 20px;{$coreAiWrapStyle}"></div>
 
     </div>
 </div>
 
 <!-- AI Snapshot Panel: Auto-loads analysis on page open (controlled by backend setting) -->
-<div id="sahdev-snapshot-outer" style="margin-top: 15px; display: none;">
+<div id="sahdev-snapshot-outer" style="margin-top: 15px; display: none;{$snapshotOuterExtraStyle}">
     <div class="panel panel-default" id="sahdev-snapshot-panel" style="border-color: #17a2b8;">
         <div class="panel-heading" style="background: #e8f7fa; color: #0d7490; display: flex; justify-content: space-between; align-items: center; cursor: pointer;" onclick="$('#sahdev-snapshot-body').slideToggle();">
             <h4 class="panel-title" style="margin: 0; font-size: 14px; font-weight: 700;">
@@ -453,7 +514,7 @@ function sahdev_inject_ticket_panel($vars)
 </div>
 
 <!-- AI Ticket Summarizer Panel -->
-<div id="sahdev-summarizer-outer" style="margin-top: 15px;">
+<div id="sahdev-summarizer-outer" style="margin-top: 15px;{$summarizerOuterStyle}">
     <div class="panel panel-default" id="sahdev-summarizer-panel" style="border-color: #6f42c1;">
         <div class="panel-heading" style="background: #f3f0fc; color: #4b2d8a; display: flex; justify-content: space-between; align-items: center; cursor: pointer;" onclick="$('#sahdev-summarizer-body').slideToggle();">
             <h4 class="panel-title" style="margin: 0; font-size: 14px; font-weight: 700;">
@@ -493,7 +554,7 @@ function sahdev_inject_ticket_panel($vars)
 </div>
 
 <!-- Canned Responses & KB Search Panel -->
-<div id="sahdev-canned-outer" style="margin-top: 15px;">
+<div id="sahdev-canned-outer" style="margin-top: 15px;{$cannedOuterStyle}">
     <div class="panel panel-default" id="sahdev-canned-panel" style="border-color: #f0ad4e;">
         <div class="panel-heading" style="background: #fff8eb; color: #d35400; display: flex; justify-content: space-between; align-items: center; cursor: pointer;" onclick="$('#sahdev-canned-body').slideToggle();">
             <h4 class="panel-title" style="margin: 0; font-size: 14px; font-weight: 700;">
@@ -514,7 +575,7 @@ function sahdev_inject_ticket_panel($vars)
 </div>
 
 <!-- Historical Client Context (Memory) Panel -->
-<div id="sahdev-history-outer" style="margin-top: 15px;">
+<div id="sahdev-history-outer" style="margin-top: 15px;{$historyOuterStyle}">
     <div class="panel panel-default" id="sahdev-history-panel" style="border-color: #e83e8c;">
         <div class="panel-heading" style="background: #fce8f3; color: #a71d5d; display: flex; justify-content: space-between; align-items: center; cursor: pointer;" onclick="$('#sahdev-history-body').slideToggle();">
             <h4 class="panel-title" style="margin: 0; font-size: 14px; font-weight: 700;">
