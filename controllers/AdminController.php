@@ -4280,17 +4280,28 @@ class AdminController
                 <!-- Identity -->
                 <div class="autopilot-card">
                     <h4><i class="fas fa-user-tie"></i> Reply Identity</h4>
-                    <div class="form-group">
-                        <label>Reply as admin account <span class="text-danger">*</span></label>
-                        <select name="autopilot_admin_id" class="form-control" style="max-width:400px;">
-                            <option value="0">— Select an admin account —</option>
-                            <?php foreach ($allAdmins as $adm): ?>
-                                <option value="<?php echo (int)$adm->id; ?>" <?php echo ((int)($settings['autopilot_admin_id'] ?? 0) === (int)$adm->id) ? 'selected' : ''; ?>>
-                                    <?php echo htmlspecialchars(trim($adm->firstname . ' ' . $adm->lastname) . ' (' . $adm->username . ')'); ?>
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
-                        <p class="help-block">Create a dedicated WHMCS admin account (e.g. <strong>Sahdev AI</strong>) and select it here. Autopilot replies will appear under this name.</p>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label>Reply as admin account <span class="text-danger">*</span></label>
+                                <select name="autopilot_admin_id" class="form-control">
+                                    <option value="0">— Select an admin account —</option>
+                                    <?php foreach ($allAdmins as $adm): ?>
+                                        <option value="<?php echo (int)$adm->id; ?>" <?php echo ((int)($settings['autopilot_admin_id'] ?? 0) === (int)$adm->id) ? 'selected' : ''; ?>>
+                                            <?php echo htmlspecialchars(trim($adm->firstname . ' ' . $adm->lastname) . ' (' . $adm->username . ')'); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <p class="help-block">Used for authentication and back-end "Operator" badge.</p>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label>Display Name Override (Hardcoded)</label>
+                                <input type="text" name="autopilot_display_name" class="form-control" value="<?php echo htmlspecialchars($settings['autopilot_display_name'] ?? ''); ?>" placeholder="e.g. Sahdev AI">
+                                <p class="help-block"><strong>Recommended.</strong> This forces the name to appear as "Sahdev AI" regardless of WHMCS profile settings.</p>
+                            </div>
+                        </div>
                     </div>
                 </div>
 

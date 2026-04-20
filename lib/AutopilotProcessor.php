@@ -652,7 +652,7 @@ class AutopilotProcessor
             'markdown'      => true,
         ];
 
-        // --- STEP 1: DUMP ADMIN PROFILE ---
+        // --- STEP 1: DUMP ADMIN PROFILE (DEBUG) ---
         $adminDump = json_encode($admin);
         ModuleLogger::log('debug', 'Autopilot.Identity.Profile', "Admin Record: {$adminDump}", $ticketId);
 
@@ -663,7 +663,7 @@ class AutopilotProcessor
             throw new \Exception("WHMCS localAPI AddTicketReply failed: {$err}");
         }
 
-        // --- STEP 2: DUMP GENERATED REPLY ROW ---
+        // --- STEP 2: FIND AND FIX THE IDENTITY (HARDCODE OVERRIDE) ---
         $replyRow = Capsule::table('tblticketreplies')
             ->where('tid', $ticketId)
             ->where('admin', $admin->username)
@@ -671,8 +671,25 @@ class AutopilotProcessor
             ->first();
 
         if ($replyRow) {
-            $rowDump = json_encode($replyRow);
-            ModuleLogger::log('debug', 'Autopilot.Identity.RowResult', "WHMCS Created Row: {$rowDump}", $ticketId);
+            // IDENTITY SYNC: WHMCS often leaves the 'name' column blank for staff.
+            // We automatically patch it using the Profile Names (First + Last) or the optional override.
+            $displayName = trim($this->settings['autopilot_display_name'] ?? '');
+            
+            if (!$displayName) {
+                $displayName = trim(($admin->firstname ?? '') . ' ' . ($admin->lastname ?? ''));
+            }
+
+            // Fallback to username only if everything else is empty
+            if (!$displayName) {
+                $displayName = $admin->username;
+            }
+
+            Capsule::table('tblticketreplies')
+                ->where('id', $replyRow->id)
+                ->update(['name' => $displayName]);
+                
+            ModuleLogger::log('debug', 'Autopilot.Identity.Sync', "Automatically synced reply name to '{$displayName}'", $ticketId);
+
             return (int) $replyRow->id;
         }
 
