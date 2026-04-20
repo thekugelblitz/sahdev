@@ -5026,7 +5026,7 @@ class AdminController
 
         ob_start();
         ?>
-        <?= $this->getNavHtml('roi') ?>
+        <?= $this->getNavigationMarkup('roi') ?>
 
         <style>
         .roi-card { background:#fff; border-radius:10px; box-shadow:0 2px 10px rgba(0,0,0,.06); padding:22px 26px; margin-bottom:20px; }
