@@ -642,14 +642,14 @@ class AutopilotProcessor
             ->value('userid');
 
         $apiParams = [
-            'ticketid'      => $ticketId,
-            'message'       => $replyText,
-            'adminusername' => $admin->username,
-            'markdown'      => true,
+            'ticketid' => $ticketId,
+            'message'  => $replyText,
+            'adminid'  => $admin->id, // Direct binding to the selected staff profile
+            'markdown' => true,
         ];
 
-        // HIGH VISIBILITY LOG: Check exactly what Sahdev is reading from your tbladmins table
-        ModuleLogger::log('info', 'Autopilot.IdentityDebug', "Attempting reply as Admin ID: {$admin->id} | Username: '{$admin->username}' | First: '{$admin->firstname}' | Last: '{$admin->lastname}'", $ticketId);
+        // Diagnostic: log the data we are about to send
+        ModuleLogger::info('Autopilot.StaffPost', "Posting as Admin ID: {$admin->id} (Name: {$adminName})", $ticketId);
 
         $result = localAPI('AddTicketReply', $apiParams, $admin->username);
 
