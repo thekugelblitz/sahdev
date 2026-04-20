@@ -17,6 +17,7 @@ class TaskProviderResolver
     public const TASK_QUALITY_SCORE      = 'quality_score';
     public const TASK_CANNED_TEMPLATE    = 'canned_template';
     public const TASK_CRON_INSIGHTS      = 'cron_insights';
+    public const TASK_AUTOPILOT          = 'autopilot';
 
     /** @return string[] */
     public static function canonicalTaskKeys(): array
@@ -29,8 +30,10 @@ class TaskProviderResolver
             self::TASK_QUALITY_SCORE,
             self::TASK_CANNED_TEMPLATE,
             self::TASK_CRON_INSIGHTS,
+            self::TASK_AUTOPILOT,
         ];
     }
+
 
     /**
      * @param mixed $raw JSON string, array, or null from DB
@@ -142,6 +145,8 @@ class TaskProviderResolver
             self::TASK_QUALITY_SCORE      => 'Quality score',
             self::TASK_CANNED_TEMPLATE    => 'Canned template generator',
             self::TASK_CRON_INSIGHTS      => 'Cron insights (batch)',
+            self::TASK_AUTOPILOT          => 'Autopilot auto-reply',
         ];
     }
 }
+

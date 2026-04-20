@@ -283,7 +283,7 @@ class AdminController
         // 9. Ensure missing prompt templates exist (migration for existing installs)
         try {
             $defs = $this->getDefaultPromptDefinitions();
-            foreach (['cron_insights_system', 'cron_insights', 'tools_evidence_system', 'tools_evidence_user', 'tools_reply_context_wrapper'] as $pkey) {
+            foreach (['cron_insights_system', 'cron_insights', 'tools_evidence_system', 'tools_evidence_user', 'tools_reply_context_wrapper', 'autopilot_system'] as $pkey) {
                 $exists = Capsule::table('tblsahdev_prompt_templates')
                     ->where('prompt_key', $pkey)
                     ->exists();
@@ -431,6 +431,11 @@ class AdminController
                 'label'       => 'Tools Reply Context Wrapper',
                 'description' => 'Template wrapper injected into reply generation custom instructions. Placeholder: {{TOOLS_EVIDENCE}}.',
                 'content'     => "=== TOOLS EXECUTION RESULTS (AUTO-RUN) ===\n{{TOOLS_EVIDENCE}}",
+            ],
+            'autopilot_system' => [
+                'label'       => 'Autopilot — System Prompt',
+                'description' => 'System persona injected when Autopilot generates an automated first reply. This controls the tone, format, and behavior of auto-replies. Output ONLY the reply body — no JSON schema.',
+                'content'     => "You are Sahdev, a Senior Technical Support Specialist for a premium web hosting company. Your goal is to provide helpful, warm, and professional first-response support.\n\nAUTOPILOT RULES:\n1. Write a complete reply to the client's ticket — address their issue specifically.\n2. Include a warm, professional greeting using the client's first name when known.\n3. Do NOT include a sign-off or signature — these are added automatically.\n4. Be empathetic, clear, and solution-focused.\n5. For technical issues, provide step-by-step guidance when possible.\n6. Output ONLY the reply text. No JSON, no schema, no code fences, no preamble.",
             ],
         ];
     }
@@ -4402,6 +4407,24 @@ class AdminController
                 <button type="submit" class="btn btn-primary btn-lg"><i class="fas fa-save"></i> Save Autopilot Settings</button>
             </form>
 
+            <hr style="margin:40px 0;">
+
+            <!-- Manual Test Runner -->
+            <div class="autopilot-card" style="border-left:4px solid #f39c12;">
+                <h4><i class="fas fa-vial"></i> Manual Autopilot Test Runner</h4>
+                <p class="text-muted" style="margin-bottom:15px;">Force Autopilot to attempt a reply on a specific ticket right now. This skips the cron job and replies immediately if eligible.</p>
+                <div class="form-inline" style="display:flex; gap:10px; align-items:center;">
+                    <input type="number" id="ap_test_ticket_id" class="form-control" placeholder="Ticket ID (e.g. 1234)" style="width:200px;">
+                    <div class="checkbox" style="margin:0; padding-top:4px;">
+                        <label>
+                            <input type="checkbox" id="ap_test_bypass" value="1"> Bypass Safety Rules (urgency/sentiment)
+                        </label>
+                    </div>
+                    <button type="button" class="btn btn-warning" id="btn_run_ap_test"><i class="fas fa-play"></i> Run Test</button>
+                </div>
+                <div id="ap_test_result" style="display:none; margin-top:15px; padding:12px; border-radius:6px; font-size:13px; background:#f8f9fa; border:1px solid #ddd;"></div>
+            </div>
+
             <!-- Status & Run Log -->
             <div class="autopilot-card" style="margin-top:28px;">
                 <h4><i class="fas fa-history"></i> Autopilot Run Log
@@ -4447,6 +4470,60 @@ class AdminController
                 <?php endif; ?>
             </div>
         </div>
+
+        <script>
+        document.getElementById('btn_run_ap_test').addEventListener('click', function() {
+            var tid = document.getElementById('ap_test_ticket_id').value;
+            var bypass = document.getElementById('ap_test_bypass').checked ? '1' : '0';
+            var out = document.getElementById('ap_test_result');
+            
+            if (!tid) {
+                alert('Please enter a Ticket ID.');
+                return;
+            }
+
+            this.disabled = true;
+            this.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Running...';
+            out.style.display = 'block';
+            out.innerHTML = 'Executing test run...';
+            out.style.borderLeft = '4px solid #ddd';
+
+            var data = new URLSearchParams();
+            data.append('action', 'autopilot_test_run');
+            data.append('force_ticket_id', tid);
+            data.append('bypass_safety', bypass);
+
+            fetch('<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&ajax=1', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: data.toString()
+            })
+            .then(r => r.json())
+            .then(res => {
+                let html = '';
+                if (res.status === 'success') {
+                    out.style.borderLeft = '4px solid #198754';
+                    html = '<strong style="color:#198754;"><i class="fas fa-check-circle"></i> Success:</strong> ' + res.message;
+                    if (res.preview) {
+                        html += '<hr style="margin:10px 0;"><pre style="margin:0; background:transparent; border:none; padding:0; white-space:pre-wrap; font-family:inherit;">' + res.preview + '</pre>';
+                    }
+                } else {
+                    out.style.borderLeft = '4px solid #dc3545';
+                    html = '<strong style="color:#dc3545;"><i class="fas fa-times-circle"></i> Error/Skipped:</strong> ' + (res.message || 'Unknown error');
+                }
+                out.innerHTML = html;
+            })
+            .catch(err => {
+                out.style.borderLeft = '4px solid #dc3545';
+                out.innerHTML = '<strong style="color:#dc3545;"><i class="fas fa-times-circle"></i> Exception:</strong> ' + err;
+            })
+            .finally(() => {
+                this.disabled = false;
+                this.innerHTML = '<i class="fas fa-play"></i> Run Test';
+            });
+        });
+        </script>
+
         <?php
         return ob_get_clean();
     }

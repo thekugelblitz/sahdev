@@ -54,6 +54,7 @@ $ticketNotRequiredActions = [
     'get_analytics', 'get_ticket_insights', 'trigger_cron_run', 'get_insights_queue', 'analyze_single_insight',
     'test_whmcs_cron_http', 'run_tools_queue', 'get_tools_operations',
     'get_open_payload', 'analyze_open_context',
+    'autopilot_test_run',
 ];
 if (!$ticketId && !in_array($action, $ticketNotRequiredActions)) {
     header('HTTP/1.1 400 Bad Request');
@@ -514,6 +515,43 @@ try {
         $manual = \Sahdev\Modules\ToolsExecution\ToolsExecutionService::runManualTool($runTicketId, (int) $adminId, $method, $path, $pathParams, $query, $body);
         $summary = \Sahdev\Modules\ToolsExecution\ToolsExecutionService::getLatestRunSummary($runTicketId);
         $response = ['status' => 'success', 'result' => $manual, 'summary' => $summary];
+    } elseif ($action === 'autopilot_test_run') {
+        // ── Manual autopilot test for a specific ticket ──────────────────────
+        require_once __DIR__ . '/lib/AutopilotProcessor.php';
+        require_once __DIR__ . '/lib/WhmcsTicketTagHelper.php';
+        require_once __DIR__ . '/lib/CronProcessor.php';
+
+        $forceTicketId = (int) ($_POST['force_ticket_id'] ?? 0);
+        if ($forceTicketId <= 0) {
+            $response = ['status' => 'error', 'message' => 'No ticket ID provided for test run.'];
+        } else {
+            // Build provider the same way CronProcessor does
+            $taskPrimary = \Sahdev\Lib\TaskProviderResolver::resolveProviderId(
+                \Sahdev\Lib\TaskProviderResolver::TASK_AUTOPILOT,
+                null,
+                $settingsArray
+            );
+            $apProvRow = \WHMCS\Database\Capsule::table('tblsahdev_providers')
+                ->where('id', $taskPrimary)
+                ->where('is_active', 1)
+                ->first();
+            if (!$apProvRow) {
+                $apProvRow = \WHMCS\Database\Capsule::table('tblsahdev_providers')
+                    ->where('id', $settingsArray['primary_provider_id'])
+                    ->first();
+            }
+            $provSettings = $apProvRow ? array_merge($settingsArray, (array) $apProvRow) : $settingsArray;
+            $provType = strtolower($apProvRow->provider_type ?? 'google');
+            switch ($provType) {
+                case 'lmstudio': $prov = new \Sahdev\Lib\LMStudioAIProvider($provSettings); break;
+                case 'replicate': $prov = new \Sahdev\Lib\ReplicateAIProvider($provSettings); break;
+                default: $prov = new \Sahdev\Lib\GoogleAIProvider($provSettings);
+            }
+
+            $bypassSafety = !empty($_POST['bypass_safety']) && $_POST['bypass_safety'] === '1';
+            $autopilot = new \Sahdev\Lib\AutopilotProcessor($settingsArray, $prov, null);
+            $response = $autopilot->runForceTicket($forceTicketId, $bypassSafety);
+        }
     } else {
         // Default analyze_ticket (server-side generation)
         $response = $controller->getAnalysis($tone, $instruction, $forceRegenerate, $forceFallback, $intent, $useSummary, $includeHistory, $technicalContext, $overrideProviderId, $includeTools, $includeAdminNotes);

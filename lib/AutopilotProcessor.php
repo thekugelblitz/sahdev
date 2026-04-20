@@ -7,6 +7,12 @@ use Carbon\Carbon;
 
 require_once __DIR__ . '/TaskProviderResolver.php';
 
+// Provider classes needed for manual provider resolution
+require_once __DIR__ . '/AIProviderInterface.php';
+require_once __DIR__ . '/GoogleAIProvider.php';
+require_once __DIR__ . '/LMStudioAIProvider.php';
+require_once __DIR__ . '/ReplicateAIProvider.php';
+
 /**
  * AutopilotProcessor
  *
@@ -165,6 +171,72 @@ class AutopilotProcessor
     }
 
 
+
+    /**
+     * Force-run autopilot for a specific ticket ID, bypassing the insights sentiment requirement.
+     * Used for manual test runs from the admin UI.
+     *
+     * @param int  $ticketId
+     * @param bool $bypassSafetyChecks  When true, skips urgency/sentiment thresholds (for testing)
+     * @return array
+     */
+    public function runForceTicket(int $ticketId, bool $bypassSafetyChecks = false): array
+    {
+        $this->ensureSchema();
+
+        $autopilotAdminId = (int) ($this->settings['autopilot_admin_id'] ?? 0);
+        if ($autopilotAdminId <= 0) {
+            return ['status' => 'error', 'message' => 'Autopilot admin account is not configured.'];
+        }
+
+        $ticket = Capsule::table('tbltickets')
+            ->select('id', 'tid', 'did', 'userid', 'name', 'title', 'status', 'lastreply')
+            ->where('id', $ticketId)
+            ->first();
+
+        if (!$ticket) {
+            return ['status' => 'error', 'message' => "Ticket ID #{$ticketId} not found."];
+        }
+
+        // For manual test: temporarily override sentiment with neutral values
+        if ($bypassSafetyChecks) {
+            $this->forcedBypassSafety = true;
+        }
+
+        try {
+            // Apply delay only for real cron runs, not manual tests
+            $skipDelay = !empty($this->forcedBypassSafety);
+
+            // Build and post the reply
+            $replyText = $this->generateReply($ticketId, $ticket);
+
+            if (empty(trim($replyText))) {
+                return ['status' => 'error', 'message' => 'AI returned an empty reply. Check your provider and prompt settings.'];
+            }
+
+            $signature = $this->getAdminSignature($autopilotAdminId);
+            if ($signature) {
+                $replyText = $replyText . "\n\n" . $signature;
+            }
+
+            $replyId = $this->postReply($ticketId, $replyText, $autopilotAdminId);
+            $this->logAttempt($ticketId, 'replied', 'manual_test', $replyId, $ticket->lastreply);
+
+            return [
+                'status'   => 'success',
+                'message'  => "Reply posted successfully to ticket #{$ticket->tid}.",
+                'reply_id' => $replyId,
+                'preview'  => substr($replyText, 0, 300) . (strlen($replyText) > 300 ? '...' : ''),
+            ];
+        } catch (\Throwable $e) {
+            return ['status' => 'error', 'message' => $e->getMessage()];
+        } finally {
+            $this->forcedBypassSafety = false;
+        }
+    }
+
+    /** @var bool Internal flag for manual test bypass */
+    private bool $forcedBypassSafety = false;
 
     // -------------------------------------------------------------------------
     // Per-ticket processing
@@ -333,28 +405,24 @@ class AutopilotProcessor
     private function generateReply(int $ticketId, $ticket): string
     {
         $context = $this->buildReplyContext($ticketId, $ticket);
+        $tone    = $this->settings['autopilot_tone'] ?? 'Friendly';
 
-        $tone = $this->settings['autopilot_tone'] ?? 'Friendly';
+        // Load system prompt from Prompt Library (falls back to hardcoded default)
+        $systemPrompt = $this->loadSystemPrompt();
 
-        $systemPrompt = $this->settings['system_prompt']
-            ?? "You are Sahdev, a Senior Technical Support Specialist. Provide helpful, empathetic, professional support replies. Output only the reply text — no JSON, no markdown preamble, no sign-off.";
+        // Resolve the provider for the autopilot task
+        $provider = $this->resolveAutopilotProvider();
 
-        // Build a focused reply-only prompt
-        $prompt = $this->buildReplyPrompt($context, $tone);
-
-        $settingsForProvider = [
-            'system_prompt'        => $systemPrompt . "\n\nIMPORTANT: Output ONLY the final client reply text. No JSON wrapper, no schema, no extra formatting. Just the reply body.",
-            'user_prompt_template' => null,
-            'model_name'           => $this->settings['model_name'] ?? '',
-            'api_url'              => $this->settings['api_url'] ?? '',
-            'provider_type'        => $this->settings['provider_type'] ?? 'google',
-            'temperature'          => 0.65,
-            'max_tokens'           => max(1024, (int) ($this->settings['max_tokens'] ?? 2048)),
+        $settingsForProvider = array_merge((array) $this->settings, [
+            'system_prompt'          => $systemPrompt,
+            'user_prompt_template'   => null,
+            'temperature'            => 0.65,
+            'max_tokens'             => max(1024, (int) ($this->settings['max_tokens_fallback'] ?? 2048)),
             'quality_scorer_enabled' => 0,
-        ];
+        ]);
 
         try {
-            $rawResponse = $this->provider->generateResponse(
+            $rawResponse = $provider->generateResponse(
                 $context + ['__autopilot_raw_reply__' => true],
                 $settingsForProvider,
                 $tone,
@@ -394,6 +462,65 @@ class AutopilotProcessor
         }
 
         return '';
+    }
+
+    /**
+     * Load the autopilot system prompt from the Prompt Library.
+     * Falls back to a sensible hardcoded default if the row doesn't exist yet.
+     */
+    private function loadSystemPrompt(): string
+    {
+        try {
+            $row = Capsule::table('tblsahdev_prompt_templates')
+                ->where('prompt_key', 'autopilot_system')
+                ->first();
+            if ($row && !empty($row->content)) {
+                return trim($row->content) . "\n\nIMPORTANT: Output ONLY the final client reply text. No JSON wrapper, no schema, no extra formatting. Just the reply body.";
+            }
+        } catch (\Throwable $e) {}
+
+        return "You are Sahdev, a Senior Technical Support Specialist for a premium web hosting company. "
+            . "Provide helpful, warm, and professional first-response support. "
+            . "Include a warm greeting using the client's first name when known. "
+            . "Do NOT include a sign-off or signature. "
+            . "Output ONLY the reply text. No JSON, no schema, no fences.";
+    }
+
+    /**
+     * Resolve the AI provider instance to use for autopilot replies.
+     * Checks the task_provider_map for task key 'autopilot'; falls back to
+     * the provider passed into the constructor by CronProcessor.
+     */
+    private function resolveAutopilotProvider()
+    {
+        try {
+            $providerId = TaskProviderResolver::resolveProviderId(
+                TaskProviderResolver::TASK_AUTOPILOT,
+                null,
+                $this->settings
+            );
+
+            $currentProviderId = (int) ($this->settings['id'] ?? 0);
+            if ($providerId > 0 && $providerId !== $currentProviderId) {
+                $provRow = Capsule::table('tblsahdev_providers')->where('id', $providerId)->first();
+                if ($provRow) {
+                    $provSettings = array_merge((array) $this->settings, (array) $provRow);
+                    $type = strtolower($provRow->provider_type ?? 'google');
+                    switch ($type) {
+                        case 'lmstudio':
+                            return new \Sahdev\Lib\LMStudioAIProvider($provSettings);
+                        case 'replicate':
+                            return new \Sahdev\Lib\ReplicateAIProvider($provSettings);
+                        default:
+                            return new \Sahdev\Lib\GoogleAIProvider($provSettings);
+                    }
+                }
+            }
+        } catch (\Throwable $e) {
+            // Fall through to default
+        }
+
+        return $this->provider;
     }
 
     private function buildReplyPrompt(array $context, string $tone): string
