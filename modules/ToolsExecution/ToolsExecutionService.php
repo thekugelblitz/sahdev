@@ -1380,9 +1380,9 @@ class ToolsExecutionService
 
     private function applyPathParams(string $path, array $pathParams, int $ticketId = 0): string
     {
-        // Use regex to find all placeholders in the path (literal or encoded)
-        // This is more reliable than looping over the parameters.
-        return preg_replace_callback('/(?:\{|%7B)([^}%]+)(?:\}|%7D)/i', function ($m) use ($pathParams, $ticketId) {
+        // Use regex to find all placeholders in the path (literal, encoded, or mangled by environment)
+        // Supports: {key}, %7Bkey%7D, (key), [key]
+        return preg_replace_callback('/(?:\{|%7B|\(|\[)([^}%\]\)\s]+)(?:\}|%7D|\)|\])/i', function ($m) use ($pathParams, $ticketId) {
             $key = $m[1];
             $lowerKey = strtolower($key);
             

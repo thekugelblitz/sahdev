@@ -1044,10 +1044,10 @@ HTML;
             var pathParams = {};
             var queryParams = {};
 
-            // Extract placeholders from the path
-            var placeholders = path.match(/\{([^}]+)\}/g) || [];
+            // Extract placeholders from the path - support {}, (), and [] due to environment mangling
+            var placeholders = path.match(/[{(]([^})]+)[})]|\[([^\]]+)\]/g) || [];
             placeholders.forEach(function(ph) {
-                var key = ph.replace('{', '').replace('}', '');
+                var key = ph.replace(/[{}()\[\]]/g, '');
                 pathParams[key] = ''; // Initialize
             });
 
