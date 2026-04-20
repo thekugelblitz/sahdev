@@ -483,6 +483,7 @@ class AdminController
             'cron_center' => ['label' => '<i class="fas fa-clock"></i> Separate Cron', 'url' => $base . '&action=cron_center'],
             'ticket_insights' => ['label' => '<i class="fas fa-brain"></i> Ticket Insights', 'url' => $base . '&action=ticket_insights'],
             'analytics' => ['label' => '<i class="fas fa-chart-line"></i> Analytics', 'url' => $base . '&action=analytics'],
+            'roi' => ['label' => '<i class="fas fa-chart-bar"></i> ROI Dashboard', 'url' => $base . '&action=roi'],
             'audit_trail' => ['label' => '<i class="fas fa-history"></i> Audit Trail', 'url' => $base . '&action=audit_trail'],
             'module_logs' => ['label' => '<i class="fas fa-clipboard-list"></i> Module log', 'url' => $base . '&action=module_logs'],
             'logs_maintenance' => ['label' => '<i class="fas fa-database"></i> Logs & Maintenance', 'url' => $base . '&action=logs_maintenance'],
@@ -4140,6 +4141,7 @@ class AdminController
             'autopilot_max_urgency' => ['string_col', 'High'], 'autopilot_max_sentiment' => ['integer', 7],
             'autopilot_only_first_reply' => ['boolean', 1], 'autopilot_tone' => ['string_col', 'Friendly'],
             'autopilot_cron_max_per_run' => ['integer', 5], 'autopilot_tag_skipped' => ['boolean', 1],
+            'autopilot_draft_mode'       => ['boolean', 0],
             'autopilot_cron_last_run_at' => ['timestamp', null], 'autopilot_cron_last_message' => ['text', null],
         ];
         foreach ($autopilotCols as $col => [$type, $default]) {
@@ -4198,6 +4200,7 @@ class AdminController
                     'autopilot_tone'              => in_array($_POST['autopilot_tone'] ?? '', ['Professional','Technical','Friendly','Strict']) ? $_POST['autopilot_tone'] : 'Friendly',
                     'autopilot_cron_max_per_run'  => max(1, min(20, (int) ($_POST['autopilot_cron_max_per_run'] ?? 5))),
                     'autopilot_tag_skipped'       => !empty($_POST['autopilot_tag_skipped']) ? 1 : 0,
+                    'autopilot_draft_mode'        => !empty($_POST['autopilot_draft_mode']) ? 1 : 0,
                     'updated_at'                  => \Carbon\Carbon::now(),
                 ]);
                 $successMsg = 'Autopilot settings saved successfully.';
@@ -4428,6 +4431,17 @@ class AdminController
                         <label>
                             <input type="checkbox" name="autopilot_tag_skipped" value="1" <?php echo !empty($settings['autopilot_tag_skipped']) ? 'checked' : ''; ?>>
                             Tag skipped tickets with <code>ai-needs-human</code> in WHMCS Tag Cloud
+                        </label>
+                    </div>
+
+                    <!-- Draft Mode -->
+                    <div class="form-group" style="background:<?php echo !empty($settings['autopilot_draft_mode']) ? '#fff8e1' : '#f8f9fa'; ?>;border:1px solid <?php echo !empty($settings['autopilot_draft_mode']) ? '#f39c12' : '#dee2e6'; ?>;border-radius:8px;padding:14px 18px;">
+                        <label style="margin:0;display:flex;align-items:flex-start;gap:10px;cursor:pointer;">
+                            <input type="checkbox" name="autopilot_draft_mode" value="1" <?php echo !empty($settings['autopilot_draft_mode']) ? 'checked' : ''; ?> style="margin-top:3px">
+                            <div>
+                                <strong><i class="fas fa-edit" style="color:#f39c12"></i> Draft Mode — Post Internal Notes Instead of Public Replies</strong><br>
+                                <small class="text-muted">When enabled, Autopilot will create a private admin note prefixed with <code>🤖 Sahdev Autopilot Draft</code> instead of sending a live reply to the client. Use this to review AI responses before publishing.</small>
+                            </div>
                         </label>
                     </div>
                 </div>
@@ -4858,6 +4872,302 @@ class AdminController
         </script>
 
         <?php
+        return ob_get_clean();
+    }
+
+    /**
+     * ROI Dashboard — Token usage, cost and time-saved metrics.
+     */
+    public function roi(): string
+    {
+        // ---- Schema migrations ----
+        try {
+            Capsule::table('tblsahdev_settings')->select('avg_handle_minutes')->first();
+        } catch (\Exception $e) {
+            try {
+                Capsule::schema()->table('tblsahdev_settings', function ($t) {
+                    $t->integer('avg_handle_minutes')->default(8)->nullable();
+                });
+            } catch (\Throwable $ex) {}
+        }
+        try {
+            Capsule::table('tblsahdev_settings')->select('autopilot_draft_mode')->first();
+        } catch (\Exception $e) {
+            try {
+                Capsule::schema()->table('tblsahdev_settings', function ($t) {
+                    $t->boolean('autopilot_draft_mode')->default(0);
+                });
+            } catch (\Throwable $ex) {}
+        }
+
+        $actionUrl  = htmlspecialchars($this->moduleVars['modulelink']) . '&action=roi';
+        $moduleLink = htmlspecialchars($this->moduleVars['modulelink']);
+
+        $settings = Capsule::table('tblsahdev_settings')->first();
+        $avgHandleMin = max(1, (int) ($settings->avg_handle_minutes ?? 8));
+
+        // ---- Aggregate stats ----
+        $nowTs  = \Carbon\Carbon::now();
+        $week   = $nowTs->copy()->subDays(7);
+        $month  = $nowTs->copy()->subDays(30);
+
+        // Manual + cron analysis calls from tblsahdev_logs
+        $logsAll  = Capsule::table('tblsahdev_logs')
+            ->whereNotNull('token_usage')
+            ->where('token_usage', '>', 0)
+            ->selectRaw('COALESCE(provider_used, "unknown") as provider, SUM(token_usage) as tokens, COUNT(*) as calls, MIN(created_at) as first_at, MAX(created_at) as last_at')
+            ->groupBy('provider')
+            ->get();
+
+        $logsWeek = Capsule::table('tblsahdev_logs')
+            ->whereNotNull('token_usage')
+            ->where('token_usage', '>', 0)
+            ->where('created_at', '>=', $week)
+            ->selectRaw('SUM(token_usage) as tokens, COUNT(*) as calls')
+            ->first();
+
+        // Autopilot drafted/replied tokens
+        $apAll  = Capsule::table('tblsahdev_autopilot_log')
+            ->whereNotNull('tokens_used')
+            ->where('tokens_used', '>', 0)
+            ->whereIn('ai_decision', ['replied', 'drafted'])
+            ->selectRaw('SUM(tokens_used) as tokens, COUNT(*) as calls')
+            ->first();
+
+        $apWeek = Capsule::table('tblsahdev_autopilot_log')
+            ->whereNotNull('tokens_used')
+            ->where('tokens_used', '>', 0)
+            ->whereIn('ai_decision', ['replied', 'drafted'])
+            ->where('created_at', '>=', $week)
+            ->selectRaw('SUM(tokens_used) as tokens, COUNT(*) as calls')
+            ->first();
+
+        $apRepliesWeek = Capsule::table('tblsahdev_autopilot_log')
+            ->whereIn('ai_decision', ['replied', 'drafted'])
+            ->where('created_at', '>=', $week)
+            ->count();
+
+        $apRepliesAll = Capsule::table('tblsahdev_autopilot_log')
+            ->whereIn('ai_decision', ['replied', 'drafted'])
+            ->count();
+
+        // Total tickets handled this week (unique tickets in logs)
+        $ticketsWeek = Capsule::table('tblsahdev_logs')
+            ->where('created_at', '>=', $week)
+            ->distinct()
+            ->count('ticket_id');
+
+        // Providers for cost lookup
+        $providers = Capsule::table('tblsahdev_providers')
+            ->where('is_active', 1)
+            ->get()
+            ->keyBy('name');
+
+        // Estimate cost: tokens × rate/1M
+        $totalTokensAll  = 0;
+        $totalTokensWeek = (int) (($logsWeek->tokens ?? 0) + ($apWeek->tokens ?? 0));
+        $totalCallsAll   = 0;
+        $totalCostAll    = 0.0;
+        $totalCostWeek   = 0.0;
+        $providerRows    = [];
+
+        foreach ($logsAll as $row) {
+            $tok   = (int) $row->tokens;
+            $calls = (int) $row->calls;
+            $totalTokensAll += $tok;
+            $totalCallsAll  += $calls;
+
+            // Find per-provider cost (use input rate as estimate since we don't split i/o)
+            $provName = (string) $row->provider;
+            $costPer1m = 0.0;
+            foreach ($providers as $p) {
+                if (strtolower($p->name) === strtolower($provName) || strtolower($p->provider_type) === strtolower($provName)) {
+                    $costPer1m = (float) (($p->cost_input_1m + $p->cost_output_1m) / 2);
+                    break;
+                }
+            }
+            $cost = round($tok / 1_000_000 * $costPer1m, 4);
+            $totalCostAll += $cost;
+            $providerRows[] = ['name' => $provName, 'tokens' => $tok, 'calls' => $calls, 'cost' => $cost];
+        }
+
+        // Add autopilot tokens to total
+        $totalTokensAll += (int) ($apAll->tokens ?? 0);
+        $totalCallsAll  += (int) ($apAll->calls ?? 0);
+
+        // Weekly cost estimate (simplified by ratio)
+        if ($totalTokensAll > 0 && $totalCostAll > 0) {
+            $totalCostWeek = round($totalCostWeek > 0
+                ? ($totalTokensWeek / $totalTokensAll) * $totalCostAll
+                : 0.0, 4);
+        }
+
+        // Time saved: autopilot replies × avg_handle_minutes
+        $timeSavedWeekMin = $apRepliesWeek * $avgHandleMin;
+        $timeSavedAllMin  = $apRepliesAll * $avgHandleMin;
+        $timeSavedWeekH   = round($timeSavedWeekMin / 60, 1);
+        $timeSavedAllH    = round($timeSavedAllMin / 60, 1);
+
+        // 7-day daily chart data
+        $dailyData = [];
+        for ($d = 6; $d >= 0; $d--) {
+            $dayStart = $nowTs->copy()->subDays($d)->startOfDay();
+            $dayEnd   = $nowTs->copy()->subDays($d)->endOfDay();
+            $dayLabel = $dayStart->format('D');
+            $tok = (int) Capsule::table('tblsahdev_logs')
+                ->whereBetween('created_at', [$dayStart, $dayEnd])
+                ->sum('token_usage');
+            $tok += (int) Capsule::table('tblsahdev_autopilot_log')
+                ->whereBetween('created_at', [$dayStart, $dayEnd])
+                ->sum('tokens_used');
+            $dailyData[] = ['label' => $dayLabel, 'tokens' => $tok];
+        }
+        $maxDayTokens = max(1, max(array_column($dailyData, 'tokens')));
+
+        ob_start();
+        ?>
+        <?= $this->getNavHtml('roi') ?>
+
+        <style>
+        .roi-card { background:#fff; border-radius:10px; box-shadow:0 2px 10px rgba(0,0,0,.06); padding:22px 26px; margin-bottom:20px; }
+        .roi-stat-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:18px; margin-bottom:24px; }
+        .roi-stat { background:linear-gradient(135deg,#f8f9fa,#fff); border:1px solid #e3e8f0; border-radius:10px; padding:20px; text-align:center; }
+        .roi-stat .val { font-size:2em; font-weight:700; color:#0d6efd; }
+        .roi-stat .sub { font-size:.8em; color:#888; margin-top:4px; }
+        .roi-stat .label { font-size:.85em; font-weight:600; color:#444; margin-top:6px; }
+        .roi-bar-chart { display:flex; align-items:flex-end; gap:8px; height:120px; margin-top:14px; }
+        .roi-bar-wrap { flex:1; display:flex; flex-direction:column; align-items:center; gap:4px; }
+        .roi-bar { width:100%; background:linear-gradient(180deg,#0d6efd,#6ea8fe); border-radius:4px 4px 0 0; min-height:2px; transition:height .3s; }
+        .roi-bar-label { font-size:.7em; color:#888; }
+        .roi-table th { font-size:.8em; color:#888; border:none; background:#f8f9fa; }
+        .roi-table td { font-size:.85em; vertical-align:middle; }
+        .roi-section-title { font-size:1em; font-weight:700; color:#333; margin-bottom:14px; display:flex; align-items:center; gap:8px; }
+        .roi-badge { display:inline-block; padding:2px 9px; border-radius:99px; font-size:.7em; font-weight:600; background:#e8f4ff; color:#0d6efd; }
+        </style>
+
+        <div class="roi-card">
+            <h4 style="margin-bottom:6px;"><i class="fas fa-chart-bar" style="color:#0d6efd"></i> ROI Dashboard</h4>
+            <p style="color:#888;font-size:.9em;margin:0">Track token usage, API costs and the time Sahdev is saving your team every week.</p>
+        </div>
+
+        <div class="roi-stat-grid">
+            <div class="roi-stat">
+                <div class="val"><?= number_format($totalTokensWeek) ?></div>
+                <div class="sub">tokens</div>
+                <div class="label">This Week</div>
+            </div>
+            <div class="roi-stat">
+                <div class="val">$<?= number_format($totalCostWeek, 4) ?></div>
+                <div class="sub">estimated cost</div>
+                <div class="label">This Week</div>
+            </div>
+            <div class="roi-stat">
+                <div class="val"><?= $ticketsWeek ?></div>
+                <div class="sub">tickets handled</div>
+                <div class="label">This Week</div>
+            </div>
+            <div class="roi-stat">
+                <div class="val"><?= $apRepliesWeek ?></div>
+                <div class="sub">autopilot replies</div>
+                <div class="label">This Week</div>
+            </div>
+            <div class="roi-stat" style="border-color:#28a745;background:linear-gradient(135deg,#f0fff4,#fff)">
+                <div class="val" style="color:#28a745"><?= $timeSavedWeekH ?>h</div>
+                <div class="sub">estimated time saved</div>
+                <div class="label">This Week</div>
+            </div>
+            <div class="roi-stat" style="border-color:#6c757d;background:linear-gradient(135deg,#f8f9fa,#fff)">
+                <div class="val" style="color:#6c757d"><?= number_format($totalTokensAll) ?></div>
+                <div class="sub">total tokens <span class="roi-badge">All Time</span></div>
+                <div class="label">Lifetime Usage</div>
+            </div>
+            <div class="roi-stat" style="border-color:#6c757d;background:linear-gradient(135deg,#f8f9fa,#fff)">
+                <div class="val" style="color:#6c757d">$<?= number_format($totalCostAll, 4) ?></div>
+                <div class="sub">total cost <span class="roi-badge">All Time</span></div>
+                <div class="label">Lifetime Cost</div>
+            </div>
+            <div class="roi-stat" style="border-color:#28a745;background:linear-gradient(135deg,#f0fff4,#fff)">
+                <div class="val" style="color:#28a745"><?= $timeSavedAllH ?>h</div>
+                <div class="sub">total time saved <span class="roi-badge">All Time</span></div>
+                <div class="label">Lifetime Savings</div>
+            </div>
+        </div>
+
+        <!-- 7-Day Chart -->
+        <div class="roi-card">
+            <div class="roi-section-title"><i class="fas fa-chart-area" style="color:#0d6efd"></i> 7-Day Token Usage Trend</div>
+            <div class="roi-bar-chart">
+                <?php foreach ($dailyData as $day):
+                    $pct = $maxDayTokens > 0 ? round(($day['tokens'] / $maxDayTokens) * 100) : 0;
+                    $height = max(2, $pct); ?>
+                <div class="roi-bar-wrap">
+                    <div style="font-size:.7em;color:#0d6efd;font-weight:600"><?= $day['tokens'] > 0 ? number_format($day['tokens']) : '' ?></div>
+                    <div class="roi-bar" style="height:<?= $height ?>%"></div>
+                    <div class="roi-bar-label"><?= htmlspecialchars($day['label']) ?></div>
+                </div>
+                <?php endforeach; ?>
+            </div>
+        </div>
+
+        <!-- Per-Provider Breakdown -->
+        <div class="roi-card">
+            <div class="roi-section-title"><i class="fas fa-microchip" style="color:#0d6efd"></i> Per-Provider Breakdown</div>
+            <?php if (empty($providerRows)): ?>
+                <p style="color:#aaa;font-size:.9em">No token data recorded yet. Provider breakdown will appear once AI calls are made.</p>
+            <?php else: ?>
+            <table class="table table-sm roi-table">
+                <thead><tr><th>Provider</th><th>Total Tokens</th><th>API Calls</th><th>Est. Cost (USD)</th></tr></thead>
+                <tbody>
+                    <?php foreach ($providerRows as $r): ?>
+                    <tr>
+                        <td><i class="fas fa-circle" style="color:#0d6efd;font-size:.5em;vertical-align:middle;margin-right:5px"></i><?= htmlspecialchars($r['name']) ?></td>
+                        <td><?= number_format($r['tokens']) ?></td>
+                        <td><?= number_format($r['calls']) ?></td>
+                        <td><?= $r['cost'] > 0 ? '$' . number_format($r['cost'], 4) : '<span style="color:#aaa">$0.0000</span>' ?></td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+                <tfoot>
+                    <tr style="font-weight:700;background:#f8f9fa">
+                        <td>Total</td>
+                        <td><?= number_format($totalTokensAll) ?></td>
+                        <td><?= number_format($totalCallsAll) ?></td>
+                        <td>$<?= number_format($totalCostAll, 4) ?></td>
+                    </tr>
+                </tfoot>
+            </table>
+            <?php endif; ?>
+        </div>
+
+        <!-- Settings -->
+        <div class="roi-card">
+            <div class="roi-section-title"><i class="fas fa-cog" style="color:#0d6efd"></i> ROI Calculation Settings</div>
+            <p style="color:#888;font-size:.85em">The "time saved" calculation uses the average minutes a human agent would spend per ticket. Adjust to match your team's actual handle time.</p>
+            <form method="post" action="<?= $actionUrl ?>">
+                <input type="hidden" name="roi_save" value="1">
+                <div class="form-group row">
+                    <label class="col-sm-3 col-form-label">Avg. Handle Time per Ticket (minutes)</label>
+                    <div class="col-sm-3">
+                        <input type="number" name="avg_handle_minutes" class="form-control" value="<?= (int) $avgHandleMin ?>" min="1" max="120">
+                    </div>
+                    <div class="col-sm-2">
+                        <button type="submit" class="btn btn-primary">Save</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+
+        <?php
+        // Handle form save
+        if (!empty($_POST['roi_save'])) {
+            $newMin = max(1, min(120, (int) ($_POST['avg_handle_minutes'] ?? 8)));
+            Capsule::table('tblsahdev_settings')->where('id', 1)->update([
+                'avg_handle_minutes' => $newMin,
+                'updated_at'         => \Carbon\Carbon::now(),
+            ]);
+            echo '<script>location.href="' . $actionUrl . '";</script>';
+        }
+
         return ob_get_clean();
     }
 }

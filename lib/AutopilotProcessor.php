@@ -211,14 +211,25 @@ class AutopilotProcessor
         }
 
         try {
-            // Apply delay only for real cron runs, not manual tests
-            $skipDelay = !empty($this->forcedBypassSafety);
-
-            // Build and post the reply
+            // Build the reply text
             $replyText = $this->generateReply($ticketId, $ticket);
 
             if (empty(trim($replyText))) {
                 return ['status' => 'error', 'message' => 'AI returned an empty reply. Check your provider and prompt settings.'];
+            }
+
+            $isDraftMode = !empty($this->settings['autopilot_draft_mode']);
+
+            if ($isDraftMode) {
+                // Draft Mode: post as internal admin note
+                $noteId = $this->postInternalNote($ticketId, $replyText, $autopilotAdminId);
+                $this->logAttempt($ticketId, 'drafted', 'manual_test', $noteId, $ticket->lastreply);
+                return [
+                    'status'   => 'success',
+                    'message'  => "Draft note posted to ticket #{$ticket->tid} (Draft Mode is ON — not a public reply).",
+                    'reply_id' => $noteId,
+                    'preview'  => substr($replyText, 0, 300) . (strlen($replyText) > 300 ? '...' : ''),
+                ];
             }
 
             $signature = $this->getAdminSignature($autopilotAdminId);
@@ -366,14 +377,14 @@ class AutopilotProcessor
             return 'skipped';
         }
  
-        // 9. Idempotency: has this exact lastreply already been replied to?
-        $alreadyReplied = Capsule::table('tblsahdev_autopilot_log')
+        // 9. Idempotency: has this exact lastreply already been replied to (or drafted)?
+        $alreadyActioned = Capsule::table('tblsahdev_autopilot_log')
             ->where('ticket_id', $ticketId)
             ->where('ticket_lastreply_snapshot', $ticket->lastreply)
-            ->where('ai_decision', 'replied')
+            ->whereIn('ai_decision', ['replied', 'drafted'])
             ->exists();
  
-        if ($alreadyReplied) {
+        if ($alreadyActioned) {
             // Not a skip — just already done, silent pass
             return 'skipped';
         }
@@ -394,7 +405,7 @@ class AutopilotProcessor
             }
         }
 
-        // --- All checks passed — generate and post the reply ---
+        // --- All checks passed — generate and post the reply (or draft) ---
 
         $this->applyRandomDelay();
 
@@ -405,15 +416,23 @@ class AutopilotProcessor
             return 'skipped';
         }
 
-        // Append admin signature
+        $isDraftMode = !empty($this->settings['autopilot_draft_mode']);
+        $tokensUsed = $this->provider ? $this->provider->getLastTokenUsage() : 0;
+
+        if ($isDraftMode) {
+            // Draft Mode: post as internal admin note instead of public reply
+            $noteId = $this->postInternalNote($ticketId, $replyText, $autopilotAdminId);
+            $this->logAttempt($ticketId, 'drafted', null, $noteId, $ticket->lastreply, $tokensUsed);
+            return 'replied'; // Count as "processed" in cron summary
+        }
+
+        // Append admin signature for live replies
         $signature = $this->getAdminSignature($autopilotAdminId);
         if ($signature) {
             $replyText = $replyText . "\n\n" . $signature;
         }
 
         $replyId = $this->postReply($ticketId, $replyText, $autopilotAdminId);
-
-        $tokensUsed = $this->provider ? $this->provider->getLastTokenUsage() : 0;
         $this->logAttempt($ticketId, 'replied', null, $replyId, $ticket->lastreply, $tokensUsed);
 
         return 'replied';
@@ -427,7 +446,9 @@ class AutopilotProcessor
     {
         $autopilotAdminId = (int) ($this->settings['autopilot_admin_id'] ?? 0);
         $extractor = new TicketDataExtractor($ticketId, $autopilotAdminId);
-        $context = $extractor->getContext(true, false);
+        // Respect PII scrubbing settings — same logic as AIController.php
+        $scrubPII = !empty($this->settings['compliance_mode']) || !empty($this->settings['pii_scrub_enabled']);
+        $context = $extractor->getContext($scrubPII, false);
 
         $toolsContext = '';
         if (class_exists('\Sahdev\Modules\ToolsExecution\ToolsExecutionService')) {
@@ -725,6 +746,44 @@ class AutopilotProcessor
     // -------------------------------------------------------------------------
     // Admin signature
     // -------------------------------------------------------------------------
+
+    /**
+     * Post a private internal admin note (Draft Mode).
+     * The note is prefixed so it's clearly identifiable as an AI draft.
+     */
+    private function postInternalNote(int $ticketId, string $replyText, int $adminId): ?int
+    {
+        $admin = Capsule::table('tbladmins')->where('id', $adminId)->first();
+        if (!$admin) {
+            throw new \Exception("Autopilot admin (ID: {$adminId}) not found.");
+        }
+
+        $draftPrefix = "🤖 **Sahdev Autopilot Draft** *(Review before sending — Draft Mode is ON)*\n\n---\n\n";
+        $noteText = $draftPrefix . $replyText;
+
+        $result = localAPI('AddTicketNote', [
+            'ticketid'     => $ticketId,
+            'message'      => $noteText,
+            'adminusername' => $admin->username,
+            'markdown'     => true,
+        ], $admin->username);
+
+        if (($result['result'] ?? '') !== 'success') {
+            $err = $result['message'] ?? json_encode($result);
+            throw new \Exception("WHMCS localAPI AddTicketNote failed: {$err}");
+        }
+
+        // Try to get the note ID from the most recent note
+        $noteRow = Capsule::table('tblticketreplies')
+            ->where('tid', $ticketId)
+            ->orderBy('id', 'desc')
+            ->first();
+
+        ModuleLogger::log('debug', 'Autopilot.DraftMode', "Posted draft note to ticket #{$ticketId}", $ticketId);
+
+        return $noteRow ? (int) $noteRow->id : null;
+    }
+
 
     private function getAdminSignature(int $adminId): string
     {
