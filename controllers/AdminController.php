@@ -474,6 +474,7 @@ class AdminController
             'canned_responses' => ['label' => '<i class="fas fa-save"></i> Canned Responses', 'url' => $base . '&action=canned_responses'],
             'intents' => ['label' => '<i class="fas fa-bullseye"></i> Intents Manager', 'url' => $base . '&action=intents'],
             'tools' => ['label' => '<i class="fas fa-tools"></i> Tools Execution', 'url' => $base . '&action=tools'],
+            'autopilot' => ['label' => '<i class="fas fa-robot"></i> Autopilot', 'url' => $base . '&action=autopilot'],
             'cron_center' => ['label' => '<i class="fas fa-clock"></i> Separate Cron', 'url' => $base . '&action=cron_center'],
             'ticket_insights' => ['label' => '<i class="fas fa-brain"></i> Ticket Insights', 'url' => $base . '&action=ticket_insights'],
             'analytics' => ['label' => '<i class="fas fa-chart-line"></i> Analytics', 'url' => $base . '&action=analytics'],
@@ -4098,4 +4099,355 @@ class AdminController
         <?php
         return ob_get_clean();
     }
-}
+
+    // =========================================================================
+    // Autopilot Mode settings tab
+    // =========================================================================
+
+    public function autopilot(): string
+    {
+        // Ensure schema exists for new installs without reactivation
+        require_once dirname(__DIR__) . '/lib/AutopilotProcessor.php';
+
+        // Hot-migrate autopilot columns & table
+        $autopilotCols = [
+            'autopilot_enabled' => ['boolean', 0], 'autopilot_admin_id' => ['integer_nullable', null],
+            'autopilot_max_replies' => ['integer', 3], 'autopilot_delay_min_sec' => ['integer', 180],
+            'autopilot_delay_max_sec' => ['integer', 900], 'autopilot_allowed_depts' => ['text', null],
+            'autopilot_blocked_depts' => ['text', null], 'autopilot_blocked_topics' => ['text', null],
+            'autopilot_max_urgency' => ['string_col', 'High'], 'autopilot_max_sentiment' => ['integer', 7],
+            'autopilot_only_first_reply' => ['boolean', 1], 'autopilot_tone' => ['string_col', 'Friendly'],
+            'autopilot_cron_max_per_run' => ['integer', 5], 'autopilot_tag_skipped' => ['boolean', 1],
+            'autopilot_cron_last_run_at' => ['timestamp', null], 'autopilot_cron_last_message' => ['text', null],
+        ];
+        foreach ($autopilotCols as $col => [$type, $default]) {
+            try { Capsule::table('tblsahdev_settings')->select($col)->first(); } catch (\Exception $e) {
+                try {
+                    Capsule::schema()->table('tblsahdev_settings', function ($tbl) use ($col, $type, $default) {
+                        switch ($type) {
+                            case 'boolean': $tbl->boolean($col)->default($default ?? 0); break;
+                            case 'integer': $c = $tbl->integer($col)->nullable(); if ($default !== null) $c->default($default); break;
+                            case 'integer_nullable': $tbl->integer($col)->nullable(); break;
+                            case 'text': $tbl->text($col)->nullable(); break;
+                            case 'timestamp': $tbl->timestamp($col)->nullable(); break;
+                            default: $c = $tbl->string($col, 128)->nullable(); if ($default !== null) $c->default($default);
+                        }
+                    });
+                } catch (\Exception $ex) {}
+            }
+        }
+        try {
+            if (!Capsule::schema()->hasTable('tblsahdev_autopilot_log')) {
+                Capsule::schema()->create('tblsahdev_autopilot_log', function ($table) {
+                    $table->increments('id');
+                    $table->integer('ticket_id')->unsigned()->index();
+                    $table->integer('reply_id')->unsigned()->nullable();
+                    $table->timestamp('ticket_lastreply_snapshot')->nullable();
+                    $table->string('ai_decision', 16)->index();
+                    $table->string('skip_reason', 128)->nullable();
+                    $table->integer('tokens_used')->nullable();
+                    $table->timestamp('created_at')->useCurrent();
+                });
+            }
+        } catch (\Throwable $e) {}
+
+        $settings = (array) Capsule::table('tblsahdev_settings')->first();
+        $successMsg = '';
+        $errorMsg = '';
+
+        if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_autopilot'])) {
+            check_token('WHMCS.admin.default');
+            try {
+                $allowedDepts = implode(',', array_filter(array_map('intval', (array) ($_POST['autopilot_allowed_depts'] ?? []))));
+                $blockedDepts = implode(',', array_filter(array_map('intval', (array) ($_POST['autopilot_blocked_depts'] ?? []))));
+
+                Capsule::table('tblsahdev_settings')->where('id', 1)->update([
+                    'autopilot_enabled'          => !empty($_POST['autopilot_enabled']) ? 1 : 0,
+                    'autopilot_admin_id'         => (int) ($_POST['autopilot_admin_id'] ?? 0) ?: null,
+                    'autopilot_max_replies'       => max(1, min(10, (int) ($_POST['autopilot_max_replies'] ?? 3))),
+                    'autopilot_delay_min_sec'     => max(0, (int) ($_POST['autopilot_delay_min_sec'] ?? 180)),
+                    'autopilot_delay_max_sec'     => max(0, (int) ($_POST['autopilot_delay_max_sec'] ?? 900)),
+                    'autopilot_allowed_depts'     => $allowedDepts,
+                    'autopilot_blocked_depts'     => $blockedDepts,
+                    'autopilot_blocked_topics'    => trim($_POST['autopilot_blocked_topics'] ?? ''),
+                    'autopilot_max_urgency'       => in_array($_POST['autopilot_max_urgency'] ?? '', ['Low','Medium','High','Critical']) ? $_POST['autopilot_max_urgency'] : 'High',
+                    'autopilot_max_sentiment'     => max(1, min(10, (int) ($_POST['autopilot_max_sentiment'] ?? 7))),
+                    'autopilot_only_first_reply'  => !empty($_POST['autopilot_only_first_reply']) ? 1 : 0,
+                    'autopilot_tone'              => in_array($_POST['autopilot_tone'] ?? '', ['Professional','Technical','Friendly','Strict']) ? $_POST['autopilot_tone'] : 'Friendly',
+                    'autopilot_cron_max_per_run'  => max(1, min(20, (int) ($_POST['autopilot_cron_max_per_run'] ?? 5))),
+                    'autopilot_tag_skipped'       => !empty($_POST['autopilot_tag_skipped']) ? 1 : 0,
+                    'updated_at'                  => \Carbon\Carbon::now(),
+                ]);
+                $successMsg = 'Autopilot settings saved successfully.';
+                $settings = (array) Capsule::table('tblsahdev_settings')->first();
+            } catch (\Throwable $e) {
+                $errorMsg = $e->getMessage();
+            }
+        }
+
+        // Load data for form
+        $allAdmins = Capsule::table('tbladmins')
+            ->select('id', 'firstname', 'lastname', 'username', 'disabled')
+            ->where('disabled', 0)
+            ->orderBy('firstname')
+            ->get();
+
+        $allDepts = Capsule::table('tblticketdepartments')
+            ->select('id', 'name')
+            ->orderBy('name')
+            ->get();
+
+        $allowedDeptIds = array_filter(array_map('intval', explode(',', $settings['autopilot_allowed_depts'] ?? '')));
+        $blockedDeptIds = array_filter(array_map('intval', explode(',', $settings['autopilot_blocked_depts'] ?? '')));
+
+        // Recent autopilot log
+        $recentLog = Capsule::table('tblsahdev_autopilot_log as al')
+            ->leftJoin('tbltickets as t', 't.id', '=', 'al.ticket_id')
+            ->select('al.*', 't.tid as ticket_tid', 't.title as ticket_title')
+            ->orderBy('al.id', 'desc')
+            ->limit(50)
+            ->get();
+
+        $actionUrl = htmlspecialchars($this->moduleVars['modulelink']) . '&action=autopilot';
+        $csrfToken = generate_token('form');
+
+        ob_start();
+        ?>
+        <?php echo $this->getNavigationMarkup('autopilot'); ?>
+
+        <style>
+            .autopilot-card { background:#fff; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,.06); padding:22px 28px; margin-bottom:22px; }
+            .autopilot-card h4 { margin-top:0; margin-bottom:16px; color:#333; font-size:15px; font-weight:700; border-bottom:1px solid #f0f0f0; padding-bottom:10px; }
+            .autopilot-card h4 i { margin-right:7px; }
+            .ap-master-switch { display:flex; align-items:center; gap:14px; padding:18px 22px; background:linear-gradient(90deg,#0d6efd10,#0d6efd05); border-radius:8px; margin-bottom:22px; border:1px solid #0d6efd30; }
+            .ap-master-switch .ap-toggle-label { font-size:17px; font-weight:700; color:#0d6efd; }
+            .ap-badge-on  { background:#198754; color:#fff; padding:3px 10px; border-radius:12px; font-size:12px; }
+            .ap-badge-off { background:#6c757d; color:#fff; padding:3px 10px; border-radius:12px; font-size:12px; }
+            .ap-dept-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:8px; max-height:220px; overflow-y:auto; padding:8px; background:#f8f9fa; border-radius:6px; border:1px solid #dee2e6; }
+            .ap-dept-check { display:flex; align-items:center; gap:6px; font-size:13px; padding:4px 0; }
+            .ap-log-table { font-size:12px; }
+            .ap-log-replied { color:#198754; font-weight:600; }
+            .ap-log-skipped { color:#6c757d; }
+        </style>
+
+        <div class="sahdev-page-container">
+            <h2 style="margin-bottom:4px;"><i class="fas fa-robot"></i> Autopilot Mode</h2>
+            <p class="text-muted" style="margin-bottom:20px;">Automatically reply to qualifying tickets via the cron job. Reuses the existing insights analysis — no extra AI credits are spent on analysis.</p>
+
+            <?php if ($successMsg): ?><div class="alert alert-success"><?php echo htmlspecialchars($successMsg); ?></div><?php endif; ?>
+            <?php if ($errorMsg): ?><div class="alert alert-danger"><?php echo htmlspecialchars($errorMsg); ?></div><?php endif; ?>
+
+            <form method="post" action="<?php echo $actionUrl; ?>">
+                <?php echo $csrfToken; ?>
+                <input type="hidden" name="save_autopilot" value="1">
+
+                <!-- Master Switch -->
+                <div class="ap-master-switch">
+                    <div>
+                        <div class="ap-toggle-label"><i class="fas fa-robot"></i> Autopilot Auto-Reply</div>
+                        <div class="text-muted" style="font-size:13px;">When enabled, Sahdev will automatically post replies to eligible tickets during each cron run.</div>
+                    </div>
+                    <div style="margin-left:auto;">
+                        <?php $apOn = !empty($settings['autopilot_enabled']); ?>
+                        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin:0;">
+                            <input type="checkbox" name="autopilot_enabled" value="1" <?php echo $apOn ? 'checked' : ''; ?> style="width:20px;height:20px;">
+                            <span class="<?php echo $apOn ? 'ap-badge-on':'ap-badge-off'; ?>"><?php echo $apOn ? 'ENABLED':'DISABLED'; ?></span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Identity -->
+                <div class="autopilot-card">
+                    <h4><i class="fas fa-user-tie"></i> Reply Identity</h4>
+                    <div class="form-group">
+                        <label>Reply as admin account <span class="text-danger">*</span></label>
+                        <select name="autopilot_admin_id" class="form-control" style="max-width:400px;">
+                            <option value="0">— Select an admin account —</option>
+                            <?php foreach ($allAdmins as $adm): ?>
+                                <option value="<?php echo (int)$adm->id; ?>" <?php echo ((int)($settings['autopilot_admin_id'] ?? 0) === (int)$adm->id) ? 'selected' : ''; ?>>
+                                    <?php echo htmlspecialchars(trim($adm->firstname . ' ' . $adm->lastname) . ' (' . $adm->username . ')'); ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                        <p class="help-block">Create a dedicated WHMCS admin account (e.g. <strong>Sahdev AI</strong>) and select it here. Autopilot replies will appear under this name.</p>
+                    </div>
+                </div>
+
+                <!-- Reply Limits -->
+                <div class="autopilot-card">
+                    <h4><i class="fas fa-sliders-h"></i> Reply Limits</h4>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="form-group">
+                                <label>Max consecutive AI replies per ticket <small class="text-muted">(1–10)</small></label>
+                                <input type="number" name="autopilot_max_replies" class="form-control" min="1" max="10" value="<?php echo (int)($settings['autopilot_max_replies'] ?? 3); ?>">
+                                <p class="help-block">After this many auto-replies, the ticket is left for a human regardless of follow-up messages.</p>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-group">
+                                <label>Max auto-replies per cron run</label>
+                                <input type="number" name="autopilot_cron_max_per_run" class="form-control" min="1" max="20" value="<?php echo (int)($settings['autopilot_cron_max_per_run'] ?? 5); ?>">
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-group">
+                                <label style="display:block;">Only reply to first-contact tickets</label>
+                                <label class="text-muted" style="font-weight:normal;">
+                                    <input type="checkbox" name="autopilot_only_first_reply" value="1" <?php echo !empty($settings['autopilot_only_first_reply']) ? 'checked' : ''; ?>>
+                                    Skip if any human admin has already replied
+                                </label>
+                                <p class="help-block">Recommended. Prevents autopilot from interrupting active human conversations.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Delay -->
+                <div class="autopilot-card">
+                    <h4><i class="fas fa-hourglass-half"></i> Reply Delay (simulate human response time)</h4>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="form-group">
+                                <label>Minimum delay (seconds)</label>
+                                <input type="number" name="autopilot_delay_min_sec" class="form-control" min="0" max="86400" value="<?php echo (int)($settings['autopilot_delay_min_sec'] ?? 180); ?>">
+                                <p class="help-block">e.g. 180 = 3 min minimum wait</p>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-group">
+                                <label>Maximum delay (seconds)</label>
+                                <input type="number" name="autopilot_delay_max_sec" class="form-control" min="0" max="86400" value="<?php echo (int)($settings['autopilot_delay_max_sec'] ?? 900); ?>">
+                                <p class="help-block">e.g. 900 = up to 15 min max wait</p>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-group">
+                                <label>Reply tone</label>
+                                <select name="autopilot_tone" class="form-control">
+                                    <?php foreach (['Professional','Technical','Friendly','Strict'] as $t): ?>
+                                        <option <?php echo (($settings['autopilot_tone'] ?? 'Friendly') === $t) ? 'selected' : ''; ?>><?php echo $t; ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Department Filters -->
+                <div class="autopilot-card">
+                    <h4><i class="fas fa-filter"></i> Department Filters</h4>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <label><strong>Allow only these departments</strong> <small class="text-muted">(leave all unchecked to allow all)</small></label>
+                            <div class="ap-dept-grid">
+                                <?php foreach ($allDepts as $dept): ?>
+                                    <label class="ap-dept-check">
+                                        <input type="checkbox" name="autopilot_allowed_depts[]" value="<?php echo (int)$dept->id; ?>" <?php echo in_array((int)$dept->id, $allowedDeptIds) ? 'checked' : ''; ?>>
+                                        <?php echo htmlspecialchars($dept->name); ?>
+                                    </label>
+                                <?php endforeach; ?>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <label><strong>Always block these departments</strong> <small class="text-muted">(e.g. Abuse, Legal)</small></label>
+                            <div class="ap-dept-grid">
+                                <?php foreach ($allDepts as $dept): ?>
+                                    <label class="ap-dept-check">
+                                        <input type="checkbox" name="autopilot_blocked_depts[]" value="<?php echo (int)$dept->id; ?>" <?php echo in_array((int)$dept->id, $blockedDeptIds) ? 'checked' : ''; ?>>
+                                        <?php echo htmlspecialchars($dept->name); ?>
+                                    </label>
+                                <?php endforeach; ?>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="form-group" style="margin-top:16px;">
+                        <label>Blocked topic keywords (comma-separated)</label>
+                        <textarea name="autopilot_blocked_topics" class="form-control" rows="2" placeholder="abuse, hack, fraud, legal, chargeback, phishing, dmca"><?php echo htmlspecialchars($settings['autopilot_blocked_topics'] ?? ''); ?></textarea>
+                        <p class="help-block">Tickets whose subject contains any of these keywords will be skipped automatically.</p>
+                    </div>
+                </div>
+
+                <!-- Safety Thresholds -->
+                <div class="autopilot-card">
+                    <h4><i class="fas fa-shield-alt"></i> Safety Thresholds</h4>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label>Maximum allowed urgency level</label>
+                                <select name="autopilot_max_urgency" class="form-control">
+                                    <?php foreach (['Low','Medium','High','Critical'] as $u): ?>
+                                        <option <?php echo (($settings['autopilot_max_urgency'] ?? 'High') === $u) ? 'selected' : ''; ?>><?php echo $u; ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <p class="help-block">Tickets at higher urgency than this will be skipped and left for human support.</p>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label>Maximum sentiment score (frustration) <small class="text-muted">1–10, skip if &ge; this</small></label>
+                                <input type="number" name="autopilot_max_sentiment" class="form-control" min="1" max="10" value="<?php echo (int)($settings['autopilot_max_sentiment'] ?? 7); ?>">
+                                <p class="help-block">Score 1 = very calm, 10 = extremely angry. Tickets with score &ge; this value are skipped. Recommended: 7.</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" name="autopilot_tag_skipped" value="1" <?php echo !empty($settings['autopilot_tag_skipped']) ? 'checked' : ''; ?>>
+                            Tag skipped tickets with <code>ai-needs-human</code> in WHMCS Tag Cloud
+                        </label>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn btn-primary btn-lg"><i class="fas fa-save"></i> Save Autopilot Settings</button>
+            </form>
+
+            <!-- Status & Run Log -->
+            <div class="autopilot-card" style="margin-top:28px;">
+                <h4><i class="fas fa-history"></i> Autopilot Run Log
+                    <?php if (!empty($settings['autopilot_cron_last_run_at'])): ?>
+                        <small class="text-muted" style="font-weight:400;font-size:12px;"> — Last run: <?php echo htmlspecialchars($settings['autopilot_cron_last_run_at']); ?> | <?php echo htmlspecialchars($settings['autopilot_cron_last_message'] ?? ''); ?></small>
+                    <?php endif; ?>
+                </h4>
+
+                <?php if ($recentLog->count() === 0): ?>
+                    <p class="text-muted">No autopilot activity yet. Enable autopilot and run the cron job.</p>
+                <?php else: ?>
+                    <div style="overflow-x:auto;">
+                    <table class="table table-condensed table-striped ap-log-table">
+                        <thead><tr><th>Time</th><th>Ticket</th><th>Decision</th><th>Reason</th><th>Tokens</th></tr></thead>
+                        <tbody>
+                        <?php foreach ($recentLog as $log): ?>
+                            <tr>
+                                <td><?php echo htmlspecialchars($log->created_at); ?></td>
+                                <td>
+                                    <?php if ($log->ticket_tid): ?>
+                                        <a href="<?php echo $GLOBALS['CONFIG']['SystemURL'] ?? ''; ?>/admin/supporttickets.php?action=view&id=<?php echo htmlspecialchars($log->ticket_id); ?>" target="_blank">
+                                            #<?php echo htmlspecialchars($log->ticket_tid); ?>
+                                        </a>
+                                        <?php echo $log->ticket_title ? ' — ' . htmlspecialchars(substr($log->ticket_title, 0, 50)) : ''; ?>
+                                    <?php else: ?>
+                                        ID #<?php echo (int)$log->ticket_id; ?>
+                                    <?php endif; ?>
+                                </td>
+                                <td>
+                                    <?php if ($log->ai_decision === 'replied'): ?>
+                                        <span class="ap-log-replied"><i class="fas fa-check-circle"></i> replied</span>
+                                    <?php else: ?>
+                                        <span class="ap-log-skipped"><i class="fas fa-minus-circle"></i> <?php echo htmlspecialchars($log->ai_decision); ?></span>
+                                    <?php endif; ?>
+                                </td>
+                                <td><?php echo htmlspecialchars($log->skip_reason ?? '—'); ?></td>
+                                <td><?php echo $log->tokens_used ? number_format((int)$log->tokens_used) : '—'; ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                    </div>
+                <?php endif; ?>
+            </div>
+        </div>
+        <?php
+        return ob_get_clean();
+    }
+}

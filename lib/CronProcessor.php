@@ -8,6 +8,7 @@ use Carbon\Carbon;
 require_once __DIR__ . '/TaskProviderResolver.php';
 require_once __DIR__ . '/WhmcsTicketTagHelper.php';
 require_once __DIR__ . '/TicketDataExtractor.php';
+require_once __DIR__ . '/AutopilotProcessor.php';
 
 /**
  * CronProcessor
@@ -59,7 +60,9 @@ class CronProcessor
             'skipped'          => 0,
             'errors'           => [],
             'statuses_checked' => [],
+            'autopilot'        => null,
         ];
+        $analyzedTicketIds = [];
 
         try {
             $settings = $this->settings;
@@ -121,12 +124,21 @@ class CronProcessor
                 try {
                     $this->analyzeTicket((int) $ticketId);
                     $result['analyzed']++;
+                    $analyzedTicketIds[] = (int) $ticketId;
                 } catch (\Throwable $e) {
                     $msg = "Ticket #{$ticketId}: " . $e->getMessage();
                     $result['errors'][] = $msg;
                     $result['skipped']++;
                     $this->logError($ticketId, $e->getMessage());
                 }
+            }
+
+            // Autopilot: attempt auto-replies for tickets just analyzed
+            try {
+                $autopilot = new AutopilotProcessor($this->settings, $this->provider, $this->fallback);
+                $result['autopilot'] = $autopilot->run($analyzedTicketIds, $verbose);
+            } catch (\Throwable $e) {
+                $result['autopilot'] = ['enabled' => false, 'errors' => ['Autopilot fatal: ' . $e->getMessage()]];
             }
         } catch (\Throwable $e) {
             $result['errors'][] = 'Fatal error: ' . $e->getMessage();

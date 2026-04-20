@@ -1,0 +1,657 @@
+<?php
+
+namespace Sahdev\Lib;
+
+use WHMCS\Database\Capsule;
+use Carbon\Carbon;
+
+require_once __DIR__ . '/TaskProviderResolver.php';
+
+/**
+ * AutopilotProcessor
+ *
+ * Automated first-response engine. Reads the AI insights already written by
+ * CronProcessor (tblsahdev_sentiment) and posts a reply on behalf of a
+ * designated WHMCS admin account when a ticket passes all eligibility checks.
+ *
+ * Design principles:
+ *  - Zero double-billing: analysis is reused from the cron insights call.
+ *    A second focused AI call generates only the reply text.
+ *  - Idempotent: every attempt is stamped with the ticket's lastreply snapshot.
+ *    Running the cron twice never produces duplicate replies.
+ *  - Hard safety rules: Critical urgency and high sentiment score always skip
+ *    to human regardless of other settings.
+ *  - Per-ticket reply cap: stops auto-replying after N consecutive replies
+ *    (default 3, max 10) to prevent infinite AI loops.
+ */
+class AutopilotProcessor
+{
+    private array $settings;
+    private $provider;
+    private $fallback;
+
+    /** @var array Result counters returned to the cron summary */
+    private array $result = [
+        'enabled'       => false,
+        'tickets_found' => 0,
+        'replied'       => 0,
+        'skipped'       => 0,
+        'errors'        => [],
+    ];
+
+    public function __construct(array $settings, $provider, $fallback)
+    {
+        $this->settings = $settings;
+        $this->provider  = $provider;
+        $this->fallback  = $fallback;
+    }
+
+    // -------------------------------------------------------------------------
+    // Public entry point
+    // -------------------------------------------------------------------------
+
+    /**
+     * @param int[] $analyzedTicketIds  Ticket IDs that CronProcessor just analyzed.
+     * @param bool  $verbose            When true, return richer diagnostic data.
+     * @return array
+     */
+    public function run(array $analyzedTicketIds, bool $verbose = false): array
+    {
+        $this->ensureSchema();
+
+        if (empty($this->settings['autopilot_enabled'])) {
+            $this->result['errors'][] = 'Autopilot is disabled.';
+            return $this->result;
+        }
+
+        $this->result['enabled'] = true;
+
+        $autopilotAdminId = (int) ($this->settings['autopilot_admin_id'] ?? 0);
+        if ($autopilotAdminId <= 0) {
+            $this->result['errors'][] = 'Autopilot admin account is not configured.';
+            return $this->result;
+        }
+
+        if (empty($analyzedTicketIds)) {
+            $this->result['errors'][] = 'No tickets were analyzed by insights cron this run.';
+            return $this->result;
+        }
+
+        $maxPerRun = max(1, (int) ($this->settings['autopilot_cron_max_per_run'] ?? 5));
+        $processed  = 0;
+
+        foreach ($analyzedTicketIds as $ticketId) {
+            if ($processed >= $maxPerRun) break;
+
+            try {
+                $outcome = $this->processTicket((int) $ticketId, $autopilotAdminId);
+                if ($outcome === 'replied') {
+                    $this->result['replied']++;
+                    $processed++;
+                } else {
+                    $this->result['skipped']++;
+                }
+                $this->result['tickets_found']++;
+            } catch (\Throwable $e) {
+                $this->result['errors'][] = "Ticket #{$ticketId}: " . $e->getMessage();
+                $this->result['skipped']++;
+                $this->result['tickets_found']++;
+                $this->logAttempt($ticketId, 'skipped', 'error: ' . substr($e->getMessage(), 0, 120), null, null);
+            }
+        }
+
+        $this->persistRunStatus();
+
+        return $this->result;
+    }
+
+    // -------------------------------------------------------------------------
+    // Per-ticket processing
+    // -------------------------------------------------------------------------
+
+    /**
+     * @return string 'replied'|'skipped'
+     */
+    private function processTicket(int $ticketId, int $autopilotAdminId): string
+    {
+        // Load ticket
+        $ticket = Capsule::table('tbltickets')
+            ->select('id', 'tid', 'did', 'userid', 'name', 'title', 'status', 'lastreply')
+            ->where('id', $ticketId)
+            ->first();
+
+        if (!$ticket) {
+            $this->logAttempt($ticketId, 'skipped', 'ticket_not_found', null, null);
+            return 'skipped';
+        }
+
+        // Load sentiment from insights cron
+        $sentiment = Capsule::table('tblsahdev_sentiment')
+            ->where('ticket_id', $ticketId)
+            ->first();
+
+        if (!$sentiment) {
+            $this->logAttempt($ticketId, 'skipped', 'no_sentiment_data', null, $ticket->lastreply);
+            return 'skipped';
+        }
+
+        // --- Eligibility checks (fail-fast) ---
+
+        // 1. Ticket must not be closed/deleted
+        $closedStatuses = ['Closed', 'On Hold'];
+        if (in_array($ticket->status, $closedStatuses, true)) {
+            $this->logAttempt($ticketId, 'skipped', 'ticket_closed', null, $ticket->lastreply);
+            return 'skipped';
+        }
+
+        // 2. Department blocked?
+        $deptId = (int) $ticket->did;
+        if ($this->isDepartmentBlocked($deptId)) {
+            $this->logAttempt($ticketId, 'skipped', 'dept_blocked', null, $ticket->lastreply);
+            $this->tagTicketIfEnabled($ticketId);
+            return 'skipped';
+        }
+
+        // 3. Department allowed? (if allowlist is configured)
+        if (!$this->isDepartmentAllowed($deptId)) {
+            $this->logAttempt($ticketId, 'skipped', 'dept_not_in_allowlist', null, $ticket->lastreply);
+            return 'skipped';
+        }
+
+        // 4. Subject/ticket blocked by keyword?
+        if ($this->isBlockedByKeyword($ticket->title)) {
+            $this->logAttempt($ticketId, 'skipped', 'blocked_keyword', null, $ticket->lastreply);
+            $this->tagTicketIfEnabled($ticketId);
+            return 'skipped';
+        }
+
+        // 5. Urgency threshold check (hard rule)
+        $urgency      = strtolower($sentiment->urgency ?? 'medium');
+        $maxUrgency   = strtolower($this->settings['autopilot_max_urgency'] ?? 'high');
+        $urgencyOrder = ['low' => 1, 'medium' => 2, 'high' => 3, 'critical' => 4];
+        $ticketUrgencyLevel = $urgencyOrder[$urgency] ?? 2;
+        $maxUrgencyLevel    = $urgencyOrder[$maxUrgency] ?? 3;
+
+        if ($ticketUrgencyLevel > $maxUrgencyLevel) {
+            $this->logAttempt($ticketId, 'skipped', 'urgency_too_high:' . $urgency, null, $ticket->lastreply);
+            $this->tagTicketIfEnabled($ticketId);
+            return 'skipped';
+        }
+
+        // 6. Sentiment score threshold (hard rule)
+        $sentimentScore    = (int) ($sentiment->score ?? 5);
+        $maxSentimentScore = (int) ($this->settings['autopilot_max_sentiment'] ?? 7);
+        if ($sentimentScore >= $maxSentimentScore) {
+            $this->logAttempt($ticketId, 'skipped', 'sentiment_too_high:' . $sentimentScore, null, $ticket->lastreply);
+            $this->tagTicketIfEnabled($ticketId);
+            return 'skipped';
+        }
+
+        // 7. Only-first-reply mode: check zero admin replies exist
+        $onlyFirst = !empty($this->settings['autopilot_only_first_reply']);
+        $adminReplyCount = Capsule::table('tblticketreplies')
+            ->where('tid', $ticketId)
+            ->whereNotNull('admin')
+            ->where('admin', '!=', '')
+            ->count();
+
+        if ($onlyFirst && $adminReplyCount > 0) {
+            $this->logAttempt($ticketId, 'skipped', 'has_admin_reply', null, $ticket->lastreply);
+            return 'skipped';
+        }
+
+        // 8. Per-ticket autopilot reply cap
+        $maxReplies = max(1, min(10, (int) ($this->settings['autopilot_max_replies'] ?? 3)));
+        $autopilotReplyCount = Capsule::table('tblsahdev_autopilot_log')
+            ->where('ticket_id', $ticketId)
+            ->where('ai_decision', 'replied')
+            ->count();
+
+        if ($autopilotReplyCount >= $maxReplies) {
+            $this->logAttempt($ticketId, 'skipped', 'limit_reached', null, $ticket->lastreply);
+            $this->tagTicketIfEnabled($ticketId, 'ai-needs-human');
+            return 'skipped';
+        }
+
+        // 9. Idempotency: has this exact lastreply already been replied to?
+        $alreadyReplied = Capsule::table('tblsahdev_autopilot_log')
+            ->where('ticket_id', $ticketId)
+            ->where('ticket_lastreply_snapshot', $ticket->lastreply)
+            ->where('ai_decision', 'replied')
+            ->exists();
+
+        if ($alreadyReplied) {
+            // Not a skip — just already done, silent pass
+            return 'skipped';
+        }
+
+        // 10. If there was a previous autopilot reply, check that the LAST reply to
+        //     this ticket is from the client (not from a human admin who jumped in).
+        if ($autopilotReplyCount > 0) {
+            $lastReply = Capsule::table('tblticketreplies')
+                ->where('tid', $ticketId)
+                ->orderBy('id', 'desc')
+                ->first();
+
+            if ($lastReply && !empty($lastReply->admin)) {
+                // Human admin replied since last autopilot — hand off
+                $this->logAttempt($ticketId, 'skipped', 'human_replied_after_autopilot', null, $ticket->lastreply);
+                return 'skipped';
+            }
+        }
+
+        // --- All checks passed — generate and post the reply ---
+
+        $this->applyRandomDelay();
+
+        $replyText = $this->generateReply($ticketId, $ticket);
+
+        if (empty(trim($replyText))) {
+            $this->logAttempt($ticketId, 'skipped', 'empty_reply_generated', null, $ticket->lastreply);
+            return 'skipped';
+        }
+
+        // Append admin signature
+        $signature = $this->getAdminSignature($autopilotAdminId);
+        if ($signature) {
+            $replyText = $replyText . "\n\n" . $signature;
+        }
+
+        $replyId = $this->postReply($ticketId, $replyText, $autopilotAdminId);
+
+        $tokensUsed = $this->provider ? $this->provider->getLastTokenUsage() : 0;
+        $this->logAttempt($ticketId, 'replied', null, $replyId, $ticket->lastreply, $tokensUsed);
+
+        return 'replied';
+    }
+
+    // -------------------------------------------------------------------------
+    // AI reply generation
+    // -------------------------------------------------------------------------
+
+    private function generateReply(int $ticketId, $ticket): string
+    {
+        $context = $this->buildReplyContext($ticketId, $ticket);
+
+        $tone = $this->settings['autopilot_tone'] ?? 'Friendly';
+
+        $systemPrompt = $this->settings['system_prompt']
+            ?? "You are Sahdev, a Senior Technical Support Specialist. Provide helpful, empathetic, professional support replies. Output only the reply text — no JSON, no markdown preamble, no sign-off.";
+
+        // Build a focused reply-only prompt
+        $prompt = $this->buildReplyPrompt($context, $tone);
+
+        $settingsForProvider = [
+            'system_prompt'        => $systemPrompt . "\n\nIMPORTANT: Output ONLY the final client reply text. No JSON wrapper, no schema, no extra formatting. Just the reply body.",
+            'user_prompt_template' => null,
+            'model_name'           => $this->settings['model_name'] ?? '',
+            'api_url'              => $this->settings['api_url'] ?? '',
+            'provider_type'        => $this->settings['provider_type'] ?? 'google',
+            'temperature'          => 0.65,
+            'max_tokens'           => max(1024, (int) ($this->settings['max_tokens'] ?? 2048)),
+            'quality_scorer_enabled' => 0,
+        ];
+
+        try {
+            $rawResponse = $this->provider->generateResponse(
+                $context + ['__autopilot_raw_reply__' => true],
+                $settingsForProvider,
+                $tone,
+                'AUTOPILOT MODE: Output ONLY the CLIENT_REPLY text verbatim. No other JSON fields.'
+            );
+
+            // Prefer CLIENT_REPLY from JSON if provider returned it, else grab any text
+            if (!empty($rawResponse['CLIENT_REPLY'])) {
+                return trim($rawResponse['CLIENT_REPLY']);
+            }
+            if (!empty($rawResponse['__raw_text__'])) {
+                return trim($rawResponse['__raw_text__']);
+            }
+            // Fallback: first non-empty string value in response
+            foreach ($rawResponse as $val) {
+                if (is_string($val) && strlen(trim($val)) > 20) {
+                    return trim($val);
+                }
+            }
+        } catch (\Exception $primaryErr) {
+            if ($this->fallback) {
+                try {
+                    $rawResponse = $this->fallback->generateResponse(
+                        $context + ['__autopilot_raw_reply__' => true],
+                        $settingsForProvider,
+                        $tone,
+                        'AUTOPILOT MODE: Output ONLY the CLIENT_REPLY text verbatim.'
+                    );
+                    if (!empty($rawResponse['CLIENT_REPLY'])) return trim($rawResponse['CLIENT_REPLY']);
+                    if (!empty($rawResponse['__raw_text__'])) return trim($rawResponse['__raw_text__']);
+                } catch (\Exception $fallbackErr) {
+                    throw new \Exception("Primary and fallback providers failed. Primary: " . $primaryErr->getMessage());
+                }
+            } else {
+                throw $primaryErr;
+            }
+        }
+
+        return '';
+    }
+
+    private function buildReplyPrompt(array $context, string $tone): string
+    {
+        $msgs = array_reverse($context['messages'] ?? []);
+        $budget = 6000;
+        $used   = 0;
+        $lines  = [];
+
+        foreach ($msgs as $msg) {
+            $type  = $msg['admin'] ? 'ADMIN' : 'CLIENT';
+            $body  = $this->sanitize($msg['message'] ?? '');
+            $entry = "[{$type}] ({$msg['date']}):\n{$body}\n\n";
+            if ($used + strlen($entry) > $budget) break;
+            $lines[] = $entry;
+            $used   += strlen($entry);
+        }
+
+        $messagesBlock = implode('', array_reverse($lines));
+        $clientName    = $context['client_name'] ?? 'Client';
+        $subject       = $context['subject'] ?? 'Support Request';
+        $dept          = $context['department'] ?? 'Support';
+
+        $prompt  = "=== AUTOPILOT TASK ===\n";
+        $prompt .= "Write a complete, professional reply to the following support ticket.\n";
+        $prompt .= "Tone: {$tone}\n";
+        $prompt .= "Include a warm greeting addressing the client by first name if available.\n";
+        $prompt .= "Do NOT include a sign-off or signature — that will be added automatically.\n";
+        $prompt .= "Output ONLY the reply text.\n\n";
+        $prompt .= "=== TICKET INFO ===\n";
+        $prompt .= "Client: {$clientName}\nDepartment: {$dept}\nSubject: {$subject}\n\n";
+        $prompt .= "=== CONVERSATION ===\n{$messagesBlock}";
+
+        return $prompt;
+    }
+
+    private function buildReplyContext(int $ticketId, $ticket): array
+    {
+        $department = Capsule::table('tblticketdepartments')
+            ->where('id', $ticket->did)
+            ->value('name') ?? 'Support';
+
+        $clientName = $ticket->name ?: 'Client';
+        if ($ticket->userid) {
+            $client = Capsule::table('tblclients')
+                ->select('firstname', 'lastname')
+                ->where('id', $ticket->userid)
+                ->first();
+            if ($client) {
+                $clientName = trim($client->firstname . ' ' . $client->lastname) ?: $clientName;
+            }
+        }
+
+        $messages = [[
+            'admin'   => false,
+            'date'    => Capsule::table('tbltickets')->where('id', $ticketId)->value('date'),
+            'message' => Capsule::table('tbltickets')->where('id', $ticketId)->value('message'),
+        ]];
+
+        $replies = Capsule::table('tblticketreplies')
+            ->select('userid', 'admin', 'message', 'date')
+            ->where('tid', $ticketId)
+            ->orderBy('id', 'asc')
+            ->limit(20)
+            ->get();
+
+        foreach ($replies as $reply) {
+            $messages[] = [
+                'admin'   => !empty($reply->admin),
+                'date'    => $reply->date,
+                'message' => $reply->message,
+            ];
+        }
+
+        return [
+            'subject'            => $ticket->title,
+            'department'         => $department,
+            'client_name'        => $clientName,
+            'messages'           => $messages,
+            'services_summary'   => '',
+            'attachments_text'   => '',
+            'attachments_images' => [],
+        ];
+    }
+
+    // -------------------------------------------------------------------------
+    // WHMCS API — post reply
+    // -------------------------------------------------------------------------
+
+    private function postReply(int $ticketId, string $replyText, int $adminId): ?int
+    {
+        // Get admin username for WHMCS reply
+        $adminUsername = Capsule::table('tbladmins')
+            ->where('id', $adminId)
+            ->value('username');
+
+        if (empty($adminUsername)) {
+            throw new \Exception("Autopilot admin (ID #{$adminId}) not found in tbladmins.");
+        }
+
+        // Use WHMCS localAPI to post the reply properly (handles status, notifications, etc.)
+        $result = localAPI('AddTicketReply', [
+            'ticketid'    => $ticketId,
+            'message'     => $replyText,
+            'adminid'     => $adminId,
+        ]);
+
+        if (($result['result'] ?? '') !== 'success') {
+            $err = $result['message'] ?? json_encode($result);
+            throw new \Exception("WHMCS localAPI AddTicketReply failed: {$err}");
+        }
+
+        // Retrieve the reply ID we just created
+        $replyId = Capsule::table('tblticketreplies')
+            ->where('tid', $ticketId)
+            ->where('admin', $adminUsername)
+            ->orderBy('id', 'desc')
+            ->value('id');
+
+        return $replyId ? (int) $replyId : null;
+    }
+
+    // -------------------------------------------------------------------------
+    // Admin signature
+    // -------------------------------------------------------------------------
+
+    private function getAdminSignature(int $adminId): string
+    {
+        $raw = Capsule::table('tbladmins')->where('id', $adminId)->value('signature');
+        return $raw ? trim(strip_tags($raw, '<br><p><a><b><strong><i><em>')) : '';
+    }
+
+    // -------------------------------------------------------------------------
+    // Eligibility helpers
+    // -------------------------------------------------------------------------
+
+    private function isDepartmentBlocked(int $deptId): bool
+    {
+        $blocked = $this->parseIntList($this->settings['autopilot_blocked_depts'] ?? '');
+        return !empty($blocked) && in_array($deptId, $blocked, true);
+    }
+
+    private function isDepartmentAllowed(int $deptId): bool
+    {
+        $allowed = $this->parseIntList($this->settings['autopilot_allowed_depts'] ?? '');
+        if (empty($allowed)) return true; // empty = all allowed
+        return in_array($deptId, $allowed, true);
+    }
+
+    private function isBlockedByKeyword(string $subject): bool
+    {
+        $raw = $this->settings['autopilot_blocked_topics'] ?? '';
+        if (empty($raw)) return false;
+
+        $keywords = array_filter(array_map('trim', explode(',', strtolower($raw))));
+        $subjectLower = strtolower($subject);
+
+        foreach ($keywords as $kw) {
+            if ($kw !== '' && strpos($subjectLower, $kw) !== false) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private function parseIntList(string $raw): array
+    {
+        if (empty($raw)) return [];
+        return array_values(array_filter(array_map('intval', explode(',', $raw))));
+    }
+
+    // -------------------------------------------------------------------------
+    // Helpers
+    // -------------------------------------------------------------------------
+
+    private function applyRandomDelay(): void
+    {
+        $min = max(0, (int) ($this->settings['autopilot_delay_min_sec'] ?? 180));
+        $max = max($min, (int) ($this->settings['autopilot_delay_max_sec'] ?? 900));
+        if ($min > 0 || $max > 0) {
+            $delay = rand($min, $max);
+            if ($delay > 0) sleep($delay);
+        }
+    }
+
+    private function tagTicketIfEnabled(int $ticketId, string $tag = 'ai-needs-human'): void
+    {
+        if (empty($this->settings['autopilot_tag_skipped'])) return;
+        try {
+            WhmcsTicketTagHelper::addTagIfMissing($ticketId, $tag);
+        } catch (\Throwable $e) {
+            // Never break cron
+        }
+    }
+
+    private function sanitize(string $text): string
+    {
+        $s = strip_tags($text);
+        $s = html_entity_decode($s, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $s = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', '', $s);
+        $s = preg_replace('/\r\n|\r/', "\n", $s);
+        $s = preg_replace('/\n{4,}/', "\n\n\n", $s);
+        return trim($s);
+    }
+
+    private function logAttempt(int $ticketId, string $decision, ?string $reason, ?int $replyId, $lastreplySnapshot, int $tokensUsed = 0): void
+    {
+        try {
+            Capsule::table('tblsahdev_autopilot_log')->insert([
+                'ticket_id'                  => $ticketId,
+                'reply_id'                   => $replyId,
+                'ticket_lastreply_snapshot'  => $lastreplySnapshot,
+                'ai_decision'                => $decision,
+                'skip_reason'                => $reason ? substr($reason, 0, 128) : null,
+                'tokens_used'                => $tokensUsed > 0 ? $tokensUsed : null,
+                'created_at'                 => Carbon::now(),
+            ]);
+        } catch (\Throwable $e) {
+            // Logging must never crash the cron
+        }
+    }
+
+    private function persistRunStatus(): void
+    {
+        try {
+            $replied  = $this->result['replied'];
+            $skipped  = $this->result['skipped'];
+            $errCount = count($this->result['errors']);
+
+            $msg = $replied > 0
+                ? "Autopilot: {$replied} replied, {$skipped} skipped."
+                : ($errCount > 0 ? 'Autopilot: ' . implode(' | ', array_slice($this->result['errors'], 0, 2)) : 'Autopilot: no eligible tickets.');
+
+            Capsule::table('tblsahdev_settings')->where('id', 1)->update([
+                'autopilot_cron_last_run_at'  => Carbon::now(),
+                'autopilot_cron_last_message' => substr($msg, 0, 512),
+                'updated_at'                  => Carbon::now(),
+            ]);
+        } catch (\Throwable $e) {
+            // Never break cron
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Schema
+    // -------------------------------------------------------------------------
+
+    private function ensureSchema(): void
+    {
+        try {
+            if (!Capsule::schema()->hasTable('tblsahdev_autopilot_log')) {
+                Capsule::schema()->create('tblsahdev_autopilot_log', function ($table) {
+                    $table->increments('id');
+                    $table->integer('ticket_id')->unsigned()->index();
+                    $table->integer('reply_id')->unsigned()->nullable();
+                    $table->timestamp('ticket_lastreply_snapshot')->nullable();
+                    $table->string('ai_decision', 16)->index(); // replied | skipped | limit_reached
+                    $table->string('skip_reason', 128)->nullable();
+                    $table->integer('tokens_used')->nullable();
+                    $table->timestamp('created_at')->useCurrent();
+                });
+            }
+        } catch (\Throwable $e) {
+            // If concurrent — table already exists, fine
+        }
+
+        // Ensure autopilot settings columns exist
+        $cols = [
+            'autopilot_enabled'          => ['type' => 'boolean', 'default' => 0],
+            'autopilot_admin_id'         => ['type' => 'integer', 'default' => null, 'nullable' => true],
+            'autopilot_max_replies'      => ['type' => 'integer', 'default' => 3],
+            'autopilot_delay_min_sec'    => ['type' => 'integer', 'default' => 180],
+            'autopilot_delay_max_sec'    => ['type' => 'integer', 'default' => 900],
+            'autopilot_allowed_depts'    => ['type' => 'text', 'nullable' => true],
+            'autopilot_blocked_depts'    => ['type' => 'text', 'nullable' => true],
+            'autopilot_blocked_topics'   => ['type' => 'text', 'nullable' => true],
+            'autopilot_max_urgency'      => ['type' => 'string', 'default' => 'High'],
+            'autopilot_max_sentiment'    => ['type' => 'integer', 'default' => 7],
+            'autopilot_only_first_reply' => ['type' => 'boolean', 'default' => 1],
+            'autopilot_tone'             => ['type' => 'string', 'default' => 'Friendly'],
+            'autopilot_cron_max_per_run' => ['type' => 'integer', 'default' => 5],
+            'autopilot_tag_skipped'      => ['type' => 'boolean', 'default' => 1],
+            'autopilot_cron_last_run_at' => ['type' => 'timestamp', 'nullable' => true],
+            'autopilot_cron_last_message'=> ['type' => 'string', 'default' => null, 'nullable' => true],
+        ];
+
+        foreach ($cols as $col => $def) {
+            try {
+                Capsule::table('tblsahdev_settings')->select($col)->first();
+            } catch (\Exception $e) {
+                try {
+                    Capsule::schema()->table('tblsahdev_settings', function ($table) use ($col, $def) {
+                        $nullable = !empty($def['nullable']);
+                        $default  = $def['default'] ?? null;
+
+                        switch ($def['type']) {
+                            case 'boolean':
+                                $c = $table->boolean($col)->default($default ?? 0);
+                                break;
+                            case 'integer':
+                                $c = $table->integer($col);
+                                if ($nullable) $c->nullable();
+                                elseif ($default !== null) $c->default($default);
+                                break;
+                            case 'text':
+                                $c = $table->text($col)->nullable();
+                                break;
+                            case 'timestamp':
+                                $c = $table->timestamp($col)->nullable();
+                                break;
+                            default:
+                                $c = $table->string($col, 128)->nullable();
+                                if ($default !== null) $c->default($default);
+                        }
+                    });
+                } catch (\Throwable $e2) {
+                    // Column may already exist via a race
+                }
+            }
+        }
+    }
+}

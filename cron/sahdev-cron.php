@@ -25,7 +25,9 @@ require_once dirname(__DIR__) . '/lib/GoogleAIProvider.php';
 require_once dirname(__DIR__) . '/lib/LMStudioAIProvider.php';
 require_once dirname(__DIR__) . '/lib/ReplicateAIProvider.php';
 require_once dirname(__DIR__) . '/lib/TicketDataExtractor.php';
+require_once dirname(__DIR__) . '/lib/WhmcsTicketTagHelper.php';
 require_once dirname(__DIR__) . '/lib/AIController.php';
+require_once dirname(__DIR__) . '/lib/AutopilotProcessor.php';
 require_once dirname(__DIR__) . '/lib/CronProcessor.php';
 require_once dirname(__DIR__) . '/modules/ToolsExecution/ToolsExecutionService.php';
 

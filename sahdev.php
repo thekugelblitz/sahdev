@@ -917,6 +917,114 @@ function sahdev_activate()
             ]);
         }
 
+        // Create tblsahdev_autopilot_log
+        try {
+            Capsule::table('tblsahdev_autopilot_log')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->create('tblsahdev_autopilot_log', function ($table) {
+                $table->increments('id');
+                $table->integer('ticket_id')->unsigned()->index();
+                $table->integer('reply_id')->unsigned()->nullable();
+                $table->timestamp('ticket_lastreply_snapshot')->nullable();
+                $table->string('ai_decision', 16)->index();
+                $table->string('skip_reason', 128)->nullable();
+                $table->integer('tokens_used')->nullable();
+                $table->timestamp('created_at')->useCurrent();
+            });
+        }
+
+        // Migrate: Autopilot settings columns
+        $autopilotColMap = [
+            'autopilot_enabled'           => ['boolean', 0],
+            'autopilot_admin_id'          => ['integer_nullable', null],
+            'autopilot_max_replies'       => ['integer', 3],
+            'autopilot_delay_min_sec'     => ['integer', 180],
+            'autopilot_delay_max_sec'     => ['integer', 900],
+            'autopilot_allowed_depts'     => ['text', null],
+            'autopilot_blocked_depts'     => ['text', null],
+            'autopilot_blocked_topics'    => ['text', null],
+            'autopilot_max_urgency'       => ['string_col', 'High'],
+            'autopilot_max_sentiment'     => ['integer', 7],
+            'autopilot_only_first_reply'  => ['boolean', 1],
+            'autopilot_tone'              => ['string_col', 'Friendly'],
+            'autopilot_cron_max_per_run'  => ['integer', 5],
+            'autopilot_tag_skipped'       => ['boolean', 1],
+            'autopilot_cron_last_run_at'  => ['timestamp', null],
+            'autopilot_cron_last_message' => ['text', null],
+        ];
+        foreach ($autopilotColMap as $col => [$type, $default]) {
+            try {
+                Capsule::table('tblsahdev_settings')->select($col)->first();
+            } catch (\Exception $e) {
+                try {
+                    Capsule::schema()->table('tblsahdev_settings', function ($tbl) use ($col, $type, $default) {
+                        switch ($type) {
+                            case 'boolean': $tbl->boolean($col)->default($default ?? 0); break;
+                            case 'integer': $c = $tbl->integer($col)->nullable(); if ($default !== null) $c->default($default); break;
+                            case 'integer_nullable': $tbl->integer($col)->nullable(); break;
+                            case 'text': $tbl->text($col)->nullable(); break;
+                            case 'timestamp': $tbl->timestamp($col)->nullable(); break;
+                            default: $c = $tbl->string($col, 128)->nullable(); if ($default !== null) $c->default($default);
+                        }
+                    });
+                } catch (\Exception $ex) { /* race / already exists */ }
+            }
+        }
+
+
+        try {
+            Capsule::table('tblsahdev_autopilot_log')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->create('tblsahdev_autopilot_log', function ($table) {
+                $table->increments('id');
+                $table->integer('ticket_id')->unsigned()->index();
+                $table->integer('reply_id')->unsigned()->nullable();
+                $table->timestamp('ticket_lastreply_snapshot')->nullable();
+                $table->string('ai_decision', 16)->index();
+                $table->string('skip_reason', 128)->nullable();
+                $table->integer('tokens_used')->nullable();
+                $table->timestamp('created_at')->useCurrent();
+            });
+        }
+
+        // Migrate: Autopilot settings columns
+        $autopilotColMap = [
+            'autopilot_enabled'           => ['boolean', 0],
+            'autopilot_admin_id'          => ['integer_nullable', null],
+            'autopilot_max_replies'       => ['integer', 3],
+            'autopilot_delay_min_sec'     => ['integer', 180],
+            'autopilot_delay_max_sec'     => ['integer', 900],
+            'autopilot_allowed_depts'     => ['text', null],
+            'autopilot_blocked_depts'     => ['text', null],
+            'autopilot_blocked_topics'    => ['text', null],
+            'autopilot_max_urgency'       => ['string_col', 'High'],
+            'autopilot_max_sentiment'     => ['integer', 7],
+            'autopilot_only_first_reply'  => ['boolean', 1],
+            'autopilot_tone'              => ['string_col', 'Friendly'],
+            'autopilot_cron_max_per_run'  => ['integer', 5],
+            'autopilot_tag_skipped'       => ['boolean', 1],
+            'autopilot_cron_last_run_at'  => ['timestamp', null],
+            'autopilot_cron_last_message' => ['text', null],
+        ];
+        foreach ($autopilotColMap as $col => [$type, $default]) {
+            try {
+                Capsule::table('tblsahdev_settings')->select($col)->first();
+            } catch (\Exception $e) {
+                try {
+                    Capsule::schema()->table('tblsahdev_settings', function ($tbl) use ($col, $type, $default) {
+                        switch ($type) {
+                            case 'boolean': $tbl->boolean($col)->default($default ?? 0); break;
+                            case 'integer': $c = $tbl->integer($col)->nullable(); if ($default !== null) $c->default($default); break;
+                            case 'integer_nullable': $tbl->integer($col)->nullable(); break;
+                            case 'text': $tbl->text($col)->nullable(); break;
+                            case 'timestamp': $tbl->timestamp($col)->nullable(); break;
+                            default: $c = $tbl->string($col, 128)->nullable(); if ($default !== null) $c->default($default);
+                        }
+                    });
+                } catch (\Exception $ex) { /* race / already exists */ }
+            }
+        }
+
         return [
             // Supported values here include: success, error or info
             'status' => 'success',
