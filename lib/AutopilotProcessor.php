@@ -430,8 +430,8 @@ class AutopilotProcessor
         $systemPrompt .= "1. If instructing the client to update Nameservers, use ONLY values labeled as 'MANDATORY_TARGET_NS'.\n";
         $systemPrompt .= "2. IGNORE any values labeled 'Current Registrar NS'.\n";
         $systemPrompt .= "3. Use 'Product IP' or 'Server IP' for A-record guidance.\n";
-        $systemPrompt .= "4. FORMATTING: Use double newlines before and after every list and instruction block.";
-
+        $systemPrompt .= "4. FORMATTING: Use double newlines (\n\n) before AND after every bullet point list or header. Use simple '-' bullets without nested bolding.";
+        
         $settingsForProvider = array_merge((array) $this->settings, [
             'system_prompt'          => $systemPrompt,
             'user_prompt_template'   => null,
@@ -646,11 +646,12 @@ class AutopilotProcessor
             ->value('userid');
 
         $apiParams = [
-            'ticketid'      => $ticketId,
-            'message'       => $replyText,
-            'adminusername' => $admin->username,
-            'name'          => $adminName,
-            // Exclude email/clientid to ensure WHMCS uses Admin/Operator attribution
+            'ticketid' => $ticketId,
+            'message'  => $replyText,
+            'adminid'  => $admin->id, // Using ID for better profile linking
+            'name'     => $adminName,
+            // WHMCS Admin/Operator attribution prioritizes adminusername in auth (3rd param)
+            // and adminid in the payload for profile details.
         ];
 
         $result = localAPI('AddTicketReply', $apiParams, $admin->username);
