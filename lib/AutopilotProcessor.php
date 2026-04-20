@@ -629,13 +629,9 @@ class AutopilotProcessor
     private function postReply(int $ticketId, string $replyText, int $adminId): ?int
     {
         // Fetch full admin row — WHMCS AddTicketReply requires name + email even for admin replies
-        $admin = Capsule::table('tbladmins')
-            ->select('id', 'username', 'firstname', 'lastname', 'email')
-            ->where('id', $adminId)
-            ->first();
-
+        $admin = Capsule::table('tbladmins')->where('id', $adminId)->first();
         if (!$admin) {
-            throw new \Exception("Autopilot admin (ID #{$adminId}) not found in tbladmins.");
+            throw new \Exception("Autopilot admin (ID: {$adminId}) not found.");
         }
 
         $adminName = trim($admin->firstname . ' ' . $admin->lastname) ?: $admin->username;
