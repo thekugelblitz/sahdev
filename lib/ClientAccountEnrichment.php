@@ -267,8 +267,6 @@ class ClientAccountEnrichment
 
         return implode("\n", $lines);
     }
-    
-    }
 
     private static function sectionAddons(int $userid): string
     {
