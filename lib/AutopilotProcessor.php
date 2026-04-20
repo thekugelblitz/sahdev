@@ -753,9 +753,9 @@ class AutopilotProcessor
     /**
      * Post a private internal admin note (Draft Mode).
      *
-     * We insert directly into tblticketreplies with notes=1 — the standard WHMCS
-     * schema for private/internal notes — because WHMCS's AddTicketNote localAPI
-     * has inconsistent parameter handling across versions and often stores blank content.
+     * Uses WHMCS localAPI AddTicketNote with 'message' parameter (confirmed from
+     * official WHMCS API docs: https://developers.whmcs.com/api-reference/addticketnote/)
+     * Notes are stored in tblticket_notes, NOT tblticketreplies.
      */
     private function postInternalNote(int $ticketId, string $replyText, int $adminId): ?int
     {
@@ -775,21 +775,33 @@ class AutopilotProcessor
         $draftPrefix = "[Sahdev Autopilot Draft] Review before sending - Draft Mode is ON\n\n---\n\n";
         $noteText    = $draftPrefix . $replyText;
 
-        // Direct DB insert — reliable across all WHMCS versions.
-        // notes=1 marks this as a private/internal note in the WHMCS UI.
-        $noteId = Capsule::table('tblticketreplies')->insertGetId([
-            'tid'     => $ticketId,
-            'userid'  => 0,
-            'admin'   => $displayName,
-            'name'    => '',
-            'message' => $noteText,
-            'notes'   => 1,
-            'date'    => Carbon::now()->toDateTimeString(),
-        ]);
+        // WHMCS AddTicketNote: 'message' is the correct content parameter (not 'note')
+        $result = localAPI('AddTicketNote', [
+            'ticketid' => $ticketId,
+            'message'  => $noteText,
+            'markdown' => true,
+        ], $admin->username);
 
-        ModuleLogger::log('debug', 'Autopilot.DraftMode', "Posted draft note #{$noteId} to ticket #{$ticketId}", $ticketId);
+        if (($result['result'] ?? '') !== 'success') {
+            $err = $result['message'] ?? json_encode($result);
+            throw new \Exception("WHMCS AddTicketNote failed: {$err}");
+        }
 
-        return $noteId ?: null;
+        // Retrieve the note ID from tblticket_notes (WHMCS notes table)
+        $noteId = null;
+        try {
+            $noteRow = Capsule::table('tblticket_notes')
+                ->where('ticket_id', $ticketId)
+                ->orderBy('id', 'desc')
+                ->first();
+            $noteId = $noteRow ? (int) $noteRow->id : null;
+        } catch (\Throwable $e) {
+            // tblticket_notes may not exist in older WHMCS — non-fatal
+        }
+
+        ModuleLogger::log('debug', 'Autopilot.DraftMode', "Posted draft note to ticket #{$ticketId}", $ticketId);
+
+        return $noteId;
     }
 
     /**
