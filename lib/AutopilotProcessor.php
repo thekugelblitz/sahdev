@@ -411,12 +411,10 @@ class AutopilotProcessor
 
     private function generateReply(int $ticketId, $ticket): string
     {
-        // Use full rich data extractor (includes hosting IPs, NS, etc.)
         $autopilotAdminId = (int) ($this->settings['autopilot_admin_id'] ?? 0);
         $extractor = new TicketDataExtractor($ticketId, $autopilotAdminId);
         $context = $extractor->getContext(true, false);
 
-        // Inject diagnostic tools output if available
         $toolsContext = '';
         if (class_exists('\Sahdev\Modules\ToolsExecution\ToolsExecutionService')) {
             $toolsContext = \Sahdev\Modules\ToolsExecution\ToolsExecutionService::buildPromptContextBlock($ticketId);
@@ -424,18 +422,15 @@ class AutopilotProcessor
         $context['tools_output'] = $toolsContext;
 
         $tone = $this->settings['autopilot_tone'] ?? 'Friendly';
-
-        // Load system prompt from Prompt Library (falls back to hardcoded default)
         $systemPrompt = $this->loadSystemPrompt();
 
-        // Resolve the provider for the autopilot task
         $provider = $this->resolveAutopilotProvider();
 
-        // Append extra strict technical rules
         $systemPrompt .= "\n\nCRITICAL TECHNICAL RULES:\n";
-        $systemPrompt .= "1. If instructing the client to update Nameservers, use ONLY values labeled as 'INSTRUCTION: Domain MUST point to these Nameservers'.\n";
-        $systemPrompt .= "2. IGNORE 'Current Registrar NS' when providing target nameservers.\n";
-        $systemPrompt .= "3. Use 'Server IP' and 'Product IP' for any A-record guidance.";
+        $systemPrompt .= "1. If instructing the client to update Nameservers, use ONLY values labeled as 'MANDATORY_TARGET_NS'.\n";
+        $systemPrompt .= "2. IGNORE any values labeled 'Current Registrar NS'.\n";
+        $systemPrompt .= "3. Use 'Product IP' or 'Server IP' for A-record guidance.\n";
+        $systemPrompt .= "4. FORMATTING: Use double newlines before and after every list and instruction block.";
 
         $settingsForProvider = array_merge((array) $this->settings, [
             'system_prompt'          => $systemPrompt,
@@ -450,42 +445,27 @@ class AutopilotProcessor
                 $context + ['__autopilot_raw_reply__' => true],
                 $settingsForProvider,
                 $tone,
-                'AUTOPILOT MODE: Output ONLY the CLIENT_REPLY text verbatim. No other JSON fields.'
+                'AUTOPILOT MODE: Output ONLY the CLIENT_REPLY text verbatim.'
             );
 
-            // Prefer CLIENT_REPLY from JSON if provider returned it, else grab any text
+            $resText = '';
             if (!empty($rawResponse['CLIENT_REPLY'])) {
-                return trim($rawResponse['CLIENT_REPLY']);
-            }
-            if (!empty($rawResponse['__raw_text__'])) {
-                return trim($rawResponse['__raw_text__']);
-            }
-            // Fallback: first non-empty string value in response
-            foreach ($rawResponse as $val) {
-                if (is_string($val) && strlen(trim($val)) > 20) {
-                    return trim($val);
-                }
-            }
-        } catch (\Exception $primaryErr) {
-            if ($this->fallback) {
-                try {
-                    $rawResponse = $this->fallback->generateResponse(
-                        $context + ['__autopilot_raw_reply__' => true],
-                        $settingsForProvider,
-                        $tone,
-                        'AUTOPILOT MODE: Output ONLY the CLIENT_REPLY text verbatim.'
-                    );
-                    if (!empty($rawResponse['CLIENT_REPLY'])) return trim($rawResponse['CLIENT_REPLY']);
-                    if (!empty($rawResponse['__raw_text__'])) return trim($rawResponse['__raw_text__']);
-                } catch (\Exception $fallbackErr) {
-                    throw new \Exception("Primary and fallback providers failed. Primary: " . $primaryErr->getMessage());
-                }
+                $resText = trim($rawResponse['CLIENT_REPLY']);
+            } elseif (!empty($rawResponse['__raw_text__'])) {
+                $resText = trim($rawResponse['__raw_text__']);
             } else {
-                throw $primaryErr;
+                foreach ($rawResponse as $v) {
+                    if (is_string($v) && strlen(trim($v)) > 20) {
+                        $resText = trim($v);
+                        break;
+                    }
+                }
             }
+            return $resText;
+        } catch (\Exception $e) {
+            ModuleLogger::error('Autopilot.generateReply', $e->getMessage(), $ticketId);
+            return '';
         }
-
-        return '';
     }
 
     /**
@@ -670,7 +650,7 @@ class AutopilotProcessor
             'message'       => $replyText,
             'adminusername' => $admin->username,
             'name'          => $adminName,
-            // Removing email/clientid ensures WHMCS recognizes this as a staff reply
+            // Exclude email/clientid to ensure WHMCS uses Admin/Operator attribution
         ];
 
         $result = localAPI('AddTicketReply', $apiParams, $admin->username);

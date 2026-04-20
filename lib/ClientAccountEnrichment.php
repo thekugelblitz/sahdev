@@ -178,7 +178,6 @@ class ClientAccountEnrichment
             ->where('userid', $userid)
             ->whereNotIn('status', ['Cancelled', 'Expired', 'Fraud'])
             ->orderBy('expirydate', 'asc')
-            ->limit(5)
             ->get();
 
         if ($rows->isEmpty()) {
@@ -228,8 +227,7 @@ class ClientAccountEnrichment
                 's.hostname as server_host',
                 's.nameserver1', 's.nameserver2', 's.nameserver3', 's.nameserver4', 's.nameserver5'
             )
-            ->orderBy('h.id', 'desc')
-            ->limit(5);
+            ->orderBy('h.id', 'desc');
 
         $rows = $query->get();
 
@@ -256,11 +254,10 @@ class ClientAccountEnrichment
                 "Status: {$st}",
                 "Product IP: " . ($ip ?: 'N/A'),
             ];
-            if (!empty($r->server_name)) $details[] = "Server: {$r->server_name}";
-            if (!empty($r->server_host)) $details[] = "Server Host: {$r->server_host}";
-            if (!empty($r->server_ip)) $details[] = "Server IP: {$r->server_ip}";
+            if (!empty($r->server_host)) $details[] = "SERVER_HOSTNAME: {$r->server_host}";
+            if (!empty($r->server_ip)) $details[] = "SERVER_IP: {$r->server_ip}";
             
-            if ($ns !== []) $details[] = "INSTRUCTION: Domain MUST point to these Nameservers: " . implode(', ', $ns);
+            if ($ns !== []) $details[] = "MANDATORY_TARGET_NS (POINT DOMAIN HERE): " . implode(', ', $ns);
             
             $lines[] = "- {$name} ({$dom}): " . implode(' | ', $details);
         }
