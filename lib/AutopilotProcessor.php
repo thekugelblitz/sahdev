@@ -805,14 +805,19 @@ class AutopilotProcessor
     }
 
     /**
-     * Set a ticket's status. Used to mark tickets as 'Reply-Drafting' in draft mode.
+     * Set a ticket's status. Only sets if the status exists in tblticketstatuses.
+     * Guards against tickets disappearing due to unknown statuses.
      */
     private function setTicketStatus(int $ticketId, string $status): void
     {
         try {
-            Capsule::table('tbltickets')->where('id', $ticketId)->update([
-                'status' => $status,
-            ]);
+            // Only set status if it's registered in WHMCS — prevents tickets disappearing
+            $exists = Capsule::table('tblticketstatuses')->where('title', $status)->exists();
+            if (!$exists) {
+                ModuleLogger::log('warning', 'Autopilot.StatusChange', "Status '{$status}' not found in tblticketstatuses — skipping status update for ticket #{$ticketId}", $ticketId);
+                return;
+            }
+            Capsule::table('tbltickets')->where('id', $ticketId)->update(['status' => $status]);
             ModuleLogger::log('debug', 'Autopilot.StatusChange', "Ticket #{$ticketId} status set to '{$status}'", $ticketId);
         } catch (\Throwable $e) {
             ModuleLogger::log('warning', 'Autopilot.StatusChange', "Failed to set status: " . $e->getMessage(), $ticketId);
@@ -1023,7 +1028,8 @@ class AutopilotProcessor
 
     /**
      * Create the 'Reply-Drafting' custom ticket status in WHMCS if it doesn't exist.
-     * Behaves like an open/active status so tickets still appear in the open queue.
+     * Column names confirmed from tblticketstatuses schema:
+     * id, title, color, sortorder, showactive, showawaiting, autoclose
      */
     private function ensureReplyDraftingStatus(): void
     {
@@ -1035,16 +1041,16 @@ class AutopilotProcessor
             if (!$exists) {
                 $maxSort = (int) Capsule::table('tblticketstatuses')->max('sortorder');
                 Capsule::table('tblticketstatuses')->insert([
-                    'title'          => 'Reply-Drafting',
-                    'color'          => '#8b5cf6',   // Purple — distinct but calm
-                    'textcolor'      => '#ffffff',
-                    'sortorder'      => $maxSort + 10,
-                    'showopentickets'=> 1,            // Appears in open ticket views
+                    'title'        => 'Reply-Drafting',
+                    'color'        => '#8b5cf6',  // Purple — distinct and visible
+                    'sortorder'    => $maxSort + 10,
+                    'showactive'   => 1,           // Appears in active/open ticket views
+                    'showawaiting' => 1,           // Appears in awaiting-reply views
+                    'autoclose'    => 0,           // Never auto-close draft tickets
                 ]);
                 ModuleLogger::log('info', 'Autopilot.Schema', "Created 'Reply-Drafting' ticket status in WHMCS.");
             }
         } catch (\Throwable $e) {
-            // Non-fatal — status may already exist or column set may differ
             ModuleLogger::log('warning', 'Autopilot.Schema', "Could not ensure Reply-Drafting status: " . $e->getMessage());
         }
     }
