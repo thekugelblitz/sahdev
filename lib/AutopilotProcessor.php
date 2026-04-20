@@ -51,8 +51,8 @@ class AutopilotProcessor
     // -------------------------------------------------------------------------
 
     /**
-     * @param int[] $analyzedTicketIds  Ticket IDs that CronProcessor just analyzed.
-     * @param bool  $verbose            When true, return richer diagnostic data.
+     * @param int[] $analyzedTicketIds  Ticket IDs CronProcessor just analyzed (used as priority hint).
+     * @param bool  $verbose
      * @return array
      */
     public function run(array $analyzedTicketIds, bool $verbose = false): array
@@ -72,15 +72,19 @@ class AutopilotProcessor
             return $this->result;
         }
 
-        if (empty($analyzedTicketIds)) {
-            $this->result['errors'][] = 'No tickets were analyzed by insights cron this run.';
+        $maxPerRun = max(1, (int) ($this->settings['autopilot_cron_max_per_run'] ?? 5));
+
+        // Independent query: don't rely solely on what insights analyzed this run.
+        // Autopilot finds any ticket that has sentiment data + still needs a reply.
+        $candidateIds = $this->fetchEligibleCandidates($analyzedTicketIds, $maxPerRun * 4);
+
+        if (empty($candidateIds)) {
+            $this->persistRunStatus();
             return $this->result;
         }
 
-        $maxPerRun = max(1, (int) ($this->settings['autopilot_cron_max_per_run'] ?? 5));
-        $processed  = 0;
-
-        foreach ($analyzedTicketIds as $ticketId) {
+        $processed = 0;
+        foreach ($candidateIds as $ticketId) {
             if ($processed >= $maxPerRun) break;
 
             try {
@@ -101,9 +105,66 @@ class AutopilotProcessor
         }
 
         $this->persistRunStatus();
-
         return $this->result;
     }
+
+    /**
+     * Independently query all tickets eligible for autopilot reply.
+     *
+     * Finds tickets that:
+     * - Have a tblsahdev_sentiment row (have been AI-analyzed at some point)
+     * - Are in an open/active status (not closed or on hold)
+     * - Have NOT already received an autopilot reply to this exact lastreply snapshot
+     * - Are under the per-ticket reply cap
+     *
+     * Fresh tickets from the current cron run are sorted first via FIELD().
+     */
+    private function fetchEligibleCandidates(array $freshIds, int $limit): array
+    {
+        $openStatuses = ['Open', 'Customer-Reply', 'Awaiting Reply', 'In Progress'];
+        $maxReplies   = max(1, min(10, (int) ($this->settings['autopilot_max_replies'] ?? 3)));
+
+        $orderRaw = empty($freshIds)
+            ? 't.lastreply ASC'
+            : 'FIELD(t.id, ' . implode(',', array_map('intval', $freshIds)) . ') DESC, t.lastreply ASC';
+
+        $rows = Capsule::table('tbltickets as t')
+            ->join('tblsahdev_sentiment as s', 's.ticket_id', '=', 't.id')
+            ->whereIn('t.status', $openStatuses)
+            ->select('t.id', 't.lastreply')
+            ->orderByRaw($orderRaw)
+            ->limit($limit)
+            ->get();
+
+        $candidates = [];
+        foreach ($rows as $row) {
+            $ticketId  = (int) $row->id;
+            $lastreply = $row->lastreply;
+
+            // Idempotency: already replied to this exact lastreply snapshot?
+            $alreadyReplied = Capsule::table('tblsahdev_autopilot_log')
+                ->where('ticket_id', $ticketId)
+                ->where('ticket_lastreply_snapshot', $lastreply)
+                ->where('ai_decision', 'replied')
+                ->exists();
+
+            if ($alreadyReplied) continue;
+
+            // Per-ticket cap
+            $replyCount = Capsule::table('tblsahdev_autopilot_log')
+                ->where('ticket_id', $ticketId)
+                ->where('ai_decision', 'replied')
+                ->count();
+
+            if ($replyCount >= $maxReplies) continue;
+
+            $candidates[] = $ticketId;
+        }
+
+        return $candidates;
+    }
+
+
 
     // -------------------------------------------------------------------------
     // Per-ticket processing
