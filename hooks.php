@@ -1030,6 +1030,88 @@ HTML;
             });
         }
 
+        // Unified parameter mapping logic
+        var syncManualToolUI = function() {
+            var op = $('#sahdev-manual-tool-op').val() || '';
+            var splitAt = op.indexOf(' ');
+            var path = splitAt > 0 ? op.substring(splitAt + 1) : op;
+            
+            var domainVal = $('#sahdev-tool-domain').val() || '';
+            var ipVal = $('#sahdev-tool-ip').val() || '';
+            var emailVal = $('#sahdev-tool-email').val() || '';
+            var extraVal = $('#sahdev-tool-extra').val() || '';
+
+            var pathParams = {};
+            var queryParams = {};
+
+            // Extract placeholders from the path
+            var placeholders = path.match(/\{([^}]+)\}/g) || [];
+            placeholders.forEach(function(ph) {
+                var key = ph.replace('{', '').replace('}', '');
+                pathParams[key] = ''; // Initialize
+            });
+
+            var mapInputToParams = function(targetObj) {
+                var keys = Object.keys(targetObj);
+                keys.forEach(function(key) {
+                    var lowerKey = key.toLowerCase();
+                    if (['domain', 'target', 'host', 'hostname', 'url'].indexOf(lowerKey) !== -1) {
+                        if (domainVal) targetObj[key] = domainVal;
+                    } else if (['ip', 'address'].indexOf(lowerKey) !== -1) {
+                        if (ipVal) targetObj[key] = ipVal;
+                    } else if (['email', 'account', 'user', 'username'].indexOf(lowerKey) !== -1) {
+                        if (emailVal) targetObj[key] = emailVal;
+                    } else if (['type', 'record_type', 'record', 'extra', 'q', 'query'].indexOf(lowerKey) !== -1) {
+                        if (extraVal) targetObj[key] = extraVal;
+                    }
+                });
+            };
+
+            mapInputToParams(pathParams);
+            
+            // Default query params logic
+            if (domainVal && !pathParams.domain && !pathParams.target && !pathParams.host) queryParams.domain = domainVal;
+            if (ipVal && !pathParams.ip) queryParams.ip = ipVal;
+            if (extraVal && !pathParams.type) queryParams.type = extraVal;
+            
+            mapInputToParams(queryParams);
+
+            // Update the "Advanced JSON" fields
+            if (!$('#sahdev-manual-path-params').is(':focus')) {
+                $('#sahdev-manual-path-params').val(JSON.stringify(pathParams));
+            }
+            if (!$('#sahdev-manual-query').is(':focus')) {
+                $('#sahdev-manual-query').val(JSON.stringify(queryParams));
+            }
+
+            validateJSONFields();
+        };
+
+        var validateJSONFields = function() {
+            $('.sahdev-json-input').each(function() {
+                var val = $(this).val();
+                var $badge = $(this).parent().find('.sahdev-json-badge');
+                if (!$badge.length) {
+                    $badge = $('<span class="sahdev-json-badge" style="font-size:10px; margin-left:5px;"></span>');
+                    $(this).after($badge);
+                }
+                try {
+                    JSON.parse(val || '{}');
+                    $badge.text('✓ Valid').css('color', 'green');
+                } catch(e) {
+                    $badge.text('✗ Invalid').css('color', 'red');
+                }
+            });
+        };
+
+        $(document).on('input change', '#sahdev-tool-domain, #sahdev-tool-ip, #sahdev-tool-email, #sahdev-tool-extra, #sahdev-manual-tool-op', function() {
+            syncManualToolUI();
+        });
+
+        $(document).on('input', '.sahdev-json-input', function() {
+            validateJSONFields();
+        });
+
         $(document).on('click', '#btn-sahdev-manual-tool-run', function() {
             var op = $('#sahdev-manual-tool-op').val() || '';
             if (!op) {
@@ -1040,123 +1122,31 @@ HTML;
             var method = splitAt > 0 ? op.substring(0, splitAt) : 'GET';
             var path = splitAt > 0 ? op.substring(splitAt + 1) : op;
 
-            // Unified parameter mapping logic
-            var syncManualToolUI = function() {
-                var op = $('#sahdev-manual-tool-op').val() || '';
-                var splitAt = op.indexOf(' ');
-                var path = splitAt > 0 ? op.substring(splitAt + 1) : op;
-                
-                var domainVal = $('#sahdev-tool-domain').val() || '';
-                var ipVal = $('#sahdev-tool-ip').val() || '';
-                var emailVal = $('#sahdev-tool-email').val() || '';
-                var extraVal = $('#sahdev-tool-extra').val() || '';
+            var pathParams = {};
+            var queryParams = {};
+            try {
+                pathParams = JSON.parse($('#sahdev-manual-path-params').val() || '{}');
+                queryParams = JSON.parse($('#sahdev-manual-query').val() || '{}');
+            } catch(e) {
+                $('#sahdev-tools-status').text('Invalid JSON in advanced fields.');
+                return;
+            }
 
-                var pathParams = {};
-                var queryParams = {};
-
-                // Extract placeholders from the path
-                var placeholders = path.match(/\{([^}]+)\}/g) || [];
-                placeholders.forEach(function(ph) {
-                    var key = ph.replace('{', '').replace('}', '');
-                    pathParams[key] = ''; // Initialize
-                });
-
-                var mapInputToParams = function(targetObj) {
-                    var keys = Object.keys(targetObj);
-                    keys.forEach(function(key) {
-                        var lowerKey = key.toLowerCase();
-                        if (['domain', 'target', 'host', 'hostname', 'url'].indexOf(lowerKey) !== -1) {
-                            if (domainVal) targetObj[key] = domainVal;
-                        } else if (['ip', 'address'].indexOf(lowerKey) !== -1) {
-                            if (ipVal) targetObj[key] = ipVal;
-                        } else if (['email', 'account', 'user', 'username'].indexOf(lowerKey) !== -1) {
-                            if (emailVal) targetObj[key] = emailVal;
-                        } else if (['type', 'record_type', 'record', 'extra', 'q', 'query'].indexOf(lowerKey) !== -1) {
-                            if (extraVal) targetObj[key] = extraVal;
-                        }
-                    });
-                };
-
-                mapInputToParams(pathParams);
-                
-                // Default query params logic
-                if (domainVal && !pathParams.domain && !pathParams.target && !pathParams.host) queryParams.domain = domainVal;
-                if (ipVal && !pathParams.ip) queryParams.ip = ipVal;
-                if (extraVal && !pathParams.type) queryParams.type = extraVal;
-                
-                mapInputToParams(queryParams);
-
-                // Update the "Advanced JSON" fields
-                if (!$('#sahdev-manual-path-params').is(':focus')) {
-                    $('#sahdev-manual-path-params').val(JSON.stringify(pathParams));
-                }
-                if (!$('#sahdev-manual-query').is(':focus')) {
-                    $('#sahdev-manual-query').val(JSON.stringify(queryParams));
-                }
-
-                validateJSONFields();
-            };
-
-            var validateJSONFields = function() {
-                $('.sahdev-json-input').each(function() {
-                    var val = $(this).val();
-                    var $badge = $(this).parent().find('.sahdev-json-badge');
-                    if (!$badge.length) {
-                        $badge = $('<span class="sahdev-json-badge" style="font-size:10px; margin-left:5px;"></span>');
-                        $(this).after($badge);
-                    }
-                    try {
-                        JSON.parse(val || '{}');
-                        $badge.text('✓ Valid').css('color', 'green');
-                    } catch(e) {
-                        $badge.text('✗ Invalid').css('color', 'red');
-                    }
-                });
-            };
-
-            $(document).on('input change', '#sahdev-tool-domain, #sahdev-tool-ip, #sahdev-tool-email, #sahdev-tool-extra, #sahdev-manual-tool-op', function() {
-                syncManualToolUI();
-            });
-
-            $(document).on('input', '.sahdev-json-input', function() {
-                validateJSONFields();
-            });
-
-            $(document).on('click', '#btn-sahdev-manual-tool-run', function() {
-                var op = $('#sahdev-manual-tool-op').val() || '';
-                if (!op) {
-                    $('#sahdev-tools-status').text('Select a tool operation first.');
-                    return;
-                }
-                var splitAt = op.indexOf(' ');
-                var method = splitAt > 0 ? op.substring(0, splitAt) : 'GET';
-                var path = splitAt > 0 ? op.substring(splitAt + 1) : op;
-
-                var pathParams = {};
-                var queryParams = {};
-                try {
-                    pathParams = JSON.parse($('#sahdev-manual-path-params').val() || '{}');
-                    queryParams = JSON.parse($('#sahdev-manual-query').val() || '{}');
-                } catch(e) {
-                    $('#sahdev-tools-status').text('Invalid JSON in advanced fields.');
-                    return;
-                }
-
-                $('#sahdev-tools-status').text('Running manual tool execution...');
-                $.ajax({
-                    url: sahdevAjaxUrl,
-                    type: 'POST',
-                    dataType: 'json',
-                    data: {
-                        action: 'run_manual_tool',
-                        ticket_id: $('#sahdev_ticket_id').val(),
-                        method: method,
-                        path: path,
-                        path_params: JSON.stringify(pathParams),
-                        query: JSON.stringify(queryParams),
-                        body: $('#sahdev-manual-body').val() || '{}',
-                        token: $('input[name="token"]').val()
-                    },
+            $('#sahdev-tools-status').text('Running manual tool execution...');
+            $.ajax({
+                url: sahdevAjaxUrl,
+                type: 'POST',
+                dataType: 'json',
+                data: {
+                    action: 'run_manual_tool',
+                    ticket_id: $('#sahdev_ticket_id').val(),
+                    method: method,
+                    path: path,
+                    path_params: JSON.stringify(pathParams),
+                    query: JSON.stringify(queryParams),
+                    body: $('#sahdev-manual-body').val() || '{}',
+                    token: $('input[name="token"]').val()
+                },
                 success: function(res) {
                     if (res && res.status === 'success') {
                         var summary = res.summary || {};
