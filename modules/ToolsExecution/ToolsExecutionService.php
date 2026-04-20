@@ -250,9 +250,10 @@ class ToolsExecutionService
                     $lines[] = "  readable: " . $readable;
                 }
                 $body = trim((string) ($run->response_body ?? ''));
-                if ($body !== '' && $readable === '' && $includeRawFallback) {
-                    if (strlen($body) > 1200) {
-                        $body = substr($body, 0, 1200) . '... [truncated]';
+                if ($body !== '' && $includeRawFallback) {
+                    $limit = 1500;
+                    if (strlen($body) > $limit) {
+                        $body = substr($body, 0, $limit) . '... [raw truncated]';
                     }
                     $lines[] = "  raw: " . $body;
                 }
