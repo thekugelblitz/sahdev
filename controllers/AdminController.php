@@ -482,8 +482,7 @@ class AdminController
             'autopilot' => ['label' => '<i class="fas fa-robot"></i> Autopilot', 'url' => $base . '&action=autopilot'],
             'cron_center' => ['label' => '<i class="fas fa-clock"></i> Separate Cron', 'url' => $base . '&action=cron_center'],
             'ticket_insights' => ['label' => '<i class="fas fa-brain"></i> Ticket Insights', 'url' => $base . '&action=ticket_insights'],
-            'analytics' => ['label' => '<i class="fas fa-chart-line"></i> Analytics', 'url' => $base . '&action=analytics'],
-            'roi' => ['label' => '<i class="fas fa-chart-bar"></i> ROI Dashboard', 'url' => $base . '&action=roi'],
+            'analytics' => ['label' => '<i class="fas fa-chart-line"></i> Analytics & ROI', 'url' => $base . '&action=analytics'],
             'audit_trail' => ['label' => '<i class="fas fa-history"></i> Audit Trail', 'url' => $base . '&action=audit_trail'],
             'module_logs' => ['label' => '<i class="fas fa-clipboard-list"></i> Module log', 'url' => $base . '&action=module_logs'],
             'logs_maintenance' => ['label' => '<i class="fas fa-database"></i> Logs & Maintenance', 'url' => $base . '&action=logs_maintenance'],
@@ -3112,28 +3111,50 @@ class AdminController
         $roiOld        = $analyticsData['roi'] ?? ['time_saved_string' => '0h 0m', 'estimated_cost_usd' => 0.00];
         $toolsNorm     = $analyticsData['tools_normalization'] ?? [];
 
-        // ── ROI/Token data ─────────────────────────────────────────────────────
+        // ── Token & Cost: source of truth is tblsahdev_audit_trail ──────────────
+        // audit_trail.provider_used stores getName() => e.g. 'Google Gemini', 'LM Studio', 'Replicate'
+        // We match that against tblsahdev_providers.provider_type via keyword lookup.
         $nowTs = \Carbon\Carbon::now();
         $week  = $nowTs->copy()->subDays(7);
 
-        $logsAll = Capsule::table('tblsahdev_logs')
-            ->whereNotNull('token_usage')->where('token_usage', '>', 0)
-            ->selectRaw('COALESCE(provider_used, "unknown") as provider, SUM(token_usage) as tokens, COUNT(*) as calls')
-            ->groupBy('provider')->get();
+        // Build provider cost-rate map: provider_type => avg_cost_per_1m_tokens
+        $providerCostMap = []; // e.g. ['google' => 1.25, 'lmstudio' => 0.0]
+        $providerNameMap = []; // e.g. ['google' => 'My Gemini Provider']
+        foreach (Capsule::table('tblsahdev_providers')->where('is_active', 1)->get() as $p) {
+            $pt = strtolower(trim($p->provider_type));
+            $rate = (float) (($p->cost_input_1m + $p->cost_output_1m) / 2);
+            if (!isset($providerCostMap[$pt]) || $rate > $providerCostMap[$pt]) {
+                $providerCostMap[$pt] = $rate;
+                $providerNameMap[$pt] = $p->name;
+            }
+        }
+        // Keyword → type resolver for getName() strings
+        $resolveType = function (string $name) {
+            $n = strtolower($name);
+            if (str_contains($n, 'google') || str_contains($n, 'gemini')) return 'google';
+            if (str_contains($n, 'lm studio') || str_contains($n, 'lmstudio')) return 'lmstudio';
+            if (str_contains($n, 'replicate')) return 'replicate';
+            return $n; // fallback: use as-is
+        };
 
-        $logsWeek = Capsule::table('tblsahdev_logs')
-            ->whereNotNull('token_usage')->where('token_usage', '>', 0)
+        // Aggregate tokens by provider_used from audit_trail
+        $auditByProvider = Capsule::table('tblsahdev_audit_trail')
+            ->whereNotNull('tokens_used')->where('tokens_used', '>', 0)
+            ->selectRaw('provider_used, SUM(tokens_used) as tokens, COUNT(*) as calls')
+            ->groupBy('provider_used')->get();
+
+        $auditWeek = Capsule::table('tblsahdev_audit_trail')
+            ->whereNotNull('tokens_used')->where('tokens_used', '>', 0)
             ->where('created_at', '>=', $week)
-            ->selectRaw('SUM(token_usage) as tokens, COUNT(*) as calls')->first();
+            ->selectRaw('SUM(tokens_used) as tokens, COUNT(*) as calls')->first();
 
+        // Autopilot tokens (separate table)
         $apAll = Capsule::table('tblsahdev_autopilot_log')
             ->whereNotNull('tokens_used')->where('tokens_used', '>', 0)
-            ->whereIn('ai_decision', ['replied', 'drafted'])
             ->selectRaw('SUM(tokens_used) as tokens, COUNT(*) as calls')->first();
 
         $apWeek = Capsule::table('tblsahdev_autopilot_log')
             ->whereNotNull('tokens_used')->where('tokens_used', '>', 0)
-            ->whereIn('ai_decision', ['replied', 'drafted'])
             ->where('created_at', '>=', $week)
             ->selectRaw('SUM(tokens_used) as tokens, COUNT(*) as calls')->first();
 
@@ -3142,58 +3163,73 @@ class AdminController
         $apRepliesAll  = Capsule::table('tblsahdev_autopilot_log')
             ->whereIn('ai_decision', ['replied', 'drafted'])->count();
 
-        // All unique tickets Sahdev touched this week (logs + autopilot, all decisions)
-        $logsTicketsWeek = Capsule::table('tblsahdev_logs')
-            ->where('created_at', '>=', $week)
-            ->whereNotNull('ticket_id')
+        // All unique tickets Sahdev touched this week
+        $logsTicketsWeek = Capsule::table('tblsahdev_audit_trail')
+            ->where('created_at', '>=', $week)->whereNotNull('ticket_id')
             ->distinct()->pluck('ticket_id')->toArray();
         $apTicketsWeek = Capsule::table('tblsahdev_autopilot_log')
-            ->where('created_at', '>=', $week)
-            ->distinct()->pluck('ticket_id')->toArray();
+            ->where('created_at', '>=', $week)->distinct()->pluck('ticket_id')->toArray();
         $ticketsWeek = count(array_unique(array_merge($logsTicketsWeek, $apTicketsWeek)));
 
-        // Autopilot: all processing runs (regardless of outcome)
-        $apProcessedWeek = Capsule::table('tblsahdev_autopilot_log')
-            ->where('created_at', '>=', $week)->count();
+        // Autopilot: all processing runs
+        $apProcessedWeek = Capsule::table('tblsahdev_autopilot_log')->where('created_at', '>=', $week)->count();
         $apProcessedAll  = Capsule::table('tblsahdev_autopilot_log')->count();
-        $providers = Capsule::table('tblsahdev_providers')
-            ->where('is_active', 1)->get()->keyBy('name');
 
+        // Build provider rows + totals
         $totalTokensAll  = 0;
-        $totalTokensWeek = (int) (($logsWeek->tokens ?? 0) + ($apWeek->tokens ?? 0));
+        $totalTokensWeek = (int) (($auditWeek->tokens ?? 0) + ($apWeek->tokens ?? 0));
         $totalCallsAll   = 0;
         $totalCostAll    = 0.0;
         $providerRows    = [];
 
-        foreach ($logsAll as $row) {
-            $tok = (int) $row->tokens; $calls = (int) $row->calls;
-            $totalTokensAll += $tok; $totalCallsAll += $calls;
-            $provName = (string) $row->provider;
-            $costPer1m = 0.0;
-            foreach ($providers as $p) {
-                if (strtolower($p->name) === strtolower($provName) || strtolower($p->provider_type) === strtolower($provName)) {
-                    $costPer1m = (float) (($p->cost_input_1m + $p->cost_output_1m) / 2);
-                    break;
-                }
-            }
-            $cost = round($tok / 1_000_000 * $costPer1m, 4);
+        foreach ($auditByProvider as $row) {
+            $tok   = (int) $row->tokens;
+            $calls = (int) $row->calls;
+            $totalTokensAll += $tok;
+            $totalCallsAll  += $calls;
+            $type      = $resolveType($row->provider_used);
+            $rate      = $providerCostMap[$type] ?? 0.0;
+            $cost      = round($tok / 1_000_000 * $rate, 6);
             $totalCostAll += $cost;
-            $providerRows[] = ['name' => $provName, 'tokens' => $tok, 'calls' => $calls, 'cost' => $cost];
+            $providerRows[] = [
+                'name'   => htmlspecialchars($row->provider_used),
+                'type'   => $type,
+                'tokens' => $tok,
+                'calls'  => $calls,
+                'rate'   => $rate,
+                'cost'   => $cost,
+            ];
         }
         $totalTokensAll += (int) ($apAll->tokens ?? 0);
         $totalCallsAll  += (int) ($apAll->calls ?? 0);
-        $totalCostWeek   = ($totalTokensAll > 0 && $totalCostAll > 0)
-            ? round(($totalTokensWeek / max(1, $totalTokensAll)) * $totalCostAll, 4) : 0.0;
+
+        // Weekly cost via direct audit_trail query
+        $auditWeekByProvider = Capsule::table('tblsahdev_audit_trail')
+            ->whereNotNull('tokens_used')->where('tokens_used', '>', 0)
+            ->where('created_at', '>=', $week)
+            ->selectRaw('provider_used, SUM(tokens_used) as tokens')->groupBy('provider_used')->get();
+        $totalCostWeek = 0.0;
+        foreach ($auditWeekByProvider as $wr) {
+            $type = $resolveType($wr->provider_used);
+            $rate = $providerCostMap[$type] ?? 0.0;
+            $totalCostWeek += round((int)$wr->tokens / 1_000_000 * $rate, 6);
+        }
+        // Add autopilot week cost estimate (use ratio)
+        if ($totalTokensAll > 0 && $totalCostAll > 0) {
+            $apTokW = (int) ($apWeek->tokens ?? 0);
+            $apCostW = round($apTokW / max(1, $totalTokensAll) * $totalCostAll, 6);
+            $totalCostWeek = round($totalCostWeek + $apCostW, 6);
+        }
 
         $timeSavedWeekH = round(($apRepliesWeek * $avgHandleMin) / 60, 1);
         $timeSavedAllH  = round(($apRepliesAll  * $avgHandleMin) / 60, 1);
 
-        // 30-day daily chart
+        // 30-day daily chart — use audit_trail as source of truth
         $dailyData = [];
         for ($d = 29; $d >= 0; $d--) {
             $dayStart = $nowTs->copy()->subDays($d)->startOfDay();
             $dayEnd   = $nowTs->copy()->subDays($d)->endOfDay();
-            $tok  = (int) Capsule::table('tblsahdev_logs')->whereBetween('created_at', [$dayStart, $dayEnd])->sum('token_usage');
+            $tok  = (int) Capsule::table('tblsahdev_audit_trail')->whereBetween('created_at', [$dayStart, $dayEnd])->sum('tokens_used');
             $tok += (int) Capsule::table('tblsahdev_autopilot_log')->whereBetween('created_at', [$dayStart, $dayEnd])->sum('tokens_used');
             $dailyData[] = ['label' => $dayStart->format('d'), 'tokens' => $tok, 'date' => $dayStart->format('d M')];
         }
@@ -3306,22 +3342,56 @@ class AdminController
             </div>
         </div>
 
-        <!-- ── 30-Day Token Trend ── -->
+        <!-- ── 30-Day Token Trend (SVG area chart) ── -->
         <div class="sad-card">
             <div class="sad-section"><i class="fas fa-chart-area" style="color:#3b82f6"></i> 30-Day Token Usage Trend</div>
-            <div class="sad-bar-chart">
-                <?php foreach ($dailyData as $day):
-                    $h = $maxDayTokens > 0 ? max(2, round(($day['tokens'] / $maxDayTokens) * 100)) : 2;
-                    $showEvery = 5; // label every 5th day
-                    $idx = array_search($day, $dailyData);
-                ?>
-                <div class="sad-bar-wrap" title="<?= htmlspecialchars($day['date']) ?>: <?= number_format($day['tokens']) ?> tokens">
-                    <div class="sad-bar" style="height:<?= $h ?>%"></div>
-                    <div class="sad-bar-lbl"><?= ($idx % $showEvery === 0) ? htmlspecialchars($day['label']) : '' ?></div>
-                </div>
+            <?php
+            $svgW = 900; $svgH = 130; $padL = 8; $padR = 8; $padT = 10; $padB = 26;
+            $iW   = $svgW - $padL - $padR;
+            $iH   = $svgH - $padT - $padB;
+            $pts  = array_values($dailyData);
+            $n    = count($pts);
+            $coords = [];
+            for ($i = 0; $i < $n; $i++) {
+                $x = $padL + ($n > 1 ? $i / ($n - 1) : 0) * $iW;
+                $y = $padT + $iH - ($maxDayTokens > 0 ? ($pts[$i]['tokens'] / $maxDayTokens) * $iH : 0);
+                $coords[] = [$x, $y];
+            }
+            $polyline = implode(' ', array_map(fn($c) => round($c[0],1).','.round($c[1],1), $coords));
+            $area = "M {$coords[0][0]},{$coords[0][1]}";
+            foreach (array_slice($coords, 1) as $c) $area .= " L {$c[0]},{$c[1]}";
+            $area .= " L {$coords[$n-1][0]},{$padT+$iH} L {$coords[0][0]},{$padT+$iH} Z";
+            ?>
+            <div style="position:relative;width:100%;overflow:hidden">
+            <svg viewBox="0 0 <?= $svgW ?> <?= $svgH ?>" preserveAspectRatio="none"
+                 style="width:100%;height:140px;display:block" id="sadTokenChart">
+                <defs>
+                    <linearGradient id="sadGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%"   stop-color="#3b82f6" stop-opacity="0.35"/>
+                        <stop offset="100%" stop-color="#3b82f6" stop-opacity="0.03"/>
+                    </linearGradient>
+                </defs>
+                <?php for ($g = 0; $g <= 4; $g++): $gy = $padT + ($g/4)*$iH; ?>
+                <line x1="<?= $padL ?>" y1="<?= round($gy,1) ?>" x2="<?= $svgW-$padR ?>" y2="<?= round($gy,1) ?>"
+                      stroke="#e2e8f0" stroke-width="1"/>
+                <?php endfor; ?>
+                <path d="<?= $area ?>" fill="url(#sadGrad)"/>
+                <polyline points="<?= $polyline ?>" fill="none" stroke="#3b82f6" stroke-width="2" stroke-linejoin="round"/>
+                <?php foreach ($coords as $i => $c):
+                    if ($i % 5 !== 0 && $i !== $n-1) continue; ?>
+                <text x="<?= round($c[0],1) ?>" y="<?= $svgH - 4 ?>" text-anchor="middle"
+                      font-size="7" fill="#94a3b8"><?= htmlspecialchars($pts[$i]['label']) ?></text>
                 <?php endforeach; ?>
+                <?php foreach ($coords as $i => $c):
+                    if ($pts[$i]['tokens'] <= 0) continue; ?>
+                <circle cx="<?= round($c[0],1) ?>" cy="<?= round($c[1],1) ?>" r="3"
+                        fill="#3b82f6" opacity="0.6" style="cursor:pointer">
+                    <title><?= htmlspecialchars($pts[$i]['date']) ?>: <?= number_format($pts[$i]['tokens']) ?> tokens</title>
+                </circle>
+                <?php endforeach; ?>
+            </svg>
             </div>
-            <div style="font-size:.72rem;color:#94a3b8;margin-top:6px;text-align:right">Last 30 days · Hover bars for details</div>
+            <div style="font-size:.72rem;color:#94a3b8;margin-top:4px;text-align:right">Last 30 days &middot; Hover dots for daily totals</div>
         </div>
 
         <!-- ── AI Action Breakdown ── -->
@@ -3429,27 +3499,34 @@ class AdminController
         <div class="sad-card">
             <div class="sad-section"><i class="fas fa-microchip" style="color:#7c3aed"></i> Per-Provider Cost Breakdown</div>
             <?php if (empty($providerRows)): ?>
-                <p style="color:#aaa;font-size:.88rem">No token data recorded yet.</p>
+                <p style="color:#aaa;font-size:.88rem">No token data yet. Costs appear once AI calls are made and providers have <code>cost_input_1m</code>/<code>cost_output_1m</code> configured.</p>
             <?php else: ?>
             <table class="table table-sm sad-table">
-                <thead><tr><th>Provider</th><th>Total Tokens</th><th>API Calls</th><th>Est. Cost (USD)</th></tr></thead>
+                <thead><tr>
+                    <th>Provider (as logged)</th><th>Type</th>
+                    <th>Rate / 1M tokens</th><th>Total Tokens</th>
+                    <th>API Calls</th><th>Est. Cost (USD)</th>
+                </tr></thead>
                 <tbody>
                     <?php foreach ($providerRows as $r): ?>
                     <tr>
-                        <td><i class="fas fa-circle" style="color:#3b82f6;font-size:.4em;vertical-align:middle;margin-right:6px"></i><?= htmlspecialchars($r['name']) ?></td>
+                        <td><i class="fas fa-circle" style="color:#3b82f6;font-size:.4em;vertical-align:middle;margin-right:6px"></i><?= $r['name'] ?></td>
+                        <td><code style="font-size:.75rem"><?= htmlspecialchars($r['type']) ?></code></td>
+                        <td><?= $r['rate'] > 0 ? '$'.number_format($r['rate'],4) : '<span style="color:#aaa">—</span>' ?></td>
                         <td><?= number_format($r['tokens']) ?></td>
                         <td><?= number_format($r['calls']) ?></td>
-                        <td><?= $r['cost'] > 0 ? '<strong>$' . number_format($r['cost'], 4) . '</strong>' : '<span style="color:#aaa">$0.0000</span>' ?></td>
+                        <td><?= $r['cost'] > 0 ? '<strong>$'.number_format($r['cost'],6).'</strong>' : '<span style="color:#aaa">$0.000000</span>' ?></td>
                     </tr>
                     <?php endforeach; ?>
                 </tbody>
                 <tfoot><tr style="font-weight:700;background:#f8fafc">
-                    <td>Total</td>
+                    <td colspan="3">Total</td>
                     <td><?= number_format($totalTokensAll) ?></td>
                     <td><?= number_format($totalCallsAll) ?></td>
-                    <td>$<?= number_format($totalCostAll, 4) ?></td>
+                    <td>$<?= number_format($totalCostAll, 6) ?></td>
                 </tr></tfoot>
             </table>
+            <p style="color:#94a3b8;font-size:.75rem;margin-top:8px">Rate matched via provider type keyword. Configure costs in <strong>AI Providers</strong> settings.</p>
             <?php endif; ?>
         </div>
 
@@ -5153,13 +5230,5 @@ class AdminController
         return ob_get_clean();
     }
 
-    /**
-     * ROI Dashboard — redirects to the unified analytics page.
-     */
-    public function roi(): string
-    {
-        header('Location: ' . htmlspecialchars($this->moduleVars['modulelink']) . '&action=analytics');
-        exit;
-    }
 }
 
