@@ -1049,20 +1049,27 @@ HTML;
             var pathParams = {};
             var queryParams = {};
 
-            // Smart mapping: Match placeholders in the path (e.g. {domain})
+            // Smart mapping: Match placeholders in the path (e.g. {domain}, {host}, {target})
             var placeholders = path.match(/\{[a-zA-Z0-9_]+\}/g) || [];
             placeholders.forEach(function(ph) {
                 var key = ph.replace('{', '').replace('}', '');
-                if (key === 'domain' || key === 'target') pathParams[key] = domainVal;
-                else if (key === 'ip') pathParams[key] = ipVal;
-                else if (key === 'email' || key === 'username') pathParams[key] = emailVal;
-                else if (key === 'type' || key === 'record_type') pathParams[key] = extraVal;
+                var lowerKey = key.toLowerCase();
+                
+                if (['domain', 'target', 'host', 'hostname', 'url'].indexOf(lowerKey) !== -1) {
+                    pathParams[key] = domainVal;
+                } else if (lowerKey === 'ip' || lowerKey === 'ipaddress') {
+                    pathParams[key] = ipVal;
+                } else if (['email', 'username', 'account', 'user'].indexOf(lowerKey) !== -1) {
+                    pathParams[key] = emailVal;
+                } else if (['type', 'record_type', 'record', 'extra'].indexOf(lowerKey) !== -1) {
+                    pathParams[key] = extraVal;
+                }
             });
 
-            // Default query params for common tools if not in path
-            if (domainVal) queryParams.domain = domainVal;
-            if (ipVal) queryParams.ip = ipVal;
-            if (extraVal) queryParams.type = extraVal;
+            // Default query params for common tools if not already in path
+            if (domainVal && !pathParams.domain && !pathParams.target && !pathParams.host) queryParams.domain = domainVal;
+            if (ipVal && !pathParams.ip) queryParams.ip = ipVal;
+            if (extraVal && !pathParams.type) queryParams.type = extraVal;
 
             // Merge Advanced JSON if visible/filled
             if ($('#sahdev-manual-json-wrap').is(':visible')) {

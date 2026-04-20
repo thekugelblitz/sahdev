@@ -1333,7 +1333,14 @@ class ToolsExecutionService
     private function applyPathParams(string $path, array $pathParams): string
     {
         foreach ($pathParams as $k => $v) {
-            $path = str_replace('{' . $k . '}', rawurlencode((string) $v), $path);
+            $val = rawurlencode((string) $v);
+            // Replace literal placeholder {key}
+            $path = str_replace('{' . $k . '}', $val, $path);
+            // Also handle encoded brackets %7Bkey%7D in case the input path was already escaped
+            $path = str_replace('%7B' . $k . '%7D', $val, $path);
+            // Case-insensitive lookup for the key if exact match wasn't found in str_replace
+            $path = str_ireplace('{' . $k . '}', $val, $path);
+            $path = str_ireplace('%7B' . $k . '%7D', $val, $path);
         }
         return $path;
     }
