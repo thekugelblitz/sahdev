@@ -642,15 +642,14 @@ class AutopilotProcessor
             ->value('userid');
 
         $apiParams = [
-            'ticketid'      => $ticketId,
-            'message'       => $replyText,
-            'adminid'       => $admin->id,       // ID for profile join
-            'adminusername' => $admin->username, // Username for identification
-            'markdown'      => true,             // Instruction to process markdown
+            'ticketid' => $ticketId,
+            'clientid' => $ticketClientId,
+            'message'  => $replyText,
+            'markdown' => true,
         ];
 
-        // Diagnostic log: check what we think the admin name is
-        ModuleLogger::debug('Autopilot.IdentityInfo', "Using Admin: {$admin->username} (ID: {$admin->id}), Name: {$adminName}", $ticketId);
+        // Final identity check - let's see what the DB actually says
+        ModuleLogger::debug('Autopilot.AdminDetails', "Fetched Admin: {$admin->username}, First: '{$admin->firstname}', Last: '{$admin->lastname}'", $ticketId);
 
         $result = localAPI('AddTicketReply', $apiParams, $admin->username);
 
