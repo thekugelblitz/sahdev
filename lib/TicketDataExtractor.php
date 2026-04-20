@@ -237,12 +237,23 @@ class TicketDataExtractor
             return '';
 
         // Get active hosting services linked to this user
-        $services = Capsule::table('tblhosting')
-            ->join('tblproducts', 'tblhosting.packageid', '=', 'tblproducts.id')
-            ->where('tblhosting.userid', $userid)
-            ->where('tblhosting.domainstatus', 'Active')
-            ->select('tblproducts.name', 'tblhosting.domain', 'tblhosting.server')
-            ->limit(5)
+        // We now fetch technical details (IP, Nameservers) directly here
+        $services = Capsule::table('tblhosting as h')
+            ->join('tblproducts as p', 'h.packageid', '=', 'p.id')
+            ->leftJoin('tblservers as s', 'h.server', '=', 's.id')
+            ->where('h.userid', $userid)
+            ->whereIn('h.domainstatus', ['Active', 'Suspended'])
+            ->select(
+                'p.name as product_name',
+                'h.domain',
+                'h.dedicatedip',
+                'h.assignedips',
+                's.name as server_name',
+                's.ipaddress as server_ip',
+                's.hostname as server_host',
+                's.nameserver1', 's.nameserver2', 's.nameserver3', 's.nameserver4', 's.nameserver5'
+            )
+            ->orderBy('h.id', 'desc')
             ->get();
 
         if ($services->isEmpty())
@@ -250,14 +261,23 @@ class TicketDataExtractor
 
         $summary = [];
         foreach ($services as $service) {
-            $serverName = '';
-            if ($service->server) {
-                $server = Capsule::table('tblservers')->where('id', $service->server)->value('name');
-                if ($server) {
-                    $serverName = " (Server: $server)";
-                }
+            $ns = [];
+            for ($i = 1; $i <= 5; $i++) {
+                $f = 'nameserver' . $i;
+                if (!empty($service->$f)) $ns[] = (string) $service->$f;
             }
-            $summary[] = "- {$service->name}: {$service->domain}{$serverName}";
+            
+            $ip = trim((string) $service->dedicatedip) ?: trim((string) $service->assignedips);
+            if (!$ip) $ip = (string) $service->server_ip;
+
+            $details = [];
+            if (!empty($service->server_name)) $details[] = "Server: {$service->server_name}";
+            if (!empty($service->server_host)) $details[] = "Hostname: {$service->server_host}";
+            if ($ip) $details[] = "IP: {$ip}";
+            if (!empty($ns)) $details[] = "MANDATORY_TARGET_NS: " . implode(', ', $ns);
+
+            $detailStr = !empty($details) ? (" (" . implode(' | ', $details) . ")") : "";
+            $summary[] = "- {$service->product_name}: {$service->domain}{$detailStr}";
         }
 
         return implode("\n", $summary);
