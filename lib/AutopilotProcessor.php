@@ -663,6 +663,8 @@ class AutopilotProcessor
             'ticketid' => $ticketId,
             'message'  => $replyText,
             'adminid'  => $adminId,
+            'name'     => $adminName,
+            'email'    => $admin->email,
             // Removing clientid/userid guarantees the reply is attributed
             // to the admin in WHMCS, not as a 'client reply' by the admin.
         ];
