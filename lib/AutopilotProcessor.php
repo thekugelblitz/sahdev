@@ -686,7 +686,14 @@ class AutopilotProcessor
 
             Capsule::table('tblticketreplies')
                 ->where('id', $replyRow->id)
-                ->update(['name' => $displayName]);
+                ->update([
+                    'name'  => $displayName,
+                    'admin' => $admin->username // Keep username for internal links, but we've synced 'name'
+                ]);
+
+            // If the theme is stubborn and uses the 'admin' column for the display name, 
+            // we can try to force the case-sensitivity if the DB collation allows.
+            // But 'name' is the standard field.
                 
             ModuleLogger::log('debug', 'Autopilot.Identity.Sync', "Automatically synced reply name to '{$displayName}'", $ticketId);
 
