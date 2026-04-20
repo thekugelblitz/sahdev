@@ -3293,18 +3293,22 @@ class AdminController
         <h2 style="margin-bottom:4px">📊 AI Performance &amp; ROI Analytics</h2>
         <p class="text-muted" style="margin-bottom:22px;font-size:.9rem">Unified view of AI performance, token spend, cost, and time saved.</p>
 
-        <!-- ── Period Selector ── -->
+        <!-- ── Period Selector (AJAX) ── -->
         <?php
-        $baseUrl = htmlspecialchars($this->moduleVars['modulelink']) . '&action=analytics';
+        $ajaxUrl = htmlspecialchars($this->moduleVars['modulelink']) . '&action=analytics_data';
         ?>
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:20px">
             <span style="font-size:.8rem;color:#64748b;font-weight:600;margin-right:4px">Period:</span>
-            <?php foreach ($validPeriods as $pk => $pl): ?>
-            <a href="<?= $baseUrl ?>&period=<?= $pk ?>"
-               style="padding:5px 16px;border-radius:99px;font-size:.8rem;font-weight:600;text-decoration:none;border:1.5px solid <?= $selectedPeriod===$pk ? '#3b82f6' : '#e2e8f0' ?>;background:<?= $selectedPeriod===$pk ? '#3b82f6' : '#f8fafc' ?>;color:<?= $selectedPeriod===$pk ? '#fff' : '#475569' ?>;transition:all .15s">
+            <?php
+            $validPeriods = ['day' => '1 Day', 'week' => '1 Week', 'month' => '1 Month', 'year' => '1 Year', 'lifetime' => 'Lifetime'];
+            foreach ($validPeriods as $pk => $pl):
+            ?>
+            <button class="sad-period-btn" data-period="<?= $pk ?>"
+               style="padding:5px 16px;border-radius:99px;font-size:.8rem;font-weight:600;cursor:pointer;border:1.5px solid #e2e8f0;background:#f8fafc;color:#475569;transition:all .15s" id="sadbtn-<?= $pk ?>">
                 <?= $pl ?>
-            </a>
+            </button>
             <?php endforeach; ?>
+            <span id="sad-period-loading" style="display:none;font-size:.8rem;color:#3b82f6"><i class="fas fa-circle-notch fa-spin"></i></span>
         </div>
 
         <!-- ── KPI Stat Grid ── -->
@@ -3312,20 +3316,20 @@ class AdminController
             <div class="sad-kpi kpi-blue">
                 <i class="fas fa-bolt kpi-icon"></i>
                 <div class="kpi-lbl">Total AI Actions</div>
-                <div class="kpi-val"><?= number_format($totalActions) ?></div>
+                <div class="kpi-val" id="sad-k-actions"><?= number_format($totalActions) ?></div>
                 <div class="kpi-sub">All time (audit trail)</div>
             </div>
             <div class="sad-kpi kpi-purple">
                 <i class="fas fa-coins kpi-icon"></i>
                 <div class="kpi-lbl">Tokens Used</div>
-                <div class="kpi-val"><?= number_format($totalTokensAll) ?></div>
-                <div class="kpi-sub"><?= $periodLabel ?></div>
+                <div class="kpi-val" id="sad-k-tokens">—</div>
+                <div class="kpi-sub" id="sad-k-tokens-sub">Loading…</div>
             </div>
             <div class="sad-kpi kpi-red">
                 <i class="fas fa-dollar-sign kpi-icon"></i>
                 <div class="kpi-lbl">Estimated Cost</div>
-                <div class="kpi-val">$<?= number_format($totalCostAll, 4) ?></div>
-                <div class="kpi-sub"><?= $periodLabel ?></div>
+                <div class="kpi-val" id="sad-k-cost">—</div>
+                <div class="kpi-sub" id="sad-k-cost-sub">Loading…</div>
             </div>
             <div class="sad-kpi kpi-teal">
                 <i class="fas fa-tachometer-alt kpi-icon"></i>
@@ -3336,20 +3340,20 @@ class AdminController
             <div class="sad-kpi kpi-indigo">
                 <i class="fas fa-ticket-alt kpi-icon"></i>
                 <div class="kpi-lbl">Tickets Handled</div>
-                <div class="kpi-val"><?= number_format($ticketsPeriod) ?></div>
-                <div class="kpi-sub"><?= $periodLabel ?></div>
+                <div class="kpi-val" id="sad-k-tickets">—</div>
+                <div class="kpi-sub" id="sad-k-tickets-sub">Loading…</div>
             </div>
             <div class="sad-kpi kpi-amber">
                 <i class="fas fa-robot kpi-icon"></i>
                 <div class="kpi-lbl">Autopilot Processed</div>
-                <div class="kpi-val"><?= number_format($apProcessedPeriod) ?></div>
-                <div class="kpi-sub"><?= $periodLabel ?> &middot; <?= number_format($apRepliesPeriod) ?> replied/drafted</div>
+                <div class="kpi-val" id="sad-k-ap">—</div>
+                <div class="kpi-sub" id="sad-k-ap-sub">Loading…</div>
             </div>
             <div class="sad-kpi kpi-green">
                 <i class="fas fa-clock kpi-icon"></i>
                 <div class="kpi-lbl">Time Saved</div>
-                <div class="kpi-val"><?= $timeSavedAllH ?>h</div>
-                <div class="kpi-sub"><?= $periodLabel ?> · <?= $avgHandleMin ?>min/ticket avg</div>
+                <div class="kpi-val" id="sad-k-time">—</div>
+                <div class="kpi-sub" id="sad-k-time-sub">Loading…</div>
             </div>
             <div class="sad-kpi kpi-slate">
                 <i class="fas fa-hourglass-half kpi-icon"></i>
@@ -3358,6 +3362,67 @@ class AdminController
                 <div class="kpi-sub">From quality scorer data</div>
             </div>
         </div>
+
+        <script>
+        (function(){
+            var ajaxUrl = <?= json_encode($ajaxUrl) ?>;
+            var activePeriod = 'lifetime';
+
+            function setActive(period) {
+                document.querySelectorAll('.sad-period-btn').forEach(function(btn) {
+                    var isActive = btn.dataset.period === period;
+                    btn.style.background = isActive ? '#3b82f6' : '#f8fafc';
+                    btn.style.color      = isActive ? '#fff'    : '#475569';
+                    btn.style.borderColor= isActive ? '#3b82f6' : '#e2e8f0';
+                });
+            }
+
+            function fmt(n) { return Number(n).toLocaleString(); }
+
+            function loadPeriod(period) {
+                activePeriod = period;
+                setActive(period);
+                document.getElementById('sad-period-loading').style.display = 'inline';
+
+                fetch(ajaxUrl + '&period=' + period, {credentials:'same-origin'})
+                    .then(function(r){ return r.json(); })
+                    .then(function(d) {
+                        document.getElementById('sad-period-loading').style.display = 'none';
+                        if (!d || d.error) { console.error('Analytics data error', d); return; }
+                        var lbl = d.period_label;
+                        function up(id, val) {
+                            var el = document.getElementById(id);
+                            if (!el) return;
+                            el.style.opacity = '0';
+                            el.textContent = val;
+                            el.style.transition = 'opacity .25s';
+                            el.style.opacity = '1';
+                        }
+                        up('sad-k-tokens',      fmt(d.tokens));
+                        up('sad-k-tokens-sub',  lbl);
+                        up('sad-k-cost',        '$' + Number(d.cost).toFixed(4));
+                        up('sad-k-cost-sub',    lbl);
+                        up('sad-k-tickets',     fmt(d.tickets));
+                        up('sad-k-tickets-sub', lbl);
+                        up('sad-k-ap',          fmt(d.ap_processed));
+                        up('sad-k-ap-sub',      lbl + ' · ' + fmt(d.ap_replied) + ' replied/drafted');
+                        up('sad-k-time',        d.time_saved + 'h');
+                        up('sad-k-time-sub',    lbl + ' · ' + d.avg_handle_min + 'min/ticket avg');
+                    })
+                    .catch(function(e){
+                        document.getElementById('sad-period-loading').style.display = 'none';
+                        console.error('Fetch error', e);
+                    });
+            }
+
+            document.querySelectorAll('.sad-period-btn').forEach(function(btn){
+                btn.addEventListener('click', function(){ loadPeriod(this.dataset.period); });
+            });
+
+            // Load lifetime on page init
+            loadPeriod('lifetime');
+        })();
+        </script>
 
         <!-- ── 30-Day Token Trend (SVG area chart) ── -->
         <div class="sad-card">
@@ -3570,6 +3635,116 @@ class AdminController
         </div><!-- /sahdev-page-container -->
         <?php
         return ob_get_clean();
+    }
+
+    /**
+     * AJAX endpoint: returns JSON with period-filtered analytics KPI data.
+     * Called by the period switcher JS in analytics().
+     */
+    public function analytics_data(): string
+    {
+        if (ob_get_length()) ob_clean();
+        header('Content-Type: application/json');
+
+        try {
+            $settings     = Capsule::table('tblsahdev_settings')->first();
+            $avgHandleMin = max(1, (int) ($settings->avg_handle_minutes ?? 8));
+
+            $nowTs = \Carbon\Carbon::now();
+            $validPeriods = ['day' => '1 Day', 'week' => '1 Week', 'month' => '1 Month', 'year' => '1 Year', 'lifetime' => 'Lifetime'];
+            $selectedPeriod = isset($_REQUEST['period']) && isset($validPeriods[$_REQUEST['period']]) ? $_REQUEST['period'] : 'lifetime';
+            $periodLabel    = $validPeriods[$selectedPeriod];
+
+            if ($selectedPeriod === 'day') {
+                $since = $nowTs->copy()->subDay()->startOfDay();
+            } elseif ($selectedPeriod === 'week') {
+                $since = $nowTs->copy()->subDays(7)->startOfDay();
+            } elseif ($selectedPeriod === 'month') {
+                $since = $nowTs->copy()->subDays(30)->startOfDay();
+            } elseif ($selectedPeriod === 'year') {
+                $since = $nowTs->copy()->subDays(365)->startOfDay();
+            } else {
+                $since = null;
+            }
+
+            // Provider cost-rate map
+            $providerCostMap = [];
+            foreach (Capsule::table('tblsahdev_providers')->where('is_active', 1)->get() as $p) {
+                $pt   = strtolower(trim($p->provider_type));
+                $rate = (float) (($p->cost_input_1m + $p->cost_output_1m) / 2);
+                if (!isset($providerCostMap[$pt]) || $rate > $providerCostMap[$pt]) {
+                    $providerCostMap[$pt] = $rate;
+                }
+            }
+            $resolveType = function ($name) {
+                $n = strtolower((string)$name);
+                if (strpos($n, 'google') !== false || strpos($n, 'gemini') !== false) return 'google';
+                if (strpos($n, 'lm studio') !== false || strpos($n, 'lmstudio') !== false) return 'lmstudio';
+                if (strpos($n, 'replicate') !== false) return 'replicate';
+                return $n;
+            };
+
+            // Audit trail tokens + cost
+            $auditQ = Capsule::table('tblsahdev_audit_trail')->whereNotNull('tokens_used')->where('tokens_used', '>', 0);
+            if ($since) $auditQ->where('created_at', '>=', $since);
+            $auditByProvider = (clone $auditQ)->selectRaw('provider_used, SUM(tokens_used) as tokens')->groupBy('provider_used')->get();
+
+            $totalTokens = 0;
+            $totalCost   = 0.0;
+            foreach ($auditByProvider as $row) {
+                $tok  = (int) $row->tokens;
+                $type = $resolveType($row->provider_used);
+                $rate = $providerCostMap[$type] ?? 0.0;
+                $totalTokens += $tok;
+                $totalCost   += round($tok / 1_000_000 * $rate, 6);
+            }
+
+            // Autopilot tokens
+            $apQ = Capsule::table('tblsahdev_autopilot_log')->whereNotNull('tokens_used')->where('tokens_used', '>', 0);
+            if ($since) $apQ->where('created_at', '>=', $since);
+            $apTok = (int) (clone $apQ)->sum('tokens_used');
+            $totalTokens += $apTok;
+            // Estimate autopilot cost via blended rate
+            if ($totalTokens > 0 && $totalCost > 0) {
+                $blendedRate = $totalCost / max(1, $totalTokens - $apTok);
+                $totalCost   = round($totalCost + ($apTok / 1_000_000 * $blendedRate), 6);
+            }
+
+            // Replied/drafted count
+            $apRepliesQ = Capsule::table('tblsahdev_autopilot_log')->whereIn('ai_decision', ['replied', 'drafted']);
+            if ($since) $apRepliesQ->where('created_at', '>=', $since);
+            $apReplied = (clone $apRepliesQ)->count();
+
+            // Autopilot processed
+            $apProcQ = Capsule::table('tblsahdev_autopilot_log');
+            if ($since) $apProcQ->where('created_at', '>=', $since);
+            $apProcessed = (clone $apProcQ)->count();
+
+            // Unique tickets
+            $atQ = Capsule::table('tblsahdev_audit_trail')->whereNotNull('ticket_id');
+            if ($since) $atQ->where('created_at', '>=', $since);
+            $auditTickets = (clone $atQ)->distinct()->pluck('ticket_id')->toArray();
+            $apTQ = Capsule::table('tblsahdev_autopilot_log');
+            if ($since) $apTQ->where('created_at', '>=', $since);
+            $apTickets = (clone $apTQ)->distinct()->pluck('ticket_id')->toArray();
+            $tickets   = count(array_unique(array_merge($auditTickets, $apTickets)));
+
+            $timeSaved = round(($apReplied * $avgHandleMin) / 60, 1);
+
+            return json_encode([
+                'period'         => $selectedPeriod,
+                'period_label'   => $periodLabel,
+                'tokens'         => $totalTokens,
+                'cost'           => round($totalCost, 6),
+                'tickets'        => $tickets,
+                'ap_processed'   => $apProcessed,
+                'ap_replied'     => $apReplied,
+                'time_saved'     => $timeSaved,
+                'avg_handle_min' => $avgHandleMin,
+            ]);
+        } catch (\Exception $e) {
+            return json_encode(['error' => $e->getMessage()]);
+        }
     }
 
     // =========================================================================
