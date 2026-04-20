@@ -61,4 +61,16 @@ if ($verbose || !empty($summary['errors'])) {
     echo json_encode($summary, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . PHP_EOL;
 }
 
+// Update global "Last Cron Success" timestamp for WHMCS admin health alerts
+try {
+    \WHMCS\Database\Capsule::table('tblsahdev_settings')->where('id', 1)->update([
+        'last_cron_success' => \Carbon\Carbon::now(),
+        'updated_at'        => \Carbon\Carbon::now(),
+    ]);
+} catch (\Throwable $e) {
+    if ($verbose) {
+        echo "Failed to update global cron timestamp: " . $e->getMessage() . PHP_EOL;
+    }
+}
+
 exit($exitCode);

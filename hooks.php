@@ -2499,6 +2499,45 @@ if (!function_exists('sahdev_inject_ticket_panel_sel')) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Health Monitor: Admin header alert if cron is not running
+// ---------------------------------------------------------------------------
+add_hook('AdminAreaHeaderOutput', 1, function ($vars) {
+    try {
+        if (!Capsule::schema()->hasTable('tblsahdev_settings')) return '';
+        $settings = Capsule::table('tblsahdev_settings')->where('id', 1)->first();
+        if (!$settings) return '';
+
+        $lastRun = !empty($settings->last_cron_success) ? \Carbon\Carbon::parse($settings->last_cron_success) : null;
+        
+        // Only show if at least one automation feature is enabled
+        $active = !empty($settings->cron_insights_enabled) || !empty($settings->autopilot_enabled) || !empty($settings->tools_execution_enabled);
+        if (!$active) return '';
+
+        $isStale = (!$lastRun || $lastRun->diffInMinutes(\Carbon\Carbon::now()) > 60);
+
+        if ($isStale) {
+            $msg = $lastRun 
+                ? "Sahdev AI automation has not run since " . $lastRun->format('Y-m-d H:i:s') . ". Please verify your system cron job."
+                : "Sahdev AI automation cron job has never run successfully. Manual configuration is required.";
+            
+            $configUrl = "addonmodules.php?module=sahdev&action=autopilot"; 
+            
+            return <<<HTML
+<div class="alert alert-warning sahdev-cron-alert" style="margin: 15px 20px 5px 20px; padding: 10px 15px; border-left: 5px solid #f39c12; font-size: 13px;">
+    <div style="display:flex; align-items:center; justify-content:space-between;">
+        <span><i class="fas fa-exclamation-triangle" style="color:#e67e22; margin-right:8px;"></i> <strong>Sahdev Health Alert:</strong> {$msg}</span>
+        <a href="{$configUrl}" class="btn btn-xs btn-warning" style="font-weight:600; text-transform:uppercase; font-size:10px;">Troubleshoot</a>
+    </div>
+</div>
+HTML;
+        }
+    } catch (\Throwable $e) {
+        // Fail silently to avoid breaking admin UI
+    }
+    return '';
+});
+
 // Since we are inside hooks.php, let's declare helper at file scope but use it via string replacement or just manual checks
 // Let's refactor the HEREDOC slightly for the dropdown to be exact and clean instead of calling function inside heredoc
 

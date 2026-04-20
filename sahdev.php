@@ -201,7 +201,19 @@ function sahdev_activate()
                     $table->timestamp('tools_cron_last_run_at')->nullable();
                     $table->string('tools_cron_last_message', 512)->nullable();
                     $table->timestamp('tools_execution_cron_lock_until')->nullable();
+                    $table->timestamp('last_cron_success')->nullable();
                 });
+            }
+
+            // Migrate: add last_cron_success if missing on existing v2 install
+            try {
+                Capsule::table('tblsahdev_settings')->select('last_cron_success')->first();
+            } catch (\Exception $e) {
+                try {
+                    Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                        $table->timestamp('last_cron_success')->nullable();
+                    });
+                } catch (\Exception $ignored) {}
             }
         } catch (\Exception $e) {
             Capsule::schema()->create(
