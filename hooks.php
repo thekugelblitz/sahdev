@@ -2515,7 +2515,23 @@ add_hook('AdminAreaHeaderOutput', 1, function ($vars) {
         $settings = Capsule::table('tblsahdev_settings')->where('id', 1)->first();
         if (!$settings) return '';
 
-        $lastRun = !empty($settings->last_cron_success) ? \Carbon\Carbon::parse($settings->last_cron_success) : null;
+        // Find the most recent run date among all Sahdev automation columns for a more accurate health picture
+        $lastRun = null;
+        $timestampCols = [
+            'last_cron_success', 
+            'insights_cron_last_run_at', 
+            'autopilot_cron_last_run_at', 
+            'tools_cron_last_run_at'
+        ];
+        
+        foreach ($timestampCols as $col) {
+            if (!empty($settings->{$col})) {
+                $dt = \Carbon\Carbon::parse($settings->{$col});
+                if (!$lastRun || $dt->gt($lastRun)) {
+                    $lastRun = $dt;
+                }
+            }
+        }
         
         // Only show if at least one automation feature is enabled
         $active = !empty($settings->cron_insights_enabled) || !empty($settings->autopilot_enabled) || !empty($settings->tools_execution_enabled);

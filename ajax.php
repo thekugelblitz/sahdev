@@ -457,6 +457,14 @@ try {
         $processor = new \Sahdev\Lib\CronProcessor();
         $result    = $processor->run(true); // verbose=true returns diagnostic info
 
+        // Record successful heartbeat after manual run
+        try {
+            \WHMCS\Database\Capsule::table('tblsahdev_settings')->where('id', 1)->update([
+                'last_cron_success' => \Carbon\Carbon::now(),
+                'updated_at'        => \Carbon\Carbon::now(),
+            ]);
+        } catch (\Throwable $e) {}
+
         $analyzed = $result['analyzed'] ?? 0;
         $found    = $result['tickets_found'] ?? 0;
         $errors   = $result['errors'] ?? [];
