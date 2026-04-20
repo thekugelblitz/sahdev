@@ -2419,6 +2419,7 @@ class AdminController
                 'tools_evidence_system' => [],
                 'tools_evidence_user' => ['{{RAW_TOOL_OUTPUT}}'],
                 'tools_reply_context_wrapper' => ['{{TOOLS_EVIDENCE}}'],
+                'autopilot_system'     => [],
             ];
             $keyIcons = [
                 'system_default'       => 'fas fa-robot',
@@ -2433,6 +2434,7 @@ class AdminController
                 'tools_evidence_system' => 'fas fa-filter',
                 'tools_evidence_user' => 'fas fa-stream',
                 'tools_reply_context_wrapper' => 'fas fa-box-open',
+                'autopilot_system'     => 'fas fa-plane-arrival',
             ];
             $orderedKeys = [
                 'system_default',
@@ -2447,6 +2449,7 @@ class AdminController
                 'tools_evidence_system',
                 'tools_evidence_user',
                 'tools_reply_context_wrapper',
+                'autopilot_system',
             ];
             foreach ($orderedKeys as $key):
                 if (!isset($templates[$key])) continue;
