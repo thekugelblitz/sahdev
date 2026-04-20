@@ -431,6 +431,12 @@ class AutopilotProcessor
         // Resolve the provider for the autopilot task
         $provider = $this->resolveAutopilotProvider();
 
+        // Append extra strict technical rules
+        $systemPrompt .= "\n\nCRITICAL TECHNICAL RULES:\n";
+        $systemPrompt .= "1. If instructing the client to update Nameservers, use ONLY values labeled as 'INSTRUCTION: Domain MUST point to these Nameservers'.\n";
+        $systemPrompt .= "2. IGNORE 'Current Registrar NS' when providing target nameservers.\n";
+        $systemPrompt .= "3. Use 'Server IP' and 'Product IP' for any A-record guidance.";
+
         $settingsForProvider = array_merge((array) $this->settings, [
             'system_prompt'          => $systemPrompt,
             'user_prompt_template'   => null,
@@ -660,13 +666,10 @@ class AutopilotProcessor
             ->value('userid');
 
         $apiParams = [
-            'ticketid' => $ticketId,
-            'message'  => $replyText,
-            'adminid'  => $adminId,
-            'name'     => $adminName,
-            'email'    => $admin->email,
-            // Removing clientid/userid guarantees the reply is attributed
-            // to the admin in WHMCS, not as a 'client reply' by the admin.
+            'ticketid'      => $ticketId,
+            'message'       => $replyText,
+            'adminusername' => $admin->username,
+            // Removing name/email/clientid ensures WHMCS recognizes this as a staff reply
         ];
 
         $result = localAPI('AddTicketReply', $apiParams, $admin->username);

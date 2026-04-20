@@ -70,12 +70,6 @@ class ClientAccountEnrichment
                 if ($s !== '') {
                     $parts[] = $s;
                 }
-                
-                // Add system-wide defaults as a reference
-                $defaults = self::sectionSystemDefaults();
-                if ($defaults !== '') {
-                    $parts[] = $defaults;
-                }
             } catch (\Throwable $e) {
                 self::logSectionFailure('hosting', $e, $ticketIdForScope);
             }
@@ -266,7 +260,7 @@ class ClientAccountEnrichment
             if (!empty($r->server_host)) $details[] = "Server Host: {$r->server_host}";
             if (!empty($r->server_ip)) $details[] = "Server IP: {$r->server_ip}";
             
-            if ($ns !== []) $details[] = "Required Hosting NS (Point here): " . implode(', ', $ns);
+            if ($ns !== []) $details[] = "INSTRUCTION: Domain MUST point to these Nameservers: " . implode(', ', $ns);
             
             $lines[] = "- {$name} ({$dom}): " . implode(' | ', $details);
         }
@@ -274,28 +268,6 @@ class ClientAccountEnrichment
         return implode("\n", $lines);
     }
     
-    private static function sectionSystemDefaults(): string
-    {
-        $ns = [];
-        try {
-            $nameservers = Capsule::table('tblconfiguration')
-                ->whereIn('setting', ['DefaultNameserver1', 'DefaultNameserver2', 'DefaultNameserver3', 'DefaultNameserver4'])
-                ->pluck('value', 'setting');
-            
-            foreach (['DefaultNameserver1', 'DefaultNameserver2', 'DefaultNameserver3', 'DefaultNameserver4'] as $key) {
-                if (!empty($nameservers[$key])) {
-                    $ns[] = $nameservers[$key];
-                }
-            }
-        } catch (\Exception $e) {
-            return '';
-        }
-        
-        if (empty($ns)) {
-            return '';
-        }
-        
-        return "Company Default Nameservers (Backup Reference): " . implode(', ', $ns);
     }
 
     private static function sectionAddons(int $userid): string
