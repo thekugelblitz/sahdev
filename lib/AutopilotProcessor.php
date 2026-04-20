@@ -440,10 +440,6 @@ class AutopilotProcessor
             'quality_scorer_enabled' => 0,
         ]);
 
-        // --- DEEP DEBUG DUMP: See exactly what we are handing to the AI ---
-        ModuleLogger::debug('Autopilot.DataFetch.Context', json_encode($context), $ticketId);
-        ModuleLogger::debug('Autopilot.DataFetch.Instructions', $systemPrompt, $ticketId);
-
         try {
             $rawResponse = $provider->generateResponse(
                 $context + ['__autopilot_raw_reply__' => true],
