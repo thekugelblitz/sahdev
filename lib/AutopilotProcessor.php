@@ -417,6 +417,13 @@ class AutopilotProcessor
 
         $toolsContext = '';
         if (class_exists('\Sahdev\Modules\ToolsExecution\ToolsExecutionService')) {
+            // PROACTIVE DIAGNOSTICS: Ensure tools have run for this ticket's current state
+            try {
+                \Sahdev\Modules\ToolsExecution\ToolsExecutionService::runTicket($ticketId);
+                ModuleLogger::debug('Autopilot.DataFetch.Tools', "Proactively triggered diagnostic tools for ticket #{$ticketId}", $ticketId);
+            } catch (\Throwable $e) {
+                ModuleLogger::debug('Autopilot.DataFetch.Tools', "Tools execution skipped/failed: " . $e->getMessage(), $ticketId);
+            }
             $toolsContext = \Sahdev\Modules\ToolsExecution\ToolsExecutionService::buildPromptContextBlock($ticketId);
         }
         $context['tools_output'] = $toolsContext;

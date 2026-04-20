@@ -43,17 +43,17 @@ $summary = [
 ];
 
 try {
-    $processor = new \Sahdev\Lib\CronProcessor();
-    $summary['insights'] = $processor->run($verbose);
+    $summary['tools'] = \Sahdev\Modules\ToolsExecution\ToolsExecutionService::runCron($verbose);
 } catch (\Throwable $e) {
-    $summary['errors'][] = 'Insights cron failed: ' . $e->getMessage();
+    $summary['errors'][] = 'Tools cron failed: ' . $e->getMessage();
     $exitCode = 1;
 }
 
 try {
-    $summary['tools'] = \Sahdev\Modules\ToolsExecution\ToolsExecutionService::runCron($verbose);
+    $processor = new \Sahdev\Lib\CronProcessor();
+    $summary['insights'] = $processor->run($verbose);
 } catch (\Throwable $e) {
-    $summary['errors'][] = 'Tools cron failed: ' . $e->getMessage();
+    $summary['errors'][] = 'Insights cron failed: ' . $e->getMessage();
     $exitCode = 1;
 }
 
