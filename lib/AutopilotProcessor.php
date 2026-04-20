@@ -430,7 +430,7 @@ class AutopilotProcessor
         $systemPrompt .= "1. If instructing the client to update Nameservers, use ONLY values labeled as 'MANDATORY_TARGET_NS'.\n";
         $systemPrompt .= "2. IGNORE any values labeled 'Current Registrar NS'.\n";
         $systemPrompt .= "3. Use 'Product IP' or 'Server IP' for A-record guidance.\n";
-        $systemPrompt .= "4. FORMATTING: Use double newlines (\n\n) before AND after every bullet point list or header. Use simple '-' bullets without nested bolding.";
+        $systemPrompt .= "4. FORMATTING: Use '### ' for all headers. ALWAYS include exactly 2 blank lines before and after every header or list to ensure standard WHMCS rendering. Use simple '-' bullets.";
         
         $settingsForProvider = array_merge((array) $this->settings, [
             'system_prompt'          => $systemPrompt,
@@ -658,14 +658,23 @@ class AutopilotProcessor
             throw new \Exception("WHMCS localAPI AddTicketReply failed: {$err}");
         }
 
-        // Retrieve the ID of the reply we just created
         $replyId = Capsule::table('tblticketreplies')
             ->where('tid', $ticketId)
             ->where('admin', $admin->username)
             ->orderBy('id', 'desc')
             ->value('id');
 
-        return $replyId ? (int) $replyId : null;
+        if ($replyId) {
+            // BULLETPROOF FIX: Manually force the display name to the full Admin Name
+            // This bypasses WHMCS localAPI defaulting to the lowercase username.
+            Capsule::table('tblticketreplies')
+                ->where('id', $replyId)
+                ->update(['name' => $adminName]);
+            
+            return (int) $replyId;
+        }
+
+        return null;
     }
 
 
