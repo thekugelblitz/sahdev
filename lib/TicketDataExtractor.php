@@ -51,7 +51,7 @@ class TicketDataExtractor
 
         // 1. Fetch main ticket data
         $ticket = Capsule::table('tbltickets')
-            ->select('id', 'tid', 'did', 'userid', 'contactid', 'name', 'email', 'title', 'message', 'status', 'urgency', 'lastreply', 'date')
+            ->select('id', 'tid', 'did', 'userid', 'contactid', 'name', 'email', 'title', 'message', 'status', 'urgency', 'lastreply', 'date', 'service')
             ->where('id', $this->ticketId)
             ->first();
 
@@ -134,7 +134,8 @@ class TicketDataExtractor
         }
 
         $userid = (int) $ticket->userid;
-        $summary = $this->extractClientServices($userid);
+        $assocService = isset($ticket->service) ? (string)$ticket->service : '';
+        $summary = $this->extractClientServices($userid, $assocService);
 
         if ($settings && !empty($settings->context_enrichment_enabled) && $userid > 0) {
             try {
@@ -231,53 +232,98 @@ class TicketDataExtractor
         return $ticket->name ?: 'Guest / Unregistered';
     }
 
-    private function extractClientServices($userid): string
+    private function extractClientServices($userid, $assocService = ''): string
     {
-        if (!$userid)
+        if (!$userid) {
             return '';
-
-        // Get active hosting services linked to this user
-        // We now fetch technical details (IP, Nameservers) directly here
-        $services = Capsule::table('tblhosting as h')
-            ->join('tblproducts as p', 'h.packageid', '=', 'p.id')
-            ->leftJoin('tblservers as s', 'h.server', '=', 's.id')
-            ->where('h.userid', $userid)
-            ->whereIn('h.domainstatus', ['Active', 'Suspended'])
-            ->select(
-                'p.name as product_name',
-                'h.domain',
-                'h.dedicatedip',
-                'h.assignedips',
-                's.name as server_name',
-                's.ipaddress as server_ip',
-                's.hostname as server_host',
-                's.nameserver1', 's.nameserver2', 's.nameserver3', 's.nameserver4', 's.nameserver5'
-            )
-            ->orderBy('h.id', 'desc')
-            ->get();
-
-        if ($services->isEmpty())
-            return 'No active services.';
+        }
 
         $summary = [];
-        foreach ($services as $service) {
-            $ns = [];
-            for ($i = 1; $i <= 5; $i++) {
-                $f = 'nameserver' . $i;
-                if (!empty($service->$f)) $ns[] = (string) $service->$f;
+
+        // Determine if we are filtering by a specific Hosting (S) or Domain (D)
+        $targetHostId = 0;
+        $targetDomainId = 0;
+        
+        if ($assocService !== '') {
+            if (preg_match('/^S([0-9]+)$/i', $assocService, $match)) {
+                $targetHostId = (int)$match[1];
+            } elseif (preg_match('/^D([0-9]+)$/i', $assocService, $match)) {
+                $targetDomainId = (int)$match[1];
+            } elseif (is_numeric($assocService) && rtrim($assocService, '0..9') === '') {
+                $targetHostId = (int)$assocService; // Legacy fallback
             }
-            
-            $ip = trim((string) $service->dedicatedip) ?: trim((string) $service->assignedips);
-            if (!$ip) $ip = (string) $service->server_ip;
+        }
 
-            $details = [];
-            if (!empty($service->server_name)) $details[] = "Server: {$service->server_name}";
-            if (!empty($service->server_host)) $details[] = "Hostname: {$service->server_host}";
-            if ($ip) $details[] = "IP: {$ip}";
-            if (!empty($ns)) $details[] = "MANDATORY_TARGET_NS: " . implode(', ', $ns);
+        // --- FETCH HOSTING SERVICES ---
+        if ($targetDomainId === 0) { // Only fetch hosting if it's not strictly a domain selection
+            $query = Capsule::table('tblhosting as h')
+                ->join('tblproducts as p', 'h.packageid', '=', 'p.id')
+                ->leftJoin('tblservers as s', 'h.server', '=', 's.id')
+                ->where('h.userid', $userid)
+                ->whereIn('h.domainstatus', ['Active', 'Suspended']);
 
-            $detailStr = !empty($details) ? (" (" . implode(' | ', $details) . ")") : "";
-            $summary[] = "- {$service->product_name}: {$service->domain}{$detailStr}";
+            if ($targetHostId > 0) {
+                $query->where('h.id', $targetHostId);
+            }
+
+            $services = $query->select(
+                    'p.name as product_name',
+                    'h.domain',
+                    'h.dedicatedip',
+                    'h.assignedips',
+                    's.name as server_name',
+                    's.ipaddress as server_ip',
+                    's.hostname as server_host',
+                    's.nameserver1', 's.nameserver2', 's.nameserver3', 's.nameserver4', 's.nameserver5'
+                )
+                ->orderBy('h.id', 'desc')
+                ->get();
+
+            foreach ($services as $service) {
+                $ns = [];
+                for ($i = 1; $i <= 5; $i++) {
+                    $f = 'nameserver' . $i;
+                    if (!empty($service->$f)) $ns[] = (string) $service->$f;
+                }
+                
+                $ip = trim((string) $service->dedicatedip) ?: trim((string) $service->assignedips);
+                if (!$ip) $ip = (string) $service->server_ip;
+
+                $details = [];
+                if (!empty($service->server_name)) $details[] = "Server: {$service->server_name}";
+                if (!empty($service->server_host)) $details[] = "Hostname: {$service->server_host}";
+                if ($ip) $details[] = "IP: {$ip}";
+                if (!empty($ns)) $details[] = "MANDATORY_TARGET_NS: " . implode(', ', $ns);
+
+                $detailStr = !empty($details) ? (" (" . implode(' | ', $details) . ")") : "";
+                $summary[] = "- {$service->product_name}: {$service->domain}{$detailStr}";
+            }
+        }
+
+        // --- FETCH DOMAIN SERVICES ---
+        // Exclusively fetch the domain if requested, or if no target is specified (fetch all)
+        if ($targetHostId === 0) { 
+            try {
+                if (Capsule::schema()->hasTable('tbldomains')) {
+                    $dQuery = Capsule::table('tbldomains')
+                        ->where('userid', $userid)
+                        ->whereIn('status', ['Active', 'Suspended']);
+                    
+                    if ($targetDomainId > 0) {
+                        $dQuery->where('id', $targetDomainId);
+                    }
+                    
+                    $domains = $dQuery->select('domain', 'registrar')->get();
+                    foreach ($domains as $d) {
+                        $registrarStr = !empty($d->registrar) ? " (Registrar: {$d->registrar})" : "";
+                        $summary[] = "- Domain: {$d->domain}{$registrarStr}";
+                    }
+                }
+            } catch (\Throwable $e) {}
+        }
+
+        if (empty($summary)) {
+            return 'No active services relevant to this ticket.';
         }
 
         return implode("\n", $summary);
