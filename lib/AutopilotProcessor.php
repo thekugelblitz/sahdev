@@ -424,36 +424,53 @@ class AutopilotProcessor
 
     private function postReply(int $ticketId, string $replyText, int $adminId): ?int
     {
-        // Get admin username for WHMCS reply
-        $adminUsername = Capsule::table('tbladmins')
+        // Fetch full admin row — WHMCS AddTicketReply requires name + email even for admin replies
+        $admin = Capsule::table('tbladmins')
+            ->select('id', 'username', 'firstname', 'lastname', 'email')
             ->where('id', $adminId)
-            ->value('username');
+            ->first();
 
-        if (empty($adminUsername)) {
+        if (!$admin) {
             throw new \Exception("Autopilot admin (ID #{$adminId}) not found in tbladmins.");
         }
 
-        // Use WHMCS localAPI to post the reply properly (handles status, notifications, etc.)
-        $result = localAPI('AddTicketReply', [
-            'ticketid'    => $ticketId,
-            'message'     => $replyText,
-            'adminid'     => $adminId,
-        ]);
+        $adminName = trim($admin->firstname . ' ' . $admin->lastname) ?: $admin->username;
+
+        // Fetch clientid from the ticket (needed for proper reply association)
+        $ticketClientId = Capsule::table('tbltickets')
+            ->where('id', $ticketId)
+            ->value('userid');
+
+        $apiParams = [
+            'ticketid' => $ticketId,
+            'message'  => $replyText,
+            'adminid'  => $adminId,
+            'name'     => $adminName,
+            'email'    => $admin->email,
+        ];
+
+        // Pass clientid if ticket is associated with a registered client
+        if ($ticketClientId) {
+            $apiParams['clientid'] = (int) $ticketClientId;
+        }
+
+        $result = localAPI('AddTicketReply', $apiParams);
 
         if (($result['result'] ?? '') !== 'success') {
             $err = $result['message'] ?? json_encode($result);
             throw new \Exception("WHMCS localAPI AddTicketReply failed: {$err}");
         }
 
-        // Retrieve the reply ID we just created
+        // Retrieve the ID of the reply we just created
         $replyId = Capsule::table('tblticketreplies')
             ->where('tid', $ticketId)
-            ->where('admin', $adminUsername)
+            ->where('admin', $admin->username)
             ->orderBy('id', 'desc')
             ->value('id');
 
         return $replyId ? (int) $replyId : null;
     }
+
 
     // -------------------------------------------------------------------------
     // Admin signature
