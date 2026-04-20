@@ -287,8 +287,8 @@ class GoogleAIProvider implements AIProviderInterface
         // Use admin-defined template if available
         if (!empty($userPromptTemplate)) {
             return str_replace(
-                ['{{CUSTOM_INSTRUCTION_BLOCK}}', '{{TONE}}', '{{CLIENT_NAME}}', '{{DEPARTMENT}}', '{{SUBJECT}}', '{{SERVICES_BLOCK}}', '{{MESSAGES}}', '{{ATTACHMENTS_BLOCK}}'],
-                [$customInstructionBlock, $tone, $context['client_name'] ?? 'Unknown Client', $context['department'] ?? 'Support', $context['subject'] ?? 'Ticket', $servicesBlock, $messagesBlock, $attachmentsBlock],
+                ['{{CUSTOM_INSTRUCTION_BLOCK}}', '{{TONE}}', '{{CLIENT_NAME}}', '{{DEPARTMENT}}', '{{SUBJECT}}', '{{SERVICES_BLOCK}}', '{{MESSAGES}}', '{{ATTACHMENTS_BLOCK}}', '{{TOOLS_OUTPUT}}'],
+                [$customInstructionBlock, $tone, $context['client_name'] ?? 'Unknown Client', $context['department'] ?? 'Support', $context['subject'] ?? 'Ticket', $servicesBlock, $messagesBlock, $attachmentsBlock, $context['tools_output'] ?? ''],
                 $userPromptTemplate
             );
         }
@@ -324,10 +324,21 @@ class GoogleAIProvider implements AIProviderInterface
         $prompt .= "Client: " . ($context['client_name'] ?? 'Unknown Client') . "\n";
         $prompt .= "Department: " . ($context['department'] ?? 'Support') . "\n";
         $prompt .= "Subject: " . ($context['subject'] ?? 'Ticket') . "\n";
-        if ($servicesBlock) $prompt .= $servicesBlock;
-        $prompt .= "\n=== CONVERSATION ===\n" . $messagesBlock;
-        if ($attachmentsBlock) $prompt .= $attachmentsBlock;
-        if ($adminNotesBlock) $prompt .= $adminNotesBlock;
+        $prompt .= "{$servicesBlock}\n";
+
+        if (!empty($context['tools_output'])) {
+            $prompt .= $this->sanitizeForPrompt($context['tools_output']) . "\n\n";
+        }
+
+        $prompt .= "=== ACCOUNT DATA (read-only) ===\n";
+        $prompt .= "Recent invoices:\n" . ($context['invoices_summary'] ?? "No invoices found.") . "\n\n";
+        $prompt .= "Hosting addons:\n" . ($context['addons_summary'] ?? "No addons found.") . "\n\n";
+        $prompt .= "Custom fields:\n" . ($context['custom_fields_summary'] ?? "No custom fields.") . "\n\n";
+
+        $prompt .= "=== CONVERSATION ===\n";
+        $prompt .= "{$messagesBlock}";
+        $prompt .= $attachmentsBlock;
+        $prompt .= $adminNotesBlock;
         return $prompt;
     }
 

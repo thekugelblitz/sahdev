@@ -98,13 +98,12 @@ class CronProcessor
                 ->leftJoin('tblsahdev_sentiment as s', 's.ticket_id', '=', 't.id')
                 ->whereIn('t.status', $statuses)
                 ->where(function ($q) use ($cooldownCutoff) {
-                    // Never analyzed
-                    $q->whereNull('s.ticket_id')
-                      ->orWhere(function ($inner) use ($cooldownCutoff) {
-                          // New reply since last analysis AND past cooldown
-                          $inner->whereRaw('t.lastreply > s.ticket_last_reply_at')
-                                ->where('s.analyzed_at', '<', $cooldownCutoff);
-                      });
+                    $q->whereNull('s.ticket_id') // Never analyzed
+                      ->orWhere(function ($inner) {
+                          // Bypass cooldown if there is a new reply
+                          $inner->whereRaw('t.lastreply > s.ticket_last_reply_at');
+                      })
+                      ->orWhere('s.analyzed_at', '<', $cooldownCutoff); // Stale analysis
                 })
                 ->orderBy('t.lastreply', 'asc')
                 ->limit($maxPerRun)
@@ -313,10 +312,10 @@ class CronProcessor
             ->whereIn('t.status', $statuses)
             ->where(function ($q) use ($cooldownCutoff) {
                 $q->whereNull('s.ticket_id')
-                  ->orWhere(function ($inner) use ($cooldownCutoff) {
-                      $inner->whereRaw('t.lastreply > s.ticket_last_reply_at')
-                            ->where('s.analyzed_at', '<', $cooldownCutoff);
-                  });
+                  ->orWhere(function ($inner) {
+                      $inner->whereRaw('t.lastreply > s.ticket_last_reply_at');
+                  })
+                  ->orWhere('s.analyzed_at', '<', $cooldownCutoff);
             })
             ->orderBy('t.lastreply', 'asc')
             ->limit($maxPerRun)
