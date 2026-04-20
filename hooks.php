@@ -381,8 +381,8 @@ function sahdev_inject_ticket_panel($vars)
                     </div>
                     <div id="sahdev-manual-json-wrap" style="display:none; margin-top:8px;">
                         <div style="display:flex; gap:6px;">
-                            <input type="text" id="sahdev-manual-path-params" class="form-control input-sm" placeholder='Path Params JSON'>
-                            <input type="text" id="sahdev-manual-query" class="form-control input-sm" placeholder='Query JSON'>
+                            <input type="text" id="sahdev-manual-path-params" class="form-control input-sm sahdev-json-input" placeholder='Path Params JSON'>
+                            <input type="text" id="sahdev-manual-query" class="form-control input-sm sahdev-json-input" placeholder='Query JSON'>
                         </div>
                     </div>
                 </div>

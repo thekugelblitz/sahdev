@@ -62,6 +62,9 @@ class TicketDataExtractor
         $context['subject'] = $ticket->title;
         $context['priority'] = $ticket->urgency;
         $context['department'] = $this->getDepartmentName($ticket->did);
+        $context['client_email'] = (string) $ticket->email;
+        $context['userid'] = (int) $ticket->userid;
+        $context['ticket_id'] = (int) $ticket->id;
 
         // 2. Fetch Client Info
         $context['client_name'] = $this->extractClientName($ticket);

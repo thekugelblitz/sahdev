@@ -520,6 +520,18 @@ try {
         $pathParams = is_array($pathParamsRaw) ? $pathParamsRaw : (json_decode((string) $pathParamsRaw, true) ?: []);
         $query = is_array($queryRaw) ? $queryRaw : (json_decode((string) $queryRaw, true) ?: []);
         $body = is_array($bodyRaw) ? $bodyRaw : (json_decode((string) $bodyRaw, true) ?: []);
+
+        // Debug trace: Log what the backend received
+        try {
+            \WHMCS\Database\Capsule::table('tblsahdev_module_logs')->insert([
+                'level' => 'debug',
+                'source' => 'AJAX::run_manual_tool',
+                'message' => sprintf('Manual Tool Request Trace: ticket=%d, path=%s, params=%s', $runTicketId, $path, (string)$pathParamsRaw),
+                'ticket_id' => $runTicketId,
+                'created_at' => \Carbon\Carbon::now(),
+            ]);
+        } catch (\Throwable $e) {}
+
         $manual = \Sahdev\Modules\ToolsExecution\ToolsExecutionService::runManualTool($runTicketId, (int) $adminId, $method, $path, $pathParams, $query, $body);
         $summary = \Sahdev\Modules\ToolsExecution\ToolsExecutionService::getLatestRunSummary($runTicketId);
         $response = ['status' => 'success', 'result' => $manual, 'summary' => $summary];

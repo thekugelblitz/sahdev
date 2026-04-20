@@ -115,9 +115,21 @@ class ToolsExecutionService
             throw new \Exception('Operation is not allowed by OpenAPI allowlist.');
         }
 
-        $finalPath = $service->applyPathParams($path, $pathParams);
+        $finalPath = $service->applyPathParams($path, $pathParams, $ticketId);
         $baseUrl = rtrim((string) ($settings->tools_api_base_url ?: self::DEFAULT_BASE_URL), '/');
         $url = $baseUrl . $finalPath;
+        
+        // Detailed Debug Trace
+        try {
+            Capsule::table('tblsahdev_module_logs')->insert([
+                'level' => 'debug',
+                'source' => 'ToolsExecutionService::runManualTool',
+                'message' => sprintf('Manual Execution Start: [%s] path=%s, finalPath=%s, url=%s', $method, $path, $finalPath, $url),
+                'ticket_id' => $ticketId,
+                'created_at' => Carbon::now(),
+            ]);
+        } catch (\Throwable $e) {}
+
         $timeout = max(5, min(60, (int) ($settings->tools_request_timeout_sec ?? 60)));
 
         $ticket = Capsule::table('tbltickets')->where('id', $ticketId)->first();
@@ -154,6 +166,17 @@ class ToolsExecutionService
         } catch (\Throwable $e) {}
 
         $normalized = $service->normalizeOutput($method, $finalPath, (string) ($exec['body'] ?? ''), (array) $settings);
+        
+        // Detailed Debug Trace: Log final result
+        try {
+            Capsule::table('tblsahdev_module_logs')->insert([
+                'level' => 'debug',
+                'source' => 'ToolsExecutionService::runManualTool',
+                'message' => sprintf('Manual Execution Result: [%s] Status=%s Code=%d BodyExcerpt=%.200s', $finalPath, $exec['status'], $exec['http_status'], $exec['body']),
+                'ticket_id' => $ticketId,
+                'created_at' => Carbon::now(),
+            ]);
+        } catch (\Throwable $e) {}
         Capsule::table('tblsahdev_tool_runs')->insert([
             'suggestion_id' => $suggestionId,
             'ticket_id' => $ticketId,
@@ -394,8 +417,19 @@ class ToolsExecutionService
             $query = is_array($item['query'] ?? null) ? $item['query'] : [];
             $body = is_array($item['body'] ?? null) ? $item['body'] : [];
 
-            $finalPath = $this->applyPathParams($path, $pathParams);
+            $finalPath = $this->applyPathParams($path, $pathParams, $ticketId);
             $url = $baseUrl . $finalPath;
+
+            // Detailed Debug Trace
+            try {
+                Capsule::table('tblsahdev_module_logs')->insert([
+                    'level' => 'debug',
+                    'source' => 'ToolsExecutionService::processTicket',
+                    'message' => sprintf('Auto Execution Line: [%s] path=%s, finalPath=%s, url=%s', $method, $path, $finalPath, $url),
+                    'ticket_id' => $ticketId,
+                    'created_at' => Carbon::now(),
+                ]);
+            } catch (\Throwable $e) {}
 
             $attempt = 0;
             $exec = null;
@@ -1344,22 +1378,48 @@ class ToolsExecutionService
         }
     }
 
-    private function applyPathParams(string $path, array $pathParams): string
+    private function applyPathParams(string $path, array $pathParams, int $ticketId = 0): string
     {
         // Use regex to find all placeholders in the path (literal or encoded)
         // This is more reliable than looping over the parameters.
-        return preg_replace_callback('/(?:\{|%7B)([^}%]+)(?:\}|%7D)/i', function ($m) use ($pathParams) {
+        return preg_replace_callback('/(?:\{|%7B)([^}%]+)(?:\}|%7D)/i', function ($m) use ($pathParams, $ticketId) {
             $key = $m[1];
             $lowerKey = strtolower($key);
             
-            // Search case-insensitively in $pathParams
+            // 1. Search case-insensitively in $pathParams (Primary)
             foreach ($pathParams as $pk => $pv) {
                 if (strtolower((string)$pk) === $lowerKey) {
                     return rawurlencode((string)$pv);
                 }
             }
             
-            // If not found in params, return the original placeholder
+            // 2. Smart Fallback: If ticketId is provided, try to extract from ticket context
+            if ($ticketId > 0) {
+                try {
+                    // We initialize extractor here to avoid expensive calls if not needed, 
+                    // though for many tools it will be hit.
+                    static $contextCache = [];
+                    if (!isset($contextCache[$ticketId])) {
+                        $contextCache[$ticketId] = \Sahdev\Lib\TicketDataExtractor::extractFullContext($ticketId);
+                    }
+                    $context = $contextCache[$ticketId];
+                    if (in_array($lowerKey, ['domain', 'target', 'host', 'hostname', 'url'])) {
+                        $val = $this->inferTargetFromContext($context);
+                        if ($val !== '') return rawurlencode($val);
+                    }
+                    if (in_array($lowerKey, ['ip', 'address'])) {
+                        $val = $this->inferIpFromContext($context);
+                        if ($val !== '') return rawurlencode($val);
+                    }
+                    if (in_array($lowerKey, ['email', 'account', 'user', 'username'])) {
+                        $val = (string) ($context['client_email'] ?? '');
+                        if ($val !== '') return rawurlencode($val);
+                    }
+                    // Add more mappings here if needed (e.g. email, ip)
+                } catch (\Throwable $e) {}
+            }
+            
+            // If not found in params and fallback failed, return the original placeholder
             return $m[0];
         }, $path);
     }
@@ -1373,6 +1433,21 @@ class ToolsExecutionService
         $services = (string) ($context['services_summary'] ?? '');
         if (preg_match('/([a-z0-9-]+\.[a-z]{2,})/i', $services, $m)) {
             return strtolower($m[1]);
+        }
+        return '';
+    }
+
+    private function inferIpFromContext(array $context): string
+    {
+        // Search for IPv4 in services summary first
+        $services = (string) ($context['services_summary'] ?? '');
+        if (preg_match('/\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b/', $services, $m)) {
+            return $m[0];
+        }
+        // Then subject
+        $subject = (string) ($context['subject'] ?? '');
+        if (preg_match('/\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b/', $subject, $m)) {
+            return $m[0];
         }
         return '';
     }
