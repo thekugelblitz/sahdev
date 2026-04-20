@@ -23,14 +23,18 @@ if (!$adminId) {
     exit;
 }
 
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+// Actions allowed via GET (no ticket/POST needed)
+$getAllowedActions = ['get_analytics_period'];
+$isGetAllowed = in_array($_REQUEST['action'] ?? '', $getAllowedActions);
+
+if ($_SERVER['REQUEST_METHOD'] !== 'POST' && !$isGetAllowed) {
     header('HTTP/1.1 405 Method Not Allowed');
     echo json_encode(['status' => 'error', 'message' => 'Invalid Request Method. POST required.']);
     exit;
 }
 
-$action = $_POST['action'] ?? '';
-$ticketId = (int) ($_POST['ticket_id'] ?? 0);
+$action = isset($_REQUEST['action']) ? $_REQUEST['action'] : '';
+$ticketId = (int) ($_REQUEST['ticket_id'] ?? 0);
 $userId = (int) ($_POST['userid'] ?? 0);
 $tone = strip_tags($_POST['tone'] ?? '');
 $instruction = strip_tags($_POST['instruction'] ?? '');
@@ -56,7 +60,7 @@ $ticketNotRequiredActions = [
     'get_open_payload', 'analyze_open_context',
     'autopilot_test_run',
 ];
-if (!$ticketId && !in_array($action, $ticketNotRequiredActions)) {
+if (!$ticketId && !in_array($action, $ticketNotRequiredActions) && !$isGetAllowed) {
     header('HTTP/1.1 400 Bad Request');
     echo json_encode(['status' => 'error', 'message' => 'Missing Ticket ID.']);
     exit;
@@ -122,7 +126,14 @@ try {
 
     $controller = new \Sahdev\Lib\AIController($ticketId, $adminId);
 
-    if ($action === 'get_open_payload') {
+    if ($action === 'get_analytics_period') {
+        // AJAX: return period-filtered KPI data for the analytics dashboard
+        require_once __DIR__ . '/controllers/AdminController.php';
+        $vars = ['modulelink' => 'addonmodules.php?module=sahdev'];
+        $adminCtrl = new \Sahdev\Controllers\AdminController($vars);
+        echo $adminCtrl->analytics_data();
+        exit;
+    } elseif ($action === 'get_open_payload') {
         if ($userId <= 0) {
             throw new \Exception('Missing or invalid userid.');
         }

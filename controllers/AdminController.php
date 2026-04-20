@@ -3295,7 +3295,8 @@ class AdminController
 
         <!-- ── Period Selector (AJAX) ── -->
         <?php
-        $ajaxUrl = htmlspecialchars($this->moduleVars['modulelink']) . '&action=analytics_data';
+        // Route through the sahdev_act=ajax_handler bypass so WHMCS does NOT wrap the output in admin page HTML
+        $ajaxUrl = htmlspecialchars($this->moduleVars['modulelink']) . '&sahdev_act=ajax_handler&action=get_analytics_period';
         ?>
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:20px">
             <span style="font-size:.8rem;color:#64748b;font-weight:600;margin-right:4px">Period:</span>
