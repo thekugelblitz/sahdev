@@ -542,10 +542,12 @@ try {
             }
             $provSettings = $apProvRow ? array_merge($settingsArray, (array) $apProvRow) : $settingsArray;
             $provType = strtolower($apProvRow->provider_type ?? 'google');
+            $apiKey = !empty($apProvRow->api_key) ? decrypt($apProvRow->api_key) : '';
+
             switch ($provType) {
-                case 'lmstudio': $prov = new \Sahdev\Lib\LMStudioAIProvider($provSettings); break;
-                case 'replicate': $prov = new \Sahdev\Lib\ReplicateAIProvider($provSettings); break;
-                default: $prov = new \Sahdev\Lib\GoogleAIProvider($provSettings);
+                case 'lmstudio': $prov = new \Sahdev\Lib\LMStudioAIProvider($apProvRow->api_url ?? '', $apiKey); break;
+                case 'replicate': $prov = new \Sahdev\Lib\ReplicateAIProvider($apProvRow->api_url ?? '', $apiKey); break;
+                default: $prov = new \Sahdev\Lib\GoogleAIProvider($apiKey);
             }
 
             $bypassSafety = !empty($_POST['bypass_safety']) && $_POST['bypass_safety'] === '1';

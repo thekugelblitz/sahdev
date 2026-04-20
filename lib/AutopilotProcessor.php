@@ -506,13 +506,15 @@ class AutopilotProcessor
                 if ($provRow) {
                     $provSettings = array_merge((array) $this->settings, (array) $provRow);
                     $type = strtolower($provRow->provider_type ?? 'google');
+                    $apiKey = !empty($provRow->api_key) ? decrypt($provRow->api_key) : '';
+
                     switch ($type) {
                         case 'lmstudio':
-                            return new \Sahdev\Lib\LMStudioAIProvider($provSettings);
+                            return new \Sahdev\Lib\LMStudioAIProvider($provRow->api_url ?? '', $apiKey);
                         case 'replicate':
-                            return new \Sahdev\Lib\ReplicateAIProvider($provSettings);
+                            return new \Sahdev\Lib\ReplicateAIProvider($provRow->api_url ?? '', $apiKey);
                         default:
-                            return new \Sahdev\Lib\GoogleAIProvider($provSettings);
+                            return new \Sahdev\Lib\GoogleAIProvider($apiKey);
                     }
                 }
             }
