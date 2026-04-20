@@ -456,11 +456,16 @@ class AutopilotProcessor
             );
 
             $resText = '';
-            if (!empty($rawResponse['CLIENT_REPLY'])) {
-                $resText = trim($rawResponse['CLIENT_REPLY']);
-            } elseif (!empty($rawResponse['__raw_text__'])) {
-                $resText = trim($rawResponse['__raw_text__']);
-            } else {
+            // If the provider detected Autopilot Mode, it returns the text directly in __raw_text__
+            if (!empty($rawResponse['__raw_text__'])) {
+                $resText = trim((string) $rawResponse['__raw_text__']);
+            } 
+            // Fallback for providers that still returned JSON
+            elseif (!empty($rawResponse['CLIENT_REPLY'])) {
+                $resText = trim((string) $rawResponse['CLIENT_REPLY']);
+            } 
+            // Ultimate fallback: look for the first long string
+            else {
                 foreach ($rawResponse as $v) {
                     if (is_string($v) && strlen(trim($v)) > 20) {
                         $resText = trim($v);

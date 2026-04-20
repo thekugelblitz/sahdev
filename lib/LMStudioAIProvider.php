@@ -62,8 +62,9 @@ class LMStudioAIProvider implements AIProviderInterface
             'stream' => false
         ];
 
+        $isAutopilotRaw = !empty($context['__autopilot_raw_reply__']);
         // Some versions of LM Studio support 'response_format' for JSON
-        if (strpos($this->apiUrl, 'v1/chat/completions') !== false) {
+        if (!$isAutopilotRaw && strpos($this->apiUrl, 'v1/chat/completions') !== false) {
             $payload['response_format'] = ['type' => 'json_object'];
         }
 
@@ -114,6 +115,10 @@ class LMStudioAIProvider implements AIProviderInterface
         // Strip out thought block if deepseek r1 format is used by local model
         $responseText = preg_replace('/<think>.*?<\/think>/s', '', $responseText);
         $responseText = trim($responseText);
+
+        if ($isAutopilotRaw) {
+            return ['__raw_text__' => trim($responseText)];
+        }
 
         $parsed = json_decode($responseText, true);
         if (json_last_error() !== JSON_ERROR_NONE) {
@@ -294,19 +299,31 @@ class LMStudioAIProvider implements AIProviderInterface
         }
 
         // Fallback hardcoded prompt
+        $isAutopilotRaw = !empty($context['__autopilot_raw_reply__']);
         $prompt  = $customInstructionBlock;
-        $prompt .= "=== TASK ===\nAnalyze the provided technical support ticket and output ONLY a valid JSON object. No extra text.\n\n";
-        $prompt .= "=== SCHEMA ===\n{\n";
-        $prompt .= "  \"ROOT_CAUSE\": \"string (brief technical analysis)\",\n";
-        $prompt .= "  \"RESPONSIBILITY\": \"string (Client, Host, or 3rd Party)\",\n";
-        $prompt .= "  \"RISK_LEVEL\": \"string (Low, Medium, High, or Critical)\",\n";
-        $prompt .= "  \"INTERNAL_ACTION_PLAN\": \"string (detailed steps for the support team)\",\n";
-        $prompt .= "  \"CLIENT_REPLY\": \"string (reply to client in Markdown — including a professional greeting, but no sign-off)\",\n";
-        $prompt .= "  \"SCORE\": \"int (Optional 0-100 rating)\",\n";
-        $prompt .= "  \"CLARITY\": \"int (Optional 0-100)\",\n";
-        $prompt .= "  \"TONE_SCORE\": \"int (Optional 0-100)\",\n";
-        $prompt .= "  \"COMPLETENESS\": \"int (Optional 0-100)\",\n";
-        $prompt .= "  \"REPLY_NOTES\": \"string (Optional brief explanation of the score)\"\n}\n\n";
+
+        if ($isAutopilotRaw) {
+            $prompt .= "=== TASK ===\nAnalyze the support ticket below and generate a professional, helpful, and technically accurate reply to the client.\n\n";
+            $prompt .= "=== RULES ===\n";
+            $prompt .= "- OUTPUT ONLY the reply text itself.\n";
+            $prompt .= "- DO NOT wrap in JSON.\n";
+            $prompt .= "- DO NOT include any preamble or notes.\n";
+            $prompt .= "- Use Markdown for formatting.\n";
+            $prompt .= "- Include a professional greeting, but NO sign-off.\n\n";
+        } else {
+            $prompt .= "=== TASK ===\nAnalyze the provided technical support ticket and output ONLY a valid JSON object. No extra text.\n\n";
+            $prompt .= "=== SCHEMA ===\n{\n";
+            $prompt .= "  \"ROOT_CAUSE\": \"string (brief technical analysis)\",\n";
+            $prompt .= "  \"RESPONSIBILITY\": \"string (Client, Host, or 3rd Party)\",\n";
+            $prompt .= "  \"RISK_LEVEL\": \"string (Low, Medium, High, or Critical)\",\n";
+            $prompt .= "  \"INTERNAL_ACTION_PLAN\": \"string (detailed steps for the support team)\",\n";
+            $prompt .= "  \"CLIENT_REPLY\": \"string (reply to client in Markdown — including a professional greeting, but no sign-off)\",\n";
+            $prompt .= "  \"SCORE\": \"int (Optional 0-100 rating)\",\n";
+            $prompt .= "  \"CLARITY\": \"int (Optional 0-100)\",\n";
+            $prompt .= "  \"TONE_SCORE\": \"int (Optional 0-100)\",\n";
+            $prompt .= "  \"COMPLETENESS\": \"int (Optional 0-100)\",\n";
+            $prompt .= "  \"REPLY_NOTES\": \"string (Optional brief explanation of the score)\"\n}\n\n";
+        }
         $prompt .= "=== TONE ===\nWrite CLIENT_REPLY in a {$tone} tone.\n\n";
         $prompt .= "=== TICKET DATA ===\n";
         $prompt .= "Client: " . ($context['client_name'] ?? 'Unknown Client') . "\n";
