@@ -304,6 +304,9 @@ function sahdev_inject_ticket_panel($vars)
                 <label style="font-weight: 600; font-size: 13px; margin: 0; cursor: pointer; color: #6f42c1;" title="If checked, the AI will use the condensed ticket summary instead of reading the full message history (if a summary exists).">
                     <input type="checkbox" id="sahdev_use_summary" value="1" checked style="vertical-align: middle; margin: 0 4px 0 0;"> Feed Summary (if available)
                 </label>
+                <label style="font-weight: 600; font-size: 13px; margin: 0; cursor: pointer; color: #e83e8c;" title="If checked, private ticket notes will be included in the AI context.">
+                    <input type="checkbox" id="sahdev_include_admin_notes" value="1" style="vertical-align: middle; margin: 0 4px 0 0;"> Include Ticket Notes
+                </label>
                 <label style="font-weight: 600; font-size: 13px; margin: 0; cursor: pointer; color: #0d6efd;" title="If checked, latest tool execution evidence will be added to AI prompt context for this generation.">
                     <input type="checkbox" id="sahdev_include_tools_context" value="1" checked style="vertical-align: middle; margin: 0 4px 0 0;"> Include Tool Evidence
                 </label>
@@ -664,6 +667,11 @@ HTML;
     console.log("Sahdev AI initialized with AJAX URL:", sahdevAjaxUrl, "| Auto-analyze:", sahdevAutoAnalyze);
 HTML;
 
+    // Inject active admin's signature into JS payload for dynamic appending
+    $adminSignatureRaw = Capsule::table('tbladmins')->where('id', $adminId)->value('signature');
+    $adminSignature = $adminSignatureRaw ? trim(strip_tags($adminSignatureRaw, '<br><p><a><b><strong><i><em>')) : '';
+    $htmlPanel .= "<script>\nvar currentAdminSignature = " . json_encode($adminSignature) . ";\n</script>";
+
     $jsContentMain = <<<'EOT'
 
     function copySahdevReply() {
@@ -825,6 +833,7 @@ HTML;
                 intent: $('#sahdev_intent').val(),
                 use_summary: $('#sahdev_use_summary').length && !$('#sahdev_use_summary').is(':checked') ? 0 : 1,
                 include_tools_context: $('#sahdev_include_tools_context').length && !$('#sahdev_include_tools_context').is(':checked') ? 0 : 1,
+                include_admin_notes: $('#sahdev_include_admin_notes').length && $('#sahdev_include_admin_notes').is(':checked') ? 1 : 0,
                 include_historical_context: $('#sahdev_include_history').is(':checked') ? 1 : 0,
                 token: $('input[name="token"]').val(),
                 force_regenerate: isRegenerate ? 'true' : 'false',
@@ -1373,6 +1382,11 @@ HTML;
                 ? ('\n=== ATTACHMENT CONTEXT ===\n' + sanitizeForPrompt(context.attachments_text.substring(0, 2000)) + '\n')
                 : '';
 
+            // Build admin notes block
+            var adminNotesBlock = context.admin_notes
+                ? ('\n=== PRIVATE ADMIN NOTES ===\n' + sanitizeForPrompt(context.admin_notes) + '\n')
+                : '';
+
             // Build custom instruction block — SUPREME PRIORITY always at the top
             var customInstructionBlock = '';
             if (customInstruction && customInstruction.trim()) {
@@ -1404,7 +1418,7 @@ HTML;
             prompt += "  \"RESPONSIBILITY\": \"string (Client, Host, or 3rd Party)\",\n";
             prompt += "  \"RISK_LEVEL\": \"string (Low, Medium, High, or Critical)\",\n";
             prompt += "  \"INTERNAL_ACTION_PLAN\": \"string (detailed steps for the support team)\",\n";
-            prompt += "  \"CLIENT_REPLY\": \"string (reply to client in Markdown — body only, no greeting or sign-off)\"\n}\n\n";
+            prompt += "  \"CLIENT_REPLY\": \"string (reply to client in Markdown — including a professional greeting, but no sign-off)\"\n}\n\n";
             prompt += "=== TONE ===\nWrite CLIENT_REPLY in a " + (tone || 'Professional') + " tone.\n\n";
             prompt += "=== TICKET DATA ===\n";
             prompt += "Client: " + (context.client_name || 'Unknown Client') + "\n";
@@ -1413,6 +1427,7 @@ HTML;
             if (servicesBlock) prompt += servicesBlock;
             prompt += "\n=== CONVERSATION ===\n" + messagesBlock;
             if (attachmentsBlock) prompt += attachmentsBlock;
+            if (adminNotesBlock) prompt += adminNotesBlock;
             return prompt;
         }
 
@@ -1423,7 +1438,13 @@ HTML;
             $('#sahdev-out-risk').text(data.RISK_LEVEL || 'N/A');
             $('#sahdev-out-plan').text(data.INTERNAL_ACTION_PLAN || 'N/A');
             
-            var formattedReply = data.CLIENT_REPLY ? data.CLIENT_REPLY.replace(/\n/g, '<br>') : 'N/A';
+            var reply = data.CLIENT_REPLY || '';
+            if (reply && typeof currentAdminSignature !== 'undefined' && currentAdminSignature) {
+                if (reply.indexOf(currentAdminSignature) === -1) {
+                    reply += "\n\n" + currentAdminSignature;
+                }
+            }
+            var formattedReply = reply ? reply.replace(/\n/g, '<br>') : 'N/A';
             $('#sahdev-out-reply').html(formattedReply);
 
             // Show intent badge
@@ -1725,6 +1746,11 @@ HTML;
                 }
             }
             text = text.trim();
+            if (text && typeof currentAdminSignature !== 'undefined' && currentAdminSignature) {
+                if (text.indexOf(currentAdminSignature) === -1) {
+                    text += "\n\n" + currentAdminSignature;
+                }
+            }
 
             // --- Step 2: Convert Markdown → HTML for TinyMCE ---
             function markdownToHtml(md) {

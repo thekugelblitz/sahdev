@@ -41,10 +41,11 @@ class TicketDataExtractor
      * Uses query builder entirely (no raw SQL).
      *
      * @param bool $scrubPII Whether to run the compliance PII scrubber over the context data.
+     * @param bool $includeAdminNotes Whether to include private ticket notes in the context.
      * @return array
      * @throws \Exception
      */
-    public function getContext(bool $scrubPII = false): array
+    public function getContext(bool $scrubPII = false, bool $includeAdminNotes = false): array
     {
         $context = [];
 
@@ -83,6 +84,14 @@ class TicketDataExtractor
 
         // 5. Extract active admin's signature
         $context['admin_signature'] = $this->extractAdminSignature();
+
+        // 5.5 Extract Admin Notes if requested
+        if ($includeAdminNotes) {
+            $context['admin_notes'] = $this->extractAdminNotes($this->ticketId);
+            if ($scrubPII && $context['admin_notes']) {
+                $context['admin_notes'] = $this->scrubPII($context['admin_notes']);
+            }
+        }
 
         // 6. Apply Compliance Mode (PII Scrubber) if requested
         if ($scrubPII) {
@@ -182,7 +191,24 @@ class TicketDataExtractor
             ->where('id', $this->adminId)
             ->value('signature');
             
+        // Use basic formatting but strip unsafe tags
         return $signature ? trim(strip_tags($signature, '<br><p><a><b><strong><i><em>')) : '';
+    }
+
+    private function extractAdminNotes(int $ticketId): string
+    {
+        $notes = Capsule::table('tblticketnotes')
+            ->where('ticketid', $ticketId)
+            ->orderBy('date', 'asc')
+            ->get();
+            
+        if ($notes->isEmpty()) return '';
+        
+        $output = [];
+        foreach ($notes as $note) {
+            $output[] = "Note by Admin (" . $note->admin . ") on " . $note->date . ":\n" . strip_tags($note->message);
+        }
+        return implode("\n\n", $output);
     }
 
     private function getDepartmentName($did): string
@@ -239,7 +265,7 @@ class TicketDataExtractor
     /**
      * Build context for admin-side ticket open page where no ticket thread exists yet.
      */
-    public function getOpenContextForUser(int $userId, bool $scrubPII = false): array
+    public function getOpenContextForUser(int $userId, bool $scrubPII = false, bool $includeAdminNotes = false): array
     {
         if ($userId <= 0) {
             throw new \Exception("Invalid client user id.");

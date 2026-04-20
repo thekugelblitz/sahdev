@@ -271,6 +271,9 @@ class LMStudioAIProvider implements AIProviderInterface
         $attachmentsBlock = !empty($context['attachments_text'])
             ? "\n=== ATTACHMENT CONTEXT ===\n" . $this->sanitizeForPrompt(substr($context['attachments_text'], 0, 2000)) . "\n"
             : '';
+        $adminNotesBlock = !empty($context['admin_notes'])
+            ? "\n=== PRIVATE ADMIN NOTES ===\n" . $this->sanitizeForPrompt($context['admin_notes']) . "\n"
+            : '';
 
         // Custom instruction is SUPREME PRIORITY — always rendered first
         $customInstructionBlock = '';
@@ -298,7 +301,7 @@ class LMStudioAIProvider implements AIProviderInterface
         $prompt .= "  \"RESPONSIBILITY\": \"string (Client, Host, or 3rd Party)\",\n";
         $prompt .= "  \"RISK_LEVEL\": \"string (Low, Medium, High, or Critical)\",\n";
         $prompt .= "  \"INTERNAL_ACTION_PLAN\": \"string (detailed steps for the support team)\",\n";
-        $prompt .= "  \"CLIENT_REPLY\": \"string (reply to client in Markdown — body only, no greeting or sign-off)\",\n";
+        $prompt .= "  \"CLIENT_REPLY\": \"string (reply to client in Markdown — including a professional greeting, but no sign-off)\",\n";
         $prompt .= "  \"SCORE\": \"int (Optional 0-100 rating)\",\n";
         $prompt .= "  \"CLARITY\": \"int (Optional 0-100)\",\n";
         $prompt .= "  \"TONE_SCORE\": \"int (Optional 0-100)\",\n";
@@ -312,6 +315,7 @@ class LMStudioAIProvider implements AIProviderInterface
         if ($servicesBlock) $prompt .= $servicesBlock;
         $prompt .= "\n=== CONVERSATION ===\n" . $messagesBlock;
         if ($attachmentsBlock) $prompt .= $attachmentsBlock;
+        if ($adminNotesBlock) $prompt .= $adminNotesBlock;
         return $prompt;
     }
 

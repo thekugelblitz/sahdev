@@ -222,7 +222,7 @@ class AIController
         ];
     }
 
-    public function getAnalysis(string $tone = null, string $customInstruction = null, bool $forceRegenerate = false, bool $forceFallback = false, string $intent = 'AUTO', bool $useSummaryToggle = true, bool $includeHistoricalContext = false, string $technicalContext = '', ?int $overrideProviderId = null, bool $includeToolsContext = true): array
+    public function getAnalysis(string $tone = null, string $customInstruction = null, bool $forceRegenerate = false, bool $forceFallback = false, string $intent = 'AUTO', bool $useSummaryToggle = true, bool $includeHistoricalContext = false, string $technicalContext = '', ?int $overrideProviderId = null, bool $includeToolsContext = true, bool $includeAdminNotes = false): array
     {
         // 1. Rate Limit Check
         $this->checkRateLimit();
@@ -230,7 +230,7 @@ class AIController
         // 2. Extract Data
         $scrubPII = !empty($this->settings['compliance_mode']) || !empty($this->settings['pii_scrub_enabled']);
         $extractor = new TicketDataExtractor($this->ticketId, $this->adminId);
-        $context = $extractor->getContext($scrubPII);
+        $context = $extractor->getContext($scrubPII, $includeAdminNotes);
 
         if (!$tone) {
             $tone = $this->settings['tone_default'];
@@ -469,7 +469,7 @@ class AIController
         );
     }
 
-    public function getPayload(string $tone = null, string $customInstruction = null, bool $forceRegenerate = false, string $intent = 'AUTO', bool $useSummaryToggle = true, bool $includeHistoricalContext = false, string $technicalContext = '', ?int $overrideProviderId = null, bool $includeToolsContext = true): array
+    public function getPayload(string $tone = null, string $customInstruction = null, bool $forceRegenerate = false, string $intent = 'AUTO', bool $useSummaryToggle = true, bool $includeHistoricalContext = false, string $technicalContext = '', ?int $overrideProviderId = null, bool $includeToolsContext = true, bool $includeAdminNotes = false): array
     {
         // 1. Rate Limit Check
         $this->checkRateLimit();
@@ -480,7 +480,7 @@ class AIController
         // 2. Extract Data
         $scrubPII = !empty($this->settings['compliance_mode']) || !empty($this->settings['pii_scrub_enabled']);
         $extractor = new TicketDataExtractor($this->ticketId, $this->adminId);
-        $context = $extractor->getContext($scrubPII);
+        $context = $extractor->getContext($scrubPII, $includeAdminNotes);
 
         if (!$tone) {
             $tone = $this->settings['tone_default'];
@@ -592,7 +592,7 @@ class AIController
         ];
     }
 
-    public function getOpenContextPayload(int $userId, string $tone = null, string $customInstruction = null, bool $forceRegenerate = false, string $intent = 'AUTO', string $technicalContext = '', ?int $overrideProviderId = null, bool $includeToolsContext = false): array
+    public function getOpenContextPayload(int $userId, string $tone = null, string $customInstruction = null, bool $forceRegenerate = false, string $intent = 'AUTO', string $technicalContext = '', ?int $overrideProviderId = null, bool $includeToolsContext = false, bool $includeAdminNotes = false): array
     {
         $this->checkRateLimit();
 
@@ -601,7 +601,7 @@ class AIController
 
         $scrubPII = !empty($this->settings['compliance_mode']) || !empty($this->settings['pii_scrub_enabled']);
         $extractor = new TicketDataExtractor($this->ticketId, $this->adminId);
-        $context = $extractor->getOpenContextForUser($userId, $scrubPII);
+        $context = $extractor->getOpenContextForUser($userId, $scrubPII, $includeAdminNotes);
 
         if (!$tone) {
             $tone = $this->settings['tone_default'];
@@ -660,13 +660,13 @@ class AIController
         ];
     }
 
-    public function getOpenContextAnalysis(int $userId, string $tone = null, string $customInstruction = null, bool $forceRegenerate = false, bool $forceFallback = false, string $intent = 'AUTO', string $technicalContext = '', ?int $overrideProviderId = null, bool $includeToolsContext = false): array
+    public function getOpenContextAnalysis(int $userId, string $tone = null, string $customInstruction = null, bool $forceRegenerate = false, bool $forceFallback = false, string $intent = 'AUTO', string $technicalContext = '', ?int $overrideProviderId = null, bool $includeToolsContext = false, bool $includeAdminNotes = false): array
     {
         $this->checkRateLimit();
 
         $scrubPII = !empty($this->settings['compliance_mode']) || !empty($this->settings['pii_scrub_enabled']);
         $extractor = new TicketDataExtractor($this->ticketId, $this->adminId);
-        $context = $extractor->getOpenContextForUser($userId, $scrubPII);
+        $context = $extractor->getOpenContextForUser($userId, $scrubPII, $includeAdminNotes);
 
         if (!$tone) {
             $tone = $this->settings['tone_default'];

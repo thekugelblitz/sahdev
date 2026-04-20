@@ -79,6 +79,8 @@ try {
     $includeHistory = ($includeHistoryRaw === '1' || $includeHistoryRaw === 'true' || $includeHistoryRaw === 'on' || $includeHistoryRaw === true);
     $includeToolsRaw = $_POST['include_tools_context'] ?? '1';
     $includeTools = ($includeToolsRaw === '1' || $includeToolsRaw === 'true' || $includeToolsRaw === 'on' || $includeToolsRaw === true);
+    $includeAdminNotesRaw = $_POST['include_admin_notes'] ?? '0';
+    $includeAdminNotes = ($includeAdminNotesRaw === '1' || $includeAdminNotesRaw === 'true' || $includeAdminNotesRaw === 'on' || $includeAdminNotesRaw === true);
 
     $postOverrideProviderId = (int) ($_POST['override_provider_id'] ?? 0);
     $postOverrideProviderId = $postOverrideProviderId > 0 ? $postOverrideProviderId : null;
@@ -123,14 +125,14 @@ try {
         if ($userId <= 0) {
             throw new \Exception('Missing or invalid userid.');
         }
-        $response = $controller->getOpenContextPayload($userId, $tone, $instruction, $forceRegenerate, $intent, $technicalContext, $overrideProviderId, $includeTools);
+        $response = $controller->getOpenContextPayload($userId, $tone, $instruction, $forceRegenerate, $intent, $technicalContext, $overrideProviderId, $includeTools, $includeAdminNotes);
     } elseif ($action === 'analyze_open_context') {
         if ($userId <= 0) {
             throw new \Exception('Missing or invalid userid.');
         }
-        $response = $controller->getOpenContextAnalysis($userId, $tone, $instruction, $forceRegenerate, false, $intent, $technicalContext, $overrideProviderId, $includeTools);
+        $response = $controller->getOpenContextAnalysis($userId, $tone, $instruction, $forceRegenerate, false, $intent, $technicalContext, $overrideProviderId, $includeTools, $includeAdminNotes);
     } elseif ($action === 'get_payload') {
-        $response = $controller->getPayload($tone, $instruction, $forceRegenerate, $intent, $useSummary, $includeHistory, $technicalContext, $overrideProviderId, $includeTools);
+        $response = $controller->getPayload($tone, $instruction, $forceRegenerate, $intent, $useSummary, $includeHistory, $technicalContext, $overrideProviderId, $includeTools, $includeAdminNotes);
     } elseif ($action === 'save_response') {
         $hashSignature = $_POST['hash_signature'] ?? '';
         $aiResponseRaw = $_POST['ai_response'] ?? '{}';
@@ -167,7 +169,7 @@ try {
         $response = $controller->rewriteReply($draftText, $tone ?: 'Professional', $instruction);
     } elseif ($action === 'auto_analyze') {
         // Feature: Auto-load AI Snapshot on ticket page load (always cached-first, no rate limit penalty on hit)
-        $response = $controller->getAnalysis($tone, $instruction, false, false, $intent, $useSummary, $includeHistory, $technicalContext, $overrideProviderId, $includeTools);
+        $response = $controller->getAnalysis($tone, $instruction, false, false, $intent, $useSummary, $includeHistory, $technicalContext, $overrideProviderId, $includeTools, $includeAdminNotes);
     } elseif ($action === 'generate_summary') {
         // Feature: AI Ticket Summarizer — generate and save a condensed summary
         $response = $controller->generateSummary();
@@ -514,7 +516,7 @@ try {
         $response = ['status' => 'success', 'result' => $manual, 'summary' => $summary];
     } else {
         // Default analyze_ticket (server-side generation)
-        $response = $controller->getAnalysis($tone, $instruction, $forceRegenerate, $forceFallback, $intent, $useSummary, $includeHistory, $technicalContext, $overrideProviderId, $includeTools);
+        $response = $controller->getAnalysis($tone, $instruction, $forceRegenerate, $forceFallback, $intent, $useSummary, $includeHistory, $technicalContext, $overrideProviderId, $includeTools, $includeAdminNotes);
     }
 
     // Clean any prior output to prevent malformed JSON
