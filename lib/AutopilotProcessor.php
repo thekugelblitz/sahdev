@@ -762,10 +762,9 @@ class AutopilotProcessor
         $noteText = $draftPrefix . $replyText;
 
         $result = localAPI('AddTicketNote', [
-            'ticketid'     => $ticketId,
-            'message'      => $noteText,
+            'ticketid'      => $ticketId,
+            'note'          => $noteText,
             'adminusername' => $admin->username,
-            'markdown'     => true,
         ], $admin->username);
 
         if (($result['result'] ?? '') !== 'success') {
