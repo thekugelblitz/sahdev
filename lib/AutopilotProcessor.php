@@ -224,6 +224,7 @@ class AutopilotProcessor
                 // Draft Mode: post as internal admin note
                 $noteId = $this->postInternalNote($ticketId, $replyText, $autopilotAdminId);
                 $this->logAttempt($ticketId, 'drafted', 'manual_test', $noteId, $ticket->lastreply);
+                $this->setTicketStatus($ticketId, 'Reply-Drafting');
                 return [
                     'status'   => 'success',
                     'message'  => "Draft note posted to ticket #{$ticket->tid} (Draft Mode is ON — not a public reply).",
@@ -423,6 +424,8 @@ class AutopilotProcessor
             // Draft Mode: post as internal admin note instead of public reply
             $noteId = $this->postInternalNote($ticketId, $replyText, $autopilotAdminId);
             $this->logAttempt($ticketId, 'drafted', null, $noteId, $ticket->lastreply, $tokensUsed);
+            // Change ticket status to 'Reply-Drafting' so staff know a draft is waiting
+            $this->setTicketStatus($ticketId, 'Reply-Drafting');
             return 'replied'; // Count as "processed" in cron summary
         }
 
@@ -749,7 +752,10 @@ class AutopilotProcessor
 
     /**
      * Post a private internal admin note (Draft Mode).
-     * The note is prefixed so it's clearly identifiable as an AI draft.
+     *
+     * We insert directly into tblticketreplies with notes=1 — the standard WHMCS
+     * schema for private/internal notes — because WHMCS's AddTicketNote localAPI
+     * has inconsistent parameter handling across versions and often stores blank content.
      */
     private function postInternalNote(int $ticketId, string $replyText, int $adminId): ?int
     {
@@ -758,29 +764,47 @@ class AutopilotProcessor
             throw new \Exception("Autopilot admin (ID: {$adminId}) not found.");
         }
 
-        $draftPrefix = "🤖 **Sahdev Autopilot Draft** *(Review before sending — Draft Mode is ON)*\n\n---\n\n";
-        $noteText = $draftPrefix . $replyText;
-
-        $result = localAPI('AddTicketNote', [
-            'ticketid'      => $ticketId,
-            'note'          => $noteText,
-            'adminusername' => $admin->username,
-        ], $admin->username);
-
-        if (($result['result'] ?? '') !== 'success') {
-            $err = $result['message'] ?? json_encode($result);
-            throw new \Exception("WHMCS localAPI AddTicketNote failed: {$err}");
+        $displayName = trim($this->settings['autopilot_display_name'] ?? '');
+        if (!$displayName) {
+            $displayName = trim(($admin->firstname ?? '') . ' ' . ($admin->lastname ?? ''));
+        }
+        if (!$displayName) {
+            $displayName = $admin->username;
         }
 
-        // Try to get the note ID from the most recent note
-        $noteRow = Capsule::table('tblticketreplies')
-            ->where('tid', $ticketId)
-            ->orderBy('id', 'desc')
-            ->first();
+        $draftPrefix = "[Sahdev Autopilot Draft] Review before sending - Draft Mode is ON\n\n---\n\n";
+        $noteText    = $draftPrefix . $replyText;
 
-        ModuleLogger::log('debug', 'Autopilot.DraftMode', "Posted draft note to ticket #{$ticketId}", $ticketId);
+        // Direct DB insert — reliable across all WHMCS versions.
+        // notes=1 marks this as a private/internal note in the WHMCS UI.
+        $noteId = Capsule::table('tblticketreplies')->insertGetId([
+            'tid'     => $ticketId,
+            'userid'  => 0,
+            'admin'   => $displayName,
+            'name'    => '',
+            'message' => $noteText,
+            'notes'   => 1,
+            'date'    => Carbon::now()->toDateTimeString(),
+        ]);
 
-        return $noteRow ? (int) $noteRow->id : null;
+        ModuleLogger::log('debug', 'Autopilot.DraftMode', "Posted draft note #{$noteId} to ticket #{$ticketId}", $ticketId);
+
+        return $noteId ?: null;
+    }
+
+    /**
+     * Set a ticket's status. Used to mark tickets as 'Reply-Drafting' in draft mode.
+     */
+    private function setTicketStatus(int $ticketId, string $status): void
+    {
+        try {
+            Capsule::table('tbltickets')->where('id', $ticketId)->update([
+                'status' => $status,
+            ]);
+            ModuleLogger::log('debug', 'Autopilot.StatusChange', "Ticket #{$ticketId} status set to '{$status}'", $ticketId);
+        } catch (\Throwable $e) {
+            ModuleLogger::log('warning', 'Autopilot.StatusChange', "Failed to set status: " . $e->getMessage(), $ticketId);
+        }
     }
 
 
@@ -942,6 +966,8 @@ class AutopilotProcessor
             'autopilot_tag_skipped'      => ['type' => 'boolean', 'default' => 1],
             'autopilot_cron_last_run_at' => ['type' => 'timestamp', 'nullable' => true],
             'autopilot_cron_last_message'=> ['type' => 'string', 'default' => null, 'nullable' => true],
+            'autopilot_draft_mode'       => ['type' => 'boolean', 'default' => 0],
+            'autopilot_display_name'     => ['type' => 'string', 'default' => null, 'nullable' => true],
         ];
 
         foreach ($cols as $col => $def) {
@@ -977,6 +1003,37 @@ class AutopilotProcessor
                     // Column may already exist via a race
                 }
             }
+        }
+
+        // Ensure the 'Reply-Drafting' custom status exists in WHMCS
+        $this->ensureReplyDraftingStatus();
+    }
+
+    /**
+     * Create the 'Reply-Drafting' custom ticket status in WHMCS if it doesn't exist.
+     * Behaves like an open/active status so tickets still appear in the open queue.
+     */
+    private function ensureReplyDraftingStatus(): void
+    {
+        try {
+            $exists = Capsule::table('tblticketstatuses')
+                ->where('title', 'Reply-Drafting')
+                ->exists();
+
+            if (!$exists) {
+                $maxSort = (int) Capsule::table('tblticketstatuses')->max('sortorder');
+                Capsule::table('tblticketstatuses')->insert([
+                    'title'          => 'Reply-Drafting',
+                    'color'          => '#8b5cf6',   // Purple — distinct but calm
+                    'textcolor'      => '#ffffff',
+                    'sortorder'      => $maxSort + 10,
+                    'showopentickets'=> 1,            // Appears in open ticket views
+                ]);
+                ModuleLogger::log('info', 'Autopilot.Schema', "Created 'Reply-Drafting' ticket status in WHMCS.");
+            }
+        } catch (\Throwable $e) {
+            // Non-fatal — status may already exist or column set may differ
+            ModuleLogger::log('warning', 'Autopilot.Schema', "Could not ensure Reply-Drafting status: " . $e->getMessage());
         }
     }
 }
