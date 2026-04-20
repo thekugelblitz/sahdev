@@ -3058,143 +3058,421 @@ class AdminController
         $adminId = (int) ($_SESSION['adminid'] ?? 0);
         $settings = Capsule::table('tblsahdev_settings')->first();
         if ($adminId > 0 && !\Sahdev\Lib\AdminPreferences::featureEnabled(
-            \Sahdev\Lib\AdminPreferences::FEATURE_ANALYTICS,
-            $adminId,
-            $settings
+            \Sahdev\Lib\AdminPreferences::FEATURE_ANALYTICS, $adminId, $settings
         )) {
             return $this->getNavigationMarkup('analytics')
                 . '<div class="sahdev-page-container"><div class="alert alert-warning">You have disabled Analytics for your account under <a href="'
                 . htmlspecialchars($this->moduleVars['modulelink']) . '&action=my_preferences">My Preferences</a>.</div></div>';
         }
 
-        ob_start();
-        
-        // Fetch real analytics data
+        // ── Schema migrations ──────────────────────────────────────────────────
+        foreach (['avg_handle_minutes' => 'integer', 'autopilot_draft_mode' => 'boolean'] as $col => $type) {
+            try {
+                Capsule::table('tblsahdev_settings')->select($col)->first();
+            } catch (\Exception $e) {
+                try {
+                    Capsule::schema()->table('tblsahdev_settings', function ($t) use ($col, $type) {
+                        if ($type === 'boolean') $t->boolean($col)->default(0);
+                        else $t->integer($col)->default(8)->nullable();
+                    });
+                } catch (\Throwable $ex) {}
+            }
+        }
+
+        $actionUrl  = htmlspecialchars($this->moduleVars['modulelink']) . '&action=analytics';
+
+        // ── Handle settings save ───────────────────────────────────────────────
+        if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['roi_save'])) {
+            check_token('WHMCS.admin.default');
+            $newMin = max(1, min(120, (int) ($_POST['avg_handle_minutes'] ?? 8)));
+            Capsule::table('tblsahdev_settings')->where('id', 1)->update([
+                'avg_handle_minutes' => $newMin,
+                'updated_at'         => \Carbon\Carbon::now(),
+            ]);
+            header('Location: ' . $actionUrl);
+            exit;
+        }
+
+        $settings     = Capsule::table('tblsahdev_settings')->first();
+        $avgHandleMin = max(1, (int) ($settings->avg_handle_minutes ?? 8));
+
+        // ── AIController analytics ─────────────────────────────────────────────
         if (!class_exists('\Sahdev\Lib\AIController')) {
             require_once dirname(__DIR__) . '/lib/AIController.php';
         }
-        $aiController = new \Sahdev\Lib\AIController(0, $_SESSION['adminid'] ?? 1);
-        $analytics = $aiController->getAnalyticsData();
+        $aiController  = new \Sahdev\Lib\AIController(0, $_SESSION['adminid'] ?? 1);
+        $analytics     = $aiController->getAnalyticsData();
         $analyticsData = $analytics['data'] ?? [];
-        
-        $totalActions = $analyticsData['total_actions'] ?? 0;
-        $totalTokens = $analyticsData['total_tokens'] ?? 0;
-        $avgExecMs = $analyticsData['avg_exec_time_ms'] ?? 0;
-        
+
+        $totalActions  = $analyticsData['total_actions'] ?? 0;
+        $totalTokens   = $analyticsData['total_tokens']  ?? 0;
+        $avgExecMs     = $analyticsData['avg_exec_time_ms'] ?? 0;
         $actionsByType = $analyticsData['action_breakdown'] ?? [];
-        $scores = $analyticsData['quality'] ?? [];
-        $roi = $analyticsData['roi'] ?? ['time_saved_string' => '0h 0m', 'estimated_cost_usd' => 0.00];
-        $toolsNorm = $analyticsData['tools_normalization'] ?? [];
+        $scores        = $analyticsData['quality'] ?? [];
+        $roiOld        = $analyticsData['roi'] ?? ['time_saved_string' => '0h 0m', 'estimated_cost_usd' => 0.00];
+        $toolsNorm     = $analyticsData['tools_normalization'] ?? [];
+
+        // ── ROI/Token data ─────────────────────────────────────────────────────
+        $nowTs = \Carbon\Carbon::now();
+        $week  = $nowTs->copy()->subDays(7);
+
+        $logsAll = Capsule::table('tblsahdev_logs')
+            ->whereNotNull('token_usage')->where('token_usage', '>', 0)
+            ->selectRaw('COALESCE(provider_used, "unknown") as provider, SUM(token_usage) as tokens, COUNT(*) as calls')
+            ->groupBy('provider')->get();
+
+        $logsWeek = Capsule::table('tblsahdev_logs')
+            ->whereNotNull('token_usage')->where('token_usage', '>', 0)
+            ->where('created_at', '>=', $week)
+            ->selectRaw('SUM(token_usage) as tokens, COUNT(*) as calls')->first();
+
+        $apAll = Capsule::table('tblsahdev_autopilot_log')
+            ->whereNotNull('tokens_used')->where('tokens_used', '>', 0)
+            ->whereIn('ai_decision', ['replied', 'drafted'])
+            ->selectRaw('SUM(tokens_used) as tokens, COUNT(*) as calls')->first();
+
+        $apWeek = Capsule::table('tblsahdev_autopilot_log')
+            ->whereNotNull('tokens_used')->where('tokens_used', '>', 0)
+            ->whereIn('ai_decision', ['replied', 'drafted'])
+            ->where('created_at', '>=', $week)
+            ->selectRaw('SUM(tokens_used) as tokens, COUNT(*) as calls')->first();
+
+        $apRepliesWeek = Capsule::table('tblsahdev_autopilot_log')
+            ->whereIn('ai_decision', ['replied', 'drafted'])->where('created_at', '>=', $week)->count();
+        $apRepliesAll  = Capsule::table('tblsahdev_autopilot_log')
+            ->whereIn('ai_decision', ['replied', 'drafted'])->count();
+
+        // All unique tickets Sahdev touched this week (logs + autopilot, all decisions)
+        $logsTicketsWeek = Capsule::table('tblsahdev_logs')
+            ->where('created_at', '>=', $week)
+            ->whereNotNull('ticket_id')
+            ->distinct()->pluck('ticket_id')->toArray();
+        $apTicketsWeek = Capsule::table('tblsahdev_autopilot_log')
+            ->where('created_at', '>=', $week)
+            ->distinct()->pluck('ticket_id')->toArray();
+        $ticketsWeek = count(array_unique(array_merge($logsTicketsWeek, $apTicketsWeek)));
+
+        // Autopilot: all processing runs (regardless of outcome)
+        $apProcessedWeek = Capsule::table('tblsahdev_autopilot_log')
+            ->where('created_at', '>=', $week)->count();
+        $apProcessedAll  = Capsule::table('tblsahdev_autopilot_log')->count();
+        $providers = Capsule::table('tblsahdev_providers')
+            ->where('is_active', 1)->get()->keyBy('name');
+
+        $totalTokensAll  = 0;
+        $totalTokensWeek = (int) (($logsWeek->tokens ?? 0) + ($apWeek->tokens ?? 0));
+        $totalCallsAll   = 0;
+        $totalCostAll    = 0.0;
+        $providerRows    = [];
+
+        foreach ($logsAll as $row) {
+            $tok = (int) $row->tokens; $calls = (int) $row->calls;
+            $totalTokensAll += $tok; $totalCallsAll += $calls;
+            $provName = (string) $row->provider;
+            $costPer1m = 0.0;
+            foreach ($providers as $p) {
+                if (strtolower($p->name) === strtolower($provName) || strtolower($p->provider_type) === strtolower($provName)) {
+                    $costPer1m = (float) (($p->cost_input_1m + $p->cost_output_1m) / 2);
+                    break;
+                }
+            }
+            $cost = round($tok / 1_000_000 * $costPer1m, 4);
+            $totalCostAll += $cost;
+            $providerRows[] = ['name' => $provName, 'tokens' => $tok, 'calls' => $calls, 'cost' => $cost];
+        }
+        $totalTokensAll += (int) ($apAll->tokens ?? 0);
+        $totalCallsAll  += (int) ($apAll->calls ?? 0);
+        $totalCostWeek   = ($totalTokensAll > 0 && $totalCostAll > 0)
+            ? round(($totalTokensWeek / max(1, $totalTokensAll)) * $totalCostAll, 4) : 0.0;
+
+        $timeSavedWeekH = round(($apRepliesWeek * $avgHandleMin) / 60, 1);
+        $timeSavedAllH  = round(($apRepliesAll  * $avgHandleMin) / 60, 1);
+
+        // 30-day daily chart
+        $dailyData = [];
+        for ($d = 29; $d >= 0; $d--) {
+            $dayStart = $nowTs->copy()->subDays($d)->startOfDay();
+            $dayEnd   = $nowTs->copy()->subDays($d)->endOfDay();
+            $tok  = (int) Capsule::table('tblsahdev_logs')->whereBetween('created_at', [$dayStart, $dayEnd])->sum('token_usage');
+            $tok += (int) Capsule::table('tblsahdev_autopilot_log')->whereBetween('created_at', [$dayStart, $dayEnd])->sum('tokens_used');
+            $dailyData[] = ['label' => $dayStart->format('d'), 'tokens' => $tok, 'date' => $dayStart->format('d M')];
+        }
+        $maxDayTokens = max(1, max(array_column($dailyData, 'tokens')));
+
+        ob_start();
         ?>
         <?php echo $this->getNavigationMarkup('analytics'); ?>
         <div class="sahdev-page-container">
+        <style>
+        .sad-card{background:#fff;border-radius:12px;box-shadow:0 2px 14px rgba(0,0,0,.07);padding:24px 28px;margin-bottom:22px;border:1px solid #f0f2f7}
+        .sad-section{font-size:1rem;font-weight:700;color:#1a2035;margin-bottom:16px;display:flex;align-items:center;gap:10px}
+        .sad-kpi-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(185px,1fr));gap:16px;margin-bottom:24px}
+        .sad-kpi{border-radius:12px;padding:20px 18px;position:relative;overflow:hidden;border:1px solid transparent}
+        .sad-kpi .kpi-val{font-size:2rem;font-weight:800;line-height:1;margin:6px 0 2px}
+        .sad-kpi .kpi-lbl{font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.06em;opacity:.75}
+        .sad-kpi .kpi-sub{font-size:.7rem;opacity:.55;margin-top:2px}
+        .sad-kpi .kpi-icon{position:absolute;right:14px;top:14px;font-size:1.6rem;opacity:.13}
+        /* Color themes */
+        .kpi-blue{background:linear-gradient(135deg,#e8f0fe,#fff);border-color:#c5d8ff}.kpi-blue .kpi-val{color:#1a56db}
+        .kpi-purple{background:linear-gradient(135deg,#f5f0ff,#fff);border-color:#d4c5ff}.kpi-purple .kpi-val{color:#7c3aed}
+        .kpi-green{background:linear-gradient(135deg,#e9fdf4,#fff);border-color:#b6f0cf}.kpi-green .kpi-val{color:#059669}
+        .kpi-teal{background:linear-gradient(135deg,#e0fafb,#fff);border-color:#9aeaef}.kpi-teal .kpi-val{color:#0891b2}
+        .kpi-amber{background:linear-gradient(135deg,#fffbeb,#fff);border-color:#fde68a}.kpi-amber .kpi-val{color:#d97706}
+        .kpi-red{background:linear-gradient(135deg,#fef2f2,#fff);border-color:#fecaca}.kpi-red .kpi-val{color:#dc2626}
+        .kpi-indigo{background:linear-gradient(135deg,#eef2ff,#fff);border-color:#c7d2fe}.kpi-indigo .kpi-val{color:#4f46e5}
+        .kpi-slate{background:linear-gradient(135deg,#f8fafc,#fff);border-color:#e2e8f0}.kpi-slate .kpi-val{color:#475569}
+        /* bar chart */
+        .sad-bar-chart{display:flex;align-items:flex-end;gap:3px;height:100px;margin-top:10px;padding:0 4px}
+        .sad-bar-wrap{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;min-width:0}
+        .sad-bar{width:100%;background:linear-gradient(180deg,#3b82f6,#93c5fd);border-radius:3px 3px 0 0;min-height:2px;transition:height .3s}
+        .sad-bar-lbl{font-size:.55rem;color:#94a3b8;white-space:nowrap}
+        /* pills */
+        .sad-pill{display:inline-block;padding:5px 12px;border-radius:999px;font-size:.8rem;font-weight:600}
+        /* progress bar */
+        .sad-prog-row{margin-bottom:12px}
+        .sad-prog-header{display:flex;justify-content:space-between;font-size:.82rem;font-weight:600;margin-bottom:4px}
+        .sad-prog-track{background:#e2e8f0;height:10px;border-radius:5px;overflow:hidden}
+        .sad-prog-fill{height:100%;border-radius:5px}
+        /* tag grid */
+        .sad-tag-grid{display:flex;gap:10px;flex-wrap:wrap}
+        /* table */
+        .sad-table th{font-size:.75rem;color:#64748b;border:none;background:#f8fafc;font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+        .sad-table td{font-size:.85rem;vertical-align:middle}
+        /* tabs */
+        .sad-tabs{display:flex;gap:6px;margin-bottom:20px;flex-wrap:wrap}
+        .sad-tab{padding:6px 16px;border-radius:99px;font-size:.82rem;font-weight:600;cursor:pointer;border:1.5px solid #e2e8f0;background:#f8fafc;color:#475569;transition:all .15s}
+        .sad-tab.active{background:#3b82f6;color:#fff;border-color:#3b82f6}
+        /* settings form */
+        .sad-settings-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+        .sad-badge{display:inline-block;padding:2px 8px;border-radius:99px;font-size:.68rem;font-weight:700;letter-spacing:.04em}
+        .badge-live{background:#dcfce7;color:#16a34a}
+        .badge-draft{background:#fef9c3;color:#ca8a04}
+        .badge-skip{background:#f1f5f9;color:#64748b}
+        @media(max-width:700px){.sad-kpi-grid{grid-template-columns:1fr 1fr}}
+        </style>
 
-            <h2 style="margin-bottom:10px;">📊 AI Performance Analytics</h2>
-            <p class="text-muted" style="margin-bottom:25px;">
-                Review the performance, ROI, and quality metrics of your AI deployment.
-            </p>
+        <h2 style="margin-bottom:4px">📊 AI Performance &amp; ROI Analytics</h2>
+        <p class="text-muted" style="margin-bottom:22px;font-size:.9rem">Unified view of AI performance, token spend, cost, and time saved.</p>
 
-            <div class="row" style="display: flex; gap: 20px; flex-wrap: wrap;">
-                <div class="col-md-4" style="flex: 1; min-width: 250px;">
-                    <div style="background: #eef2ff; border-left: 4px solid #4f46e5; padding: 20px; border-radius: 8px;">
-                        <span style="display:block; font-size: 13px; font-weight: 600; color: #4338ca; text-transform: uppercase;">Total Actions</span>
-                        <div style="font-size: 32px; font-weight: 700; color: #1e1b4b; margin-top: 5px;"><?php echo number_format($totalActions); ?></div>
-                    </div>
-                </div>
-                
-                <div class="col-md-4" style="flex: 1; min-width: 250px;">
-                    <div style="background: #fdf4ff; border-left: 4px solid #c026d3; padding: 20px; border-radius: 8px;">
-                        <span style="display:block; font-size: 13px; font-weight: 600; color: #a21caf; text-transform: uppercase;">Tokens Used</span>
-                        <div style="font-size: 32px; font-weight: 700; color: #4a044e; margin-top: 5px;"><?php echo number_format($totalTokens); ?></div>
-                    </div>
-                </div>
-
-                <div class="col-md-4" style="flex: 1; min-width: 250px;">
-                    <div style="background: #f0fdf4; border-left: 4px solid #16a34a; padding: 20px; border-radius: 8px;">
-                        <span style="display:block; font-size: 13px; font-weight: 600; color: #15803d; text-transform: uppercase;">Avg Generation Speed</span>
-                        <div style="font-size: 32px; font-weight: 700; color: #14532d; margin-top: 5px;"><?php echo number_format($avgExecMs); ?> ms</div>
-                    </div>
-                </div>
+        <!-- ── KPI Stat Grid ── -->
+        <div class="sad-kpi-grid">
+            <div class="sad-kpi kpi-blue">
+                <i class="fas fa-bolt kpi-icon"></i>
+                <div class="kpi-lbl">Total AI Actions</div>
+                <div class="kpi-val"><?= number_format($totalActions) ?></div>
+                <div class="kpi-sub">All time</div>
             </div>
-
-            <div class="row" style="display: flex; gap: 20px; flex-wrap: wrap; margin-top: 20px;">
-                <div class="col-md-6" style="flex: 1; min-width: 300px;">
-                    <div style="background: #fffbeb; border-left: 4px solid #d97706; padding: 20px; border-radius: 8px;">
-                        <span style="display:block; font-size: 13px; font-weight: 600; color: #b45309; text-transform: uppercase;">Time Saved (ROI)</span>
-                        <div style="font-size: 32px; font-weight: 700; color: #78350f; margin-top: 5px;"><?php echo htmlspecialchars($roi['time_saved_string']); ?></div>
-                        <p style="margin:0; font-size:12px; color: #92400e; margin-top: 5px;">Estimated based on avg. response drafting time.</p>
-                    </div>
-                </div>
-                <div class="col-md-6" style="flex: 1; min-width: 300px;">
-                    <div style="background: #fef2f2; border-left: 4px solid #ef4444; padding: 20px; border-radius: 8px;">
-                        <span style="display:block; font-size: 13px; font-weight: 600; color: #b91c1c; text-transform: uppercase;">Estimated AI Cost</span>
-                        <div style="font-size: 32px; font-weight: 700; color: #7f1d1d; margin-top: 5px;">$<?php echo number_format($roi['estimated_cost_usd'], 4); ?></div>
-                        <p style="margin:0; font-size:12px; color: #991b1b; margin-top: 5px;">Based on aggregated provider costs.</p>
-                    </div>
-                </div>
+            <div class="sad-kpi kpi-purple">
+                <i class="fas fa-coins kpi-icon"></i>
+                <div class="kpi-lbl">Tokens Used</div>
+                <div class="kpi-val"><?= number_format($totalTokensAll) ?></div>
+                <div class="kpi-sub"><?= number_format($totalTokensWeek) ?> this week</div>
             </div>
-
-            <hr style="margin: 30px 0;">
-            <h4 style="margin-bottom: 16px;">Tools Evidence Quality</h4>
-            <div style="display:flex; gap:10px; flex-wrap:wrap;">
-                <span style="background:#f8fafc; padding:8px 14px; border-radius:999px;">Total Runs: <strong><?php echo number_format((int) ($toolsNorm['total_tool_runs'] ?? 0)); ?></strong></span>
-                <span style="background:#ecfeff; padding:8px 14px; border-radius:999px;">Readable Extracted: <strong><?php echo number_format((int) ($toolsNorm['normalized_runs'] ?? 0)); ?></strong></span>
-                <span style="background:#fff7ed; padding:8px 14px; border-radius:999px;">Raw Fallback: <strong><?php echo number_format((int) ($toolsNorm['raw_fallback_runs'] ?? 0)); ?></strong></span>
-                <span style="background:#fef2f2; padding:8px 14px; border-radius:999px;">Readable Extraction Errors: <strong><?php echo number_format((int) ($toolsNorm['normalization_errors'] ?? 0)); ?></strong></span>
+            <div class="sad-kpi kpi-red">
+                <i class="fas fa-dollar-sign kpi-icon"></i>
+                <div class="kpi-lbl">Estimated Cost</div>
+                <div class="kpi-val">$<?= number_format($totalCostAll, 4) ?></div>
+                <div class="kpi-sub">$<?= number_format($totalCostWeek, 4) ?> this week</div>
             </div>
+            <div class="sad-kpi kpi-teal">
+                <i class="fas fa-tachometer-alt kpi-icon"></i>
+                <div class="kpi-lbl">Avg Generation</div>
+                <div class="kpi-val"><?= number_format($avgExecMs) ?> <small style="font-size:.9rem">ms</small></div>
+                <div class="kpi-sub">Per AI call</div>
+            </div>
+            <div class="sad-kpi kpi-indigo">
+                <i class="fas fa-ticket-alt kpi-icon"></i>
+                <div class="kpi-lbl">Tickets Handled</div>
+                <div class="kpi-val"><?= number_format($ticketsWeek) ?></div>
+                <div class="kpi-sub">This week</div>
+            </div>
+            <div class="sad-kpi kpi-amber">
+                <i class="fas fa-robot kpi-icon"></i>
+                <div class="kpi-lbl">Autopilot Processed</div>
+                <div class="kpi-val"><?= number_format($apProcessedAll) ?></div>
+                <div class="kpi-sub"><?= number_format($apProcessedWeek) ?> this week &middot; <?= number_format($apRepliesAll) ?> replied/drafted</div>
+            </div>
+            <div class="sad-kpi kpi-green">
+                <i class="fas fa-clock kpi-icon"></i>
+                <div class="kpi-lbl">Time Saved</div>
+                <div class="kpi-val"><?= $timeSavedAllH ?>h</div>
+                <div class="kpi-sub"><?= $timeSavedWeekH ?>h this week · <?= $avgHandleMin ?>min/ticket avg</div>
+            </div>
+            <div class="sad-kpi kpi-slate">
+                <i class="fas fa-hourglass-half kpi-icon"></i>
+                <div class="kpi-lbl">ROI Time Saved</div>
+                <div class="kpi-val"><?= htmlspecialchars($roiOld['time_saved_string'] ?? '—') ?></div>
+                <div class="kpi-sub">From quality scorer data</div>
+            </div>
+        </div>
 
-            <hr style="margin: 30px 0;">
-            
-            <h4 style="margin-bottom: 20px;">AI Action Breakdown</h4>
-            <div style="display:flex; gap:10px; flex-wrap: wrap;">
+        <!-- ── 30-Day Token Trend ── -->
+        <div class="sad-card">
+            <div class="sad-section"><i class="fas fa-chart-area" style="color:#3b82f6"></i> 30-Day Token Usage Trend</div>
+            <div class="sad-bar-chart">
+                <?php foreach ($dailyData as $day):
+                    $h = $maxDayTokens > 0 ? max(2, round(($day['tokens'] / $maxDayTokens) * 100)) : 2;
+                    $showEvery = 5; // label every 5th day
+                    $idx = array_search($day, $dailyData);
+                ?>
+                <div class="sad-bar-wrap" title="<?= htmlspecialchars($day['date']) ?>: <?= number_format($day['tokens']) ?> tokens">
+                    <div class="sad-bar" style="height:<?= $h ?>%"></div>
+                    <div class="sad-bar-lbl"><?= ($idx % $showEvery === 0) ? htmlspecialchars($day['label']) : '' ?></div>
+                </div>
+                <?php endforeach; ?>
+            </div>
+            <div style="font-size:.72rem;color:#94a3b8;margin-top:6px;text-align:right">Last 30 days · Hover bars for details</div>
+        </div>
+
+        <!-- ── AI Action Breakdown ── -->
+        <div class="sad-card">
+            <div class="sad-section"><i class="fas fa-layer-group" style="color:#7c3aed"></i> AI Action Breakdown</div>
+            <div class="sad-tag-grid">
                 <?php if (empty($actionsByType)): ?>
-                    <span class="text-muted">No actions recorded yet. Generate an AI response to see data.</span>
+                    <span class="text-muted" style="font-size:.88rem">No actions recorded yet.<br>Generate an AI response to see data here.</span>
                 <?php else: ?>
-                    <?php foreach ($actionsByType as $type => $count): ?>
-                        <span style="background: #f1f5f9; padding: 8px 16px; border-radius: 20px; font-weight: 500; color: #334155;">
-                            <strong style="color: #0f172a; margin-right: 5px;"><?php echo ucwords(str_replace('_', ' ', $type)); ?>:</strong> <?php echo number_format($count); ?>
-                        </span>
+                    <?php
+                    $palette = ['#3b82f6','#7c3aed','#059669','#d97706','#dc2626','#0891b2','#db2777','#65a30d'];
+                    $i = 0;
+                    foreach ($actionsByType as $type => $count):
+                        $col = $palette[$i++ % count($palette)];
+                    ?>
+                    <span class="sad-pill" style="background:<?= $col ?>18;color:<?= $col ?>;border:1px solid <?= $col ?>44">
+                        <?= ucwords(str_replace('_', ' ', $type)) ?>: <strong><?= number_format($count) ?></strong>
+                    </span>
                     <?php endforeach; ?>
                 <?php endif; ?>
             </div>
+        </div>
 
-            <hr style="margin: 30px 0;">
-
-            <div class="row">
-                <div class="col-md-6">
-                    <h4 style="margin-bottom: 20px;">Quality Metrics</h4>
-                    <?php 
-                    $metricsToGraph = ['overall', 'clarity', 'tone', 'completeness', 'ai_avg', 'manual_avg'];
-                    $hasMetrics = false;
-                    
-                    foreach ($metricsToGraph as $metricKey) {
-                        if (isset($scores[$metricKey]) && $scores[$metricKey] > 0) {
-                            $hasMetrics = true;
-                            $val = $scores[$metricKey];
-                            $pct = ($val / 10) * 100;
-                            // Change name for display
-                            $displayName = str_replace('_', ' ', $metricKey);
-                            if ($metricKey == 'ai_avg') $displayName = 'AI Answers Avg Score';
-                            if ($metricKey == 'manual_avg') $displayName = 'Human Answers Avg Score';
-                            ?>
-                            <div style="margin-bottom: 15px;">
-                                <div style="display:flex; justify-content: space-between; margin-bottom: 5px; font-size: 13px; font-weight: 600;">
-                                    <span><?php echo ucwords($displayName); ?></span>
-                                    <span><?php echo number_format($val, 1); ?>/10</span>
-                                </div>
-                                <div style="background: #e2e8f0; height: 10px; border-radius: 5px; overflow: hidden;">
-                                    <div style="background: <?php echo $pct >= 80 ? '#22c55e' : ($pct >= 60 ? '#f59e0b' : '#ef4444'); ?>; width: <?php echo $pct; ?>%; height: 100%;"></div>
-                                </div>
-                            </div>
-                            <?php
-                        }
-                    }
-                    if (!$hasMetrics) echo '<span class="text-muted">No quality scores recorded yet. Have users rate AI responses to see data.</span>';
-                    ?>
+        <!-- ── Quality Metrics + Tool Evidence Side-by-Side ── -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;" class="sad-two-col">
+            <div class="sad-card" style="margin-bottom:0">
+                <div class="sad-section"><i class="fas fa-star-half-alt" style="color:#d97706"></i> Quality Scores</div>
+                <?php
+                $metricsToGraph = ['overall','clarity','tone','completeness','ai_avg','manual_avg'];
+                $labels = ['overall'=>'Overall','clarity'=>'Clarity','tone'=>'Tone','completeness'=>'Completeness','ai_avg'=>'AI Replies Avg','manual_avg'=>'Human Replies Avg'];
+                $hasMetrics = false;
+                foreach ($metricsToGraph as $mk):
+                    if (!isset($scores[$mk]) || $scores[$mk] <= 0) continue;
+                    $hasMetrics = true;
+                    $val = $scores[$mk];
+                    $pct = ($val / 10) * 100;
+                    $fillCol = $pct >= 80 ? '#22c55e' : ($pct >= 60 ? '#f59e0b' : '#ef4444');
+                ?>
+                <div class="sad-prog-row">
+                    <div class="sad-prog-header">
+                        <span><?= $labels[$mk] ?></span>
+                        <span><?= number_format($val, 1) ?>/10</span>
+                    </div>
+                    <div class="sad-prog-track">
+                        <div class="sad-prog-fill" style="width:<?= $pct ?>%;background:<?= $fillCol ?>"></div>
+                    </div>
                 </div>
+                <?php endforeach; ?>
+                <?php if (!$hasMetrics): ?>
+                    <span class="text-muted" style="font-size:.85rem">No quality scores recorded yet. Have users rate AI responses to see data.</span>
+                <?php endif; ?>
             </div>
 
+            <div class="sad-card" style="margin-bottom:0">
+                <div class="sad-section"><i class="fas fa-tools" style="color:#0891b2"></i> Tools Evidence Quality</div>
+                <div class="sad-tag-grid">
+                    <?php
+                    $toolPills = [
+                        ['Total Runs', $toolsNorm['total_tool_runs'] ?? 0, '#f8fafc', '#334155'],
+                        ['Readable Extracted', $toolsNorm['normalized_runs'] ?? 0, '#e0fafb', '#0891b2'],
+                        ['Raw Fallback', $toolsNorm['raw_fallback_runs'] ?? 0, '#fff7ed', '#d97706'],
+                        ['Extraction Errors', $toolsNorm['normalization_errors'] ?? 0, '#fef2f2', '#dc2626'],
+                    ];
+                    foreach ($toolPills as [$label, $val, $bg, $col]): ?>
+                    <span class="sad-pill" style="background:<?= $bg ?>;color:<?= $col ?>;border:1px solid <?= $col ?>30">
+                        <?= $label ?>: <strong><?= number_format((int) $val) ?></strong>
+                    </span>
+                    <?php endforeach; ?>
+                </div>
+
+                <hr style="margin:16px 0">
+                <div class="sad-section" style="margin-bottom:12px"><i class="fas fa-robot" style="color:#7c3aed"></i> Autopilot Outcome Split</div>
+                <?php
+                $apSplit = Capsule::table('tblsahdev_autopilot_log')
+                    ->selectRaw('ai_decision, COUNT(*) as cnt')
+                    ->groupBy('ai_decision')->get();
+                $splitMap = [];
+                foreach ($apSplit as $s) $splitMap[$s->ai_decision] = $s->cnt;
+                $splitTotal = max(1, array_sum($splitMap));
+                $splitDefs = [
+                    'replied' => ['Replied', '#16a34a', 'badge-live'],
+                    'drafted' => ['Drafted (Notes)', '#ca8a04', 'badge-draft'],
+                    'skipped' => ['Skipped', '#64748b', 'badge-skip'],
+                ];
+                foreach ($splitDefs as $key => [$label, $col, $badgeCls]):
+                    $cnt = $splitMap[$key] ?? 0;
+                    $pct = $cnt > 0 ? round($cnt / $splitTotal * 100) : 0;
+                ?>
+                <div class="sad-prog-row">
+                    <div class="sad-prog-header">
+                        <span><span class="sad-badge <?= $badgeCls ?>"><?= $label ?></span></span>
+                        <span><?= number_format($cnt) ?> (<?= $pct ?>%)</span>
+                    </div>
+                    <div class="sad-prog-track">
+                        <div class="sad-prog-fill" style="width:<?= $pct ?>%;background:<?= $col ?>"></div>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+            </div>
         </div>
+
+        <style>@media(max-width:700px){.sad-two-col{grid-template-columns:1fr!important}}</style>
+
+        <!-- ── Per-Provider Cost Breakdown ── -->
+        <div class="sad-card">
+            <div class="sad-section"><i class="fas fa-microchip" style="color:#7c3aed"></i> Per-Provider Cost Breakdown</div>
+            <?php if (empty($providerRows)): ?>
+                <p style="color:#aaa;font-size:.88rem">No token data recorded yet.</p>
+            <?php else: ?>
+            <table class="table table-sm sad-table">
+                <thead><tr><th>Provider</th><th>Total Tokens</th><th>API Calls</th><th>Est. Cost (USD)</th></tr></thead>
+                <tbody>
+                    <?php foreach ($providerRows as $r): ?>
+                    <tr>
+                        <td><i class="fas fa-circle" style="color:#3b82f6;font-size:.4em;vertical-align:middle;margin-right:6px"></i><?= htmlspecialchars($r['name']) ?></td>
+                        <td><?= number_format($r['tokens']) ?></td>
+                        <td><?= number_format($r['calls']) ?></td>
+                        <td><?= $r['cost'] > 0 ? '<strong>$' . number_format($r['cost'], 4) . '</strong>' : '<span style="color:#aaa">$0.0000</span>' ?></td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+                <tfoot><tr style="font-weight:700;background:#f8fafc">
+                    <td>Total</td>
+                    <td><?= number_format($totalTokensAll) ?></td>
+                    <td><?= number_format($totalCallsAll) ?></td>
+                    <td>$<?= number_format($totalCostAll, 4) ?></td>
+                </tr></tfoot>
+            </table>
+            <?php endif; ?>
+        </div>
+
+        <!-- ── ROI Settings ── -->
+        <div class="sad-card">
+            <div class="sad-section"><i class="fas fa-sliders-h" style="color:#059669"></i> ROI Calculation Settings</div>
+            <p style="color:#64748b;font-size:.85rem;margin-bottom:16px">Configure how Sahdev estimates the human time saved per autopilot reply. Adjust to your team's real average handle time.</p>
+            <form method="post" action="<?= $actionUrl ?>">
+                <?php echo function_exists('generate_token') ? generate_token() : ''; ?>
+                <input type="hidden" name="roi_save" value="1">
+                <div class="sad-settings-row">
+                    <label style="font-weight:600;font-size:.88rem;margin:0">Avg. Handle Time per Ticket</label>
+                    <div style="display:flex;align-items:center;gap:8px">
+                        <input type="number" name="avg_handle_minutes" class="form-control" style="width:90px" value="<?= (int) $avgHandleMin ?>" min="1" max="120">
+                        <span style="font-size:.85rem;color:#64748b">minutes</span>
+                    </div>
+                    <button type="submit" class="btn btn-sm btn-success"><i class="fas fa-save"></i> Save</button>
+                    <span style="font-size:.78rem;color:#94a3b8">Used to compute <em>time saved = autopilot replies × avg handle time</em></span>
+                </div>
+            </form>
+        </div>
+
+        </div><!-- /sahdev-page-container -->
         <?php
         return ob_get_clean();
     }
@@ -4876,299 +5154,12 @@ class AdminController
     }
 
     /**
-     * ROI Dashboard — Token usage, cost and time-saved metrics.
+     * ROI Dashboard — redirects to the unified analytics page.
      */
     public function roi(): string
     {
-        // ---- Schema migrations ----
-        try {
-            Capsule::table('tblsahdev_settings')->select('avg_handle_minutes')->first();
-        } catch (\Exception $e) {
-            try {
-                Capsule::schema()->table('tblsahdev_settings', function ($t) {
-                    $t->integer('avg_handle_minutes')->default(8)->nullable();
-                });
-            } catch (\Throwable $ex) {}
-        }
-        try {
-            Capsule::table('tblsahdev_settings')->select('autopilot_draft_mode')->first();
-        } catch (\Exception $e) {
-            try {
-                Capsule::schema()->table('tblsahdev_settings', function ($t) {
-                    $t->boolean('autopilot_draft_mode')->default(0);
-                });
-            } catch (\Throwable $ex) {}
-        }
-
-        $actionUrl  = htmlspecialchars($this->moduleVars['modulelink']) . '&action=roi';
-        $moduleLink = htmlspecialchars($this->moduleVars['modulelink']);
-
-        $settings = Capsule::table('tblsahdev_settings')->first();
-        $avgHandleMin = max(1, (int) ($settings->avg_handle_minutes ?? 8));
-
-        // ---- Aggregate stats ----
-        $nowTs  = \Carbon\Carbon::now();
-        $week   = $nowTs->copy()->subDays(7);
-        $month  = $nowTs->copy()->subDays(30);
-
-        // Manual + cron analysis calls from tblsahdev_logs
-        $logsAll  = Capsule::table('tblsahdev_logs')
-            ->whereNotNull('token_usage')
-            ->where('token_usage', '>', 0)
-            ->selectRaw('COALESCE(provider_used, "unknown") as provider, SUM(token_usage) as tokens, COUNT(*) as calls, MIN(created_at) as first_at, MAX(created_at) as last_at')
-            ->groupBy('provider')
-            ->get();
-
-        $logsWeek = Capsule::table('tblsahdev_logs')
-            ->whereNotNull('token_usage')
-            ->where('token_usage', '>', 0)
-            ->where('created_at', '>=', $week)
-            ->selectRaw('SUM(token_usage) as tokens, COUNT(*) as calls')
-            ->first();
-
-        // Autopilot drafted/replied tokens
-        $apAll  = Capsule::table('tblsahdev_autopilot_log')
-            ->whereNotNull('tokens_used')
-            ->where('tokens_used', '>', 0)
-            ->whereIn('ai_decision', ['replied', 'drafted'])
-            ->selectRaw('SUM(tokens_used) as tokens, COUNT(*) as calls')
-            ->first();
-
-        $apWeek = Capsule::table('tblsahdev_autopilot_log')
-            ->whereNotNull('tokens_used')
-            ->where('tokens_used', '>', 0)
-            ->whereIn('ai_decision', ['replied', 'drafted'])
-            ->where('created_at', '>=', $week)
-            ->selectRaw('SUM(tokens_used) as tokens, COUNT(*) as calls')
-            ->first();
-
-        $apRepliesWeek = Capsule::table('tblsahdev_autopilot_log')
-            ->whereIn('ai_decision', ['replied', 'drafted'])
-            ->where('created_at', '>=', $week)
-            ->count();
-
-        $apRepliesAll = Capsule::table('tblsahdev_autopilot_log')
-            ->whereIn('ai_decision', ['replied', 'drafted'])
-            ->count();
-
-        // Total tickets handled this week (unique tickets in logs)
-        $ticketsWeek = Capsule::table('tblsahdev_logs')
-            ->where('created_at', '>=', $week)
-            ->distinct()
-            ->count('ticket_id');
-
-        // Providers for cost lookup
-        $providers = Capsule::table('tblsahdev_providers')
-            ->where('is_active', 1)
-            ->get()
-            ->keyBy('name');
-
-        // Estimate cost: tokens × rate/1M
-        $totalTokensAll  = 0;
-        $totalTokensWeek = (int) (($logsWeek->tokens ?? 0) + ($apWeek->tokens ?? 0));
-        $totalCallsAll   = 0;
-        $totalCostAll    = 0.0;
-        $totalCostWeek   = 0.0;
-        $providerRows    = [];
-
-        foreach ($logsAll as $row) {
-            $tok   = (int) $row->tokens;
-            $calls = (int) $row->calls;
-            $totalTokensAll += $tok;
-            $totalCallsAll  += $calls;
-
-            // Find per-provider cost (use input rate as estimate since we don't split i/o)
-            $provName = (string) $row->provider;
-            $costPer1m = 0.0;
-            foreach ($providers as $p) {
-                if (strtolower($p->name) === strtolower($provName) || strtolower($p->provider_type) === strtolower($provName)) {
-                    $costPer1m = (float) (($p->cost_input_1m + $p->cost_output_1m) / 2);
-                    break;
-                }
-            }
-            $cost = round($tok / 1_000_000 * $costPer1m, 4);
-            $totalCostAll += $cost;
-            $providerRows[] = ['name' => $provName, 'tokens' => $tok, 'calls' => $calls, 'cost' => $cost];
-        }
-
-        // Add autopilot tokens to total
-        $totalTokensAll += (int) ($apAll->tokens ?? 0);
-        $totalCallsAll  += (int) ($apAll->calls ?? 0);
-
-        // Weekly cost estimate (simplified by ratio)
-        if ($totalTokensAll > 0 && $totalCostAll > 0) {
-            $totalCostWeek = round($totalCostWeek > 0
-                ? ($totalTokensWeek / $totalTokensAll) * $totalCostAll
-                : 0.0, 4);
-        }
-
-        // Time saved: autopilot replies × avg_handle_minutes
-        $timeSavedWeekMin = $apRepliesWeek * $avgHandleMin;
-        $timeSavedAllMin  = $apRepliesAll * $avgHandleMin;
-        $timeSavedWeekH   = round($timeSavedWeekMin / 60, 1);
-        $timeSavedAllH    = round($timeSavedAllMin / 60, 1);
-
-        // 7-day daily chart data
-        $dailyData = [];
-        for ($d = 6; $d >= 0; $d--) {
-            $dayStart = $nowTs->copy()->subDays($d)->startOfDay();
-            $dayEnd   = $nowTs->copy()->subDays($d)->endOfDay();
-            $dayLabel = $dayStart->format('D');
-            $tok = (int) Capsule::table('tblsahdev_logs')
-                ->whereBetween('created_at', [$dayStart, $dayEnd])
-                ->sum('token_usage');
-            $tok += (int) Capsule::table('tblsahdev_autopilot_log')
-                ->whereBetween('created_at', [$dayStart, $dayEnd])
-                ->sum('tokens_used');
-            $dailyData[] = ['label' => $dayLabel, 'tokens' => $tok];
-        }
-        $maxDayTokens = max(1, max(array_column($dailyData, 'tokens')));
-
-        ob_start();
-        ?>
-        <?= $this->getNavigationMarkup('roi') ?>
-
-        <style>
-        .roi-card { background:#fff; border-radius:10px; box-shadow:0 2px 10px rgba(0,0,0,.06); padding:22px 26px; margin-bottom:20px; }
-        .roi-stat-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:18px; margin-bottom:24px; }
-        .roi-stat { background:linear-gradient(135deg,#f8f9fa,#fff); border:1px solid #e3e8f0; border-radius:10px; padding:20px; text-align:center; }
-        .roi-stat .val { font-size:2em; font-weight:700; color:#0d6efd; }
-        .roi-stat .sub { font-size:.8em; color:#888; margin-top:4px; }
-        .roi-stat .label { font-size:.85em; font-weight:600; color:#444; margin-top:6px; }
-        .roi-bar-chart { display:flex; align-items:flex-end; gap:8px; height:120px; margin-top:14px; }
-        .roi-bar-wrap { flex:1; display:flex; flex-direction:column; align-items:center; gap:4px; }
-        .roi-bar { width:100%; background:linear-gradient(180deg,#0d6efd,#6ea8fe); border-radius:4px 4px 0 0; min-height:2px; transition:height .3s; }
-        .roi-bar-label { font-size:.7em; color:#888; }
-        .roi-table th { font-size:.8em; color:#888; border:none; background:#f8f9fa; }
-        .roi-table td { font-size:.85em; vertical-align:middle; }
-        .roi-section-title { font-size:1em; font-weight:700; color:#333; margin-bottom:14px; display:flex; align-items:center; gap:8px; }
-        .roi-badge { display:inline-block; padding:2px 9px; border-radius:99px; font-size:.7em; font-weight:600; background:#e8f4ff; color:#0d6efd; }
-        </style>
-
-        <div class="roi-card">
-            <h4 style="margin-bottom:6px;"><i class="fas fa-chart-bar" style="color:#0d6efd"></i> ROI Dashboard</h4>
-            <p style="color:#888;font-size:.9em;margin:0">Track token usage, API costs and the time Sahdev is saving your team every week.</p>
-        </div>
-
-        <div class="roi-stat-grid">
-            <div class="roi-stat">
-                <div class="val"><?= number_format($totalTokensWeek) ?></div>
-                <div class="sub">tokens</div>
-                <div class="label">This Week</div>
-            </div>
-            <div class="roi-stat">
-                <div class="val">$<?= number_format($totalCostWeek, 4) ?></div>
-                <div class="sub">estimated cost</div>
-                <div class="label">This Week</div>
-            </div>
-            <div class="roi-stat">
-                <div class="val"><?= $ticketsWeek ?></div>
-                <div class="sub">tickets handled</div>
-                <div class="label">This Week</div>
-            </div>
-            <div class="roi-stat">
-                <div class="val"><?= $apRepliesWeek ?></div>
-                <div class="sub">autopilot replies</div>
-                <div class="label">This Week</div>
-            </div>
-            <div class="roi-stat" style="border-color:#28a745;background:linear-gradient(135deg,#f0fff4,#fff)">
-                <div class="val" style="color:#28a745"><?= $timeSavedWeekH ?>h</div>
-                <div class="sub">estimated time saved</div>
-                <div class="label">This Week</div>
-            </div>
-            <div class="roi-stat" style="border-color:#6c757d;background:linear-gradient(135deg,#f8f9fa,#fff)">
-                <div class="val" style="color:#6c757d"><?= number_format($totalTokensAll) ?></div>
-                <div class="sub">total tokens <span class="roi-badge">All Time</span></div>
-                <div class="label">Lifetime Usage</div>
-            </div>
-            <div class="roi-stat" style="border-color:#6c757d;background:linear-gradient(135deg,#f8f9fa,#fff)">
-                <div class="val" style="color:#6c757d">$<?= number_format($totalCostAll, 4) ?></div>
-                <div class="sub">total cost <span class="roi-badge">All Time</span></div>
-                <div class="label">Lifetime Cost</div>
-            </div>
-            <div class="roi-stat" style="border-color:#28a745;background:linear-gradient(135deg,#f0fff4,#fff)">
-                <div class="val" style="color:#28a745"><?= $timeSavedAllH ?>h</div>
-                <div class="sub">total time saved <span class="roi-badge">All Time</span></div>
-                <div class="label">Lifetime Savings</div>
-            </div>
-        </div>
-
-        <!-- 7-Day Chart -->
-        <div class="roi-card">
-            <div class="roi-section-title"><i class="fas fa-chart-area" style="color:#0d6efd"></i> 7-Day Token Usage Trend</div>
-            <div class="roi-bar-chart">
-                <?php foreach ($dailyData as $day):
-                    $pct = $maxDayTokens > 0 ? round(($day['tokens'] / $maxDayTokens) * 100) : 0;
-                    $height = max(2, $pct); ?>
-                <div class="roi-bar-wrap">
-                    <div style="font-size:.7em;color:#0d6efd;font-weight:600"><?= $day['tokens'] > 0 ? number_format($day['tokens']) : '' ?></div>
-                    <div class="roi-bar" style="height:<?= $height ?>%"></div>
-                    <div class="roi-bar-label"><?= htmlspecialchars($day['label']) ?></div>
-                </div>
-                <?php endforeach; ?>
-            </div>
-        </div>
-
-        <!-- Per-Provider Breakdown -->
-        <div class="roi-card">
-            <div class="roi-section-title"><i class="fas fa-microchip" style="color:#0d6efd"></i> Per-Provider Breakdown</div>
-            <?php if (empty($providerRows)): ?>
-                <p style="color:#aaa;font-size:.9em">No token data recorded yet. Provider breakdown will appear once AI calls are made.</p>
-            <?php else: ?>
-            <table class="table table-sm roi-table">
-                <thead><tr><th>Provider</th><th>Total Tokens</th><th>API Calls</th><th>Est. Cost (USD)</th></tr></thead>
-                <tbody>
-                    <?php foreach ($providerRows as $r): ?>
-                    <tr>
-                        <td><i class="fas fa-circle" style="color:#0d6efd;font-size:.5em;vertical-align:middle;margin-right:5px"></i><?= htmlspecialchars($r['name']) ?></td>
-                        <td><?= number_format($r['tokens']) ?></td>
-                        <td><?= number_format($r['calls']) ?></td>
-                        <td><?= $r['cost'] > 0 ? '$' . number_format($r['cost'], 4) : '<span style="color:#aaa">$0.0000</span>' ?></td>
-                    </tr>
-                    <?php endforeach; ?>
-                </tbody>
-                <tfoot>
-                    <tr style="font-weight:700;background:#f8f9fa">
-                        <td>Total</td>
-                        <td><?= number_format($totalTokensAll) ?></td>
-                        <td><?= number_format($totalCallsAll) ?></td>
-                        <td>$<?= number_format($totalCostAll, 4) ?></td>
-                    </tr>
-                </tfoot>
-            </table>
-            <?php endif; ?>
-        </div>
-
-        <!-- Settings -->
-        <div class="roi-card">
-            <div class="roi-section-title"><i class="fas fa-cog" style="color:#0d6efd"></i> ROI Calculation Settings</div>
-            <p style="color:#888;font-size:.85em">The "time saved" calculation uses the average minutes a human agent would spend per ticket. Adjust to match your team's actual handle time.</p>
-            <form method="post" action="<?= $actionUrl ?>">
-                <input type="hidden" name="roi_save" value="1">
-                <div class="form-group row">
-                    <label class="col-sm-3 col-form-label">Avg. Handle Time per Ticket (minutes)</label>
-                    <div class="col-sm-3">
-                        <input type="number" name="avg_handle_minutes" class="form-control" value="<?= (int) $avgHandleMin ?>" min="1" max="120">
-                    </div>
-                    <div class="col-sm-2">
-                        <button type="submit" class="btn btn-primary">Save</button>
-                    </div>
-                </div>
-            </form>
-        </div>
-
-        <?php
-        // Handle form save
-        if (!empty($_POST['roi_save'])) {
-            $newMin = max(1, min(120, (int) ($_POST['avg_handle_minutes'] ?? 8)));
-            Capsule::table('tblsahdev_settings')->where('id', 1)->update([
-                'avg_handle_minutes' => $newMin,
-                'updated_at'         => \Carbon\Carbon::now(),
-            ]);
-            echo '<script>location.href="' . $actionUrl . '";</script>';
-        }
-
-        return ob_get_clean();
+        header('Location: ' . htmlspecialchars($this->moduleVars['modulelink']) . '&action=analytics');
+        exit;
     }
 }
 
