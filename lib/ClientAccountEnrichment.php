@@ -70,6 +70,12 @@ class ClientAccountEnrichment
                 if ($s !== '') {
                     $parts[] = $s;
                 }
+                
+                // Add system-wide defaults as a reference
+                $defaults = self::sectionSystemDefaults();
+                if ($defaults !== '') {
+                    $parts[] = $defaults;
+                }
             } catch (\Throwable $e) {
                 self::logSectionFailure('hosting', $e, $ticketIdForScope);
             }
@@ -198,7 +204,7 @@ class ClientAccountEnrichment
                 $f = 'ns' . $i;
                 if (!empty($r->$f)) $ns[] = (string) $r->$f;
             }
-            $nsStr = $ns !== [] ? (' (NS: ' . implode(', ', $ns) . ')') : '';
+            $nsStr = $ns !== [] ? (' (Current Registrar NS: ' . implode(', ', $ns) . ')') : '';
             $lines[] = "- {$dom}: {$st}{$ex}{$nsStr}";
         }
 
@@ -254,15 +260,42 @@ class ClientAccountEnrichment
             
             $details = [
                 "Status: {$st}",
-                "IP: " . ($ip ?: 'N/A'),
+                "Product IP: " . ($ip ?: 'N/A'),
             ];
             if (!empty($r->server_name)) $details[] = "Server: {$r->server_name}";
-            if ($ns !== []) $details[] = "NS: " . implode(', ', $ns);
+            if (!empty($r->server_host)) $details[] = "Server Host: {$r->server_host}";
+            if (!empty($r->server_ip)) $details[] = "Server IP: {$r->server_ip}";
+            
+            if ($ns !== []) $details[] = "Required Hosting NS (Point here): " . implode(', ', $ns);
             
             $lines[] = "- {$name} ({$dom}): " . implode(' | ', $details);
         }
 
         return implode("\n", $lines);
+    }
+    
+    private static function sectionSystemDefaults(): string
+    {
+        $ns = [];
+        try {
+            $nameservers = Capsule::table('tblconfiguration')
+                ->whereIn('setting', ['DefaultNameserver1', 'DefaultNameserver2', 'DefaultNameserver3', 'DefaultNameserver4'])
+                ->pluck('value', 'setting');
+            
+            foreach (['DefaultNameserver1', 'DefaultNameserver2', 'DefaultNameserver3', 'DefaultNameserver4'] as $key) {
+                if (!empty($nameservers[$key])) {
+                    $ns[] = $nameservers[$key];
+                }
+            }
+        } catch (\Exception $e) {
+            return '';
+        }
+        
+        if (empty($ns)) {
+            return '';
+        }
+        
+        return "Company Default Nameservers (Backup Reference): " . implode(', ', $ns);
     }
 
     private static function sectionAddons(int $userid): string
