@@ -528,11 +528,8 @@ class AdminController
             }
             .sahdev-nav-btn i { font-size: 13px; }
             .sahdev-page-container {
-                max-width: 1100px;
-                padding: 25px;
-                background: #fff;
-                border-radius: 8px;
-                box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+                width: 100%;
+                padding: 20px;
             }
         </style>';
 
