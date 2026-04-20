@@ -513,13 +513,17 @@ try {
     } elseif ($action === 'run_manual_tool') {
         $runTicketId = (int) ($_POST['ticket_id'] ?? 0);
         $method = (string) ($_POST['method'] ?? 'GET');
-        $path = (string) ($_POST['path'] ?? '');
+        $path = html_entity_decode((string) ($_POST['path'] ?? ''), ENT_QUOTES);
         $pathParamsRaw = $_POST['path_params'] ?? '{}';
+        if (is_string($pathParamsRaw)) $pathParamsRaw = html_entity_decode($pathParamsRaw, ENT_QUOTES);
         $queryRaw = $_POST['query'] ?? '{}';
+        if (is_string($queryRaw)) $queryRaw = html_entity_decode($queryRaw, ENT_QUOTES);
         $bodyRaw = $_POST['body'] ?? '{}';
-        $pathParams = is_array($pathParamsRaw) ? $pathParamsRaw : (json_decode((string) $pathParamsRaw, true) ?: []);
-        $query = is_array($queryRaw) ? $queryRaw : (json_decode((string) $queryRaw, true) ?: []);
-        $body = is_array($bodyRaw) ? $bodyRaw : (json_decode((string) $bodyRaw, true) ?: []);
+        if (is_string($bodyRaw)) $bodyRaw = html_entity_decode($bodyRaw, ENT_QUOTES);
+
+        $pathParams = is_array($pathParamsRaw) ? $pathParamsRaw : (json_decode($pathParamsRaw, true) ?: []);
+        $query = is_array($queryRaw) ? $queryRaw : (json_decode($queryRaw, true) ?: []);
+        $body = is_array($bodyRaw) ? $bodyRaw : (json_decode($bodyRaw, true) ?: []);
 
         // Debug trace: Log what the backend received
         try {
