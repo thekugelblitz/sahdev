@@ -3112,10 +3112,24 @@ class AdminController
         $toolsNorm     = $analyticsData['tools_normalization'] ?? [];
 
         // ── Token & Cost: source of truth is tblsahdev_audit_trail ──────────────
-        // audit_trail.provider_used stores getName() => e.g. 'Google Gemini', 'LM Studio', 'Replicate'
-        // We match that against tblsahdev_providers.provider_type via keyword lookup.
         $nowTs = \Carbon\Carbon::now();
-        $week  = $nowTs->copy()->subDays(7);
+        $week  = $nowTs->copy()->subDays(7); // kept for time-saved KPI sub-stat only
+
+        // ── Period filter ───────────────────────────────────────────────────────
+        $validPeriods = ['day' => '1 Day', 'week' => '1 Week', 'month' => '1 Month', 'year' => '1 Year', 'lifetime' => 'Lifetime'];
+        $selectedPeriod = in_array($_GET['period'] ?? '', array_keys($validPeriods)) ? $_GET['period'] : 'lifetime';
+        if ($selectedPeriod === 'day') {
+            $since = $nowTs->copy()->subDay()->startOfDay();
+        } elseif ($selectedPeriod === 'week') {
+            $since = $nowTs->copy()->subDays(7)->startOfDay();
+        } elseif ($selectedPeriod === 'month') {
+            $since = $nowTs->copy()->subDays(30)->startOfDay();
+        } elseif ($selectedPeriod === 'year') {
+            $since = $nowTs->copy()->subDays(365)->startOfDay();
+        } else {
+            $since = null; // lifetime = no date filter
+        }
+        $periodLabel = $validPeriods[$selectedPeriod];
 
         // Build provider cost-rate map: provider_type => avg_cost_per_1m_tokens
         $providerCostMap = []; // e.g. ['google' => 1.25, 'lmstudio' => 0.0]
@@ -3129,55 +3143,55 @@ class AdminController
             }
         }
         // Keyword → type resolver for getName() strings
-        $resolveType = function (string $name) {
-            $n = strtolower($name);
-            if (str_contains($n, 'google') || str_contains($n, 'gemini')) return 'google';
-            if (str_contains($n, 'lm studio') || str_contains($n, 'lmstudio')) return 'lmstudio';
-            if (str_contains($n, 'replicate')) return 'replicate';
+        $resolveType = function ($name) {
+            $n = strtolower((string)$name);
+            if (strpos($n, 'google') !== false || strpos($n, 'gemini') !== false) return 'google';
+            if (strpos($n, 'lm studio') !== false || strpos($n, 'lmstudio') !== false) return 'lmstudio';
+            if (strpos($n, 'replicate') !== false) return 'replicate';
             return $n; // fallback: use as-is
         };
 
-        // Aggregate tokens by provider_used from audit_trail
-        $auditByProvider = Capsule::table('tblsahdev_audit_trail')
-            ->whereNotNull('tokens_used')->where('tokens_used', '>', 0)
+        // Aggregate audit_trail for the selected period
+        $auditQ = Capsule::table('tblsahdev_audit_trail')
+            ->whereNotNull('tokens_used')->where('tokens_used', '>', 0);
+        if ($since) $auditQ->where('created_at', '>=', $since);
+        $auditByProvider = (clone $auditQ)
             ->selectRaw('provider_used, SUM(tokens_used) as tokens, COUNT(*) as calls')
             ->groupBy('provider_used')->get();
-
-        $auditWeek = Capsule::table('tblsahdev_audit_trail')
-            ->whereNotNull('tokens_used')->where('tokens_used', '>', 0)
-            ->where('created_at', '>=', $week)
+        $auditPeriod = (clone $auditQ)
             ->selectRaw('SUM(tokens_used) as tokens, COUNT(*) as calls')->first();
 
-        // Autopilot tokens (separate table)
-        $apAll = Capsule::table('tblsahdev_autopilot_log')
-            ->whereNotNull('tokens_used')->where('tokens_used', '>', 0)
-            ->selectRaw('SUM(tokens_used) as tokens, COUNT(*) as calls')->first();
+        // Autopilot tokens for the period
+        $apQ = Capsule::table('tblsahdev_autopilot_log')
+            ->whereNotNull('tokens_used')->where('tokens_used', '>', 0);
+        if ($since) $apQ->where('created_at', '>=', $since);
+        $apPeriod = (clone $apQ)->selectRaw('SUM(tokens_used) as tokens, COUNT(*) as calls')->first();
 
-        $apWeek = Capsule::table('tblsahdev_autopilot_log')
-            ->whereNotNull('tokens_used')->where('tokens_used', '>', 0)
-            ->where('created_at', '>=', $week)
-            ->selectRaw('SUM(tokens_used) as tokens, COUNT(*) as calls')->first();
+        // Autopilot replied/drafted for the period (time-saved calc)
+        $apRepliesQ = Capsule::table('tblsahdev_autopilot_log')->whereIn('ai_decision', ['replied', 'drafted']);
+        if ($since) $apRepliesQ->where('created_at', '>=', $since);
+        $apRepliesPeriod = (clone $apRepliesQ)->count();
+        // Also need all-time replied count for the Autopilot Processed card sub-stat
+        $apRepliesAll  = Capsule::table('tblsahdev_autopilot_log')->whereIn('ai_decision', ['replied', 'drafted'])->count();
 
-        $apRepliesWeek = Capsule::table('tblsahdev_autopilot_log')
-            ->whereIn('ai_decision', ['replied', 'drafted'])->where('created_at', '>=', $week)->count();
-        $apRepliesAll  = Capsule::table('tblsahdev_autopilot_log')
-            ->whereIn('ai_decision', ['replied', 'drafted'])->count();
+        // Unique tickets touched in the period
+        $atQ = Capsule::table('tblsahdev_audit_trail')->whereNotNull('ticket_id');
+        if ($since) $atQ->where('created_at', '>=', $since);
+        $logsTicketsPeriod = (clone $atQ)->distinct()->pluck('ticket_id')->toArray();
 
-        // All unique tickets Sahdev touched this week
-        $logsTicketsWeek = Capsule::table('tblsahdev_audit_trail')
-            ->where('created_at', '>=', $week)->whereNotNull('ticket_id')
-            ->distinct()->pluck('ticket_id')->toArray();
-        $apTicketsWeek = Capsule::table('tblsahdev_autopilot_log')
-            ->where('created_at', '>=', $week)->distinct()->pluck('ticket_id')->toArray();
-        $ticketsWeek = count(array_unique(array_merge($logsTicketsWeek, $apTicketsWeek)));
+        $apTQ = Capsule::table('tblsahdev_autopilot_log');
+        if ($since) $apTQ->where('created_at', '>=', $since);
+        $apTicketsPeriod = (clone $apTQ)->distinct()->pluck('ticket_id')->toArray();
+        $ticketsPeriod = count(array_unique(array_merge($logsTicketsPeriod, $apTicketsPeriod)));
 
-        // Autopilot: all processing runs
-        $apProcessedWeek = Capsule::table('tblsahdev_autopilot_log')->where('created_at', '>=', $week)->count();
-        $apProcessedAll  = Capsule::table('tblsahdev_autopilot_log')->count();
+        // Autopilot all processing runs for the period
+        $apProcQ = Capsule::table('tblsahdev_autopilot_log');
+        if ($since) $apProcQ->where('created_at', '>=', $since);
+        $apProcessedPeriod = (clone $apProcQ)->count();
 
-        // Build provider rows + totals
+
+        // Build provider rows + period totals
         $totalTokensAll  = 0;
-        $totalTokensWeek = (int) (($auditWeek->tokens ?? 0) + ($apWeek->tokens ?? 0));
         $totalCallsAll   = 0;
         $totalCostAll    = 0.0;
         $providerRows    = [];
@@ -3200,29 +3214,21 @@ class AdminController
                 'cost'   => $cost,
             ];
         }
-        $totalTokensAll += (int) ($apAll->tokens ?? 0);
-        $totalCallsAll  += (int) ($apAll->calls ?? 0);
+        $totalTokensAll += (int) ($apPeriod->tokens ?? 0);
+        $totalCallsAll  += (int) ($apPeriod->calls ?? 0);
 
-        // Weekly cost via direct audit_trail query
-        $auditWeekByProvider = Capsule::table('tblsahdev_audit_trail')
-            ->whereNotNull('tokens_used')->where('tokens_used', '>', 0)
-            ->where('created_at', '>=', $week)
-            ->selectRaw('provider_used, SUM(tokens_used) as tokens')->groupBy('provider_used')->get();
-        $totalCostWeek = 0.0;
-        foreach ($auditWeekByProvider as $wr) {
-            $type = $resolveType($wr->provider_used);
-            $rate = $providerCostMap[$type] ?? 0.0;
-            $totalCostWeek += round((int)$wr->tokens / 1_000_000 * $rate, 6);
+        // Period cost via direct per-provider query
+        $totalCostPeriod = $totalCostAll; // audit rows already filtered to period
+        // Add autopilot tokens cost (estimate via blended rate)
+        if ($totalTokensAll > 0) {
+            $apBlendedRate = $totalTokensAll > 0 ? ($totalCostAll / max(1, $totalTokensAll - (int)($apPeriod->tokens ?? 0))) : 0;
+            $totalCostPeriod += round((int)($apPeriod->tokens ?? 0) / 1_000_000 * $apBlendedRate, 6);
         }
-        // Add autopilot week cost estimate (use ratio)
-        if ($totalTokensAll > 0 && $totalCostAll > 0) {
-            $apTokW = (int) ($apWeek->tokens ?? 0);
-            $apCostW = round($apTokW / max(1, $totalTokensAll) * $totalCostAll, 6);
-            $totalCostWeek = round($totalCostWeek + $apCostW, 6);
-        }
+        $totalCostAll   = $totalCostPeriod; // rename to single variable for display
+        $totalTokensWeek = (int)(($auditPeriod->tokens ?? 0) + ($apPeriod->tokens ?? 0)); // period tokens
 
-        $timeSavedWeekH = round(($apRepliesWeek * $avgHandleMin) / 60, 1);
-        $timeSavedAllH  = round(($apRepliesAll  * $avgHandleMin) / 60, 1);
+        $timeSavedAllH = round(($apRepliesPeriod * $avgHandleMin) / 60, 1);
+        // "Replied" sub-stat: keep all-time replied for context on the Autopilot card
 
         // 30-day daily chart — use audit_trail as source of truth
         $dailyData = [];
@@ -3290,49 +3296,63 @@ class AdminController
         <h2 style="margin-bottom:4px">📊 AI Performance &amp; ROI Analytics</h2>
         <p class="text-muted" style="margin-bottom:22px;font-size:.9rem">Unified view of AI performance, token spend, cost, and time saved.</p>
 
+        <!-- ── Period Selector ── -->
+        <?php
+        $baseUrl = htmlspecialchars($this->moduleVars['modulelink']) . '&action=analytics';
+        ?>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:20px">
+            <span style="font-size:.8rem;color:#64748b;font-weight:600;margin-right:4px">Period:</span>
+            <?php foreach ($validPeriods as $pk => $pl): ?>
+            <a href="<?= $baseUrl ?>&period=<?= $pk ?>"
+               style="padding:5px 16px;border-radius:99px;font-size:.8rem;font-weight:600;text-decoration:none;border:1.5px solid <?= $selectedPeriod===$pk ? '#3b82f6' : '#e2e8f0' ?>;background:<?= $selectedPeriod===$pk ? '#3b82f6' : '#f8fafc' ?>;color:<?= $selectedPeriod===$pk ? '#fff' : '#475569' ?>;transition:all .15s">
+                <?= $pl ?>
+            </a>
+            <?php endforeach; ?>
+        </div>
+
         <!-- ── KPI Stat Grid ── -->
         <div class="sad-kpi-grid">
             <div class="sad-kpi kpi-blue">
                 <i class="fas fa-bolt kpi-icon"></i>
                 <div class="kpi-lbl">Total AI Actions</div>
                 <div class="kpi-val"><?= number_format($totalActions) ?></div>
-                <div class="kpi-sub">All time</div>
+                <div class="kpi-sub">All time (audit trail)</div>
             </div>
             <div class="sad-kpi kpi-purple">
                 <i class="fas fa-coins kpi-icon"></i>
                 <div class="kpi-lbl">Tokens Used</div>
                 <div class="kpi-val"><?= number_format($totalTokensAll) ?></div>
-                <div class="kpi-sub"><?= number_format($totalTokensWeek) ?> this week</div>
+                <div class="kpi-sub"><?= $periodLabel ?></div>
             </div>
             <div class="sad-kpi kpi-red">
                 <i class="fas fa-dollar-sign kpi-icon"></i>
                 <div class="kpi-lbl">Estimated Cost</div>
                 <div class="kpi-val">$<?= number_format($totalCostAll, 4) ?></div>
-                <div class="kpi-sub">$<?= number_format($totalCostWeek, 4) ?> this week</div>
+                <div class="kpi-sub"><?= $periodLabel ?></div>
             </div>
             <div class="sad-kpi kpi-teal">
                 <i class="fas fa-tachometer-alt kpi-icon"></i>
                 <div class="kpi-lbl">Avg Generation</div>
                 <div class="kpi-val"><?= number_format($avgExecMs) ?> <small style="font-size:.9rem">ms</small></div>
-                <div class="kpi-sub">Per AI call</div>
+                <div class="kpi-sub">Per AI call · All time</div>
             </div>
             <div class="sad-kpi kpi-indigo">
                 <i class="fas fa-ticket-alt kpi-icon"></i>
                 <div class="kpi-lbl">Tickets Handled</div>
-                <div class="kpi-val"><?= number_format($ticketsWeek) ?></div>
-                <div class="kpi-sub">This week</div>
+                <div class="kpi-val"><?= number_format($ticketsPeriod) ?></div>
+                <div class="kpi-sub"><?= $periodLabel ?></div>
             </div>
             <div class="sad-kpi kpi-amber">
                 <i class="fas fa-robot kpi-icon"></i>
                 <div class="kpi-lbl">Autopilot Processed</div>
-                <div class="kpi-val"><?= number_format($apProcessedAll) ?></div>
-                <div class="kpi-sub"><?= number_format($apProcessedWeek) ?> this week &middot; <?= number_format($apRepliesAll) ?> replied/drafted</div>
+                <div class="kpi-val"><?= number_format($apProcessedPeriod) ?></div>
+                <div class="kpi-sub"><?= $periodLabel ?> &middot; <?= number_format($apRepliesPeriod) ?> replied/drafted</div>
             </div>
             <div class="sad-kpi kpi-green">
                 <i class="fas fa-clock kpi-icon"></i>
                 <div class="kpi-lbl">Time Saved</div>
                 <div class="kpi-val"><?= $timeSavedAllH ?>h</div>
-                <div class="kpi-sub"><?= $timeSavedWeekH ?>h this week · <?= $avgHandleMin ?>min/ticket avg</div>
+                <div class="kpi-sub"><?= $periodLabel ?> · <?= $avgHandleMin ?>min/ticket avg</div>
             </div>
             <div class="sad-kpi kpi-slate">
                 <i class="fas fa-hourglass-half kpi-icon"></i>
@@ -3357,10 +3377,11 @@ class AdminController
                 $y = $padT + $iH - ($maxDayTokens > 0 ? ($pts[$i]['tokens'] / $maxDayTokens) * $iH : 0);
                 $coords[] = [$x, $y];
             }
-            $polyline = implode(' ', array_map(fn($c) => round($c[0],1).','.round($c[1],1), $coords));
-            $area = "M {$coords[0][0]},{$coords[0][1]}";
-            foreach (array_slice($coords, 1) as $c) $area .= " L {$c[0]},{$c[1]}";
-            $area .= " L {$coords[$n-1][0]},{$padT+$iH} L {$coords[0][0]},{$padT+$iH} Z";
+            $polyline = implode(' ', array_map(function($c) { return round($c[0],1).','.round($c[1],1); }, $coords));
+            $svgBottom = $padT + $iH;
+            $area = 'M ' . $coords[0][0] . ',' . $coords[0][1];
+            foreach (array_slice($coords, 1) as $c) $area .= ' L ' . $c[0] . ',' . $c[1];
+            $area .= ' L ' . $coords[$n-1][0] . ',' . $svgBottom . ' L ' . $coords[0][0] . ',' . $svgBottom . ' Z';
             ?>
             <div style="position:relative;width:100%;overflow:hidden">
             <svg viewBox="0 0 <?= $svgW ?> <?= $svgH ?>" preserveAspectRatio="none"
