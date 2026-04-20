@@ -141,6 +141,18 @@ class ToolsExecutionService
         ]);
 
         $exec = $service->executeHttp($url, $method, $apiKey, $query, $body, $timeout);
+        
+        // Log detailed execution info for debugging
+        try {
+            Capsule::table('tblsahdev_module_logs')->insert([
+                'level' => 'debug',
+                'source' => 'ToolsExecutionService::runManualTool',
+                'message' => sprintf('Manual Run: [%s %s] URL=%s Status=%s Code=%d', $method, $path, $url, $exec['status'], $exec['http_status']),
+                'ticket_id' => $ticketId,
+                'created_at' => Carbon::now(),
+            ]);
+        } catch (\Throwable $e) {}
+
         $normalized = $service->normalizeOutput($method, $finalPath, (string) ($exec['body'] ?? ''), (array) $settings);
         Capsule::table('tblsahdev_tool_runs')->insert([
             'suggestion_id' => $suggestionId,
