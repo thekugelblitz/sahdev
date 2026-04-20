@@ -12,6 +12,13 @@ require_once __DIR__ . '/AIProviderInterface.php';
 require_once __DIR__ . '/GoogleAIProvider.php';
 require_once __DIR__ . '/LMStudioAIProvider.php';
 require_once __DIR__ . '/ReplicateAIProvider.php';
+require_once __DIR__ . '/TicketDataExtractor.php';
+
+// Safe check for ToolsExecution module
+$toolsSvcPath = dirname(__DIR__) . '/modules/ToolsExecution/ToolsExecutionService.php';
+if (file_exists($toolsSvcPath)) {
+    require_once $toolsSvcPath;
+}
 
 /**
  * AutopilotProcessor
@@ -404,8 +411,19 @@ class AutopilotProcessor
 
     private function generateReply(int $ticketId, $ticket): string
     {
-        $context = $this->buildReplyContext($ticketId, $ticket);
-        $tone    = $this->settings['autopilot_tone'] ?? 'Friendly';
+        // Use full rich data extractor (includes hosting IPs, NS, etc.)
+        $autopilotAdminId = (int) ($this->settings['autopilot_admin_id'] ?? 0);
+        $extractor = new TicketDataExtractor($ticketId, $autopilotAdminId);
+        $context = $extractor->getContext(true, false);
+
+        // Inject diagnostic tools output if available
+        $toolsContext = '';
+        if (class_exists('\Sahdev\Modules\ToolsExecution\ToolsExecutionService')) {
+            $toolsContext = \Sahdev\Modules\ToolsExecution\ToolsExecutionService::buildPromptContextBlock($ticketId);
+        }
+        $context['tools_output'] = $toolsContext;
+
+        $tone = $this->settings['autopilot_tone'] ?? 'Friendly';
 
         // Load system prompt from Prompt Library (falls back to hardcoded default)
         $systemPrompt = $this->loadSystemPrompt();
@@ -552,8 +570,18 @@ class AutopilotProcessor
         $prompt .= "Include a warm greeting addressing the client by first name if available.\n";
         $prompt .= "Do NOT include a sign-off or signature — that will be added automatically.\n";
         $prompt .= "Output ONLY the reply text.\n\n";
+
+        if (!empty($context['tools_output'])) {
+            $prompt .= "=== DIAGNOSTIC EVIDENCE ===\n{$context['tools_output']}\n\n";
+        }
+
         $prompt .= "=== TICKET INFO ===\n";
         $prompt .= "Client: {$clientName}\nDepartment: {$dept}\nSubject: {$subject}\n\n";
+
+        if (!empty($context['services_summary'])) {
+            $prompt .= "=== ACCOUNT CONTEXT (READ-ONLY) ===\n{$context['services_summary']}\n\n";
+        }
+
         $prompt .= "=== CONVERSATION ===\n{$messagesBlock}";
 
         return $prompt;
@@ -635,14 +663,9 @@ class AutopilotProcessor
             'ticketid' => $ticketId,
             'message'  => $replyText,
             'adminid'  => $adminId,
-            'name'     => $adminName,
-            'email'    => $admin->email,
+            // Removing clientid/userid guarantees the reply is attributed
+            // to the admin in WHMCS, not as a 'client reply' by the admin.
         ];
-
-        // Pass clientid if ticket is associated with a registered client
-        if ($ticketClientId) {
-            $apiParams['clientid'] = (int) $ticketClientId;
-        }
 
         $result = localAPI('AddTicketReply', $apiParams);
 

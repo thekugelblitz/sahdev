@@ -142,6 +142,7 @@ class TicketDataExtractor
                     'context_enrichment_enabled' => true,
                     'context_enrichment_invoices' => !empty($settings->context_enrichment_invoices),
                     'context_enrichment_domains' => !empty($settings->context_enrichment_domains),
+                    'context_enrichment_hosting' => !empty($settings->context_enrichment_hosting),
                     'context_enrichment_addons' => !empty($settings->context_enrichment_addons),
                     'context_enrichment_custom_fields' => !empty($settings->context_enrichment_custom_fields),
                     'context_enrichment_client_notes' => !empty($settings->context_enrichment_client_notes),

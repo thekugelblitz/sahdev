@@ -811,8 +811,17 @@ class AdminController
                 $table->boolean('context_enrichment_domains')->default(1);
                 $table->boolean('context_enrichment_addons')->default(1);
                 $table->boolean('context_enrichment_custom_fields')->default(1);
+                $table->boolean('context_enrichment_hosting')->default(1);
                 $table->boolean('context_enrichment_client_notes')->default(0);
                 $table->text('context_enrichment_custom_field_allowlist')->nullable();
+            });
+        }
+
+        try {
+            Capsule::table('tblsahdev_settings')->select('context_enrichment_hosting')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                $table->boolean('context_enrichment_hosting')->default(1);
             });
         }
 
@@ -871,6 +880,7 @@ class AdminController
             $contextEnrichmentMaxChars = max(500, min(20000, (int) ($_POST['context_enrichment_max_chars'] ?? 2500)));
             $contextEnrichmentInvoices = !empty($_POST['context_enrichment_invoices']) ? 1 : 0;
             $contextEnrichmentDomains = !empty($_POST['context_enrichment_domains']) ? 1 : 0;
+            $contextEnrichmentHosting = !empty($_POST['context_enrichment_hosting']) ? 1 : 0;
             $contextEnrichmentAddons = !empty($_POST['context_enrichment_addons']) ? 1 : 0;
             $contextEnrichmentCustomFields = !empty($_POST['context_enrichment_custom_fields']) ? 1 : 0;
             $contextEnrichmentClientNotes = !empty($_POST['context_enrichment_client_notes']) ? 1 : 0;
@@ -925,6 +935,7 @@ class AdminController
                     'context_enrichment_max_chars' => $contextEnrichmentMaxChars,
                     'context_enrichment_invoices' => $contextEnrichmentInvoices,
                     'context_enrichment_domains' => $contextEnrichmentDomains,
+                    'context_enrichment_hosting' => $contextEnrichmentHosting,
                     'context_enrichment_addons' => $contextEnrichmentAddons,
                     'context_enrichment_custom_fields' => $contextEnrichmentCustomFields,
                     'context_enrichment_client_notes' => $contextEnrichmentClientNotes,
@@ -965,6 +976,7 @@ class AdminController
                 'context_enrichment_max_chars' => 2500,
                 'context_enrichment_invoices' => 1,
                 'context_enrichment_domains' => 1,
+                'context_enrichment_hosting' => 1,
                 'context_enrichment_addons' => 1,
                 'context_enrichment_custom_fields' => 1,
                 'context_enrichment_client_notes' => 0,
@@ -1152,6 +1164,7 @@ class AdminController
                         <div class="row" style="display: flex; flex-wrap: wrap; gap: 12px 24px;">
                             <div class="checkbox" style="margin: 0;"><label><input type="checkbox" name="context_enrichment_invoices" value="1" <?php echo !empty($settings->context_enrichment_invoices) ? 'checked' : ''; ?>> Recent invoices</label></div>
                             <div class="checkbox" style="margin: 0;"><label><input type="checkbox" name="context_enrichment_domains" value="1" <?php echo !empty($settings->context_enrichment_domains) ? 'checked' : ''; ?>> Domains</label></div>
+                            <div class="checkbox" style="margin: 0;"><label><input type="checkbox" name="context_enrichment_hosting" value="1" <?php echo !empty($settings->context_enrichment_hosting) ? 'checked' : ''; ?>> Hosting & Server context</label></div>
                             <div class="checkbox" style="margin: 0;"><label><input type="checkbox" name="context_enrichment_addons" value="1" <?php echo !empty($settings->context_enrichment_addons) ? 'checked' : ''; ?>> Hosting addons</label></div>
                             <div class="checkbox" style="margin: 0;"><label><input type="checkbox" name="context_enrichment_custom_fields" value="1" <?php echo !empty($settings->context_enrichment_custom_fields) ? 'checked' : ''; ?>> Custom fields (filtered)</label></div>
                             <div class="checkbox" style="margin: 0;"><label><input type="checkbox" name="context_enrichment_client_notes" value="1" <?php echo !empty($settings->context_enrichment_client_notes) ? 'checked' : ''; ?>> Staff client notes (internal)</label></div>

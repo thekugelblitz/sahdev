@@ -64,6 +64,17 @@ class ClientAccountEnrichment
             }
         }
 
+        if (!empty($options['context_enrichment_hosting'])) {
+            try {
+                $s = self::sectionHosting($clientUserId);
+                if ($s !== '') {
+                    $parts[] = $s;
+                }
+            } catch (\Throwable $e) {
+                self::logSectionFailure('hosting', $e, $ticketIdForScope);
+            }
+        }
+
         if (!empty($options['context_enrichment_custom_fields'])) {
             try {
                 $allowRaw = $options['context_enrichment_custom_field_allowlist'] ?? null;
@@ -182,7 +193,73 @@ class ClientAccountEnrichment
             if (isset($r->expirydate) && $r->expirydate && (string) $r->expirydate !== '0000-00-00') {
                 $ex = ', expires ' . substr((string) $r->expirydate, 0, 10);
             }
-            $lines[] = "- {$dom}: {$st}{$ex}";
+            $ns = [];
+            for ($i = 1; $i <= 5; $i++) {
+                $f = 'ns' . $i;
+                if (!empty($r->$f)) $ns[] = (string) $r->$f;
+            }
+            $nsStr = $ns !== [] ? (' (NS: ' . implode(', ', $ns) . ')') : '';
+            $lines[] = "- {$dom}: {$st}{$ex}{$nsStr}";
+        }
+
+        return implode("\n", $lines);
+    }
+
+    private static function sectionHosting(int $userid): string
+    {
+        if (!self::hasTable('tblhosting') || !self::hasTable('tblproducts')) {
+            return '';
+        }
+
+        $query = Capsule::table('tblhosting as h')
+            ->join('tblproducts as p', 'h.packageid', '=', 'p.id')
+            ->leftJoin('tblservers as s', 'h.server', '=', 's.id')
+            ->where('h.userid', $userid)
+            ->whereIn('h.domainstatus', ['Active', 'Suspended'])
+            ->select(
+                'p.name as product_name',
+                'h.domain',
+                'h.username',
+                'h.dedicatedip',
+                'h.assignedips',
+                'h.domainstatus',
+                's.name as server_name',
+                's.ipaddress as server_ip',
+                's.hostname as server_host',
+                's.nameserver1', 's.nameserver2', 's.nameserver3', 's.nameserver4', 's.nameserver5'
+            )
+            ->orderBy('h.id', 'desc')
+            ->limit(5);
+
+        $rows = $query->get();
+
+        if ($rows->isEmpty()) {
+            return '';
+        }
+
+        $lines = ['Hosting services:'];
+        foreach ($rows as $r) {
+            $name = (string) $r->product_name;
+            $dom = (string) $r->domain;
+            $st = (string) $r->domainstatus;
+            
+            $ip = trim((string) $r->dedicatedip) ?: trim((string) $r->assignedips);
+            if (!$ip) $ip = (string) $r->server_ip;
+            
+            $ns = [];
+            for ($i = 1; $i <= 5; $i++) {
+                $f = 'nameserver' . $i;
+                if (!empty($r->$f)) $ns[] = (string) $r->$f;
+            }
+            
+            $details = [
+                "Status: {$st}",
+                "IP: " . ($ip ?: 'N/A'),
+            ];
+            if (!empty($r->server_name)) $details[] = "Server: {$r->server_name}";
+            if ($ns !== []) $details[] = "NS: " . implode(', ', $ns);
+            
+            $lines[] = "- {$name} ({$dom}): " . implode(' | ', $details);
         }
 
         return implode("\n", $lines);
