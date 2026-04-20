@@ -440,6 +440,10 @@ class AutopilotProcessor
             'quality_scorer_enabled' => 0,
         ]);
 
+        // --- DEEP DEBUG DUMP: See exactly what we are handing to the AI ---
+        ModuleLogger::debug('Autopilot.DataFetch.Context', json_encode($context), $ticketId);
+        ModuleLogger::debug('Autopilot.DataFetch.Instructions', $systemPrompt, $ticketId);
+
         try {
             $rawResponse = $provider->generateResponse(
                 $context + ['__autopilot_raw_reply__' => true],
@@ -648,8 +652,9 @@ class AutopilotProcessor
             'markdown'      => true,
         ];
 
-        // Diagnostic: log the data we are about to send
-        ModuleLogger::info('Autopilot.StaffPost', "Posting as Admin: '{$admin->username}' (Force Name: {$adminName})", $ticketId);
+        // --- STEP 1: DUMP ADMIN PROFILE ---
+        $adminDump = json_encode($admin);
+        ModuleLogger::log('debug', 'Autopilot.Identity.Profile', "Admin Record: {$adminDump}", $ticketId);
 
         $result = localAPI('AddTicketReply', $apiParams, $admin->username);
 
@@ -658,20 +663,17 @@ class AutopilotProcessor
             throw new \Exception("WHMCS localAPI AddTicketReply failed: {$err}");
         }
 
-        $replyId = Capsule::table('tblticketreplies')
+        // --- STEP 2: DUMP GENERATED REPLY ROW ---
+        $replyRow = Capsule::table('tblticketreplies')
             ->where('tid', $ticketId)
             ->where('admin', $admin->username)
             ->orderBy('id', 'desc')
-            ->value('id');
+            ->first();
 
-        if ($replyId) {
-            // BULLETPROOF FIX: Manually force the display name to the full Admin Name
-            // This bypasses WHMCS localAPI defaulting to the lowercase username.
-            Capsule::table('tblticketreplies')
-                ->where('id', $replyId)
-                ->update(['name' => $adminName]);
-            
-            return (int) $replyId;
+        if ($replyRow) {
+            $rowDump = json_encode($replyRow);
+            ModuleLogger::log('debug', 'Autopilot.Identity.RowResult', "WHMCS Created Row: {$rowDump}", $ticketId);
+            return (int) $replyRow->id;
         }
 
         return null;
