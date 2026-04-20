@@ -327,54 +327,68 @@ class AutopilotProcessor
             return 'skipped';
         }
 
-        // 7. Only-first-reply mode: check zero admin replies exist
+        // 7. Only-first-reply mode: check zero admin replies exist (excluding System/Automation)
         $onlyFirst = !empty($this->settings['autopilot_only_first_reply']);
+        
+        // Build list of ignored admin names (System + Autopilot identity itself)
+        $ignoredAdminNames = ['System', 'system', 'Automation', 'Autopilot', 'sahdev', 'Sahdev'];
+        $autopilotAdmin = Capsule::table('tbladmins')->where('id', $autopilotAdminId)->first();
+        if ($autopilotAdmin) {
+            $ignoredAdminNames[] = $autopilotAdmin->username;
+            $displayName = trim($this->settings['autopilot_display_name'] ?? '');
+            if (!$displayName) $displayName = trim(($autopilotAdmin->firstname ?? '') . ' ' . ($autopilotAdmin->lastname ?? ''));
+            if ($displayName) $ignoredAdminNames[] = $displayName;
+        }
+        $ignoredAdminNames = array_unique(array_filter($ignoredAdminNames));
+
         $adminReplyCount = Capsule::table('tblticketreplies')
             ->where('tid', $ticketId)
             ->whereNotNull('admin')
             ->where('admin', '!=', '')
+            ->whereNotIn('admin', $ignoredAdminNames)
             ->count();
-
+ 
         if ($onlyFirst && $adminReplyCount > 0) {
             $this->logAttempt($ticketId, 'skipped', 'has_admin_reply', null, $ticket->lastreply);
             return 'skipped';
         }
-
+ 
         // 8. Per-ticket autopilot reply cap
         $maxReplies = max(1, min(10, (int) ($this->settings['autopilot_max_replies'] ?? 3)));
         $autopilotReplyCount = Capsule::table('tblsahdev_autopilot_log')
             ->where('ticket_id', $ticketId)
             ->where('ai_decision', 'replied')
             ->count();
-
+ 
         if ($autopilotReplyCount >= $maxReplies) {
             $this->logAttempt($ticketId, 'skipped', 'limit_reached', null, $ticket->lastreply);
             $this->tagTicketIfEnabled($ticketId, 'ai-needs-human');
             return 'skipped';
         }
-
+ 
         // 9. Idempotency: has this exact lastreply already been replied to?
         $alreadyReplied = Capsule::table('tblsahdev_autopilot_log')
             ->where('ticket_id', $ticketId)
             ->where('ticket_lastreply_snapshot', $ticket->lastreply)
             ->where('ai_decision', 'replied')
             ->exists();
-
+ 
         if ($alreadyReplied) {
             // Not a skip — just already done, silent pass
             return 'skipped';
         }
-
+ 
         // 10. If there was a previous autopilot reply, check that the LAST reply to
-        //     this ticket is from the client (not from a human admin who jumped in).
+        //     this ticket is from the client (ignoring automated system messages).
         if ($autopilotReplyCount > 0) {
-            $lastReply = Capsule::table('tblticketreplies')
+            $lastNonSystemReply = Capsule::table('tblticketreplies')
                 ->where('tid', $ticketId)
+                ->whereNotIn('admin', $ignoredAdminNames) // Ignore System
                 ->orderBy('id', 'desc')
                 ->first();
-
-            if ($lastReply && !empty($lastReply->admin)) {
-                // Human admin replied since last autopilot — hand off
+ 
+            if ($lastNonSystemReply && !empty($lastNonSystemReply->admin)) {
+                // A real human admin (not System) replied — hand off
                 $this->logAttempt($ticketId, 'skipped', 'human_replied_after_autopilot', null, $ticket->lastreply);
                 return 'skipped';
             }
