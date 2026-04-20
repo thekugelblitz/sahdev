@@ -41,4 +41,9 @@ class ModuleLogger
     {
         self::log('error', $source, $message, $ticketId);
     }
+
+    public static function debug(string $source, string $message, ?int $ticketId = null): void
+    {
+        self::log('debug', $source, $message, $ticketId);
+    }
 }

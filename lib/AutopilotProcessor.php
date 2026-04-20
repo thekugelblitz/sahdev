@@ -648,12 +648,13 @@ class AutopilotProcessor
         $apiParams = [
             'ticketid'      => $ticketId,
             'message'       => $replyText,
-            'adminusername' => $admin->username,
-            'markdown'      => true, // Force markdown processing via API
+            'adminid'       => $admin->id,       // ID for profile join
+            'adminusername' => $admin->username, // Username for identification
+            'markdown'      => true,             // Instruction to process markdown
         ];
 
         // Diagnostic log: check what we think the admin name is
-        ModuleLogger::debug('Autopilot.IdentityInfo', "Using Admin: {$admin->username}, Name: {$adminName}", $ticketId);
+        ModuleLogger::debug('Autopilot.IdentityInfo', "Using Admin: {$admin->username} (ID: {$admin->id}), Name: {$adminName}", $ticketId);
 
         $result = localAPI('AddTicketReply', $apiParams, $admin->username);
 
