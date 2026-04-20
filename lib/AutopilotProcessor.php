@@ -669,7 +669,7 @@ class AutopilotProcessor
             // to the admin in WHMCS, not as a 'client reply' by the admin.
         ];
 
-        $result = localAPI('AddTicketReply', $apiParams);
+        $result = localAPI('AddTicketReply', $apiParams, $admin->username);
 
         if (($result['result'] ?? '') !== 'success') {
             $err = $result['message'] ?? json_encode($result);
