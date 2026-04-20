@@ -430,7 +430,7 @@ class AutopilotProcessor
         $systemPrompt .= "1. If instructing the client to update Nameservers, use ONLY values labeled as 'MANDATORY_TARGET_NS'.\n";
         $systemPrompt .= "2. IGNORE any values labeled 'Current Registrar NS'.\n";
         $systemPrompt .= "3. Use 'Product IP' or 'Server IP' for A-record guidance.\n";
-        $systemPrompt .= "4. FORMATTING: Use '### ' for all headers. ALWAYS include exactly 2 blank lines before and after every header or list to ensure standard WHMCS rendering. Use simple '-' bullets.";
+        $systemPrompt .= "4. FORMATTING: Use '### ' for section headers. Always ensure 2 blank lines above and below any header or list. Avoid double asterisks for bolding headers.";
         
         $settingsForProvider = array_merge((array) $this->settings, [
             'system_prompt'          => $systemPrompt,
@@ -648,8 +648,12 @@ class AutopilotProcessor
         $apiParams = [
             'ticketid'      => $ticketId,
             'message'       => $replyText,
-            'adminusername' => $admin->username, // This is the standard way WHMCS identifies the admin
+            'adminusername' => $admin->username,
+            'markdown'      => true, // Force markdown processing via API
         ];
+
+        // Diagnostic log: check what we think the admin name is
+        ModuleLogger::debug('Autopilot.IdentityInfo', "Using Admin: {$admin->username}, Name: {$adminName}", $ticketId);
 
         $result = localAPI('AddTicketReply', $apiParams, $admin->username);
 
