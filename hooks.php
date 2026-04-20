@@ -346,17 +346,45 @@ function sahdev_inject_ticket_panel($vars)
                         <span id="sahdev-tools-meta" class="text-muted" style="font-size:11px;"></span>
                     </div>
                     <hr style="margin:10px 0;">
-                    <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
-                        <select id="sahdev-manual-tool-op" class="form-control input-sm" style="max-width:320px;">
-                            <option value="">Select Tool Operation...</option>
-                        </select>
-                        <input type="text" id="sahdev-manual-path-params" class="form-control input-sm" style="max-width:260px;" placeholder='Path params JSON e.g. {"domain":"example.com"}'>
-                        <input type="text" id="sahdev-manual-query" class="form-control input-sm" style="max-width:260px;" placeholder='Query JSON e.g. {"type":"A"}'>
-                        <button type="button" id="btn-sahdev-manual-tool-run" class="btn btn-info btn-xs">
-                            <i class="fas fa-play"></i> Run Selected Tool
-                        </button>
+                    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap:10px; align-items:end;">
+                        <div style="grid-column: span 2;">
+                            <label style="font-size:11px; color:#666; margin-bottom:2px; display:block;">Select Diagnostic Tool</label>
+                            <select id="sahdev-manual-tool-op" class="form-control input-sm">
+                                <option value="">Select Tool Operation...</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label style="font-size:11px; color:#666; margin-bottom:2px; display:block;">Domain / Target</label>
+                            <input type="text" id="sahdev-tool-domain" class="form-control input-sm" placeholder="example.com">
+                        </div>
+                        <div>
+                            <label style="font-size:11px; color:#666; margin-bottom:2px; display:block;">IP Address</label>
+                            <input type="text" id="sahdev-tool-ip" class="form-control input-sm" placeholder="1.2.3.4">
+                        </div>
+                        <div>
+                            <label style="font-size:11px; color:#666; margin-bottom:2px; display:block;">Email / Account</label>
+                            <input type="text" id="sahdev-tool-email" class="form-control input-sm" placeholder="user@email.com">
+                        </div>
+                        <div>
+                            <label style="font-size:11px; color:#666; margin-bottom:2px; display:block;">Extra / Type</label>
+                            <input type="text" id="sahdev-tool-extra" class="form-control input-sm" placeholder="A, MX, etc.">
+                        </div>
+                        <div>
+                            <button type="button" id="btn-sahdev-manual-tool-run" class="btn btn-info btn-sm btn-block" style="font-weight:600; padding:5px;">
+                                <i class="fas fa-play"></i> RUN TOOL
+                            </button>
+                        </div>
                     </div>
-                    <div class="text-muted" style="font-size:11px; margin-top:4px;">Smart values auto-fill from ticket subject/services/replies. You can edit JSON before running.</div>
+                    <div class="text-muted" style="font-size:10px; margin-top:6px; display:flex; justify-content:space-between;">
+                        <span><i class="fas fa-magic"></i> Auto-filled from ticket context.</span>
+                        <span><a href="#" id="sahdev-manual-json-toggle" style="color:#aaa; text-decoration:none;">Advanced JSON</a></span>
+                    </div>
+                    <div id="sahdev-manual-json-wrap" style="display:none; margin-top:8px;">
+                        <div style="display:flex; gap:6px;">
+                            <input type="text" id="sahdev-manual-path-params" class="form-control input-sm" placeholder='Path Params JSON'>
+                            <input type="text" id="sahdev-manual-query" class="form-control input-sm" placeholder='Query JSON'>
+                        </div>
+                    </div>
                 </div>
             </div>
         </form>
@@ -956,6 +984,11 @@ HTML;
             $('#sahdev-tools-status').text('Tool output appended to Technical Context.');
         });
 
+        $(document).on('click', '#sahdev-manual-json-toggle', function(e) {
+            e.preventDefault();
+            $('#sahdev-manual-json-wrap').toggle();
+        });
+
         function loadToolOperations() {
             var reqData = {
                 action: 'get_tools_operations',
@@ -978,6 +1011,15 @@ HTML;
                         $sel.append('<option value="' + label.replace(/"/g, '&quot;') + '">' + label + '</option>');
                     }
                     var smart = res.smart || {};
+                    
+                    // Fill the new human-friendly fields
+                    if (smart.default_domain) $('#sahdev-tool-domain').val(smart.default_domain);
+                    if (smart.default_ip) $('#sahdev-tool-ip').val(smart.default_ip);
+                    if (smart.default_url) {
+                        if (!$('#sahdev-tool-domain').val()) $('#sahdev-tool-domain').val(smart.default_url);
+                    }
+
+                    // Also keep the raw JSON fields updated for advanced users
                     var pathParams = {};
                     if (smart.default_domain) pathParams.domain = smart.default_domain;
                     if (smart.default_ip) pathParams.ip = smart.default_ip;
@@ -997,8 +1039,43 @@ HTML;
             var splitAt = op.indexOf(' ');
             var method = splitAt > 0 ? op.substring(0, splitAt) : 'GET';
             var path = splitAt > 0 ? op.substring(splitAt + 1) : op;
-            var pathParams = $('#sahdev-manual-path-params').val() || '{}';
-            var query = $('#sahdev-manual-query').val() || '{}';
+
+            // Gather values from the new human-friendly fields
+            var domainVal = $('#sahdev-tool-domain').val() || '';
+            var ipVal = $('#sahdev-tool-ip').val() || '';
+            var emailVal = $('#sahdev-tool-email').val() || '';
+            var extraVal = $('#sahdev-tool-extra').val() || '';
+
+            var pathParams = {};
+            var queryParams = {};
+
+            // Smart mapping: Match placeholders in the path (e.g. {domain})
+            var placeholders = path.match(/\{[a-zA-Z0-9_]+\}/g) || [];
+            placeholders.forEach(function(ph) {
+                var key = ph.replace('{', '').replace('}', '');
+                if (key === 'domain' || key === 'target') pathParams[key] = domainVal;
+                else if (key === 'ip') pathParams[key] = ipVal;
+                else if (key === 'email' || key === 'username') pathParams[key] = emailVal;
+                else if (key === 'type' || key === 'record_type') pathParams[key] = extraVal;
+            });
+
+            // Default query params for common tools if not in path
+            if (domainVal) queryParams.domain = domainVal;
+            if (ipVal) queryParams.ip = ipVal;
+            if (extraVal) queryParams.type = extraVal;
+
+            // Merge Advanced JSON if visible/filled
+            if ($('#sahdev-manual-json-wrap').is(':visible')) {
+                try {
+                    var pp = JSON.parse($('#sahdev-manual-path-params').val() || '{}');
+                    var qq = JSON.parse($('#sahdev-manual-query').val() || '{}');
+                    Object.assign(pathParams, pp);
+                    Object.assign(queryParams, qq);
+                } catch(e) {
+                    console.error("Sahdev: Manual Tool JSON parse error", e);
+                }
+            }
+
             $('#sahdev-tools-status').text('Running manual tool execution...');
             $.ajax({
                 url: sahdevAjaxUrl,
@@ -1009,8 +1086,8 @@ HTML;
                     ticket_id: $('#sahdev_ticket_id').val(),
                     method: method,
                     path: path,
-                    path_params: pathParams,
-                    query: query,
+                    path_params: JSON.stringify(pathParams),
+                    query: JSON.stringify(queryParams),
                     body: '{}',
                     token: $('input[name="token"]').val()
                 },
