@@ -305,7 +305,7 @@ function sahdev_inject_ticket_panel($vars)
                     <input type="checkbox" id="sahdev_use_summary" value="1" checked style="vertical-align: middle; margin: 0 4px 0 0;"> Feed Summary (if available)
                 </label>
                 <label style="font-weight: 600; font-size: 13px; margin: 0; cursor: pointer; color: #e83e8c;" title="If checked, private ticket notes will be included in the AI context.">
-                    <input type="checkbox" id="sahdev_include_admin_notes" value="1" style="vertical-align: middle; margin: 0 4px 0 0;"> Include Ticket Notes
+                    <input type="checkbox" id="sahdev_include_admin_notes" value="1" checked style="vertical-align: middle; margin: 0 4px 0 0;"> Include Ticket Notes
                 </label>
                 <label style="font-weight: 600; font-size: 13px; margin: 0; cursor: pointer; color: #0d6efd;" title="If checked, latest tool execution evidence will be added to AI prompt context for this generation.">
                     <input type="checkbox" id="sahdev_include_tools_context" value="1" checked style="vertical-align: middle; margin: 0 4px 0 0;"> Include Tool Evidence
@@ -689,7 +689,8 @@ HTML;
     function insertSahdevToTinyMce() {
         var replyHtml = $('#sahdev-out-reply').html();
         if (typeof tinymce !== "undefined" && tinymce.activeEditor) {
-            tinymce.activeEditor.execCommand('mceInsertContent', false, replyHtml);
+            var currentContent = tinymce.activeEditor.getContent();
+            tinymce.activeEditor.setContent(replyHtml + '<br><br>' + currentContent);
             
             $('html, body').animate({
                 scrollTop: $("#replyticket").offset().top - 50
@@ -698,17 +699,9 @@ HTML;
             var el = $('#replymessage').get(0);
             var plain = replyHtml.replace(/<br\s*\/?>/gi, "\n").replace(/(<([^>]+)>)/gi, "");
             
-            if (el.selectionStart || el.selectionStart == '0') {
-                var startPos = el.selectionStart;
-                var endPos = el.selectionEnd;
-                el.value = el.value.substring(0, startPos) + plain + el.value.substring(endPos, el.value.length);
-                el.selectionStart = startPos + plain.length;
-                el.selectionEnd = startPos + plain.length;
-                el.focus();
-            } else {
-                el.value += "\n" + plain;
-                el.focus();
-            }
+            var currentVal = el.value;
+            el.value = plain + "\n\n" + currentVal;
+            el.focus();
         }
     }
 
@@ -1438,13 +1431,7 @@ HTML;
             $('#sahdev-out-risk').text(data.RISK_LEVEL || 'N/A');
             $('#sahdev-out-plan').text(data.INTERNAL_ACTION_PLAN || 'N/A');
             
-            var reply = data.CLIENT_REPLY || '';
-            if (reply && typeof currentAdminSignature !== 'undefined' && currentAdminSignature) {
-                if (reply.indexOf(currentAdminSignature) === -1) {
-                    reply += "\n\n" + currentAdminSignature;
-                }
-            }
-            var formattedReply = reply ? reply.replace(/\n/g, '<br>') : 'N/A';
+            var formattedReply = data.CLIENT_REPLY ? data.CLIENT_REPLY.replace(/\n/g, '<br>') : 'N/A';
             $('#sahdev-out-reply').html(formattedReply);
 
             // Show intent badge
@@ -1746,11 +1733,6 @@ HTML;
                 }
             }
             text = text.trim();
-            if (text && typeof currentAdminSignature !== 'undefined' && currentAdminSignature) {
-                if (text.indexOf(currentAdminSignature) === -1) {
-                    text += "\n\n" + currentAdminSignature;
-                }
-            }
 
             // --- Step 2: Convert Markdown → HTML for TinyMCE ---
             function markdownToHtml(md) {
