@@ -1045,31 +1045,43 @@ HTML;
             var ipVal = $('#sahdev-tool-ip').val() || '';
             var emailVal = $('#sahdev-tool-email').val() || '';
             var extraVal = $('#sahdev-tool-extra').val() || '';
-
             var pathParams = {};
             var queryParams = {};
 
-            // Smart mapping: Match placeholders in the path (e.g. {domain}, {host}, {target})
-            var placeholders = path.match(/\{[a-zA-Z0-9_]+\}/g) || [];
+            // Extract placeholders from the path to initialize pathParams keys
+            var placeholders = path.match(/\{([^}]+)\}/g) || [];
             placeholders.forEach(function(ph) {
                 var key = ph.replace('{', '').replace('}', '');
-                var lowerKey = key.toLowerCase();
-                
-                if (['domain', 'target', 'host', 'hostname', 'url'].indexOf(lowerKey) !== -1) {
-                    pathParams[key] = domainVal;
-                } else if (lowerKey === 'ip' || lowerKey === 'ipaddress') {
-                    pathParams[key] = ipVal;
-                } else if (['email', 'username', 'account', 'user'].indexOf(lowerKey) !== -1) {
-                    pathParams[key] = emailVal;
-                } else if (['type', 'record_type', 'record', 'extra'].indexOf(lowerKey) !== -1) {
-                    pathParams[key] = extraVal;
-                }
+                pathParams[key] = ''; // Initialize
             });
 
-            // Default query params for common tools if not already in path
+            // Unified parameter mapping logic
+            var mapInputToParams = function(targetObj) {
+                var keys = Object.keys(targetObj);
+                keys.forEach(function(key) {
+                    var lowerKey = key.toLowerCase();
+                    if (['domain', 'target', 'host', 'hostname', 'url'].indexOf(lowerKey) !== -1) {
+                        if (domainVal) targetObj[key] = domainVal;
+                    } else if (['ip', 'address'].indexOf(lowerKey) !== -1) {
+                        if (ipVal) targetObj[key] = ipVal;
+                    } else if (['email', 'account', 'user', 'username'].indexOf(lowerKey) !== -1) {
+                        if (emailVal) targetObj[key] = emailVal;
+                    } else if (['type', 'record_type', 'record', 'extra', 'q', 'query'].indexOf(lowerKey) !== -1) {
+                        if (extraVal) targetObj[key] = extraVal;
+                    }
+                });
+            };
+
+            // Mapping for path params based on placeholders
+            mapInputToParams(pathParams);
+
+            // Default query params for common tools if not already satisfied by path
             if (domainVal && !pathParams.domain && !pathParams.target && !pathParams.host) queryParams.domain = domainVal;
             if (ipVal && !pathParams.ip) queryParams.ip = ipVal;
             if (extraVal && !pathParams.type) queryParams.type = extraVal;
+            
+            // Mapping for query params
+            mapInputToParams(queryParams);
 
             // Merge Advanced JSON if visible/filled
             if ($('#sahdev-manual-json-wrap').is(':visible')) {

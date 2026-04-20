@@ -1211,7 +1211,9 @@ class ToolsExecutionService
 
         if ($method === 'POST') {
             curl_setopt($ch, CURLOPT_POST, true);
-            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($body));
+            // Ensure empty arrays are encoded as JSON objects {} to satisfy API validation
+            $jsonBody = empty($body) ? '{}' : json_encode($body);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, $jsonBody);
         }
 
         $resp = curl_exec($ch);
@@ -1332,17 +1334,22 @@ class ToolsExecutionService
 
     private function applyPathParams(string $path, array $pathParams): string
     {
-        foreach ($pathParams as $k => $v) {
-            $val = rawurlencode((string) $v);
-            // Replace literal placeholder {key}
-            $path = str_replace('{' . $k . '}', $val, $path);
-            // Also handle encoded brackets %7Bkey%7D in case the input path was already escaped
-            $path = str_replace('%7B' . $k . '%7D', $val, $path);
-            // Case-insensitive lookup for the key if exact match wasn't found in str_replace
-            $path = str_ireplace('{' . $k . '}', $val, $path);
-            $path = str_ireplace('%7B' . $k . '%7D', $val, $path);
-        }
-        return $path;
+        // Use regex to find all placeholders in the path (literal or encoded)
+        // This is more reliable than looping over the parameters.
+        return preg_replace_callback('/(?:\{|%7B)([^}%]+)(?:\}|%7D)/i', function ($m) use ($pathParams) {
+            $key = $m[1];
+            $lowerKey = strtolower($key);
+            
+            // Search case-insensitively in $pathParams
+            foreach ($pathParams as $pk => $pv) {
+                if (strtolower((string)$pk) === $lowerKey) {
+                    return rawurlencode((string)$pv);
+                }
+            }
+            
+            // If not found in params, return the original placeholder
+            return $m[0];
+        }, $path);
     }
 
     private function inferTargetFromContext(array $context): string
