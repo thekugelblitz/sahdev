@@ -642,14 +642,14 @@ class AutopilotProcessor
             ->value('userid');
 
         $apiParams = [
-            'ticketid' => $ticketId,
-            'clientid' => $ticketClientId,
-            'message'  => $replyText,
-            'markdown' => true,
+            'ticketid'      => $ticketId,
+            'message'       => $replyText,
+            'adminusername' => $admin->username,
+            'markdown'      => true,
         ];
 
-        // Final identity check - let's see what the DB actually says
-        ModuleLogger::debug('Autopilot.AdminDetails', "Fetched Admin: {$admin->username}, First: '{$admin->firstname}', Last: '{$admin->lastname}'", $ticketId);
+        // HIGH VISIBILITY LOG: Check exactly what Sahdev is reading from your tbladmins table
+        ModuleLogger::log('info', 'Autopilot.IdentityDebug', "Attempting reply as Admin ID: {$admin->id} | Username: '{$admin->username}' | First: '{$admin->firstname}' | Last: '{$admin->lastname}'", $ticketId);
 
         $result = localAPI('AddTicketReply', $apiParams, $admin->username);
 
