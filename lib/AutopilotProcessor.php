@@ -646,12 +646,9 @@ class AutopilotProcessor
             ->value('userid');
 
         $apiParams = [
-            'ticketid' => $ticketId,
-            'message'  => $replyText,
-            'adminid'  => $admin->id, // Using ID for better profile linking
-            'name'     => $adminName,
-            // WHMCS Admin/Operator attribution prioritizes adminusername in auth (3rd param)
-            // and adminid in the payload for profile details.
+            'ticketid'      => $ticketId,
+            'message'       => $replyText,
+            'adminusername' => $admin->username, // This is the standard way WHMCS identifies the admin
         ];
 
         $result = localAPI('AddTicketReply', $apiParams, $admin->username);
