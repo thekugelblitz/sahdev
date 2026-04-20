@@ -4493,7 +4493,7 @@ class AdminController
             data.append('force_ticket_id', tid);
             data.append('bypass_safety', bypass);
 
-            fetch('../modules/addons/sahdev/ajax.php', {
+            fetch('<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&sahdev_act=ajax_handler', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: data.toString()
