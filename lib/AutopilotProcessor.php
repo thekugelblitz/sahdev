@@ -669,7 +669,8 @@ class AutopilotProcessor
             'ticketid'      => $ticketId,
             'message'       => $replyText,
             'adminusername' => $admin->username,
-            // Removing name/email/clientid ensures WHMCS recognizes this as a staff reply
+            'name'          => $adminName,
+            // Removing email/clientid ensures WHMCS recognizes this as a staff reply
         ];
 
         $result = localAPI('AddTicketReply', $apiParams, $admin->username);
