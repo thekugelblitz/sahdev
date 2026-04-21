@@ -2686,58 +2686,28 @@ add_hook('AdminAreaFooterOutput', 1, function ($vars) {
 <script>
 (function() {
     function sahdev_init_note_insert_buttons() {
-        // Search for any button that looks like a note action (Edit or Delete)
-        // We include a broad range of selectors to cover standard and custom WHMCS themes
-        jQuery('a, button').each(function() {
-            var \$btn = jQuery(this);
+        // Strategy A: Target any element containing Sahdev draft text directly
+        jQuery(':contains("[Sahdev Autopilot Draft]")').each(function() {
+            var \$msg = jQuery(this);
             
-            // Skip if already processed or in our own panel
-            if (\$btn.hasClass('sdv-processed') || \$btn.closest('#sahdev-ai-panel').length || \$btn.prev('.btn-sahdev-insert-note').length) {
-                return;
-            }
-
-            var btnText = \$btn.text().toLowerCase();
-            var hasActionIcon = \$btn.find('.fa-trash, .fa-trash-alt, .fa-edit, .fa-pencil-alt, .fa-times, .glyphicon-trash, .glyphicon-pencil').length > 0;
+            // Ensure we are targeting the actual content block, not a parent
+            if (\$msg.children(':contains("[Sahdev Autopilot Draft]")').length > 0) return;
+            if (\$msg.hasClass('sdv-draft-processed')) return;
             
-            // Target Edit or Delete buttons - very broad to ensure coverage
-            var isTargetAction = (btnText.indexOf('edit') !== -1 || btnText.indexOf('delete') !== -1 || hasActionIcon);
-            if (!isTargetAction) return;
-
-            // Try to find the nearest note container
-            var \$container = \$btn.closest('.note, .ticketnote, .ticket-note, .note-container, .well, tr, td, .panel, .alert');
-            if (!\$container.length) return;
-
-            // Robust check: Is this actually a private note or in a notes section?
-            var isNoteContext = \$container.find(':contains("Private Note")').length > 0 || 
-                                \$container.closest('.ticket-notes, #ticketnotes, #notes, .notes-container, .ticket-sidebar').length > 0 ||
-                                \$container.hasClass('note') || \$container.hasClass('ticketnote') ||
-                                \$container.find('.label-info, .label-danger').length > 0;
-
-            if (!isNoteContext) return;
-
-            // Mark as processed
-            \$btn.addClass('sdv-processed');
+            // Only target blocks that look like notes (skip the AI panel itself)
+            if (\$msg.closest('#sahdev-ai-panel').length) return;
             
-            var \$insertBtn = jQuery('<button type="button" class="btn btn-xs btn-sahdev-insert-note"><i class="fas fa-reply"></i> Use as Reply</button>');
-            \$btn.before(\$insertBtn);
+            \$msg.addClass('sdv-draft-processed');
+            // Add a clear visual indicator in console
+            console.log("[Sahdev] Found Draft Note Content. Injecting button.");
+
+            var \$insertBtn = jQuery('<button type="button" class="btn btn-xs btn-sahdev-insert-note" style="display:block; margin-bottom:10px; width:100%; max-width:200px;"><i class="fas fa-reply"></i> Use as Reply</button>');
+            \$msg.prepend(\$insertBtn);
 
             \$insertBtn.on('click', function(e) {
                 e.preventDefault();
-                var noteText = '';
+                var noteText = \$msg.text().trim();
                 
-                // Extract content using common WHMCS body classes
-                var \$content = \$container.find('.text, .message, .note-content, blockquote, .note-body, .note-msg').first();
-                if (\$content.length) {
-                    noteText = \$content.text().trim();
-                } else {
-                    // Fallback to full container text minus buttons/metadata
-                    var \$clone = \$container.clone();
-                    \$clone.find('.btn, .label, .date, .admin, .actions, .note-actions, .sdv-processed, script, style').remove();
-                    noteText = \$clone.text().trim();
-                }
-
-                if (!noteText) return;
-
                 // Strip Sahdev Autopilot Draft formatting
                 var draftPrefix = "[Sahdev Autopilot Draft]";
                 if (noteText.indexOf(draftPrefix) !== -1) {
@@ -2746,23 +2716,58 @@ add_hook('AdminAreaFooterOutput', 1, function ($vars) {
                     noteText = noteText.replace(/^---+\\s*/, '').trim();
                 }
 
-                // Inject into editor
-                if (typeof tinymce !== "undefined" && tinymce.activeEditor) {
-                    var html = noteText.replace(/\\n/g, '<br>');
-                    tinymce.activeEditor.execCommand('mceInsertContent', false, html);
-                } else if (jQuery('#replymessage').length) {
-                    var el = jQuery('#replymessage').get(0);
-                    var currentVal = el.value;
-                    el.value = noteText + "\\n\\n" + currentVal;
-                    el.focus();
-                }
-
-                // Scroll to reply section
-                if (jQuery('#replyticket').length) {
-                    jQuery('html, body').animate({ scrollTop: jQuery('#replyticket').offset().top - 120 }, 400);
-                }
+                injectToEditor(noteText);
             });
         });
+
+        // Strategy B: Fallback to finding action buttons (Edit/Delete) in notes
+        jQuery('a, button').each(function() {
+            var \$btn = jQuery(this);
+            if (\$btn.hasClass('sdv-processed') || \$btn.hasClass('btn-sahdev-insert-note') || \$btn.closest('#sahdev-ai-panel').length) return;
+
+            var btnText = \$btn.text().toLowerCase();
+            var hasIcon = \$btn.find('.fa-trash, .fa-edit, .fa-pencil, .fa-times').length > 0;
+            
+            if (btnText.indexOf('edit') === -1 && btnText.indexOf('delete') === -1 && !hasIcon) return;
+
+            var \$container = \$btn.closest('.note, .ticketnote, .ticket-note, .note-container, .well, tr, td, .panel, .alert');
+            if (!\$container.length) return;
+
+            // Mark as processed
+            \$btn.addClass('sdv-processed');
+            
+            var \$insertBtn = jQuery('<button type="button" class="btn btn-xs btn-sahdev-insert-note" style="margin-right: 5px;"><i class="fas fa-reply"></i> Use as Reply</button>');
+            \$btn.before(\$insertBtn);
+
+            \$insertBtn.on('click', function(e) {
+                e.preventDefault();
+                var \$content = \$container.find('.text, .message, .note-content, blockquote, .note-body, .note-msg').first();
+                var noteText = \$content.length ? \$content.text().trim() : \$container.clone().find('.btn, .label, .actions, .sdv-processed').remove().end().text().trim();
+                
+                if (noteText.indexOf("[Sahdev Autopilot Draft]") !== -1) {
+                    noteText = noteText.substring(noteText.indexOf("[Sahdev Autopilot Draft]") + 24);
+                    noteText = noteText.replace(/Review before sending - Draft Mode is ON/i, '').trim();
+                    noteText = noteText.replace(/^---+\\s*/, '').trim();
+                }
+                
+                injectToEditor(noteText);
+            });
+        });
+    }
+
+    function injectToEditor(text) {
+        if (!text) return;
+        if (typeof tinymce !== "undefined" && tinymce.activeEditor) {
+            var html = text.replace(/\\n/g, '<br>');
+            tinymce.activeEditor.execCommand('mceInsertContent', false, html);
+        } else if (jQuery('#replymessage').length) {
+            var el = jQuery('#replymessage').get(0);
+            el.value = text + "\\n\\n" + el.value;
+            el.focus();
+        }
+        if (jQuery('#replyticket').length) {
+            jQuery('html, body').animate({ scrollTop: jQuery('#replyticket').offset().top - 120 }, 400);
+        }
     }
 
     // Use MutationObserver for dynamic page updates (WHMCS AJAX loading)
