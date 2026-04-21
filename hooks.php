@@ -2682,10 +2682,7 @@ add_hook('AdminAreaFooterOutput', 1, function ($vars) {
     // Robust Ticket ID detection (handles different themes and routing)
     $ticketId = (int) ($_GET['id'] ?? ($vars['ticketid'] ?? 0));
     $userId = (int) ($_GET['userid'] ?? ($vars['userid'] ?? 0));
-    $adminId = (int) ($_SESSION['adminid'] ?? 0);
-    if ($adminId <= 0) {
-        return '';
-    }
+    $adminId = (int) ($_SESSION['adminid'] ?? ($_SESSION['admin_id'] ?? 0));
 
     $panelVars = $vars;
     if ($ticketId > 0) $panelVars['ticketid'] = $ticketId;
@@ -2722,212 +2719,103 @@ add_hook('AdminAreaFooterOutput', 1, function ($vars) {
 <script>
 (function() {
     function stripAutopilotBanner(text) {
-        if (!text) return '';
-        return String(text)
-            .replace(/^\s*\[Sahdev\s+Autopilot\s+Draft\][^\n\r]*[\r\n]*/i, '')
-            .replace(/\r\n/g, '\n')
+        return String(text || '')
+            .replace(/^\s*\[Sahdev\s+Autopilot\s+Draft\][^\r\n]*[\r\n]*/i, '')
             .trim();
     }
 
-    function htmlToMarkdownish(html) {
-        if (!html) return '';
-        var tmp = document.createElement('div');
-        tmp.innerHTML = html;
-
-        var brs = tmp.querySelectorAll('br');
-        for (var i = 0; i < brs.length; i++) brs[i].replaceWith('\n');
-
-        var lis = tmp.querySelectorAll('li');
-        for (var j = 0; j < lis.length; j++) {
-            lis[j].insertAdjacentText('afterbegin', '- ');
-            lis[j].insertAdjacentText('beforeend', '\n');
+    function markdownFromHtml(html) {
+        var box = document.createElement('div');
+        box.innerHTML = html || '';
+        var br = box.querySelectorAll('br');
+        for (var i = 0; i < br.length; i++) br[i].parentNode.replaceChild(document.createTextNode('\n'), br[i]);
+        var li = box.querySelectorAll('li');
+        for (var j = 0; j < li.length; j++) {
+            li[j].insertBefore(document.createTextNode('- '), li[j].firstChild);
+            li[j].appendChild(document.createTextNode('\n'));
         }
-
-        var ps = tmp.querySelectorAll('p, div, blockquote');
-        for (var k = 0; k < ps.length; k++) {
-            ps[k].insertAdjacentText('beforeend', '\n\n');
-        }
-
-        return stripAutopilotBanner(tmp.textContent || '');
+        var blocks = box.querySelectorAll('p,div,blockquote,ul,ol');
+        for (var k = 0; k < blocks.length; k++) blocks[k].appendChild(document.createTextNode('\n\n'));
+        return stripAutopilotBanner((box.textContent || '').replace(/\r\n/g, '\n'));
     }
 
-    function insertIntoReplyEditor(text) {
-        if (!text) return;
-        var cleaned = stripAutopilotBanner(String(text));
+    function insertReplyText(text) {
+        var cleaned = stripAutopilotBanner(text);
         if (!cleaned) return;
 
+        var replyField = document.getElementById('replymessage');
+        if (replyField) {
+            replyField.value = cleaned + (replyField.value ? '\n\n' + replyField.value : '');
+            if (window.jQuery) window.jQuery(replyField).trigger('change');
+        }
         if (typeof tinymce !== 'undefined' && tinymce.activeEditor) {
-            // Insert markdown as literal text so syntax is preserved.
-            var encoded = cleaned
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/\n/g, '<br>');
-            tinymce.activeEditor.execCommand('mceInsertContent', false, encoded + '<br><br>');
-        } else {
-            var replyField = document.querySelector('#replymessage');
-            if (replyField) {
-                var current = replyField.value || '';
-                replyField.value = current ? (cleaned + "\\n\\n" + current) : cleaned;
-            }
+            tinymce.activeEditor.setContent(
+                cleaned.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')
+            );
         }
-
-        var replyWrap = document.querySelector('#replyticket');
-        if (replyWrap && typeof replyWrap.scrollIntoView === 'function') {
-            replyWrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }
+        var wrap = document.getElementById('replyticket');
+        if (wrap && wrap.scrollIntoView) wrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
-    function getNoteText(noteEl) {
-        var content = noteEl.querySelector('.fr-view, .markdown-content, .ticket-reply-message, .content, .message, .ticket-content');
-        if (!content) {
-            content = noteEl.querySelector('blockquote, p, div');
-        }
-        if (!content) return '';
-        return htmlToMarkdownish(content.innerHTML || content.textContent || '');
+    function getNoteBlockFromBadge(badgeEl) {
+        return badgeEl.closest('tr, .ticket-reply, .ticket-reply-item, .ticket-message, .message, .panel, .alert, .well, .post, .reply');
     }
 
-    function findActionHost(noteEl) {
-        var buttons = noteEl.querySelectorAll('a, button, input[type="button"], input[type="submit"]');
-        for (var i = 0; i < buttons.length; i++) {
-            var t = (buttons[i].innerText || buttons[i].value || buttons[i].textContent || '').trim().toLowerCase();
-            if (t === 'edit' || t === 'delete' || t.indexOf('edit') !== -1 || t.indexOf('delete') !== -1) {
-                return buttons[i].parentNode;
-            }
-        }
-        return null;
+    function getNoteBodyText(noteBlock) {
+        if (!noteBlock) return '';
+        var body = noteBlock.querySelector('.fr-view, .markdown-content, .ticket-reply-message, .content, .message') || noteBlock;
+        return markdownFromHtml(body.innerHTML || body.textContent || '');
     }
 
-    function findPrivateLabel(noteEl) {
-        var nodes = noteEl.querySelectorAll('span, small, div, strong, a, label');
-        for (var i = 0; i < nodes.length; i++) {
-            var t = (nodes[i].innerText || nodes[i].textContent || '').trim().toLowerCase();
-            if (t === 'private note' || t.indexOf('private note') !== -1) {
-                return nodes[i];
-            }
-        }
-        return null;
-    }
+    function attachButtons() {
+        var all = document.querySelectorAll('span,small,div,strong,a,label');
+        for (var i = 0; i < all.length; i++) {
+            var txt = (all[i].textContent || '').trim().toLowerCase();
+            if (txt !== 'private note' && txt.indexOf('private note') === -1) continue;
+            if (all[i].getAttribute('data-sahdev-private-note-bound') === '1') continue;
 
-    function findNoteRootFromLabel(labelEl) {
-        if (!labelEl) return null;
-        return labelEl.closest('.ticket-reply, .ticket-reply-item, .ticket-message, .message, .card, .panel, .alert, .well, tr, li, .reply, .post')
-            || labelEl.closest('div')
-            || labelEl.parentElement;
-    }
+            var noteBlock = getNoteBlockFromBadge(all[i]);
+            if (!noteBlock) continue;
 
-    function wirePrivateNote(noteEl, labelEl) {
-        if (!noteEl || noteEl.getAttribute('data-sahdev-note-wired') === '1') return;
+            var host = all[i].parentNode || all[i];
+            var wrap = document.createElement('span');
+            wrap.className = 'sahdev-note-actions sahdev-inline-actions';
 
-        var bodyText = (noteEl.innerText || '').toLowerCase();
-        var isPrivate = bodyText.indexOf('private note') !== -1 || bodyText.indexOf('private') !== -1;
-        if (!isPrivate) return;
+            var btnUse = document.createElement('button');
+            btnUse.type = 'button';
+            btnUse.className = 'btn btn-xs btn-success';
+            btnUse.textContent = 'Use as Reply';
+            btnUse.onclick = function(blockRef) {
+                return function() { insertReplyText(getNoteBodyText(blockRef)); };
+            }(noteBlock);
 
-        var actions = document.createElement('div');
-        actions.className = 'sahdev-note-actions';
+            var btnEdit = document.createElement('button');
+            btnEdit.type = 'button';
+            btnEdit.className = 'btn btn-xs btn-default';
+            btnEdit.textContent = 'Edit';
+            btnEdit.onclick = function(blockRef) {
+                return function() {
+                    var raw = getNoteBodyText(blockRef);
+                    var editor = window.prompt('Edit note text before using as reply:', raw);
+                    if (editor !== null) insertReplyText(editor);
+                };
+            }(noteBlock);
 
-        var useBtn = document.createElement('button');
-        useBtn.type = 'button';
-        useBtn.className = 'btn btn-xs btn-success';
-        useBtn.textContent = 'Use as Reply';
-
-        var editBtn = document.createElement('button');
-        editBtn.type = 'button';
-        editBtn.className = 'btn btn-xs btn-default';
-        editBtn.textContent = 'Edit';
-
-        useBtn.addEventListener('click', function() {
-            insertIntoReplyEditor(getNoteText(noteEl));
-        });
-
-        editBtn.addEventListener('click', function() {
-            var existingEditor = noteEl.querySelector('.sahdev-note-edit-area');
-            if (existingEditor) return;
-
-            var raw = getNoteText(noteEl);
-            var editor = document.createElement('textarea');
-            editor.className = 'sahdev-note-edit-area';
-            editor.value = raw;
-
-            var saveBtn = document.createElement('button');
-            saveBtn.type = 'button';
-            saveBtn.className = 'btn btn-xs btn-primary';
-            saveBtn.textContent = 'Save';
-
-            var cancelBtn = document.createElement('button');
-            cancelBtn.type = 'button';
-            cancelBtn.className = 'btn btn-xs btn-default';
-            cancelBtn.textContent = 'Cancel';
-
-            var editActions = document.createElement('div');
-            editActions.className = 'sahdev-note-actions';
-            editActions.appendChild(saveBtn);
-            editActions.appendChild(cancelBtn);
-
-            noteEl.appendChild(editor);
-            noteEl.appendChild(editActions);
-            editor.focus();
-
-            saveBtn.addEventListener('click', function() {
-                insertIntoReplyEditor(editor.value || '');
-                editor.remove();
-                editActions.remove();
-            });
-            cancelBtn.addEventListener('click', function() {
-                editor.remove();
-                editActions.remove();
-            });
-        });
-
-        actions.appendChild(useBtn);
-        actions.appendChild(editBtn);
-
-        var actionHost = findActionHost(noteEl);
-        if (actionHost) {
-            actions.classList.add('sahdev-inline-actions');
-            actionHost.appendChild(actions);
-        } else {
-            var privateLabel = labelEl || findPrivateLabel(noteEl);
-            if (privateLabel && privateLabel.parentNode) {
-                actions.classList.add('sahdev-inline-actions');
-                privateLabel.parentNode.insertBefore(actions, privateLabel.nextSibling);
-            } else {
-                noteEl.insertBefore(actions, noteEl.firstChild);
-            }
-        }
-
-        noteEl.setAttribute('data-sahdev-note-wired', '1');
-    }
-
-    function scanPrivateNotes() {
-        var labels = document.querySelectorAll('span, small, div, strong, a, label');
-        for (var i = 0; i < labels.length; i++) {
-            var t = (labels[i].innerText || labels[i].textContent || '').trim().toLowerCase();
-            if (t !== 'private note' && t.indexOf('private note') === -1) continue;
-            var noteEl = findNoteRootFromLabel(labels[i]);
-            if (noteEl) {
-                wirePrivateNote(noteEl, labels[i]);
-            }
+            wrap.appendChild(btnUse);
+            wrap.appendChild(btnEdit);
+            host.appendChild(wrap);
+            all[i].setAttribute('data-sahdev-private-note-bound', '1');
         }
     }
 
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', scanPrivateNotes);
+        document.addEventListener('DOMContentLoaded', attachButtons);
     } else {
-        scanPrivateNotes();
+        attachButtons();
     }
-    setTimeout(scanPrivateNotes, 700);
-    setTimeout(scanPrivateNotes, 1500);
-    setTimeout(scanPrivateNotes, 3000);
-
-    try {
-        var obs = new MutationObserver(function() {
-            scanPrivateNotes();
-        });
-        obs.observe(document.body, { childList: true, subtree: true });
-    } catch (e) {
-        // ignore
-    }
+    setTimeout(attachButtons, 600);
+    setTimeout(attachButtons, 1400);
+    setInterval(attachButtons, 2500);
 })();
 </script>
 HTML;
