@@ -2694,7 +2694,7 @@ add_hook('AdminAreaFooterOutput', 1, function ($vars) {
     $panelVars = $vars;
     if ($ticketId > 0) $panelVars['ticketid'] = $ticketId;
 
-    $output = sahdev_inject_ticket_panel($panelVars);
+    $output = "";
     
     $output .= "\n<!-- Sahdev Note Tool Active (Ticket ID: $ticketId) -->\n";
     $output .= <<<HTML
@@ -2730,57 +2730,54 @@ add_hook('AdminAreaFooterOutput', 1, function ($vars) {
     text-align: right;
 }
 </style>
-<script>
-(function() {
     function sahdev_init_native_edit_buttons() {
-        // Targeted scan for anything containing Sahdev Draft markers
-        jQuery('div, blockquote, .text, .message, .note-content, .ticketnote, .ticket-note, .ticketnoteinfo, tr, .well').each(function() {
-            var \$el = jQuery(this);
-            if (\$el.hasClass('sdv-native-processed')) return;
+        // Targeted scan for known WHMCS note containers
+        var containers = jQuery('.note, .ticketnote, .ticket-note, .ticketnoteinfo, tr.note-row, div[class*="note"]');
+        
+        containers.each(function() {
+            var \$note = jQuery(this);
+            if (\$note.hasClass('sdv-native-processed')) return;
             
-            var txt = \$el.text();
-            if (!/Sahdev/i.test(txt) || !/Draft/i.test(txt)) return;
+            var noteTxt = \$note.text();
+            if (!/Sahdev/i.test(noteTxt) || !/Draft/i.test(noteTxt)) return;
             
-            // Avoid double-injection on parents/children
-            var hasDraftChild = false;
-            \$el.children().each(function() {
-                var cTxt = jQuery(this).text();
-                if (/Sahdev/i.test(cTxt) && /Draft/i.test(cTxt)) {
-                    hasDraftChild = true;
-                    return false;
-                }
-            });
-            if (hasDraftChild) return;
-
-            \$el.addClass('sdv-native-processed');
-
-            // 1. Find an anchor point (Delete button)
-            var \$anchor = \$el.find('a[onclick*="Delete"], a[onclick*="delete"], .btn-danger, .fa-trash, :contains("Delete")').first();
+            // Critical Check: Make sure this is actually a note container 
+            // by verifying it has some kind of Admin interaction or styling
+            var \$anchor = \$note.find('a.btn-danger, button.btn-danger, a[onclick*="Delete"], a[onclick*="delete"], .glyphicon-trash, .fa-trash').filter(':contains("Delete"), [title*="Delete"], [data-original-title*="Delete"]').first();
             
-            // 2. Create the Edit button
-            var \$editBtn = jQuery('<a href="#" class="btn btn-default btn-xs btn-small sdv-edit-trigger" style="margin-right:5px; margin-bottom:5px; display:inline-block !important;"><i class="fa fa-pencil"></i> Edit</a>');
-            
-            // 3. Inject: Use anchor if found, otherwise prepend to the content block itself
-            if (\$anchor.length) {
-                \$anchor.before(\$editBtn);
-            } else {
-                \$el.prepend(\$editBtn);
+            if (!\$anchor.length) {
+                // In some themes, the delete button is at the same DOM level (siblings) in a table
+                \$anchor = \$note.closest('tr').find('.btn-danger, a[onclick*="Delete"]').first();
             }
+
+            // Only process if we are sure this is the right level
+            if (!\$anchor.length) return; 
+
+            \$note.addClass('sdv-native-processed');
+
+            // 1. Create the Edit button
+            var \$editBtn = jQuery('<a href="#" class="btn btn-default btn-xs btn-small sdv-edit-trigger" style="margin-right:5px; display:inline-block !important;"><i class="fa fa-pencil fas fa-edit"></i> Edit / Use as Reply</a>');
+            
+            // 2. Inject right before the Delete button
+            \$anchor.before(\$editBtn);
 
             \$editBtn.on('click', function(e) {
                 e.preventDefault();
                 e.stopPropagation();
                 
-                var \$existing = \$el.find('.sdv-native-edit');
+                var \$existing = \$note.find('.sdv-native-edit');
                 if (\$existing.length) {
                     \$existing.toggle();
                     return;
                 }
 
                 // Prepare clean draft text
-                var \$clone = \$el.clone();
-                \$clone.find('.btn, .sdv-native-edit, .sdv-edit-trigger, script, style, textarea').remove();
-                var cleanText = \$clone.text().trim();
+                var \$clone = \$note.clone();
+                \$clone.find('.btn, .sdv-native-edit, .sdv-edit-trigger, script, style, textarea, a.delete').remove();
+                
+                // Some themes have sub-containers containing the actual text
+                var \$innerMsg = \$clone.find('.message, .text, .note-content').last();
+                var cleanText = \$innerMsg.length ? \$innerMsg.text().trim() : \$clone.text().trim();
                 
                 var marker = "[Sahdev Autopilot Draft]";
                 var markerIdx = cleanText.indexOf(marker);
@@ -2789,16 +2786,16 @@ add_hook('AdminAreaFooterOutput', 1, function ($vars) {
                 }
                 cleanText = cleanText.replace(/Review before sending - Draft Mode is ON/i, '').replace(/^---+\\s*/, '').trim();
 
-                // 2. Create the Native-Style Edit UI
-                var \$editUI = jQuery('<div class="sdv-native-edit" style="display:block !important; visibility:visible !important; position:relative; z-index:9999; width:100%;">' +
-                    '<div class="sdv-native-edit-hd" style="display:flex; justify-content:space-between; align-items:center;">' +
-                        '<span>Edit Sahdev Draft</span>' +
-                        '<button type="button" class="btn btn-success btn-xs btn-copy-one">Copy to Clipboard</button>' +
+                // 3. Create the Native-Style Edit UI
+                var \$editUI = jQuery('<div class="sdv-native-edit sdv-active-edit-area" style="display:block !important; visibility:visible !important; position:relative; z-index:9999; width:100%; margin-top:15px; border-top:2px solid #ccc; padding-top:10px;">' +
+                    '<div class="sdv-native-edit-hd" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">' +
+                        '<span style="font-weight:bold; color:#333;">Edit / Use as Reply:</span>' +
+                        '<button type="button" class="btn btn-success btn-xs btn-copy-one"><i class="fa fa-clipboard"></i> Copy to Clipboard</button>' +
                     '</div>' +
                     '<div class="sdv-native-edit-bd">' +
-                        '<textarea class="form-control" style="width:100% !important; min-width:100%; height:180px; font-family:monospace; font-size:13px; border:1px solid #ccc; background:#fff; color:#333;">' + cleanText + '</textarea>' +
+                        '<textarea class="form-control" style="width:100% !important; min-width:100%; height:180px; font-family:monospace; font-size:13px; border:1px solid #aaa; background:#fff; color:#222; padding:8px;">' + cleanText + '</textarea>' +
                     '</div>' +
-                    '<div class="sdv-native-edit-ft" style="text-align:right;">' +
+                    '<div class="sdv-native-edit-ft" style="text-align:right; margin-top:5px;">' +
                         '<button type="button" class="btn btn-default btn-xs btn-close-native">Close</button>' +
                     '</div>' +
                 '</div>');

@@ -28,11 +28,11 @@ function sahdev_config()
         // Description displayed within the admin interface
         'description' => 'AI Ticket Intelligence Assistant for WHMCS Support. Provides smart analysis and reply generation using LLMs.',
         // Module author name
-        'author' => 'Addon Developer',
+        'author' => 'HostingSpell LLP.',
         // Default language
         'language' => 'english',
         // Version number
-        'version' => '2.0.0',
+        'version' => '3.1.2',
         'fields' => [
             // Settings are handled in a custom admin UI built in sahdev_output,
             // but we can define standard WHMCS module settings here if we want them rendered automatically.
