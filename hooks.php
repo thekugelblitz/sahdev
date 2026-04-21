@@ -2766,7 +2766,7 @@ add_hook('AdminAreaFooterOutput', 1, function ($vars) {
         
         var \$searchRoot = \$notesArea.length ? \$notesArea : jQuery('body');
 
-        // Strategy: Look for Draft content within notes area
+        // Strategy A: Look for Draft content within notes area
         \$searchRoot.find('div, blockquote, .text, .message, .note-content').each(function() {
             var \$el = jQuery(this);
             if (\$el.hasClass('sdv-monitored')) return;
@@ -2806,17 +2806,17 @@ add_hook('AdminAreaFooterOutput', 1, function ($vars) {
                                  .replace(/^---+\\s*/, '')
                                  .trim();
 
-                // 1. Copy to clipboard
+                // Copy to clipboard
                 navigator.clipboard.writeText(noteText);
 
-                // 2. Open inline textarea for manual copy/view (as requested)
+                // Open inline textarea for manual copy/view
                 var \$existing = \$el.parent().find('.sdv-edit-area');
                 if (\$existing.length) {
                     \$existing.toggle();
                 } else {
                     var \$editContainer = jQuery('<div class="sdv-edit-area" style="margin: 10px 0; padding: 10px; background: #f8f9fa; border: 1px solid #ddd; border-radius: 4px;">' +
                         '<p style="margin-bottom: 5px; font-weight: bold; font-size: 11px; color: #666;">MANUAL COPY AREA:</p>' +
-                        '<textarea class="form-control" style="width:100%; height:150px; font-family: monospace; font-size: 13px;" readonly></textarea>' +
+                        '<textarea class="form-control" style="width:100%; height:120px; font-family: monospace; font-size: 13px;" readonly></textarea>' +
                         '<button type="button" class="btn btn-link btn-xs" style="color: #666;">Close</button>' +
                         '</div>');
                     
@@ -2834,7 +2834,7 @@ add_hook('AdminAreaFooterOutput', 1, function ($vars) {
             });
         });
 
-        // Strategy B: Fallback for existing Edit/Delete buttons
+        // Strategy B: Fallback for existing action buttons
         \$searchRoot.find('a, button').filter('.btn-danger, .btn-edit, :contains("Delete"), :contains("Edit")').each(function() {
             var \$btn = jQuery(this);
             if (\$btn.hasClass('sdv-btn-processed') || \$btn.hasClass('btn-sahdev-insert-note') || \$btn.closest('#sahdev-ai-panel').length) return;
@@ -2850,26 +2850,13 @@ add_hook('AdminAreaFooterOutput', 1, function ($vars) {
                 e.preventDefault();
                 var \$content = \$container.find('.text, .message, .note-content, blockquote, .note-body, .note-msg').first();
                 var noteText = \$content.length ? \$content.text().trim() : \$container.clone().find('.btn, .label, .actions').remove().end().text().trim();
-                
-                // Add the same inline edit area logic here if needed
-                alert("Text copied to clipboard. You can now paste it into the reply box.");
                 navigator.clipboard.writeText(noteText);
+                alert("Copied to clipboard.");
             });
         });
     }
 
-    // Initialize with MutationObserver
-    jQuery(document).ready(function() {
-        sahdev_init_note_insert_buttons();
-        var observer = new MutationObserver(function() {
-            sahdev_init_note_insert_buttons();
-        });
-        observer.observe(document.body, { childList: true, subtree: true });
-    });
-})();
-</script>
-
-    // Initialize with MutationObserver
+    // Initialize once with a single MutationObserver
     jQuery(document).ready(function() {
         sahdev_init_note_insert_buttons();
         var observer = new MutationObserver(function() {
