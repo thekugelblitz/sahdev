@@ -2679,10 +2679,24 @@ function sahdev_is_admin_ticket_open_page(?array $vars = null): bool
 }
 
 add_hook('AdminAreaFooterOutput', 1, function ($vars) {
-    if (!isset($vars['ticketid'])) return '';
-
-    $output = sahdev_inject_ticket_panel($vars);
+    // Robust Ticket ID detection (handles different themes and routing)
+    $ticketId = (int) ($_GET['id'] ?? ($vars['ticketid'] ?? 0));
+    $userId = (int) ($_GET['userid'] ?? ($vars['userid'] ?? 0));
     
+    // Broad page check: only inject on Ticket View, Client Summary, or Open Ticket pages
+    $uri = $_SERVER['REQUEST_URI'] ?? '';
+    $isTicketPage = ($ticketId > 0 || strpos($uri, 'supporttickets.php') !== false || strpos($uri, 'viewticket') !== false);
+    
+    if (!$isTicketPage) {
+        return '';
+    }
+
+    $panelVars = $vars;
+    if ($ticketId > 0) $panelVars['ticketid'] = $ticketId;
+
+    $output = sahdev_inject_ticket_panel($panelVars);
+    
+    $output .= "\n<!-- Sahdev Note Tool Active (Ticket ID: $ticketId) -->\n";
     $output .= <<<HTML
 <style>
 /* Native-Style Edit area for Sahdev Notes */
