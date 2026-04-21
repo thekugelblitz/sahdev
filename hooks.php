@@ -2605,12 +2605,26 @@ add_hook('AdminAreaHeaderOutput', 1, function ($vars) {
 HTML;
         }
         
-        // Global Note Insert Button CSS injection
+        // Global Note Insert Button CSS injection - Using !important everywhere to override theme defaults
         $output .= <<<HTML
 <style>
-    .btn-sahdev-insert-note { background: #28a745 !important; color: #fff !important; border: 1px solid #218838 !important; transition: all 0.15s ease; font-weight: 600; margin-right: 5px; margin-bottom: 2px; }
-    .btn-sahdev-insert-note:hover { background: #218838 !important; color: #fff !important; border-color: #1e7e34 !important; opacity: 0.95; }
-    .btn-sahdev-insert-note i { margin-right: 4px; }
+    .btn-sahdev-insert-note { 
+        background: #28a745 !important; 
+        color: #fff !important; 
+        border: 1px solid #218838 !important; 
+        padding: 5px 12px !important;
+        font-size: 13px !important;
+        border-radius: 4px !important;
+        transition: all 0.15s ease !important; 
+        font-weight: 600 !important; 
+        margin-right: 8px !important; 
+        margin-bottom: 8px !important;
+        display: inline-block !important;
+        cursor: pointer !important;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
+    }
+    .btn-sahdev-insert-note:hover { background: #218838 !important; opacity: 0.9 !important; transform: translateY(-1px); }
+    .btn-sahdev-insert-note i { margin-right: 6px !important; }
 </style>
 HTML;
 
@@ -2685,150 +2699,141 @@ add_hook('AdminAreaFooterOutput', 1, function ($vars) {
     $output .= <<<HTML
 <script>
 (function() {
-    function sahdev_init_note_insert_buttons() {
-        // Strategy A: Target any element containing Sahdev draft text directly
-        jQuery(':contains("[Sahdev Autopilot Draft]")').each(function() {
-            var \$msg = jQuery(this);
-            
-            // Ensure we are targeting the actual content block, not a parent
-            if (\$msg.children(':contains("[Sahdev Autopilot Draft]")').length > 0) return;
-            if (\$msg.hasClass('sdv-draft-processed')) return;
-            
-            // Only target blocks that look like notes (skip the AI panel itself)
-            if (\$msg.closest('#sahdev-ai-panel').length) return;
-            
-            \$msg.addClass('sdv-draft-processed');
-            // Add a clear visual indicator in console
-            console.log("[Sahdev] Found Draft Note Content. Injecting button.");
-
-            var \$insertBtn = jQuery('<button type="button" class="btn btn-xs btn-sahdev-insert-note" style="display:block; margin-bottom:10px; width:100%; max-width:200px;"><i class="fas fa-reply"></i> Use as Reply</button>');
-            \$msg.prepend(\$insertBtn);
-
-            \$insertBtn.on('click', function(e) {
-                e.preventDefault();
-                e.stopPropagation();
-                console.log("[Sahdev] Use as Reply clicked.");
-                
-                var noteText = \$msg.clone().find('.btn, .sdv-processed').remove().end().text().trim();
-                
-                // Strip Sahdev Autopilot Draft formatting
-                var draftPrefix = "[Sahdev Autopilot Draft]";
-                if (noteText.indexOf(draftPrefix) !== -1) {
-                    noteText = noteText.substring(noteText.indexOf(draftPrefix) + draftPrefix.length);
-                    noteText = noteText.replace(/Review before sending - Draft Mode is ON/i, '').trim();
-                    noteText = noteText.replace(/^---+\\s*/, '').trim();
-                }
-
-                console.log("[Sahdev] Content extracted, length:", noteText.length);
-                injectToEditor(noteText);
-            });
-        });
-
-        // Strategy B: Fallback to finding action buttons (Edit/Delete) in notes
-        jQuery('a, button').each(function() {
-            var \$btn = jQuery(this);
-            if (\$btn.hasClass('sdv-processed') || \$btn.hasClass('btn-sahdev-insert-note') || \$btn.closest('#sahdev-ai-panel').length) return;
-
-            var btnText = \$btn.text().toLowerCase();
-            var hasIcon = \$btn.find('.fa-trash, .fa-edit, .fa-pencil, .fa-times').length > 0;
-            
-            if (btnText.indexOf('edit') === -1 && btnText.indexOf('delete') === -1 && !hasIcon) return;
-
-            var \$container = \$btn.closest('.note, .ticketnote, .ticket-note, .note-container, .well, tr, td, .panel, .alert');
-            if (!\$container.length) return;
-
-            // Mark as processed
-            \$btn.addClass('sdv-processed');
-            
-            var \$insertBtn = jQuery('<button type="button" class="btn btn-xs btn-sahdev-insert-note" style="margin-right: 5px;"><i class="fas fa-reply"></i> Use as Reply</button>');
-            \$btn.before(\$insertBtn);
-
-            \$insertBtn.on('click', function(e) {
-                e.preventDefault();
-                var \$content = \$container.find('.text, .message, .note-content, blockquote, .note-body, .note-msg').first();
-                var noteText = \$content.length ? \$content.text().trim() : \$container.clone().find('.btn, .label, .actions, .sdv-processed').remove().end().text().trim();
-                
-                if (noteText.indexOf("[Sahdev Autopilot Draft]") !== -1) {
-                    noteText = noteText.substring(noteText.indexOf("[Sahdev Autopilot Draft]") + 24);
-                    noteText = noteText.replace(/Review before sending - Draft Mode is ON/i, '').trim();
-                    noteText = noteText.replace(/^---+\\s*/, '').trim();
-                }
-                
-                injectToEditor(noteText);
-            });
-        });
-    }
-
+    // Utility to inject text into the WHMCS reply editor
     function injectToEditor(text) {
         if (!text) return;
         console.log("[Sahdev] Attempting to inject text to editor...");
 
         var injected = false;
+        var tinymce = window.tinymce;
 
-        // 1. Try TinyMCE by checking all instances
-        if (typeof tinymce !== "undefined") {
-            var editor = tinymce.activeEditor || (tinymce.editors && tinymce.editors[0]);
-            if (editor && !editor.isHidden()) {
-                console.log("[Sahdev] Found active TinyMCE editor.");
-                var html = text.replace(/\n/g, '<br>');
+        // 1. Try TinyMCE by checking all instances and their visibility
+        if (typeof tinymce !== "undefined" && tinymce.editors) {
+            // Find the first visible or active editor
+            var editor = tinymce.activeEditor || tinymce.editors[0];
+            for (var i = 0; i < tinymce.editors.length; i++) {
+                if (!tinymce.editors[i].isHidden()) {
+                    editor = tinymce.editors[i];
+                    break;
+                }
+            }
+
+            if (editor) {
+                console.log("[Sahdev] Found TinyMCE editor: " + editor.id);
+                var html = text.replace(/\\n/g, '<br>');
                 editor.execCommand('mceInsertContent', false, html);
                 injected = true;
             }
         }
 
-        // 2. Try raw textarea (standard or reply)
+        // 2. Try raw textarea fallback (handles Standard and non-TinyMCE views)
         if (!injected) {
-            var $textarea = jQuery('#replymessage, textarea[name="replymessage"], .reply-message-body textarea').filter(':visible').first();
-            if ($textarea.length) {
-                console.log("[Sahdev] Found visible textarea.");
-                var currentVal = $textarea.val();
-                $textarea.val(text + "\n\n" + currentVal);
-                $textarea.focus();
+            var \$textarea = jQuery('#replymessage, textarea[name="replymessage"], .reply-message-body textarea').filter(':visible').first();
+            if (\$textarea.length) {
+                console.log("[Sahdev] Found visible textarea, prepending content.");
+                \$textarea.val(text + "\\n\\n" + \$textarea.val());
+                \$textarea.focus();
                 injected = true;
             }
         }
 
         if (injected) {
-            // Attempt to switch to Reply tab if it's a tabbed interface
-            var $replyTab = jQuery('a[href="#tabReply"], a:contains("Reply")').filter('.nav-link, button');
-            if ($replyTab.length && !$replyTab.hasClass('active')) {
-                $replyTab.click();
-            }
+            // WHMCS Reply Tab Activation (if present)
+            var \$replyTab = jQuery('a[href="#tabReply"], a:contains("Reply")').filter('.nav-link, button').first();
+            if (\$replyTab.length) \$replyTab.tab('show'); // Use Bootstrap's tab show command
 
-            // Scroll to reply section
-            var $target = jQuery('#replyticket, #replymessage, .reply-container').filter(':visible').first();
-            if ($target.length) {
-                jQuery('html, body').animate({ scrollTop: $target.offset().top - 150 }, 400);
+            // Smooth scroll to the reply section
+            var \$target = jQuery('#replyticket, #replymessage, .reply-container').filter(':visible').first();
+            if (\$target.length) {
+                jQuery('html, body').animate({ scrollTop: \$target.offset().top - 150 }, 400);
             }
         } else {
-            console.error("[Sahdev] Could not find a valid editor/textarea to inject text.");
-            alert("Could not find the ticket reply editor. Please make sure the Reply tab is open.");
+            console.warn("[Sahdev] Could not find any valid editor/textarea to inject text. Showing fallback alert.");
+            alert("Sahdev: Could not find the reply editor. Please click the 'Reply' tab first.");
         }
     }
 
-    // Use MutationObserver for dynamic page updates (WHMCS AJAX loading)
-    function initObserver() {
-        var targetNode = document.body;
-        if (!targetNode) return;
-        
-        var observer = new MutationObserver(function(mutations) {
-            sahdev_init_note_insert_buttons();
+    function sahdev_init_note_insert_buttons() {
+        // Strategy A: Direct content scanning for Draft markers
+        jQuery('div, blockquote, .text, .message, .note-content').each(function() {
+            var \$el = jQuery(this);
+            if (\$el.hasClass('sdv-monitored')) return;
+            
+            var fullTxt = \$el.text();
+            if (fullTxt.indexOf('Sahdev') === -1 || fullTxt.indexOf('Draft') === -1) return;
+            
+            // Avoid double-injection by checking if any child also matches
+            var hasMatchChild = false;
+            \$el.children().each(function() {
+                var childTxt = jQuery(this).text();
+                if (childTxt.indexOf('Sahdev') !== -1 && childTxt.indexOf('Draft') !== -1) {
+                    hasMatchChild = true;
+                    return false;
+                }
+            });
+            if (hasMatchChild) return;
+            
+            \$el.addClass('sdv-monitored');
+            console.log("[Sahdev] Found Note Content matching Draft criteria.");
+
+            var \$btn = jQuery('<button type="button" class="btn btn-xs btn-sahdev-insert-note"><i class="fas fa-reply"></i> Use as Reply</button>');
+            \$el.prepend(\$btn);
+
+            \$btn.on('click', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                
+                var \$clone = \$el.clone();
+                \$clone.find('.btn, .sdv-monitored, .sdv-processed, .sdv-btn-processed, script, style').remove();
+                var noteText = \$clone.text().trim();
+                
+                var draftMarker = "[Sahdev Autopilot Draft]";
+                if (noteText.indexOf(draftMarker) !== -1) {
+                    noteText = noteText.substring(noteText.indexOf(draftMarker) + draftMarker.length);
+                }
+                noteText = noteText.replace(/Review before sending - Draft Mode is ON/i, '')
+                                 .replace(/^---+\\s*/, '')
+                                 .trim();
+
+                injectToEditor(noteText);
+            });
         });
-        
-        var config = { childList: true, subtree: true };
-        observer.observe(targetNode, config);
-        console.log("[Sahdev] Note Insertion Logic Active (Observer Mode)");
+
+        // Strategy B: Standard action-button fallback (checks Edit/Delete buttons)
+        jQuery('a, button').each(function() {
+            var \$btn = jQuery(this);
+            if (\$btn.hasClass('sdv-btn-processed') || \$btn.hasClass('btn-sahdev-insert-note') || \$btn.closest('#sahdev-ai-panel').length) return;
+            
+            var btnText = \$btn.text().toLowerCase();
+            var hasIcon = \$btn.find('.fa-trash, .fa-edit, .fa-pencil, .fa-times').length > 0;
+            if (btnText.indexOf('edit') === -1 && btnText.indexOf('delete') === -1 && !hasIcon) return;
+
+            var \$container = \$btn.closest('.note, .ticketnote, .ticket-note, .note-container, .well, .alert, tr, td');
+            if (!\$container.length) return;
+
+            \$btn.addClass('sdv-btn-processed');
+            var \$insertBtn = jQuery('<button type="button" class="btn btn-xs btn-sahdev-insert-note"><i class="fas fa-reply"></i> Use as Reply</button>');
+            \$btn.before(\$insertBtn);
+
+            \$insertBtn.on('click', function(e) {
+                e.preventDefault();
+                var \$content = \$container.find('.text, .message, .note-content, blockquote, .note-body, .note-msg').first();
+                var noteText = \$content.length ? \$content.text().trim() : \$container.clone().find('.btn, .label, .actions').remove().end().text().trim();
+                injectToEditor(noteText);
+            });
+        });
     }
 
-    if (window.jQuery) {
-        jQuery(document).ready(function() {
+    // Initialize with MutationObserver for permanent monitoring
+    jQuery(document).ready(function() {
+        console.log("[Sahdev] Note Controller Active.");
+        sahdev_init_note_insert_buttons();
+        
+        var observer = new MutationObserver(function() {
             sahdev_init_note_insert_buttons();
-            setTimeout(sahdev_init_note_insert_buttons, 1500);
-            initObserver();
         });
-    } else {
-        window.addEventListener('load', initObserver);
-    }
+        observer.observe(document.body, { childList: true, subtree: true });
+    });
 })();
 </script>
 HTML;
