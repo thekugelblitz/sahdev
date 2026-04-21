@@ -2697,6 +2697,146 @@ add_hook('AdminAreaFooterOutput', 1, function ($vars) {
     $output = "";
     
     $output .= "\n<!-- Sahdev Note Tool Active (Ticket ID: $ticketId) -->\n";
+    $output .= <<<HTML
+<style>
+    .sahdev-note-actions {
+        display: flex;
+        gap: 6px;
+        margin: 8px 0 10px 0;
+        flex-wrap: wrap;
+    }
+    .sahdev-note-edit-area {
+        width: 100%;
+        min-height: 110px;
+        margin-top: 8px;
+        padding: 8px;
+        border: 1px solid #c9ced4;
+        border-radius: 4px;
+        resize: vertical;
+    }
+</style>
+<script>
+(function() {
+    function insertIntoReplyEditor(text) {
+        if (!text) return;
+        var cleaned = String(text).trim();
+        if (!cleaned) return;
+
+        if (typeof tinymce !== 'undefined' && tinymce.activeEditor) {
+            var html = '<p>' + cleaned
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/\\n/g, '<br>') + '</p>';
+            tinymce.activeEditor.execCommand('mceInsertContent', false, html);
+        } else {
+            var replyField = document.querySelector('#replymessage');
+            if (replyField) {
+                var current = replyField.value || '';
+                replyField.value = current ? (cleaned + "\\n\\n" + current) : cleaned;
+            }
+        }
+
+        var replyWrap = document.querySelector('#replyticket');
+        if (replyWrap && typeof replyWrap.scrollIntoView === 'function') {
+            replyWrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+    }
+
+    function getNoteText(noteEl) {
+        var content = noteEl.querySelector('.fr-view, .markdown-content, .ticket-reply-message, .content, .message, .ticket-content');
+        if (!content) {
+            content = noteEl.querySelector('blockquote, p, div');
+        }
+        return content ? (content.innerText || content.textContent || '') : '';
+    }
+
+    function wirePrivateNote(noteEl) {
+        if (!noteEl || noteEl.getAttribute('data-sahdev-note-wired') === '1') return;
+
+        var bodyText = (noteEl.innerText || '').toLowerCase();
+        var isPrivate = bodyText.indexOf('private note') !== -1 || bodyText.indexOf('private') !== -1;
+        if (!isPrivate) return;
+
+        var actions = document.createElement('div');
+        actions.className = 'sahdev-note-actions';
+
+        var useBtn = document.createElement('button');
+        useBtn.type = 'button';
+        useBtn.className = 'btn btn-xs btn-success';
+        useBtn.textContent = 'Use as Reply';
+
+        var editBtn = document.createElement('button');
+        editBtn.type = 'button';
+        editBtn.className = 'btn btn-xs btn-default';
+        editBtn.textContent = 'Edit';
+
+        useBtn.addEventListener('click', function() {
+            insertIntoReplyEditor(getNoteText(noteEl));
+        });
+
+        editBtn.addEventListener('click', function() {
+            var existingEditor = noteEl.querySelector('.sahdev-note-edit-area');
+            if (existingEditor) return;
+
+            var raw = getNoteText(noteEl);
+            var editor = document.createElement('textarea');
+            editor.className = 'sahdev-note-edit-area';
+            editor.value = raw;
+
+            var saveBtn = document.createElement('button');
+            saveBtn.type = 'button';
+            saveBtn.className = 'btn btn-xs btn-primary';
+            saveBtn.textContent = 'Save';
+
+            var cancelBtn = document.createElement('button');
+            cancelBtn.type = 'button';
+            cancelBtn.className = 'btn btn-xs btn-default';
+            cancelBtn.textContent = 'Cancel';
+
+            var editActions = document.createElement('div');
+            editActions.className = 'sahdev-note-actions';
+            editActions.appendChild(saveBtn);
+            editActions.appendChild(cancelBtn);
+
+            noteEl.appendChild(editor);
+            noteEl.appendChild(editActions);
+            editor.focus();
+
+            saveBtn.addEventListener('click', function() {
+                insertIntoReplyEditor(editor.value || '');
+                editor.remove();
+                editActions.remove();
+            });
+            cancelBtn.addEventListener('click', function() {
+                editor.remove();
+                editActions.remove();
+            });
+        });
+
+        actions.appendChild(useBtn);
+        actions.appendChild(editBtn);
+        noteEl.appendChild(actions);
+        noteEl.setAttribute('data-sahdev-note-wired', '1');
+    }
+
+    function scanPrivateNotes() {
+        var candidates = document.querySelectorAll('.ticket-reply, .ticket-reply-item, .ticket-message, .message, .card, .panel');
+        for (var i = 0; i < candidates.length; i++) {
+            wirePrivateNote(candidates[i]);
+        }
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', scanPrivateNotes);
+    } else {
+        scanPrivateNotes();
+    }
+    setTimeout(scanPrivateNotes, 700);
+    setTimeout(scanPrivateNotes, 1500);
+})();
+</script>
+HTML;
     return $output;
 });
 
