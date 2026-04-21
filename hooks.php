@@ -2730,6 +2730,8 @@ add_hook('AdminAreaFooterOutput', 1, function ($vars) {
     text-align: right;
 }
 </style>
+<script>
+(function() {
     function sahdev_init_native_edit_buttons() {
         // Targeted scan for known WHMCS note containers
         var containers = jQuery('.note, .ticketnote, .ticket-note, .ticketnoteinfo, tr.note-row, div[class*="note"]');
