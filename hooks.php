@@ -2679,6 +2679,10 @@ function sahdev_is_admin_ticket_open_page(?array $vars = null): bool
 }
 
 add_hook('AdminAreaFooterOutput', 1, function ($vars) {
+    // HOTFIX: disable injected private-note UI script to prevent admin slowdown/timeouts.
+    // Keep hook body in file for later rework; return immediately for stability.
+    return '';
+
     // Robust Ticket ID detection (handles different themes and routing)
     $ticketId = (int) ($_GET['id'] ?? ($vars['ticketid'] ?? 0));
     $userId = (int) ($_GET['userid'] ?? ($vars['userid'] ?? 0));
