@@ -2612,19 +2612,23 @@ HTML;
         background: #28a745 !important; 
         color: #fff !important; 
         border: 1px solid #218838 !important; 
-        padding: 5px 12px !important;
-        font-size: 13px !important;
+        padding: 8px 16px !important;
+        font-size: 14px !important;
         border-radius: 4px !important;
         transition: all 0.15s ease !important; 
         font-weight: 600 !important; 
-        margin-right: 8px !important; 
-        margin-bottom: 8px !important;
-        display: inline-block !important;
+        margin-bottom: 12px !important;
+        display: block !important;
+        width: auto !important;
+        min-width: 160px !important;
         cursor: pointer !important;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.15) !important;
+        position: relative !important;
+        z-index: 9999 !important;
+        text-align: center !important;
     }
-    .btn-sahdev-insert-note:hover { background: #218838 !important; opacity: 0.9 !important; transform: translateY(-1px); }
-    .btn-sahdev-insert-note i { margin-right: 6px !important; }
+    .btn-sahdev-insert-note:hover { background: #218838 !important; opacity: 0.9 !important; transform: scale(1.02); }
+    .btn-sahdev-insert-note i { margin-right: 8px !important; }
 </style>
 HTML;
 
@@ -2774,14 +2778,16 @@ add_hook('AdminAreaFooterOutput', 1, function ($vars) {
             if (hasMatchChild) return;
             
             \$el.addClass('sdv-monitored');
-            console.log("[Sahdev] Found Note Content matching Draft criteria.");
+            console.log("[Sahdev] Found Note Content matching Draft criteria. Injecting BEFORE content block.");
 
             var \$btn = jQuery('<button type="button" class="btn btn-xs btn-sahdev-insert-note"><i class="fas fa-reply"></i> Use as Reply</button>');
-            \$el.prepend(\$btn);
+            // Using .before instead of .prepend to ensure it is not clipped or hidden by parent overflow
+            \$el.before(\$btn);
 
             \$btn.on('click', function(e) {
                 e.preventDefault();
                 e.stopPropagation();
+                console.log("[Sahdev] Use as Reply button clicked.");
                 
                 var \$clone = \$el.clone();
                 \$clone.find('.btn, .sdv-monitored, .sdv-processed, .sdv-btn-processed, script, style').remove();
@@ -2799,19 +2805,16 @@ add_hook('AdminAreaFooterOutput', 1, function ($vars) {
             });
         });
 
-        // Strategy B: Standard action-button fallback (checks Edit/Delete buttons)
-        jQuery('a, button').each(function() {
+        // Strategy B: Expanded action-button fallback (checks Edit/Delete/red buttons)
+        jQuery('a, button').filter('.btn-danger, .btn-edit, :contains("Delete"), :contains("Edit")').each(function() {
             var \$btn = jQuery(this);
             if (\$btn.hasClass('sdv-btn-processed') || \$btn.hasClass('btn-sahdev-insert-note') || \$btn.closest('#sahdev-ai-panel').length) return;
             
-            var btnText = \$btn.text().toLowerCase();
-            var hasIcon = \$btn.find('.fa-trash, .fa-edit, .fa-pencil, .fa-times').length > 0;
-            if (btnText.indexOf('edit') === -1 && btnText.indexOf('delete') === -1 && !hasIcon) return;
-
             var \$container = \$btn.closest('.note, .ticketnote, .ticket-note, .note-container, .well, .alert, tr, td');
             if (!\$container.length) return;
 
             \$btn.addClass('sdv-btn-processed');
+            console.log("[Sahdev] Adding button next to action button.");
             var \$insertBtn = jQuery('<button type="button" class="btn btn-xs btn-sahdev-insert-note"><i class="fas fa-reply"></i> Use as Reply</button>');
             \$btn.before(\$insertBtn);
 
