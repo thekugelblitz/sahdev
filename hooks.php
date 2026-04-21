@@ -245,6 +245,8 @@ function sahdev_inject_ticket_panel($vars)
                 .sahdev-intent-btn:hover { background: #dbe4ff; color: #3a56c9; border-color: #3a56c9; }
                 .sahdev-intent-active { background: #0d6efd !important; color: #fff !important; border-color: #0d6efd !important; }
                 #sahdev_override_provider, #sahdev_override_provider option { color: #212529; background-color: #fff; }
+                .btn-sahdev-insert-note { background: #28a745; color: #fff; border: 1px solid #218838; transition: all 0.15s ease; font-weight: 600; margin-bottom: 2px; }
+                .btn-sahdev-insert-note:hover { background: #218838; color: #fff; border-color: #1e7e34; }
             </style>
 
             <div class="row">
@@ -2534,8 +2536,75 @@ HTML;
             });
         });
 
+        // =====================================================================
+        // FEATURE: Insert Note to Reply
+        // =====================================================================
+        function sahdev_init_note_insert_buttons() {
+            // Target WHMCS note structure (covers various themes and versions)
+            $('.ticket-notes .note, .note-container, .ticketnote, .ticket-note').each(function() {
+                var $note = $(this);
+                if ($note.find('.btn-sahdev-insert-note').length) return;
+
+                // Find the standard WHMCS action buttons (usually Delete)
+                var $actionArea = $note.find('.actions, .options, .note-actions').first();
+                var $targetBtn = $note.find('a.btn-danger, button.btn-danger').filter(function() {
+                    return $(this).text().toLowerCase().indexOf('delete') !== -1;
+                }).first();
+
+                if ($targetBtn.length) {
+                    var $insertBtn = $('<button type="button" class="btn btn-xs btn-sahdev-insert-note" style="margin-right: 5px;"><i class="fas fa-reply"></i> Use as Reply</button>');
+                    $targetBtn.before($insertBtn);
+
+                    $insertBtn.on('click', function(e) {
+                        e.preventDefault();
+                        var noteText = '';
+                        // Extract content from known WHMCS note body classes
+                        var $content = $note.find('.text, .message, .note-content, blockquote, .note-body').first();
+                        if ($content.length) {
+                            noteText = $content.text().trim();
+                        } else {
+                            // Fallback: clone and strip metadata/buttons
+                            var $clone = $note.clone();
+                            $clone.find('.btn, .label, .date, .admin, .actions, .note-actions').remove();
+                            noteText = $clone.text().trim();
+                        }
+
+                        if (!noteText) return;
+
+                        // Cleanup Sahdev Autopilot Draft headers
+                        var draftPrefix = "[Sahdev Autopilot Draft] Review before sending - Draft Mode is ON";
+                        if (noteText.indexOf(draftPrefix) !== -1) {
+                            noteText = noteText.replace(draftPrefix, '').trim();
+                            noteText = noteText.replace(/^---/, '').trim();
+                        }
+
+                        // Insert into editor
+                        if (typeof tinymce !== "undefined" && tinymce.activeEditor) {
+                            var html = noteText.replace(/\n/g, '<br>');
+                            tinymce.activeEditor.execCommand('mceInsertContent', false, html);
+                        } else if ($('#replymessage').length) {
+                            var el = $('#replymessage').get(0);
+                            var currentVal = el.value;
+                            el.value = noteText + "\n\n" + currentVal;
+                            el.focus();
+                        }
+
+                        // Scroll to reply editor
+                        if ($('#replyticket').length) {
+                            $('html, body').animate({ scrollTop: $('#replyticket').offset().top - 60 }, 400);
+                        }
+                    });
+                }
+            });
+        }
+
+        // Initialize once, then periodically to catch dynamic updates
+        setTimeout(sahdev_init_note_insert_buttons, 1000);
+        setInterval(sahdev_init_note_insert_buttons, 3000);
+
         // Expose globally for inline onclick handlers
         window.sahdevSnapInsertToEditor = sahdevSnapInsertToEditor;
+        window.sahdev_init_note_insert_buttons = sahdev_init_note_insert_buttons;
 
     });
 
