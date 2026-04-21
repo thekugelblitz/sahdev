@@ -2683,9 +2683,18 @@ add_hook('AdminAreaFooterOutput', 1, function ($vars) {
     $ticketId = (int) ($_GET['id'] ?? ($vars['ticketid'] ?? 0));
     $userId = (int) ($_GET['userid'] ?? ($vars['userid'] ?? 0));
     
-    // Broad page check: only inject on Ticket View, Client Summary, or Open Ticket pages
-    $uri = $_SERVER['REQUEST_URI'] ?? '';
-    $isTicketPage = ($ticketId > 0 || strpos($uri, 'supporttickets.php') !== false || strpos($uri, 'viewticket') !== false);
+    // Broad page check: inject on all likely admin ticket view routes (classic + routed)
+    $uri = strtolower((string) ($_SERVER['REQUEST_URI'] ?? ''));
+    $isTicketPage = (
+        $ticketId > 0
+        || strpos($uri, 'supporttickets.php') !== false
+        || strpos($uri, 'viewticket') !== false
+        || (
+            strpos($uri, 'support') !== false
+            && strpos($uri, 'ticket') !== false
+            && strpos($uri, 'open') === false
+        )
+    );
     
     if (!$isTicketPage) {
         return '';
@@ -2702,8 +2711,13 @@ add_hook('AdminAreaFooterOutput', 1, function ($vars) {
     .sahdev-note-actions {
         display: flex;
         gap: 6px;
-        margin: 8px 0 10px 0;
+        margin: 6px 0 8px 0;
         flex-wrap: wrap;
+    }
+    .sahdev-note-actions.sahdev-inline-actions {
+        display: inline-flex;
+        margin: 0 0 0 8px;
+        vertical-align: middle;
     }
     .sahdev-note-edit-area {
         width: 100%;
@@ -2749,6 +2763,17 @@ add_hook('AdminAreaFooterOutput', 1, function ($vars) {
             content = noteEl.querySelector('blockquote, p, div');
         }
         return content ? (content.innerText || content.textContent || '') : '';
+    }
+
+    function findPrivateLabel(noteEl) {
+        var nodes = noteEl.querySelectorAll('span, small, div, strong, a, label');
+        for (var i = 0; i < nodes.length; i++) {
+            var t = (nodes[i].innerText || nodes[i].textContent || '').trim().toLowerCase();
+            if (t === 'private note' || t.indexOf('private note') !== -1) {
+                return nodes[i];
+            }
+        }
+        return null;
     }
 
     function wirePrivateNote(noteEl) {
@@ -2816,12 +2841,20 @@ add_hook('AdminAreaFooterOutput', 1, function ($vars) {
 
         actions.appendChild(useBtn);
         actions.appendChild(editBtn);
-        noteEl.appendChild(actions);
+
+        var privateLabel = findPrivateLabel(noteEl);
+        if (privateLabel && privateLabel.parentNode) {
+            actions.classList.add('sahdev-inline-actions');
+            privateLabel.parentNode.insertBefore(actions, privateLabel.nextSibling);
+        } else {
+            noteEl.insertBefore(actions, noteEl.firstChild);
+        }
+
         noteEl.setAttribute('data-sahdev-note-wired', '1');
     }
 
     function scanPrivateNotes() {
-        var candidates = document.querySelectorAll('.ticket-reply, .ticket-reply-item, .ticket-message, .message, .card, .panel');
+        var candidates = document.querySelectorAll('.ticket-reply, .ticket-reply-item, .ticket-message, .message, .card, .panel, .alert, .well, .row, .col-md-12, .contentarea');
         for (var i = 0; i < candidates.length; i++) {
             wirePrivateNote(candidates[i]);
         }
