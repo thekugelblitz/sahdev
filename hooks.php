@@ -2745,11 +2745,15 @@ add_hook('AdminAreaFooterOutput', 1, function ($vars) {
             
             // Critical Check: Make sure this is actually a note container 
             // by verifying it has some kind of Admin interaction or styling
-            var \$anchor = \$note.find('a.btn-danger, button.btn-danger, a[onclick*="Delete"], a[onclick*="delete"], .glyphicon-trash, .fa-trash').filter(':contains("Delete"), [title*="Delete"], [data-original-title*="Delete"]').first();
+            // WHMCS uses input buttons in many legacy themes, not just <a> or <button>
+            var \$anchor = \$note.find('input.btn-danger, input[value="Delete"], input[value="delete"], a.btn-danger, button.btn-danger, a[onclick*="Delete"], a[onclick*="delete"], .glyphicon-trash, .fa-trash').filter(function() {
+                var \$el = jQuery(this);
+                return \$el.is('input') || \$el.text().indexOf('Delete') > -1 || \$el.attr('title') === 'Delete';
+            }).first();
             
             if (!\$anchor.length) {
                 // In some themes, the delete button is at the same DOM level (siblings) in a table
-                \$anchor = \$note.closest('tr').find('.btn-danger, a[onclick*="Delete"]').first();
+                \$anchor = \$note.closest('tr').find('.btn-danger, input[value="Delete"], a[onclick*="Delete"]').first();
             }
 
             // Only process if we are sure this is the right level
