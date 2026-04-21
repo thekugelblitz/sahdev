@@ -2682,7 +2682,6 @@ add_hook('AdminAreaFooterOutput', 1, function ($vars) {
     $userId = (int) ($_GET['userid'] ?? 0);
     $ticketId = (int) ($_GET['id'] ?? ($vars['ticketid'] ?? 0));
     
-    // Check if we are on a page that should have the panel (Open Ticket or View Ticket)
     if ($userId <= 0 && $ticketId <= 0) {
         return '';
     }
@@ -2691,7 +2690,6 @@ add_hook('AdminAreaFooterOutput', 1, function ($vars) {
         return '';
     }
 
-    // Pass the ticketId if available to ensure correct context
     $panelVars = $vars;
     if ($ticketId > 0 && !isset($panelVars['ticketid'])) {
         $panelVars['ticketid'] = $ticketId;
@@ -2699,96 +2697,40 @@ add_hook('AdminAreaFooterOutput', 1, function ($vars) {
 
     $output = sahdev_inject_ticket_panel($panelVars);
     
-    // Add Note Insert Button JS logic
     $output .= <<<HTML
 <script>
 (function() {
-    // Utility to inject text into the WHMCS reply editor
-    function injectToEditor(text) {
-        if (!text) return;
-        console.log("[Sahdev] Attempting to inject text to editor...");
-
-        var injected = false;
-        var tinymce = window.tinymce;
-
-        // 1. Try TinyMCE by checking all instances and their visibility
-        if (typeof tinymce !== "undefined" && tinymce.editors) {
-            // Find the first visible or active editor
-            var editor = tinymce.activeEditor || tinymce.editors[0];
-            for (var i = 0; i < tinymce.editors.length; i++) {
-                if (!tinymce.editors[i].isHidden()) {
-                    editor = tinymce.editors[i];
-                    break;
-                }
-            }
-
-            if (editor) {
-                console.log("[Sahdev] Found TinyMCE editor: " + editor.id);
-                var html = text.replace(/\\n/g, '<br>');
-                editor.execCommand('mceInsertContent', false, html);
-                injected = true;
-            }
-        }
-
-        // 2. Try raw textarea fallback (handles Standard and non-TinyMCE views)
-        if (!injected) {
-            var \$textarea = jQuery('#replymessage, textarea[name="replymessage"], .reply-message-body textarea').filter(':visible').first();
-            if (\$textarea.length) {
-                console.log("[Sahdev] Found visible textarea, prepending content.");
-                \$textarea.val(text + "\\n\\n" + \$textarea.val());
-                \$textarea.focus();
-                injected = true;
-            }
-        }
-
-        if (injected) {
-            // WHMCS Reply Tab Activation (if present)
-            var \$replyTab = jQuery('a[href="#tabReply"], a:contains("Reply")').filter('.nav-link, button').first();
-            if (\$replyTab.length) \$replyTab.tab('show'); // Use Bootstrap's tab show command
-
-            // Smooth scroll to the reply section
-            var \$target = jQuery('#replyticket, #replymessage, .reply-container').filter(':visible').first();
-            if (\$target.length) {
-                jQuery('html, body').animate({ scrollTop: \$target.offset().top - 150 }, 400);
-            }
-        } else {
-            console.warn("[Sahdev] Could not find any valid editor/textarea to inject text. Showing fallback alert.");
-            alert("Sahdev: Could not find the reply editor. Please click the 'Reply' tab first.");
-        }
-    }
+    console.log("[Sahdev] Note Controller Initialized (Footer Hook).");
 
     function sahdev_init_note_insert_buttons() {
-        // Find the notes container to prevent random spawning in other areas
-        var \$notesArea = jQuery('#ticketnotes, .ticket-notes, #ticketnotes-container, .notes-container, #notes').first();
-        if (!\$notesArea.length) {
-            \$notesArea = jQuery('.tab-pane#notes, .tab-content #tabNotes, #tab3').first();
-        }
-        
-        var \$searchRoot = \$notesArea.length ? \$notesArea : jQuery('body');
-
-        // Strategy A: Look for Draft content within notes area
-        \$searchRoot.find('div, blockquote, .text, .message, .note-content').each(function() {
+        // Strategy A: Content matching for Sahdev Drafts
+        // Scanning widely but focusing on note-like elements to avoid performance hits
+        jQuery('div, blockquote, .text, .message, .note-content').each(function() {
             var \$el = jQuery(this);
             if (\$el.hasClass('sdv-monitored')) return;
             
-            var fullTxt = \$el.text();
-            if (fullTxt.indexOf('Sahdev') === -1 || fullTxt.indexOf('Draft') === -1) return;
+            var txt = \$el.text();
+            // Case-insensitive check for Sahdev and Draft
+            if (!/Sahdev/i.test(txt) || !/Draft/i.test(txt)) return;
             
-            // Avoid double-injection
-            var hasMatchChild = false;
+            // Safety: Skip if any child has the same content (avoids putting button on container AND content)
+            var hasDraftChild = false;
             \$el.children().each(function() {
-                var childTxt = jQuery(this).text();
-                if (childTxt.indexOf('Sahdev') !== -1 && childTxt.indexOf('Draft') !== -1) {
-                    hasMatchChild = true;
+                var cTxt = jQuery(this).text();
+                if (/Sahdev/i.test(cTxt) && /Draft/i.test(cTxt)) {
+                    hasDraftChild = true;
                     return false;
                 }
             });
-            if (hasMatchChild) return;
+            if (hasDraftChild) return;
             
             \$el.addClass('sdv-monitored');
+            console.log("[Sahdev] Found Draft Note content. Injecting button.");
 
-            var \$btn = jQuery('<button type="button" class="btn btn-xs btn-sahdev-insert-note" style="display:inline-block !important; width:auto !important; margin-bottom:10px !important;"><i class="fas fa-edit"></i> Edit / Copy Draft</button>');
-            \$el.prepend(\$btn);
+            var \$btn = jQuery('<button type="button" class="btn btn-xs btn-sahdev-insert-note" style="margin-bottom:10px !important;"><i class="fas fa-edit"></i> Edit / Copy Draft</button>');
+            
+            // Using .before instead of .prepend to ensure it acts as a separate block element and isn't clipped
+            \$el.before(\$btn);
 
             \$btn.on('click', function(e) {
                 e.preventDefault();
@@ -2798,23 +2740,25 @@ add_hook('AdminAreaFooterOutput', 1, function ($vars) {
                 \$clone.find('.btn, .sdv-monitored, .sdv-processed, .sdv-btn-processed, script, style, textarea').remove();
                 var noteText = \$clone.text().trim();
                 
+                // Clean up metadata
                 var draftMarker = "[Sahdev Autopilot Draft]";
-                if (noteText.indexOf(draftMarker) !== -1) {
-                    noteText = noteText.substring(noteText.indexOf(draftMarker) + draftMarker.length);
+                var markerIdx = noteText.indexOf(draftMarker);
+                if (markerIdx !== -1) {
+                    noteText = noteText.substring(markerIdx + draftMarker.length);
                 }
                 noteText = noteText.replace(/Review before sending - Draft Mode is ON/i, '')
                                  .replace(/^---+\\s*/, '')
                                  .trim();
 
-                // Copy to clipboard
+                // 1. Copy to clipboard
                 navigator.clipboard.writeText(noteText);
 
-                // Open inline textarea for manual copy/view
+                // 2. Toggle inline preview/edit area
                 var \$existing = \$el.parent().find('.sdv-edit-area');
                 if (\$existing.length) {
                     \$existing.toggle();
                 } else {
-                    var \$editContainer = jQuery('<div class="sdv-edit-area" style="margin: 10px 0; padding: 10px; background: #f8f9fa; border: 1px solid #ddd; border-radius: 4px;">' +
+                    var \$editContainer = jQuery('<div class="sdv-edit-area" style="margin: 10px 0; padding: 10px; background: #f8f9fa; border: 1px solid #ddd; border-radius: 4px; clear:both;">' +
                         '<p style="margin-bottom: 5px; font-weight: bold; font-size: 11px; color: #666;">MANUAL COPY AREA:</p>' +
                         '<textarea class="form-control" style="width:100%; height:120px; font-family: monospace; font-size: 13px;" readonly></textarea>' +
                         '<button type="button" class="btn btn-link btn-xs" style="color: #666;">Close</button>' +
@@ -2826,37 +2770,36 @@ add_hook('AdminAreaFooterOutput', 1, function ($vars) {
                 }
 
                 var \$this = jQuery(this);
-                var originalText = \$this.html();
+                var originalHtml = \$this.html();
                 \$this.html('<i class="fas fa-check"></i> Copied / Viewing').addClass('btn-success');
                 setTimeout(function() {
-                    \$this.html(originalText).removeClass('btn-success');
+                    \$this.html(originalHtml).removeClass('btn-success');
                 }, 3000);
             });
         });
 
-        // Strategy B: Fallback for existing action buttons
-        \$searchRoot.find('a, button').filter('.btn-danger, .btn-edit, :contains("Delete"), :contains("Edit")').each(function() {
-            var \$btn = jQuery(this);
-            if (\$btn.hasClass('sdv-btn-processed') || \$btn.hasClass('btn-sahdev-insert-note') || \$btn.closest('#sahdev-ai-panel').length) return;
+        // Strategy B: Action button matching (Delete/Edit)
+        jQuery('a, button').filter('.btn-danger, .btn-edit, :contains("Delete"), :contains("Edit")').each(function() {
+            var \$actionBtn = jQuery(this);
+            if (\$actionBtn.hasClass('sdv-btn-processed') || \$actionBtn.hasClass('btn-sahdev-insert-note') || \$actionBtn.closest('#sahdev-ai-panel').length) return;
             
-            var \$container = \$btn.closest('.note, .ticketnote, .ticket-note, .note-container, .well, .alert, tr, td');
+            var \$container = \$actionBtn.closest('.note, .ticketnote, .ticket-note, .note-container, .well, .alert, tr, td');
             if (!\$container.length) return;
 
-            \$btn.addClass('sdv-btn-processed');
+            \$actionBtn.addClass('sdv-btn-processed');
             var \$copyBtn = jQuery('<button type="button" class="btn btn-xs btn-sahdev-insert-note" style="margin-right: 5px;"><i class="fas fa-edit"></i> Edit</button>');
-            \$btn.before(\$copyBtn);
+            \$actionBtn.before(\$copyBtn);
 
             \$copyBtn.on('click', function(e) {
                 e.preventDefault();
                 var \$content = \$container.find('.text, .message, .note-content, blockquote, .note-body, .note-msg').first();
                 var noteText = \$content.length ? \$content.text().trim() : \$container.clone().find('.btn, .label, .actions').remove().end().text().trim();
                 navigator.clipboard.writeText(noteText);
-                alert("Copied to clipboard.");
+                alert("Text copied to clipboard. You can now paste it into the reply box.");
             });
         });
     }
 
-    // Initialize once with a single MutationObserver
     jQuery(document).ready(function() {
         sahdev_init_note_insert_buttons();
         var observer = new MutationObserver(function() {
