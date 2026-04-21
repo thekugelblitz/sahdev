@@ -245,8 +245,6 @@ function sahdev_inject_ticket_panel($vars)
                 .sahdev-intent-btn:hover { background: #dbe4ff; color: #3a56c9; border-color: #3a56c9; }
                 .sahdev-intent-active { background: #0d6efd !important; color: #fff !important; border-color: #0d6efd !important; }
                 #sahdev_override_provider, #sahdev_override_provider option { color: #212529; background-color: #fff; }
-                .btn-sahdev-insert-note { background: #28a745; color: #fff; border: 1px solid #218838; transition: all 0.15s ease; font-weight: 600; margin-bottom: 2px; }
-                .btn-sahdev-insert-note:hover { background: #218838; color: #fff; border-color: #1e7e34; }
             </style>
 
             <div class="row">
@@ -2536,98 +2534,7 @@ HTML;
             });
         });
 
-        // =====================================================================
-        // FEATURE: Insert Note to Reply
-        // =====================================================================
-        function sahdev_init_note_insert_buttons() {
-            // Guard to ensure we only process buttons that haven't been touched yet
-            // and search for any button that looks like a note action (Edit or Delete)
-            $('a, button').each(function() {
-                var $btn = $(this);
-                
-                // Skip if already processed or in our own panel
-                if ($btn.hasClass('sdv-processed') || $btn.closest('#sahdev-ai-panel').length || $btn.prev('.btn-sahdev-insert-note').length) {
-                    return;
-                }
-
-                var btnText = $btn.text().toLowerCase();
-                var hasActionIcon = $btn.find('.fa-trash, .fa-trash-alt, .fa-edit, .fa-pencil-alt, .fa-times, .glyphicon-trash, .glyphicon-pencil').length > 0;
-                
-                // Target Edit or Delete buttons
-                var isTargetAction = (btnText.indexOf('edit') !== -1 || btnText.indexOf('delete') !== -1 || hasActionIcon);
-                if (!isTargetAction) return;
-
-                // Try to find the nearest note container
-                var $container = $btn.closest('.note, .ticketnote, .ticket-note, .note-container, .well, tr, td, .panel');
-                if (!$container.length) return;
-
-                // Robust check: Is this actually a private note or in a notes section?
-                var isNoteContext = $container.find(':contains("Private Note")').length > 0 || 
-                                    $container.closest('.ticket-notes, #ticketnotes, #notes, .notes-container').length > 0 ||
-                                    $container.hasClass('note') || $container.hasClass('ticketnote');
-
-                if (!isNoteContext) return;
-
-                // Mark as processed early
-                $btn.addClass('sdv-processed');
-                
-                var $insertBtn = $('<button type="button" class="btn btn-xs btn-sahdev-insert-note" style="margin-right: 5px;"><i class="fas fa-reply"></i> Use as Reply</button>');
-                $btn.before($insertBtn);
-
-                $insertBtn.on('click', function(e) {
-                    e.preventDefault();
-                    var noteText = '';
-                    
-                    // Comprehensive content search
-                    var $content = $container.find('.text, .message, .note-content, blockquote, .note-body, .note-msg').first();
-                    if ($content.length) {
-                        noteText = $content.text().trim();
-                    } else {
-                        // Hard fallback: strip all buttons/meta and take everything else
-                        var $clone = $container.clone();
-                        $clone.find('.btn, .label, .date, .admin, .actions, .note-actions, .sdv-processed, script, style').remove();
-                        noteText = $clone.text().trim();
-                    }
-
-                    if (!noteText) return;
-
-                    // Improved Sahdev Autopilot Draft cleanup
-                    var draftPrefix = "[Sahdev Autopilot Draft]";
-                    if (noteText.indexOf(draftPrefix) !== -1) {
-                        noteText = noteText.substring(noteText.indexOf(draftPrefix) + draftPrefix.length);
-                        noteText = noteText.replace(/Review before sending - Draft Mode is ON/i, '').trim();
-                        noteText = noteText.replace(/^---+\s*/, '').trim();
-                    }
-
-                    // Insert into editor
-                    if (typeof tinymce !== "undefined" && tinymce.activeEditor) {
-                        var html = noteText.replace(/\n/g, '<br>');
-                        tinymce.activeEditor.execCommand('mceInsertContent', false, html);
-                    } else if ($('#replymessage').length) {
-                        var el = $('#replymessage').get(0);
-                        var currentVal = el.value;
-                        el.value = noteText + "\n\n" + currentVal;
-                        el.focus();
-                    }
-
-                    // Jump to reply field
-                    if ($('#replyticket').length) {
-                        $('html, body').animate({ scrollTop: $('#replyticket').offset().top - 60 }, 400);
-                    }
-                });
-            });
-        }
-
-        // Initialize multiple times and on common WHMCS events
-        $(document).ready(function() {
-            console.log("Sahdev: Note Interceptor Enabled.");
-            sahdev_init_note_insert_buttons();
-            setTimeout(sahdev_init_note_insert_buttons, 1500);
-            setInterval(sahdev_init_note_insert_buttons, 4000);
-        });
-
-        // Expose globally
-        window.sahdev_init_note_insert_buttons = sahdev_init_note_insert_buttons;
+        // Expose globally for inline onclick handlers
         window.sahdevSnapInsertToEditor = sahdevSnapInsertToEditor;
 
     });
@@ -2688,7 +2595,7 @@ add_hook('AdminAreaHeaderOutput', 1, function ($vars) {
             
             $configUrl = "addonmodules.php?module=sahdev&action=autopilot"; 
             
-            return <<<HTML
+            $output .= <<<HTML
 <div class="alert alert-warning sahdev-cron-alert" style="margin: 15px 20px 5px 20px; padding: 10px 15px; border-left: 5px solid #f39c12; font-size: 13px;">
     <div style="display:flex; align-items:center; justify-content:space-between;">
         <span><i class="fas fa-exclamation-triangle" style="color:#e67e22; margin-right:8px;"></i> <strong>Sahdev Health Alert:</strong> {$msg}</span>
@@ -2697,8 +2604,18 @@ add_hook('AdminAreaHeaderOutput', 1, function ($vars) {
 </div>
 HTML;
         }
+        
+        // Global Note Insert Button CSS injection
+        $output .= <<<HTML
+<style>
+    .btn-sahdev-insert-note { background: #28a745 !important; color: #fff !important; border: 1px solid #218838 !important; transition: all 0.15s ease; font-weight: 600; margin-right: 5px; margin-bottom: 2px; }
+    .btn-sahdev-insert-note:hover { background: #218838 !important; color: #fff !important; border-color: #1e7e34 !important; opacity: 0.95; }
+    .btn-sahdev-insert-note i { margin-right: 4px; }
+</style>
+HTML;
+
+        return $output;
     } catch (\Throwable $e) {
-        // Fail silently to avoid breaking admin UI
     }
     return '';
 });
@@ -2762,7 +2679,120 @@ add_hook('AdminAreaFooterOutput', 1, function ($vars) {
         $panelVars['ticketid'] = $ticketId;
     }
 
-    return sahdev_inject_ticket_panel($panelVars);
+    $output = sahdev_inject_ticket_panel($panelVars);
+    
+    // Add Note Insert Button JS logic
+    $output .= <<<HTML
+<script>
+(function() {
+    function sahdev_init_note_insert_buttons() {
+        // Search for any button that looks like a note action (Edit or Delete)
+        // We include a broad range of selectors to cover standard and custom WHMCS themes
+        jQuery('a, button').each(function() {
+            var \$btn = jQuery(this);
+            
+            // Skip if already processed or in our own panel
+            if (\$btn.hasClass('sdv-processed') || \$btn.closest('#sahdev-ai-panel').length || \$btn.prev('.btn-sahdev-insert-note').length) {
+                return;
+            }
+
+            var btnText = \$btn.text().toLowerCase();
+            var hasActionIcon = \$btn.find('.fa-trash, .fa-trash-alt, .fa-edit, .fa-pencil-alt, .fa-times, .glyphicon-trash, .glyphicon-pencil').length > 0;
+            
+            // Target Edit or Delete buttons - very broad to ensure coverage
+            var isTargetAction = (btnText.indexOf('edit') !== -1 || btnText.indexOf('delete') !== -1 || hasActionIcon);
+            if (!isTargetAction) return;
+
+            // Try to find the nearest note container
+            var \$container = \$btn.closest('.note, .ticketnote, .ticket-note, .note-container, .well, tr, td, .panel, .alert');
+            if (!\$container.length) return;
+
+            // Robust check: Is this actually a private note or in a notes section?
+            var isNoteContext = \$container.find(':contains("Private Note")').length > 0 || 
+                                \$container.closest('.ticket-notes, #ticketnotes, #notes, .notes-container, .ticket-sidebar').length > 0 ||
+                                \$container.hasClass('note') || \$container.hasClass('ticketnote') ||
+                                \$container.find('.label-info, .label-danger').length > 0;
+
+            if (!isNoteContext) return;
+
+            // Mark as processed
+            \$btn.addClass('sdv-processed');
+            
+            var \$insertBtn = jQuery('<button type="button" class="btn btn-xs btn-sahdev-insert-note"><i class="fas fa-reply"></i> Use as Reply</button>');
+            \$btn.before(\$insertBtn);
+
+            \$insertBtn.on('click', function(e) {
+                e.preventDefault();
+                var noteText = '';
+                
+                // Extract content using common WHMCS body classes
+                var \$content = \$container.find('.text, .message, .note-content, blockquote, .note-body, .note-msg').first();
+                if (\$content.length) {
+                    noteText = \$content.text().trim();
+                } else {
+                    // Fallback to full container text minus buttons/metadata
+                    var \$clone = \$container.clone();
+                    \$clone.find('.btn, .label, .date, .admin, .actions, .note-actions, .sdv-processed, script, style').remove();
+                    noteText = \$clone.text().trim();
+                }
+
+                if (!noteText) return;
+
+                // Strip Sahdev Autopilot Draft formatting
+                var draftPrefix = "[Sahdev Autopilot Draft]";
+                if (noteText.indexOf(draftPrefix) !== -1) {
+                    noteText = noteText.substring(noteText.indexOf(draftPrefix) + draftPrefix.length);
+                    noteText = noteText.replace(/Review before sending - Draft Mode is ON/i, '').trim();
+                    noteText = noteText.replace(/^---+\\s*/, '').trim();
+                }
+
+                // Inject into editor
+                if (typeof tinymce !== "undefined" && tinymce.activeEditor) {
+                    var html = noteText.replace(/\\n/g, '<br>');
+                    tinymce.activeEditor.execCommand('mceInsertContent', false, html);
+                } else if (jQuery('#replymessage').length) {
+                    var el = jQuery('#replymessage').get(0);
+                    var currentVal = el.value;
+                    el.value = noteText + "\\n\\n" + currentVal;
+                    el.focus();
+                }
+
+                // Scroll to reply section
+                if (jQuery('#replyticket').length) {
+                    jQuery('html, body').animate({ scrollTop: jQuery('#replyticket').offset().top - 120 }, 400);
+                }
+            });
+        });
+    }
+
+    // Use MutationObserver for dynamic page updates (WHMCS AJAX loading)
+    function initObserver() {
+        var targetNode = document.body;
+        if (!targetNode) return;
+        
+        var observer = new MutationObserver(function(mutations) {
+            sahdev_init_note_insert_buttons();
+        });
+        
+        var config = { childList: true, subtree: true };
+        observer.observe(targetNode, config);
+        console.log("[Sahdev] Note Insertion Logic Active (Observer Mode)");
+    }
+
+    if (window.jQuery) {
+        jQuery(document).ready(function() {
+            sahdev_init_note_insert_buttons();
+            setTimeout(sahdev_init_note_insert_buttons, 1500);
+            initObserver();
+        });
+    } else {
+        window.addEventListener('load', initObserver);
+    }
+})();
+</script>
+HTML;
+
+    return $output;
 });
 
 // ---------------------------------------------------------------------------
