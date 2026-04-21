@@ -2783,7 +2783,36 @@ add_hook('AdminAreaFooterOutput', 1, function ($vars) {
                 
                 // Some themes have sub-containers containing the actual text
                 var \$innerMsg = \$clone.find('.message, .text, .note-content').last();
-                var cleanText = \$innerMsg.length ? \$innerMsg.text().trim() : \$clone.text().trim();
+                if (!\$innerMsg.length) \$innerMsg = \$clone;
+                
+                // Advanced HTML to Markdown extraction
+                var tempDiv = document.createElement('div');
+                tempDiv.innerHTML = \$innerMsg.html();
+                
+                // Convert strong/b
+                jQuery(tempDiv).find('strong, b').each(function() { jQuery(this).replaceWith('**' + jQuery(this).text() + '**'); });
+                // Convert em/i
+                jQuery(tempDiv).find('em, i').each(function() { jQuery(this).replaceWith('*' + jQuery(this).text() + '*'); });
+                // Convert code blocks
+                jQuery(tempDiv).find('pre').each(function() { jQuery(this).replaceWith('\n```\n' + jQuery(this).text() + '\n```\n'); });
+                jQuery(tempDiv).find('code').each(function() { jQuery(this).replaceWith('`' + jQuery(this).text() + '`'); });
+                // Convert links
+                jQuery(tempDiv).find('a').each(function() { jQuery(this).replaceWith('[' + jQuery(this).text() + '](' + jQuery(this).attr('href') + ')'); });
+                // Convert lists
+                jQuery(tempDiv).find('ul, ol').each(function() {
+                    var isOrdered = this.tagName.toLowerCase() === 'ol';
+                    var index = 1;
+                    jQuery(this).find('li').each(function() {
+                        var prefix = isOrdered ? (index++) + '. ' : '- ';
+                        jQuery(this).replaceWith('\n' + prefix + jQuery(this).text().trim());
+                    });
+                });
+                // Convert paragraph and breaks
+                jQuery(tempDiv).find('br').replaceWith('\n');
+                jQuery(tempDiv).find('p').each(function() { jQuery(this).replaceWith(jQuery(this).text() + '\n\n'); });
+
+                // Extract final text with preserved formatting
+                var cleanText = tempDiv.textContent || tempDiv.innerText || "";
                 
                 var marker = "[Sahdev Autopilot Draft]";
                 var markerIdx = cleanText.indexOf(marker);
@@ -2791,6 +2820,7 @@ add_hook('AdminAreaFooterOutput', 1, function ($vars) {
                     cleanText = cleanText.substring(markerIdx + marker.length);
                 }
                 cleanText = cleanText.replace(/Review before sending - Draft Mode is ON/i, '').replace(/^---+\\s*/, '').trim();
+                cleanText = cleanText.replace(/\\n{3,}/g, '\\n\\n'); // Clean excess newlines
 
                 // 3. Create the Native-Style Edit UI
                 var \$editUI = jQuery('<div class="sdv-native-edit sdv-active-edit-area" style="display:block !important; visibility:visible !important; position:relative; z-index:9999; width:100%; margin-top:15px; border-top:2px solid #ccc; padding-top:10px;">' +
