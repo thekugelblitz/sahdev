@@ -2682,21 +2682,8 @@ add_hook('AdminAreaFooterOutput', 1, function ($vars) {
     // Robust Ticket ID detection (handles different themes and routing)
     $ticketId = (int) ($_GET['id'] ?? ($vars['ticketid'] ?? 0));
     $userId = (int) ($_GET['userid'] ?? ($vars['userid'] ?? 0));
-    
-    // Broad page check: inject on all likely admin ticket view routes (classic + routed)
-    $uri = strtolower((string) ($_SERVER['REQUEST_URI'] ?? ''));
-    $isTicketPage = (
-        $ticketId > 0
-        || strpos($uri, 'supporttickets.php') !== false
-        || strpos($uri, 'viewticket') !== false
-        || (
-            strpos($uri, 'support') !== false
-            && strpos($uri, 'ticket') !== false
-            && strpos($uri, 'open') === false
-        )
-    );
-    
-    if (!$isTicketPage) {
+    $adminId = (int) ($_SESSION['adminid'] ?? 0);
+    if ($adminId <= 0) {
         return '';
     }
 
@@ -2705,7 +2692,7 @@ add_hook('AdminAreaFooterOutput', 1, function ($vars) {
 
     $output = "";
     
-    $output .= "\n<!-- Sahdev Note Tool Active (Ticket ID: $ticketId) -->\n";
+    $output .= "\n<!-- Sahdev Note Tool Active (Ticket ID: $ticketId, Admin ID: $adminId) -->\n";
     $output .= <<<HTML
 <style>
     .sahdev-note-actions {
