@@ -2706,7 +2706,10 @@ add_hook('AdminAreaFooterOutput', 1, function ($vars) {
 
             \$insertBtn.on('click', function(e) {
                 e.preventDefault();
-                var noteText = \$msg.text().trim();
+                e.stopPropagation();
+                console.log("[Sahdev] Use as Reply clicked.");
+                
+                var noteText = \$msg.clone().find('.btn, .sdv-processed').remove().end().text().trim();
                 
                 // Strip Sahdev Autopilot Draft formatting
                 var draftPrefix = "[Sahdev Autopilot Draft]";
@@ -2716,6 +2719,7 @@ add_hook('AdminAreaFooterOutput', 1, function ($vars) {
                     noteText = noteText.replace(/^---+\\s*/, '').trim();
                 }
 
+                console.log("[Sahdev] Content extracted, length:", noteText.length);
                 injectToEditor(noteText);
             });
         });
@@ -2757,16 +2761,48 @@ add_hook('AdminAreaFooterOutput', 1, function ($vars) {
 
     function injectToEditor(text) {
         if (!text) return;
-        if (typeof tinymce !== "undefined" && tinymce.activeEditor) {
-            var html = text.replace(/\\n/g, '<br>');
-            tinymce.activeEditor.execCommand('mceInsertContent', false, html);
-        } else if (jQuery('#replymessage').length) {
-            var el = jQuery('#replymessage').get(0);
-            el.value = text + "\\n\\n" + el.value;
-            el.focus();
+        console.log("[Sahdev] Attempting to inject text to editor...");
+
+        var injected = false;
+
+        // 1. Try TinyMCE by checking all instances
+        if (typeof tinymce !== "undefined") {
+            var editor = tinymce.activeEditor || (tinymce.editors && tinymce.editors[0]);
+            if (editor && !editor.isHidden()) {
+                console.log("[Sahdev] Found active TinyMCE editor.");
+                var html = text.replace(/\n/g, '<br>');
+                editor.execCommand('mceInsertContent', false, html);
+                injected = true;
+            }
         }
-        if (jQuery('#replyticket').length) {
-            jQuery('html, body').animate({ scrollTop: jQuery('#replyticket').offset().top - 120 }, 400);
+
+        // 2. Try raw textarea (standard or reply)
+        if (!injected) {
+            var $textarea = jQuery('#replymessage, textarea[name="replymessage"], .reply-message-body textarea').filter(':visible').first();
+            if ($textarea.length) {
+                console.log("[Sahdev] Found visible textarea.");
+                var currentVal = $textarea.val();
+                $textarea.val(text + "\n\n" + currentVal);
+                $textarea.focus();
+                injected = true;
+            }
+        }
+
+        if (injected) {
+            // Attempt to switch to Reply tab if it's a tabbed interface
+            var $replyTab = jQuery('a[href="#tabReply"], a:contains("Reply")').filter('.nav-link, button');
+            if ($replyTab.length && !$replyTab.hasClass('active')) {
+                $replyTab.click();
+            }
+
+            // Scroll to reply section
+            var $target = jQuery('#replyticket, #replymessage, .reply-container').filter(':visible').first();
+            if ($target.length) {
+                jQuery('html, body').animate({ scrollTop: $target.offset().top - 150 }, 400);
+            }
+        } else {
+            console.error("[Sahdev] Could not find a valid editor/textarea to inject text.");
+            alert("Could not find the ticket reply editor. Please make sure the Reply tab is open.");
         }
     }
 
