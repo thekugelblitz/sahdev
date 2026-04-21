@@ -2817,7 +2817,7 @@ add_hook('AdminAreaFooterOutput', 1, function ($vars) {
 
                 \$editUI.find('.btn-close-native').on('click', function() { \$editUI.hide(); });
                 
-                \$el.append(\$editUI);
+                \$note.append(\$editUI);
             });
         });
     }
