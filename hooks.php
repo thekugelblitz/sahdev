@@ -2679,150 +2679,24 @@ function sahdev_is_admin_ticket_open_page(?array $vars = null): bool
 }
 
 add_hook('AdminAreaFooterOutput', 1, function ($vars) {
-    // HOTFIX: disable injected private-note UI script to prevent admin slowdown/timeouts.
-    // Keep hook body in file for later rework; return immediately for stability.
-    return '';
-
     // Robust Ticket ID detection (handles different themes and routing)
     $ticketId = (int) ($_GET['id'] ?? ($vars['ticketid'] ?? 0));
     $userId = (int) ($_GET['userid'] ?? ($vars['userid'] ?? 0));
-    $adminId = (int) ($_SESSION['adminid'] ?? ($_SESSION['admin_id'] ?? 0));
+    
+    // Broad page check: only inject on Ticket View, Client Summary, or Open Ticket pages
+    $uri = $_SERVER['REQUEST_URI'] ?? '';
+    $isTicketPage = ($ticketId > 0 || strpos($uri, 'supporttickets.php') !== false || strpos($uri, 'viewticket') !== false);
+    
+    if (!$isTicketPage) {
+        return '';
+    }
 
     $panelVars = $vars;
     if ($ticketId > 0) $panelVars['ticketid'] = $ticketId;
 
     $output = "";
     
-    $output .= "\n<!-- Sahdev Note Tool Active (Ticket ID: $ticketId, Admin ID: $adminId) -->\n";
-    $output .= <<<HTML
-<style>
-    .sahdev-note-actions {
-        display: flex;
-        gap: 6px;
-        margin: 6px 0 8px 0;
-        flex-wrap: wrap;
-    }
-    .sahdev-note-actions.sahdev-inline-actions {
-        display: inline-flex;
-        margin: 0 0 0 8px;
-        vertical-align: middle;
-    }
-    .sahdev-note-actions .btn {
-        line-height: 1.2;
-    }
-    .sahdev-note-edit-area {
-        width: 100%;
-        min-height: 110px;
-        margin-top: 8px;
-        padding: 8px;
-        border: 1px solid #c9ced4;
-        border-radius: 4px;
-        resize: vertical;
-    }
-</style>
-<script>
-(function() {
-    function stripAutopilotBanner(text) {
-        return String(text || '')
-            .replace(/^\s*\[Sahdev\s+Autopilot\s+Draft\][^\r\n]*[\r\n]*/i, '')
-            .trim();
-    }
-
-    function markdownFromHtml(html) {
-        var box = document.createElement('div');
-        box.innerHTML = html || '';
-        var br = box.querySelectorAll('br');
-        for (var i = 0; i < br.length; i++) br[i].parentNode.replaceChild(document.createTextNode('\n'), br[i]);
-        var li = box.querySelectorAll('li');
-        for (var j = 0; j < li.length; j++) {
-            li[j].insertBefore(document.createTextNode('- '), li[j].firstChild);
-            li[j].appendChild(document.createTextNode('\n'));
-        }
-        var blocks = box.querySelectorAll('p,div,blockquote,ul,ol');
-        for (var k = 0; k < blocks.length; k++) blocks[k].appendChild(document.createTextNode('\n\n'));
-        return stripAutopilotBanner((box.textContent || '').replace(/\r\n/g, '\n'));
-    }
-
-    function insertReplyText(text) {
-        var cleaned = stripAutopilotBanner(text);
-        if (!cleaned) return;
-
-        var replyField = document.getElementById('replymessage');
-        if (replyField) {
-            replyField.value = cleaned + (replyField.value ? '\n\n' + replyField.value : '');
-            if (window.jQuery) window.jQuery(replyField).trigger('change');
-        }
-        if (typeof tinymce !== 'undefined' && tinymce.activeEditor) {
-            tinymce.activeEditor.setContent(
-                cleaned.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')
-            );
-        }
-        var wrap = document.getElementById('replyticket');
-        if (wrap && wrap.scrollIntoView) wrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-
-    function getNoteBlockFromBadge(badgeEl) {
-        return badgeEl.closest('tr, .ticket-reply, .ticket-reply-item, .ticket-message, .message, .panel, .alert, .well, .post, .reply');
-    }
-
-    function getNoteBodyText(noteBlock) {
-        if (!noteBlock) return '';
-        var body = noteBlock.querySelector('.fr-view, .markdown-content, .ticket-reply-message, .content, .message') || noteBlock;
-        return markdownFromHtml(body.innerHTML || body.textContent || '');
-    }
-
-    function attachButtons() {
-        var all = document.querySelectorAll('span,small,div,strong,a,label');
-        for (var i = 0; i < all.length; i++) {
-            var txt = (all[i].textContent || '').trim().toLowerCase();
-            if (txt !== 'private note' && txt.indexOf('private note') === -1) continue;
-            if (all[i].getAttribute('data-sahdev-private-note-bound') === '1') continue;
-
-            var noteBlock = getNoteBlockFromBadge(all[i]);
-            if (!noteBlock) continue;
-
-            var host = all[i].parentNode || all[i];
-            var wrap = document.createElement('span');
-            wrap.className = 'sahdev-note-actions sahdev-inline-actions';
-
-            var btnUse = document.createElement('button');
-            btnUse.type = 'button';
-            btnUse.className = 'btn btn-xs btn-success';
-            btnUse.textContent = 'Use as Reply';
-            btnUse.onclick = function(blockRef) {
-                return function() { insertReplyText(getNoteBodyText(blockRef)); };
-            }(noteBlock);
-
-            var btnEdit = document.createElement('button');
-            btnEdit.type = 'button';
-            btnEdit.className = 'btn btn-xs btn-default';
-            btnEdit.textContent = 'Edit';
-            btnEdit.onclick = function(blockRef) {
-                return function() {
-                    var raw = getNoteBodyText(blockRef);
-                    var editor = window.prompt('Edit note text before using as reply:', raw);
-                    if (editor !== null) insertReplyText(editor);
-                };
-            }(noteBlock);
-
-            wrap.appendChild(btnUse);
-            wrap.appendChild(btnEdit);
-            host.appendChild(wrap);
-            all[i].setAttribute('data-sahdev-private-note-bound', '1');
-        }
-    }
-
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', attachButtons);
-    } else {
-        attachButtons();
-    }
-    setTimeout(attachButtons, 600);
-    setTimeout(attachButtons, 1400);
-    setInterval(attachButtons, 2500);
-})();
-</script>
-HTML;
+    $output .= "\n<!-- Sahdev Note Tool Active (Ticket ID: $ticketId) -->\n";
     return $output;
 });
 
