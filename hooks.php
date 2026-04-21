@@ -2540,35 +2540,35 @@ HTML;
         // FEATURE: Insert Note to Reply
         // =====================================================================
         function sahdev_init_note_insert_buttons() {
-            // Find all potential "Delete" buttons in the ticket view
-            $('a.btn-danger, button.btn-danger, .btn-danger > a').each(function() {
+            // Guard to ensure we only process buttons that haven't been touched yet
+            // and search for any button that looks like a note action (Edit or Delete)
+            $('a, button').each(function() {
                 var $btn = $(this);
                 
-                // Avoid processing buttons in our own Sahdev panel or already processed ones
-                if ($btn.closest('#sahdev-ai-panel').length || $btn.hasClass('sdv-processed') || $btn.prev('.btn-sahdev-insert-note').length) {
+                // Skip if already processed or in our own panel
+                if ($btn.hasClass('sdv-processed') || $btn.closest('#sahdev-ai-panel').length || $btn.prev('.btn-sahdev-insert-note').length) {
                     return;
                 }
 
                 var btnText = $btn.text().toLowerCase();
-                var hasTrashIcon = $btn.find('.fa-trash, .fa-trash-alt, .fa-times, .glyphicon-trash').length > 0;
+                var hasActionIcon = $btn.find('.fa-trash, .fa-trash-alt, .fa-edit, .fa-pencil-alt, .fa-times, .glyphicon-trash, .glyphicon-pencil').length > 0;
                 
-                // Only target buttons that look like note deletion
-                if (btnText.indexOf('delete') === -1 && !hasTrashIcon) {
-                    return;
-                }
+                // Target Edit or Delete buttons
+                var isTargetAction = (btnText.indexOf('edit') !== -1 || btnText.indexOf('delete') !== -1 || hasActionIcon);
+                if (!isTargetAction) return;
 
-                // Try to find the nearest note container (handles various WHMCS versions/themes)
-                var $container = $btn.closest('.note, .ticketnote, .ticket-note, .note-container, .well, tr, td');
+                // Try to find the nearest note container
+                var $container = $btn.closest('.note, .ticketnote, .ticket-note, .note-container, .well, tr, td, .panel');
                 if (!$container.length) return;
 
-                // Qualifying check: is this actually a note?
-                // Look for labels like "Private Note" or content blocks
-                var isNote = $container.find('.text, .message, .note-content, blockquote, .note-body, :contains("Private Note")').length > 0;
-                if (!isNote && !$btn.closest('.ticket-notes, #ticketnotes, #notes').length) {
-                    // If not obviously a note and not in a notes section, skip
-                    return;
-                }
+                // Robust check: Is this actually a private note or in a notes section?
+                var isNoteContext = $container.find(':contains("Private Note")').length > 0 || 
+                                    $container.closest('.ticket-notes, #ticketnotes, #notes, .notes-container').length > 0 ||
+                                    $container.hasClass('note') || $container.hasClass('ticketnote');
 
+                if (!isNoteContext) return;
+
+                // Mark as processed early
                 $btn.addClass('sdv-processed');
                 
                 var $insertBtn = $('<button type="button" class="btn btn-xs btn-sahdev-insert-note" style="margin-right: 5px;"><i class="fas fa-reply"></i> Use as Reply</button>');
@@ -2578,30 +2578,24 @@ HTML;
                     e.preventDefault();
                     var noteText = '';
                     
-                    // Priority content extraction
-                    var $content = $container.find('.text, .message, .note-content, blockquote, .note-body').first();
+                    // Comprehensive content search
+                    var $content = $container.find('.text, .message, .note-content, blockquote, .note-body, .note-msg').first();
                     if ($content.length) {
                         noteText = $content.text().trim();
                     } else {
-                        // Fallback: clone and strip metadata/buttons
+                        // Hard fallback: strip all buttons/meta and take everything else
                         var $clone = $container.clone();
-                        $clone.find('.btn, .label, .date, .admin, .actions, .note-actions, .sdv-processed').remove();
+                        $clone.find('.btn, .label, .date, .admin, .actions, .note-actions, .sdv-processed, script, style').remove();
                         noteText = $clone.text().trim();
                     }
 
-                    if (!noteText) {
-                        console.warn("Sahdev: No note content found for injection.");
-                        return;
-                    }
+                    if (!noteText) return;
 
-                    // Cleanup Sahdev Autopilot Draft headers
+                    // Improved Sahdev Autopilot Draft cleanup
                     var draftPrefix = "[Sahdev Autopilot Draft]";
                     if (noteText.indexOf(draftPrefix) !== -1) {
-                        // Remove prefix and everything before it if any
                         noteText = noteText.substring(noteText.indexOf(draftPrefix) + draftPrefix.length);
-                        // Remove the "Review before sending..." secondary line if present
-                        noteText = noteText.replace(/Review before sending - Draft Mode is ON\n*/i, '').trim();
-                        // Remove leading dashes/separators
+                        noteText = noteText.replace(/Review before sending - Draft Mode is ON/i, '').trim();
                         noteText = noteText.replace(/^---+\s*/, '').trim();
                     }
 
@@ -2616,7 +2610,7 @@ HTML;
                         el.focus();
                     }
 
-                    // Transition to reply editor
+                    // Jump to reply field
                     if ($('#replyticket').length) {
                         $('html, body').animate({ scrollTop: $('#replyticket').offset().top - 60 }, 400);
                     }
@@ -2624,16 +2618,17 @@ HTML;
             });
         }
 
-        // Initialize with multiple attempts to handle WHMCS lazy load
+        // Initialize multiple times and on common WHMCS events
         $(document).ready(function() {
-            setTimeout(sahdev_init_note_insert_buttons, 800);
-            setTimeout(sahdev_init_note_insert_buttons, 2500);
-            setInterval(sahdev_init_note_insert_buttons, 5000);
+            console.log("Sahdev: Note Interceptor Enabled.");
+            sahdev_init_note_insert_buttons();
+            setTimeout(sahdev_init_note_insert_buttons, 1500);
+            setInterval(sahdev_init_note_insert_buttons, 4000);
         });
 
-        // Expose globally for inline onclick handlers
-        window.sahdevSnapInsertToEditor = sahdevSnapInsertToEditor;
+        // Expose globally
         window.sahdev_init_note_insert_buttons = sahdev_init_note_insert_buttons;
+        window.sahdevSnapInsertToEditor = sahdevSnapInsertToEditor;
 
     });
 
@@ -2750,11 +2745,24 @@ function sahdev_is_admin_ticket_open_page(?array $vars = null): bool
 
 add_hook('AdminAreaFooterOutput', 1, function ($vars) {
     $userId = (int) ($_GET['userid'] ?? 0);
-    if ($userId <= 0 || !sahdev_is_admin_ticket_open_page($vars)) {
+    $ticketId = (int) ($_GET['id'] ?? ($vars['ticketid'] ?? 0));
+    
+    // Check if we are on a page that should have the panel (Open Ticket or View Ticket)
+    if ($userId <= 0 && $ticketId <= 0) {
         return '';
     }
 
-    return sahdev_inject_ticket_panel(['userid' => $userId]);
+    if (!sahdev_is_admin_ticket_open_page($vars) && !isset($vars['ticketid']) && strpos($_SERVER['REQUEST_URI'], 'action=viewticket') === false) {
+        return '';
+    }
+
+    // Pass the ticketId if available to ensure correct context
+    $panelVars = $vars;
+    if ($ticketId > 0 && !isset($panelVars['ticketid'])) {
+        $panelVars['ticketid'] = $ticketId;
+    }
+
+    return sahdev_inject_ticket_panel($panelVars);
 });
 
 // ---------------------------------------------------------------------------
