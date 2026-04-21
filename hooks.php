@@ -2540,67 +2540,96 @@ HTML;
         // FEATURE: Insert Note to Reply
         // =====================================================================
         function sahdev_init_note_insert_buttons() {
-            // Target WHMCS note structure (covers various themes and versions)
-            $('.ticket-notes .note, .note-container, .ticketnote, .ticket-note').each(function() {
-                var $note = $(this);
-                if ($note.find('.btn-sahdev-insert-note').length) return;
-
-                // Find the standard WHMCS action buttons (usually Delete)
-                var $actionArea = $note.find('.actions, .options, .note-actions').first();
-                var $targetBtn = $note.find('a.btn-danger, button.btn-danger').filter(function() {
-                    return $(this).text().toLowerCase().indexOf('delete') !== -1;
-                }).first();
-
-                if ($targetBtn.length) {
-                    var $insertBtn = $('<button type="button" class="btn btn-xs btn-sahdev-insert-note" style="margin-right: 5px;"><i class="fas fa-reply"></i> Use as Reply</button>');
-                    $targetBtn.before($insertBtn);
-
-                    $insertBtn.on('click', function(e) {
-                        e.preventDefault();
-                        var noteText = '';
-                        // Extract content from known WHMCS note body classes
-                        var $content = $note.find('.text, .message, .note-content, blockquote, .note-body').first();
-                        if ($content.length) {
-                            noteText = $content.text().trim();
-                        } else {
-                            // Fallback: clone and strip metadata/buttons
-                            var $clone = $note.clone();
-                            $clone.find('.btn, .label, .date, .admin, .actions, .note-actions').remove();
-                            noteText = $clone.text().trim();
-                        }
-
-                        if (!noteText) return;
-
-                        // Cleanup Sahdev Autopilot Draft headers
-                        var draftPrefix = "[Sahdev Autopilot Draft] Review before sending - Draft Mode is ON";
-                        if (noteText.indexOf(draftPrefix) !== -1) {
-                            noteText = noteText.replace(draftPrefix, '').trim();
-                            noteText = noteText.replace(/^---/, '').trim();
-                        }
-
-                        // Insert into editor
-                        if (typeof tinymce !== "undefined" && tinymce.activeEditor) {
-                            var html = noteText.replace(/\n/g, '<br>');
-                            tinymce.activeEditor.execCommand('mceInsertContent', false, html);
-                        } else if ($('#replymessage').length) {
-                            var el = $('#replymessage').get(0);
-                            var currentVal = el.value;
-                            el.value = noteText + "\n\n" + currentVal;
-                            el.focus();
-                        }
-
-                        // Scroll to reply editor
-                        if ($('#replyticket').length) {
-                            $('html, body').animate({ scrollTop: $('#replyticket').offset().top - 60 }, 400);
-                        }
-                    });
+            // Find all potential "Delete" buttons in the ticket view
+            $('a.btn-danger, button.btn-danger, .btn-danger > a').each(function() {
+                var $btn = $(this);
+                
+                // Avoid processing buttons in our own Sahdev panel or already processed ones
+                if ($btn.closest('#sahdev-ai-panel').length || $btn.hasClass('sdv-processed') || $btn.prev('.btn-sahdev-insert-note').length) {
+                    return;
                 }
+
+                var btnText = $btn.text().toLowerCase();
+                var hasTrashIcon = $btn.find('.fa-trash, .fa-trash-alt, .fa-times, .glyphicon-trash').length > 0;
+                
+                // Only target buttons that look like note deletion
+                if (btnText.indexOf('delete') === -1 && !hasTrashIcon) {
+                    return;
+                }
+
+                // Try to find the nearest note container (handles various WHMCS versions/themes)
+                var $container = $btn.closest('.note, .ticketnote, .ticket-note, .note-container, .well, tr, td');
+                if (!$container.length) return;
+
+                // Qualifying check: is this actually a note?
+                // Look for labels like "Private Note" or content blocks
+                var isNote = $container.find('.text, .message, .note-content, blockquote, .note-body, :contains("Private Note")').length > 0;
+                if (!isNote && !$btn.closest('.ticket-notes, #ticketnotes, #notes').length) {
+                    // If not obviously a note and not in a notes section, skip
+                    return;
+                }
+
+                $btn.addClass('sdv-processed');
+                
+                var $insertBtn = $('<button type="button" class="btn btn-xs btn-sahdev-insert-note" style="margin-right: 5px;"><i class="fas fa-reply"></i> Use as Reply</button>');
+                $btn.before($insertBtn);
+
+                $insertBtn.on('click', function(e) {
+                    e.preventDefault();
+                    var noteText = '';
+                    
+                    // Priority content extraction
+                    var $content = $container.find('.text, .message, .note-content, blockquote, .note-body').first();
+                    if ($content.length) {
+                        noteText = $content.text().trim();
+                    } else {
+                        // Fallback: clone and strip metadata/buttons
+                        var $clone = $container.clone();
+                        $clone.find('.btn, .label, .date, .admin, .actions, .note-actions, .sdv-processed').remove();
+                        noteText = $clone.text().trim();
+                    }
+
+                    if (!noteText) {
+                        console.warn("Sahdev: No note content found for injection.");
+                        return;
+                    }
+
+                    // Cleanup Sahdev Autopilot Draft headers
+                    var draftPrefix = "[Sahdev Autopilot Draft]";
+                    if (noteText.indexOf(draftPrefix) !== -1) {
+                        // Remove prefix and everything before it if any
+                        noteText = noteText.substring(noteText.indexOf(draftPrefix) + draftPrefix.length);
+                        // Remove the "Review before sending..." secondary line if present
+                        noteText = noteText.replace(/Review before sending - Draft Mode is ON\n*/i, '').trim();
+                        // Remove leading dashes/separators
+                        noteText = noteText.replace(/^---+\s*/, '').trim();
+                    }
+
+                    // Insert into editor
+                    if (typeof tinymce !== "undefined" && tinymce.activeEditor) {
+                        var html = noteText.replace(/\n/g, '<br>');
+                        tinymce.activeEditor.execCommand('mceInsertContent', false, html);
+                    } else if ($('#replymessage').length) {
+                        var el = $('#replymessage').get(0);
+                        var currentVal = el.value;
+                        el.value = noteText + "\n\n" + currentVal;
+                        el.focus();
+                    }
+
+                    // Transition to reply editor
+                    if ($('#replyticket').length) {
+                        $('html, body').animate({ scrollTop: $('#replyticket').offset().top - 60 }, 400);
+                    }
+                });
             });
         }
 
-        // Initialize once, then periodically to catch dynamic updates
-        setTimeout(sahdev_init_note_insert_buttons, 1000);
-        setInterval(sahdev_init_note_insert_buttons, 3000);
+        // Initialize with multiple attempts to handle WHMCS lazy load
+        $(document).ready(function() {
+            setTimeout(sahdev_init_note_insert_buttons, 800);
+            setTimeout(sahdev_init_note_insert_buttons, 2500);
+            setInterval(sahdev_init_note_insert_buttons, 5000);
+        });
 
         // Expose globally for inline onclick handlers
         window.sahdevSnapInsertToEditor = sahdevSnapInsertToEditor;
