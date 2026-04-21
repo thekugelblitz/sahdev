@@ -2731,18 +2731,49 @@ add_hook('AdminAreaFooterOutput', 1, function ($vars) {
 </style>
 <script>
 (function() {
+    function stripAutopilotBanner(text) {
+        if (!text) return '';
+        return String(text)
+            .replace(/^\s*\[Sahdev\s+Autopilot\s+Draft\][^\n\r]*[\r\n]*/i, '')
+            .replace(/\r\n/g, '\n')
+            .trim();
+    }
+
+    function htmlToMarkdownish(html) {
+        if (!html) return '';
+        var tmp = document.createElement('div');
+        tmp.innerHTML = html;
+
+        var brs = tmp.querySelectorAll('br');
+        for (var i = 0; i < brs.length; i++) brs[i].replaceWith('\n');
+
+        var lis = tmp.querySelectorAll('li');
+        for (var j = 0; j < lis.length; j++) {
+            lis[j].insertAdjacentText('afterbegin', '- ');
+            lis[j].insertAdjacentText('beforeend', '\n');
+        }
+
+        var ps = tmp.querySelectorAll('p, div, blockquote');
+        for (var k = 0; k < ps.length; k++) {
+            ps[k].insertAdjacentText('beforeend', '\n\n');
+        }
+
+        return stripAutopilotBanner(tmp.textContent || '');
+    }
+
     function insertIntoReplyEditor(text) {
         if (!text) return;
-        var cleaned = String(text).trim();
+        var cleaned = stripAutopilotBanner(String(text));
         if (!cleaned) return;
 
         if (typeof tinymce !== 'undefined' && tinymce.activeEditor) {
-            var html = '<p>' + cleaned
+            // Insert markdown as literal text so syntax is preserved.
+            var encoded = cleaned
                 .replace(/&/g, '&amp;')
                 .replace(/</g, '&lt;')
                 .replace(/>/g, '&gt;')
-                .replace(/\\n/g, '<br>') + '</p>';
-            tinymce.activeEditor.execCommand('mceInsertContent', false, html);
+                .replace(/\n/g, '<br>');
+            tinymce.activeEditor.execCommand('mceInsertContent', false, encoded + '<br><br>');
         } else {
             var replyField = document.querySelector('#replymessage');
             if (replyField) {
@@ -2762,7 +2793,19 @@ add_hook('AdminAreaFooterOutput', 1, function ($vars) {
         if (!content) {
             content = noteEl.querySelector('blockquote, p, div');
         }
-        return content ? (content.innerText || content.textContent || '') : '';
+        if (!content) return '';
+        return htmlToMarkdownish(content.innerHTML || content.textContent || '');
+    }
+
+    function findActionHost(noteEl) {
+        var buttons = noteEl.querySelectorAll('a, button, input[type="button"], input[type="submit"]');
+        for (var i = 0; i < buttons.length; i++) {
+            var t = (buttons[i].innerText || buttons[i].value || buttons[i].textContent || '').trim().toLowerCase();
+            if (t === 'edit' || t === 'delete' || t.indexOf('edit') !== -1 || t.indexOf('delete') !== -1) {
+                return buttons[i].parentNode;
+            }
+        }
+        return null;
     }
 
     function findPrivateLabel(noteEl) {
@@ -2842,21 +2885,32 @@ add_hook('AdminAreaFooterOutput', 1, function ($vars) {
         actions.appendChild(useBtn);
         actions.appendChild(editBtn);
 
-        var privateLabel = findPrivateLabel(noteEl);
-        if (privateLabel && privateLabel.parentNode) {
+        var actionHost = findActionHost(noteEl);
+        if (actionHost) {
             actions.classList.add('sahdev-inline-actions');
-            privateLabel.parentNode.insertBefore(actions, privateLabel.nextSibling);
+            actionHost.appendChild(actions);
         } else {
-            noteEl.insertBefore(actions, noteEl.firstChild);
+            var privateLabel = findPrivateLabel(noteEl);
+            if (privateLabel && privateLabel.parentNode) {
+                actions.classList.add('sahdev-inline-actions');
+                privateLabel.parentNode.insertBefore(actions, privateLabel.nextSibling);
+            } else {
+                noteEl.insertBefore(actions, noteEl.firstChild);
+            }
         }
 
         noteEl.setAttribute('data-sahdev-note-wired', '1');
     }
 
     function scanPrivateNotes() {
-        var candidates = document.querySelectorAll('.ticket-reply, .ticket-reply-item, .ticket-message, .message, .card, .panel, .alert, .well, .row, .col-md-12, .contentarea');
-        for (var i = 0; i < candidates.length; i++) {
-            wirePrivateNote(candidates[i]);
+        var labels = document.querySelectorAll('span, small, div, strong, a, label');
+        for (var i = 0; i < labels.length; i++) {
+            var t = (labels[i].innerText || labels[i].textContent || '').trim().toLowerCase();
+            if (t !== 'private note' && t.indexOf('private note') === -1) continue;
+            var noteEl = labels[i].closest('.ticket-reply, .ticket-reply-item, .ticket-message, .message, .card, .panel, .alert, .well, tr, li, .reply, .post');
+            if (noteEl) {
+                wirePrivateNote(noteEl);
+            }
         }
     }
 
