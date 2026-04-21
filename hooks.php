@@ -2758,15 +2758,23 @@ add_hook('AdminAreaFooterOutput', 1, function ($vars) {
     }
 
     function sahdev_init_note_insert_buttons() {
-        // Strategy A: Direct content scanning for Draft markers
-        jQuery('div, blockquote, .text, .message, .note-content').each(function() {
+        // Find the notes container to prevent random spawning in other areas
+        var \$notesArea = jQuery('#ticketnotes, .ticket-notes, #ticketnotes-container, .notes-container, #notes').first();
+        if (!\$notesArea.length) {
+            \$notesArea = jQuery('.tab-pane#notes, .tab-content #tabNotes, #tab3').first();
+        }
+        
+        var \$searchRoot = \$notesArea.length ? \$notesArea : jQuery('body');
+
+        // Strategy: Look for Draft content within notes area
+        \$searchRoot.find('div, blockquote, .text, .message, .note-content').each(function() {
             var \$el = jQuery(this);
             if (\$el.hasClass('sdv-monitored')) return;
             
             var fullTxt = \$el.text();
             if (fullTxt.indexOf('Sahdev') === -1 || fullTxt.indexOf('Draft') === -1) return;
             
-            // Avoid double-injection by checking if any child also matches
+            // Avoid double-injection
             var hasMatchChild = false;
             \$el.children().each(function() {
                 var childTxt = jQuery(this).text();
@@ -2778,19 +2786,16 @@ add_hook('AdminAreaFooterOutput', 1, function ($vars) {
             if (hasMatchChild) return;
             
             \$el.addClass('sdv-monitored');
-            console.log("[Sahdev] Found Note Content matching Draft criteria. Injecting BEFORE content block.");
 
-            var \$btn = jQuery('<button type="button" class="btn btn-xs btn-sahdev-insert-note"><i class="fas fa-reply"></i> Use as Reply</button>');
-            // Using .before instead of .prepend to ensure it is not clipped or hidden by parent overflow
-            \$el.before(\$btn);
+            var \$btn = jQuery('<button type="button" class="btn btn-xs btn-sahdev-insert-note" style="display:inline-block !important; width:auto !important; margin-bottom:10px !important;"><i class="fas fa-edit"></i> Edit / Copy Draft</button>');
+            \$el.prepend(\$btn);
 
             \$btn.on('click', function(e) {
                 e.preventDefault();
                 e.stopPropagation();
-                console.log("[Sahdev] Use as Reply button clicked.");
                 
                 var \$clone = \$el.clone();
-                \$clone.find('.btn, .sdv-monitored, .sdv-processed, .sdv-btn-processed, script, style').remove();
+                \$clone.find('.btn, .sdv-monitored, .sdv-processed, .sdv-btn-processed, script, style, textarea').remove();
                 var noteText = \$clone.text().trim();
                 
                 var draftMarker = "[Sahdev Autopilot Draft]";
@@ -2801,12 +2806,36 @@ add_hook('AdminAreaFooterOutput', 1, function ($vars) {
                                  .replace(/^---+\\s*/, '')
                                  .trim();
 
-                injectToEditor(noteText);
+                // 1. Copy to clipboard
+                navigator.clipboard.writeText(noteText);
+
+                // 2. Open inline textarea for manual copy/view (as requested)
+                var \$existing = \$el.parent().find('.sdv-edit-area');
+                if (\$existing.length) {
+                    \$existing.toggle();
+                } else {
+                    var \$editContainer = jQuery('<div class="sdv-edit-area" style="margin: 10px 0; padding: 10px; background: #f8f9fa; border: 1px solid #ddd; border-radius: 4px;">' +
+                        '<p style="margin-bottom: 5px; font-weight: bold; font-size: 11px; color: #666;">MANUAL COPY AREA:</p>' +
+                        '<textarea class="form-control" style="width:100%; height:150px; font-family: monospace; font-size: 13px;" readonly></textarea>' +
+                        '<button type="button" class="btn btn-link btn-xs" style="color: #666;">Close</button>' +
+                        '</div>');
+                    
+                    \$editContainer.find('textarea').val(noteText);
+                    \$editContainer.find('button').one('click', function() { \$editContainer.hide(); });
+                    \$el.after(\$editContainer);
+                }
+
+                var \$this = jQuery(this);
+                var originalText = \$this.html();
+                \$this.html('<i class="fas fa-check"></i> Copied / Viewing').addClass('btn-success');
+                setTimeout(function() {
+                    \$this.html(originalText).removeClass('btn-success');
+                }, 3000);
             });
         });
 
-        // Strategy B: Expanded action-button fallback (checks Edit/Delete/red buttons)
-        jQuery('a, button').filter('.btn-danger, .btn-edit, :contains("Delete"), :contains("Edit")').each(function() {
+        // Strategy B: Fallback for existing Edit/Delete buttons
+        \$searchRoot.find('a, button').filter('.btn-danger, .btn-edit, :contains("Delete"), :contains("Edit")').each(function() {
             var \$btn = jQuery(this);
             if (\$btn.hasClass('sdv-btn-processed') || \$btn.hasClass('btn-sahdev-insert-note') || \$btn.closest('#sahdev-ai-panel').length) return;
             
@@ -2814,24 +2843,35 @@ add_hook('AdminAreaFooterOutput', 1, function ($vars) {
             if (!\$container.length) return;
 
             \$btn.addClass('sdv-btn-processed');
-            console.log("[Sahdev] Adding button next to action button.");
-            var \$insertBtn = jQuery('<button type="button" class="btn btn-xs btn-sahdev-insert-note"><i class="fas fa-reply"></i> Use as Reply</button>');
-            \$btn.before(\$insertBtn);
+            var \$copyBtn = jQuery('<button type="button" class="btn btn-xs btn-sahdev-insert-note" style="margin-right: 5px;"><i class="fas fa-edit"></i> Edit</button>');
+            \$btn.before(\$copyBtn);
 
-            \$insertBtn.on('click', function(e) {
+            \$copyBtn.on('click', function(e) {
                 e.preventDefault();
                 var \$content = \$container.find('.text, .message, .note-content, blockquote, .note-body, .note-msg').first();
                 var noteText = \$content.length ? \$content.text().trim() : \$container.clone().find('.btn, .label, .actions').remove().end().text().trim();
-                injectToEditor(noteText);
+                
+                // Add the same inline edit area logic here if needed
+                alert("Text copied to clipboard. You can now paste it into the reply box.");
+                navigator.clipboard.writeText(noteText);
             });
         });
     }
 
-    // Initialize with MutationObserver for permanent monitoring
+    // Initialize with MutationObserver
     jQuery(document).ready(function() {
-        console.log("[Sahdev] Note Controller Active.");
         sahdev_init_note_insert_buttons();
-        
+        var observer = new MutationObserver(function() {
+            sahdev_init_note_insert_buttons();
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+    });
+})();
+</script>
+
+    // Initialize with MutationObserver
+    jQuery(document).ready(function() {
+        sahdev_init_note_insert_buttons();
         var observer = new MutationObserver(function() {
             sahdev_init_note_insert_buttons();
         });
