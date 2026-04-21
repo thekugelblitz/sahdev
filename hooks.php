@@ -2719,6 +2719,9 @@ add_hook('AdminAreaFooterOutput', 1, function ($vars) {
         margin: 0 0 0 8px;
         vertical-align: middle;
     }
+    .sahdev-note-actions .btn {
+        line-height: 1.2;
+    }
     .sahdev-note-edit-area {
         width: 100%;
         min-height: 110px;
@@ -2819,7 +2822,14 @@ add_hook('AdminAreaFooterOutput', 1, function ($vars) {
         return null;
     }
 
-    function wirePrivateNote(noteEl) {
+    function findNoteRootFromLabel(labelEl) {
+        if (!labelEl) return null;
+        return labelEl.closest('.ticket-reply, .ticket-reply-item, .ticket-message, .message, .card, .panel, .alert, .well, tr, li, .reply, .post')
+            || labelEl.closest('div')
+            || labelEl.parentElement;
+    }
+
+    function wirePrivateNote(noteEl, labelEl) {
         if (!noteEl || noteEl.getAttribute('data-sahdev-note-wired') === '1') return;
 
         var bodyText = (noteEl.innerText || '').toLowerCase();
@@ -2890,7 +2900,7 @@ add_hook('AdminAreaFooterOutput', 1, function ($vars) {
             actions.classList.add('sahdev-inline-actions');
             actionHost.appendChild(actions);
         } else {
-            var privateLabel = findPrivateLabel(noteEl);
+            var privateLabel = labelEl || findPrivateLabel(noteEl);
             if (privateLabel && privateLabel.parentNode) {
                 actions.classList.add('sahdev-inline-actions');
                 privateLabel.parentNode.insertBefore(actions, privateLabel.nextSibling);
@@ -2907,9 +2917,9 @@ add_hook('AdminAreaFooterOutput', 1, function ($vars) {
         for (var i = 0; i < labels.length; i++) {
             var t = (labels[i].innerText || labels[i].textContent || '').trim().toLowerCase();
             if (t !== 'private note' && t.indexOf('private note') === -1) continue;
-            var noteEl = labels[i].closest('.ticket-reply, .ticket-reply-item, .ticket-message, .message, .card, .panel, .alert, .well, tr, li, .reply, .post');
+            var noteEl = findNoteRootFromLabel(labels[i]);
             if (noteEl) {
-                wirePrivateNote(noteEl);
+                wirePrivateNote(noteEl, labels[i]);
             }
         }
     }
@@ -2921,6 +2931,16 @@ add_hook('AdminAreaFooterOutput', 1, function ($vars) {
     }
     setTimeout(scanPrivateNotes, 700);
     setTimeout(scanPrivateNotes, 1500);
+    setTimeout(scanPrivateNotes, 3000);
+
+    try {
+        var obs = new MutationObserver(function() {
+            scanPrivateNotes();
+        });
+        obs.observe(document.body, { childList: true, subtree: true });
+    } catch (e) {
+        // ignore
+    }
 })();
 </script>
 HTML;
