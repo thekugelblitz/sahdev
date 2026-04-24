@@ -551,10 +551,10 @@ class TicketDataExtractor
                 continue;
 
             $extension = strtolower(pathinfo($file, PATHINFO_EXTENSION));
-            if (in_array($extension, ['txt', 'log', 'csv', 'json', 'php', 'html', 'htm', 'js', 'css', 'sql', 'sh', 'py', 'xml', 'yml', 'yaml', 'ini', 'conf'])) {
-                $filePath = $whmcsAttachmentsDir . DIRECTORY_SEPARATOR . $file;
+            if (in_array($extension, ['txt', 'log', 'csv', 'json', 'xml', 'yml', 'yaml'])) {
+                $filePath = $this->resolveSafeAttachmentPath($whmcsAttachmentsDir, $file);
 
-                if (file_exists($filePath) && filesize($filePath) < $this->maxAttachmentSize) {
+                if ($filePath && file_exists($filePath) && filesize($filePath) < $this->maxAttachmentSize) {
                     $content = @file_get_contents($filePath);
                     if ($content !== false) {
                         // Truncate if massive (safety net beyond filesize)
@@ -634,10 +634,10 @@ class TicketDataExtractor
 
             $extension = strtolower(pathinfo($file, PATHINFO_EXTENSION));
             if (in_array($extension, ['png', 'jpg', 'jpeg', 'gif', 'webp'])) {
-                $filePath = rtrim($whmcsAttachmentsDir, '/\\') . DIRECTORY_SEPARATOR . $file;
+                $filePath = $this->resolveSafeAttachmentPath($whmcsAttachmentsDir, $file);
                 
                 // Track missing files by appending info to context if we want, but instead let's just make sure path is right
-                if (file_exists($filePath) && filesize($filePath) < 5242880) { // 5MB limit for images
+                if ($filePath && file_exists($filePath) && filesize($filePath) < 5242880) { // 5MB limit for images
                     $content = @file_get_contents($filePath);
                     if ($content !== false) {
                         $finfo = new \finfo(FILEINFO_MIME_TYPE);
@@ -692,7 +692,14 @@ class TicketDataExtractor
             foreach (array_unique($matches[0]) as $prntScUrl) {
                 if (count($images) >= $this->maxImages) break;
                 
-                $html = @file_get_contents($prntScUrl);
+                if (!$this->isSafeRemoteUrl($prntScUrl)) {
+                    continue;
+                }
+                $ctx = stream_context_create([
+                    'http' => ['timeout' => 8, 'follow_location' => 0],
+                    'ssl' => ['verify_peer' => true, 'verify_peer_name' => true],
+                ]);
+                $html = @file_get_contents($prntScUrl, false, $ctx);
                 if ($html && preg_match('/<img[^>]+(?:id="screenshot-image"|class="[^"]*screenshot-image[^"]*")[^>]+src="([^"]+)"/i', $html, $imgMatches)) {
                     $actualUrl = $imgMatches[1];
                     // Sometimes prnt.sc image URLs are relative to their own CDN or absolute imgur
@@ -717,11 +724,15 @@ class TicketDataExtractor
 
     private function fetchUrlAsBase64(string $url): ?string
     {
+        if (!$this->isSafeRemoteUrl($url)) {
+            return null;
+        }
         $ch = curl_init($url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, false);
         curl_setopt($ch, CURLOPT_TIMEOUT, 10);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
         // Pretend to be a browser to prevent 403 blocks from CDNs
         curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
         
@@ -736,6 +747,44 @@ class TicketDataExtractor
         }
         
         return null;
+    }
+
+    private function resolveSafeAttachmentPath(string $baseDir, string $fileName): ?string
+    {
+        $fileName = trim($fileName);
+        if ($fileName === '' || strpos($fileName, '..') !== false || preg_match('/[\\\\\\/]/', $fileName)) {
+            return null;
+        }
+        $base = realpath(rtrim($baseDir, '/\\'));
+        if ($base === false) {
+            return null;
+        }
+        $candidate = $base . DIRECTORY_SEPARATOR . $fileName;
+        $resolved = realpath($candidate);
+        if ($resolved === false) {
+            return null;
+        }
+        return strpos($resolved, $base . DIRECTORY_SEPARATOR) === 0 ? $resolved : null;
+    }
+
+    private function isSafeRemoteUrl(string $url): bool
+    {
+        if (!preg_match('#^https?://#i', $url)) {
+            return false;
+        }
+        $parts = parse_url($url);
+        $host = $parts['host'] ?? '';
+        if ($host === '') {
+            return false;
+        }
+        $ip = gethostbyname($host);
+        if (!filter_var($ip, FILTER_VALIDATE_IP)) {
+            return false;
+        }
+        if (!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
+            return false;
+        }
+        return true;
     }
 
     /**

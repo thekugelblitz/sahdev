@@ -102,8 +102,8 @@ function sahdev_activate()
                 Capsule::schema()->table('tblsahdev_settings', function ($table) {
                     $table->boolean('summarizer_enabled')->default(1);
                     $table->integer('summarizer_threshold')->default(20);
-                    $table->boolean('compliance_mode')->default(0);
-                    $table->boolean('pii_scrub_enabled')->default(0);
+                    $table->boolean('compliance_mode')->default(1);
+                    $table->boolean('pii_scrub_enabled')->default(1);
                     $table->boolean('translation_enabled')->default(0);
                     $table->boolean('auto_sentiment')->default(0);
                     $table->boolean('auto_tagging')->default(0);
@@ -197,7 +197,7 @@ function sahdev_activate()
                     $table->text('tools_filter_ips')->nullable();
                     $table->text('tools_filter_emails')->nullable();
                     $table->boolean('tools_normalize_enabled')->default(1);
-                    $table->boolean('tools_include_raw_fallback')->default(1);
+                    $table->boolean('tools_include_raw_fallback')->default(0);
                     $table->timestamp('tools_cron_last_run_at')->nullable();
                     $table->string('tools_cron_last_message', 512)->nullable();
                     $table->timestamp('tools_execution_cron_lock_until')->nullable();
@@ -231,8 +231,8 @@ function sahdev_activate()
                     $table->boolean('auto_analyze_on_load')->default(0);
                     $table->boolean('summarizer_enabled')->default(1);
                     $table->integer('summarizer_threshold')->default(20);
-                    $table->boolean('compliance_mode')->default(0);
-                    $table->boolean('pii_scrub_enabled')->default(0);
+                    $table->boolean('compliance_mode')->default(1);
+                    $table->boolean('pii_scrub_enabled')->default(1);
                     $table->boolean('translation_enabled')->default(0);
                     $table->boolean('auto_sentiment')->default(0);
                     $table->boolean('auto_tagging')->default(0);
@@ -265,7 +265,7 @@ function sahdev_activate()
                     $table->text('tools_filter_ips')->nullable();
                     $table->text('tools_filter_emails')->nullable();
                     $table->boolean('tools_normalize_enabled')->default(1);
-                    $table->boolean('tools_include_raw_fallback')->default(1);
+                    $table->boolean('tools_include_raw_fallback')->default(0);
                     $table->timestamp('tools_cron_last_run_at')->nullable();
                     $table->string('tools_cron_last_message', 512)->nullable();
                     $table->timestamp('tools_execution_cron_lock_until')->nullable();
@@ -294,8 +294,8 @@ function sahdev_activate()
                 'auto_analyze_on_load' => 0,
                 'summarizer_enabled' => 1,
                 'summarizer_threshold' => 20,
-                'compliance_mode' => 0,
-                'pii_scrub_enabled' => 0,
+                'compliance_mode' => 1,
+                'pii_scrub_enabled' => 1,
                 'translation_enabled' => 0,
                 'auto_sentiment' => 0,
                 'max_messages' => 10,
@@ -316,7 +316,7 @@ function sahdev_activate()
                 'tools_filter_ips' => '',
                 'tools_filter_emails' => '',
                 'tools_normalize_enabled' => 1,
-                'tools_include_raw_fallback' => 1,
+                'tools_include_raw_fallback' => 0,
                 'context_enrichment_enabled' => 1,
                 'context_enrichment_max_chars' => 2500,
                 'context_enrichment_invoices' => 1,
@@ -682,7 +682,7 @@ function sahdev_activate()
                 $table->text('tools_filter_ips')->nullable();
                 $table->text('tools_filter_emails')->nullable();
                 $table->boolean('tools_normalize_enabled')->default(1);
-                $table->boolean('tools_include_raw_fallback')->default(1);
+                $table->boolean('tools_include_raw_fallback')->default(0);
                 $table->timestamp('tools_cron_last_run_at')->nullable();
                 $table->string('tools_cron_last_message', 512)->nullable();
                 $table->timestamp('tools_execution_cron_lock_until')->nullable();
@@ -734,7 +734,7 @@ function sahdev_activate()
         } catch (\Exception $e) {
             Capsule::schema()->table('tblsahdev_settings', function ($table) {
                 $table->boolean('tools_normalize_enabled')->default(1);
-                $table->boolean('tools_include_raw_fallback')->default(1);
+                $table->boolean('tools_include_raw_fallback')->default(0);
             });
         }
 

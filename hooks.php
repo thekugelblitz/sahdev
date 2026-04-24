@@ -877,11 +877,7 @@ HTML;
                             return;
                         }
 
-                        if (res.provider === 'lmstudio') {
-                            executeLocalLMStudioCall(res, baseReqData, $btn);
-                        } else {
-                            executeBackendGoogleCall(baseReqData, $btn);
-                        }
+                        executeBackendGoogleCall(baseReqData, $btn);
                     } else {
                         showSahdevError(res.message || 'Failed to initialize AI request.');
                         $('#btn-sahdev-analyze, #btn-sahdev-regenerate').prop('disabled', false);
@@ -1252,8 +1248,7 @@ HTML;
                 var response = await fetch(config.api_url, {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': 'Bearer ' + (config.api_key || 'local')
+                        'Content-Type': 'application/json'
                     },
                     body: JSON.stringify(llmPayload)
                 });
@@ -1564,8 +1559,8 @@ HTML;
             $('#sahdev-out-risk').text(data.RISK_LEVEL || 'N/A');
             $('#sahdev-out-plan').text(data.INTERNAL_ACTION_PLAN || 'N/A');
             
-            var formattedReply = data.CLIENT_REPLY ? data.CLIENT_REPLY.replace(/\n/g, '<br>') : 'N/A';
-            $('#sahdev-out-reply').html(formattedReply);
+            var formattedReply = data.CLIENT_REPLY ? String(data.CLIENT_REPLY) : 'N/A';
+            $('#sahdev-out-reply').text(formattedReply).css('white-space', 'pre-wrap');
 
             // Show intent badge
             var intentLabels = {
@@ -1722,33 +1717,27 @@ HTML;
                         return;
                     }
 
-                    if (res.provider === 'lmstudio') {
-                        // Step 2a: LM Studio — browser calls directly (same as main analyze flow)
-                        executeRewriteLMStudio(res, rewriteBaseData);
-                    } else {
-                        // Step 2b: Google — server handles it
-                        $.ajax({
-                            url: sahdevAjaxUrl,
-                            type: 'POST',
-                            data: Object.assign({ action: 'rewrite_reply' }, rewriteBaseData),
-                            dataType: 'json',
-                            success: function(r) {
-                                $('#sahdev-rewrite-loading').hide();
-                                $('#btn-sahdev-rewrite').prop('disabled', false);
-                                if (r && r.status === 'success' && r.reply) {
-                                    insertRewriteResult(r.reply);
-                                } else {
-                                    showRewriteError((r && r.message) ? r.message : 'Server rewrite failed.');
-                                }
-                            },
-                            error: function(xhr, s, e) {
-                                var msg = (xhr.responseJSON && xhr.responseJSON.message)
-                                    ? xhr.responseJSON.message
-                                    : ('Server error: ' + (e || 'HTTP ' + xhr.status));
-                                showRewriteError(msg);
+                    $.ajax({
+                        url: sahdevAjaxUrl,
+                        type: 'POST',
+                        data: Object.assign({ action: 'rewrite_reply' }, rewriteBaseData),
+                        dataType: 'json',
+                        success: function(r) {
+                            $('#sahdev-rewrite-loading').hide();
+                            $('#btn-sahdev-rewrite').prop('disabled', false);
+                            if (r && r.status === 'success' && r.reply) {
+                                insertRewriteResult(r.reply);
+                            } else {
+                                showRewriteError((r && r.message) ? r.message : 'Server rewrite failed.');
                             }
-                        });
-                    }
+                        },
+                        error: function(xhr, s, e) {
+                            var msg = (xhr.responseJSON && xhr.responseJSON.message)
+                                ? xhr.responseJSON.message
+                                : ('Server error: ' + (e || 'HTTP ' + xhr.status));
+                            showRewriteError(msg);
+                        }
+                    });
                 },
                 error: function(xhr, s, e) {
                     showRewriteError('Server error: ' + e + ' (HTTP ' + xhr.status + ')');
@@ -1799,7 +1788,7 @@ HTML;
 
                 var response = await fetch(config.api_url, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (config.api_key || 'local') },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(llmPayload)
                 });
 
@@ -2052,8 +2041,8 @@ HTML;
             $('#sahdev-snap-resp').text(data.RESPONSIBILITY || 'N/A');
             $('#sahdev-snap-risk').text(data.RISK_LEVEL || 'N/A');
             $('#sahdev-snap-plan').text(data.INTERNAL_ACTION_PLAN || 'N/A');
-            var snapReplyHtml = data.CLIENT_REPLY ? data.CLIENT_REPLY.replace(/\n/g, '<br>') : 'N/A';
-            $('#sahdev-snap-reply').html(snapReplyHtml);
+            var snapReplyText = data.CLIENT_REPLY ? String(data.CLIENT_REPLY) : 'N/A';
+            $('#sahdev-snap-reply').text(snapReplyText).css('white-space', 'pre-wrap');
             var statsText = (tokensUsed === 'Cached') ? 'Cached result (instant)' : ('Tokens: ' + (tokensUsed || '?') + ' | Time: ' + (execTimeMs || 0) + 'ms');
             $('#sahdev-snap-stats').text(statsText);
             
@@ -2123,31 +2112,25 @@ HTML;
                         return;
                     }
 
-                    // No cache — need to call AI
-                    if (res.provider === 'lmstudio') {
-                        // Step 2a: browser calls LM Studio directly
-                        executeSnapLMStudio(res, snapBaseData);
-                    } else {
-                        // Step 2b: server-side Google call
-                        $.ajax({
-                            url: sahdevAjaxUrl,
-                            type: 'POST',
-                            data: Object.assign({ action: 'analyze_ticket' }, snapBaseData),
-                            dataType: 'json',
-                            success: function(r) {
-                                if (r && r.status === 'success' && r.data) {
-                                    renderSnapResults(r.data, r.tokens_used, r.execution_time_ms);
-                                } else {
-                                    showSnapSleeping('Status: ' + (r ? r.status : 'unknown') + '\nMessage: ' + (r ? r.message : 'empty'));
-                                }
-                            },
-                            error: function(xhr, s, e) {
-                                var techMsg = 'AJAX Error: ' + e + ' (HTTP ' + xhr.status + ')';
-                                if (xhr.responseJSON && xhr.responseJSON.message) techMsg += '\nServer: ' + xhr.responseJSON.message;
-                                showSnapSleeping(techMsg);
+                    // No cache — execute server-side provider call.
+                    $.ajax({
+                        url: sahdevAjaxUrl,
+                        type: 'POST',
+                        data: Object.assign({ action: 'analyze_ticket' }, snapBaseData),
+                        dataType: 'json',
+                        success: function(r) {
+                            if (r && r.status === 'success' && r.data) {
+                                renderSnapResults(r.data, r.tokens_used, r.execution_time_ms);
+                            } else {
+                                showSnapSleeping('Status: ' + (r ? r.status : 'unknown') + '\nMessage: ' + (r ? r.message : 'empty'));
                             }
-                        });
-                    }
+                        },
+                        error: function(xhr, s, e) {
+                            var techMsg = 'AJAX Error: ' + e + ' (HTTP ' + xhr.status + ')';
+                            if (xhr.responseJSON && xhr.responseJSON.message) techMsg += '\nServer: ' + xhr.responseJSON.message;
+                            showSnapSleeping(techMsg);
+                        }
+                    });
                 },
                 error: function(xhr, s, e) {
                     var techMsg = 'AJAX Error: ' + e + ' (HTTP ' + xhr.status + ')';
@@ -2189,7 +2172,7 @@ HTML;
             try {
                 var response = await fetch(config.api_url, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (config.api_key || 'local') },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(llmPayload)
                 });
                 if (!response.ok) { throw new Error('HTTP ' + response.status + ' - ' + await response.text()); }

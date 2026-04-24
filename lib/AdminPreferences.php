@@ -283,17 +283,21 @@ class AdminPreferences
             'get_ticket_insights'          => self::FEATURE_TICKET_INSIGHTS,
             'get_insights_queue'           => self::FEATURE_TICKET_INSIGHTS,
             'analyze_single_insight'       => self::FEATURE_TICKET_INSIGHTS,
+            'trigger_cron_run'             => self::FEATURE_TICKET_INSIGHTS,
+            'test_whmcs_cron_http'         => self::FEATURE_TICKET_INSIGHTS,
             'run_tools_for_ticket'         => self::FEATURE_TOOLS,
             'get_tools_ticket_status'      => self::FEATURE_TOOLS,
             'get_tools_operations'         => self::FEATURE_TOOLS,
             'run_manual_tool'              => self::FEATURE_TOOLS,
+            'run_tools_queue'              => self::FEATURE_TOOLS,
+            'autopilot_test_run'           => self::FEATURE_TICKET_AI,
         ];
     }
 
     /** Actions that skip per-admin feature checks (organizational / power). */
     public static function unguardedActions(): array
     {
-        return ['trigger_cron_run', 'test_whmcs_cron_http', 'run_tools_queue'];
+        return [];
     }
 
     /**

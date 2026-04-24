@@ -34,6 +34,33 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST' && !$isGetAllowed) {
 }
 
 $action = isset($_REQUEST['action']) ? $_REQUEST['action'] : '';
+$allowedActions = [
+    'get_analytics_period', 'get_open_payload', 'analyze_open_context', 'get_payload', 'save_response',
+    'get_rewrite_payload', 'rewrite_reply', 'auto_analyze', 'analyze_ticket',
+    'generate_summary', 'get_summary', 'delete_summary',
+    'generate_historical_context', 'get_historical_context', 'delete_historical_context',
+    'score_reply', 'delete_audit_entries', 'search_canned_responses', 'generate_canned_template',
+    'save_canned_response', 'save_kb_article', 'get_analytics', 'get_ticket_insights',
+    'trigger_cron_run', 'get_insights_queue', 'analyze_single_insight', 'test_whmcs_cron_http',
+    'run_tools_for_ticket', 'get_tools_ticket_status', 'run_tools_queue', 'get_tools_operations',
+    'run_manual_tool', 'autopilot_test_run'
+];
+if (!in_array($action, $allowedActions, true)) {
+    header('HTTP/1.1 400 Bad Request');
+    echo json_encode(['status' => 'error', 'message' => 'Unsupported action.']);
+    exit;
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isGetAllowed) {
+    $requestToken = (string) ($_REQUEST['token'] ?? '');
+    $sessionToken = (string) ($_SESSION['token'] ?? '');
+    if ($requestToken === '' || $sessionToken === '' || !hash_equals($sessionToken, $requestToken)) {
+        header('HTTP/1.1 403 Forbidden');
+        echo json_encode(['status' => 'error', 'message' => 'Invalid CSRF token. Please refresh the page and try again.']);
+        exit;
+    }
+}
+
 $ticketId = (int) ($_REQUEST['ticket_id'] ?? 0);
 $userId = (int) ($_POST['userid'] ?? 0);
 $tone = strip_tags($_POST['tone'] ?? '');

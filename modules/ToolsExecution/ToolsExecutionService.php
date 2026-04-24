@@ -124,7 +124,7 @@ class ToolsExecutionService
             Capsule::table('tblsahdev_module_logs')->insert([
                 'level' => 'debug',
                 'source' => 'ToolsExecutionService::runManualTool',
-                'message' => sprintf('Manual Execution Start: [%s] path=%s, finalPath=%s, url=%s', $method, $path, $finalPath, $url),
+                'message' => self::sanitizeLogMessage(sprintf('Manual Execution Start: [%s] path=%s, finalPath=%s, url=%s', $method, $path, $finalPath, $url)),
                 'ticket_id' => $ticketId,
                 'created_at' => Carbon::now(),
             ]);
@@ -159,7 +159,7 @@ class ToolsExecutionService
             Capsule::table('tblsahdev_module_logs')->insert([
                 'level' => 'debug',
                 'source' => 'ToolsExecutionService::runManualTool',
-                'message' => sprintf('Manual Run: [%s %s] URL=%s Status=%s Code=%d', $method, $path, $url, $exec['status'], $exec['http_status']),
+                'message' => self::sanitizeLogMessage(sprintf('Manual Run: [%s %s] URL=%s Status=%s Code=%d', $method, $path, $url, $exec['status'], $exec['http_status'])),
                 'ticket_id' => $ticketId,
                 'created_at' => Carbon::now(),
             ]);
@@ -172,7 +172,7 @@ class ToolsExecutionService
             Capsule::table('tblsahdev_module_logs')->insert([
                 'level' => 'debug',
                 'source' => 'ToolsExecutionService::runManualTool',
-                'message' => sprintf('Manual Execution Result: [%s] Status=%s Code=%d BodyExcerpt=%.200s', $finalPath, $exec['status'], $exec['http_status'], $exec['body']),
+                'message' => self::sanitizeLogMessage(sprintf('Manual Execution Result: [%s] Status=%s Code=%d BodyExcerpt=%.200s', $finalPath, $exec['status'], $exec['http_status'], $exec['body'])),
                 'ticket_id' => $ticketId,
                 'created_at' => Carbon::now(),
             ]);
@@ -182,11 +182,11 @@ class ToolsExecutionService
             'ticket_id' => $ticketId,
             'method' => $method,
             'path' => $finalPath,
-            'request_query_json' => json_encode($query),
-            'request_body_json' => json_encode($body),
+            'request_query_json' => self::truncateForStorage(json_encode($query)),
+            'request_body_json' => self::truncateForStorage(json_encode($body)),
             'status' => $exec['status'],
             'http_status' => (int) ($exec['http_status'] ?? 0),
-            'response_body' => (string) ($exec['body'] ?? ''),
+            'response_body' => self::truncateForStorage((string) ($exec['body'] ?? '')),
             'normalized_summary' => (string) ($normalized['summary'] ?? ''),
             'normalized_json' => (string) ($normalized['json'] ?? ''),
             'normalization_status' => (string) ($normalized['status'] ?? 'raw'),
@@ -1527,5 +1527,21 @@ class ToolsExecutionService
             'tools_cron_last_message' => substr($message, 0, 500),
             'updated_at' => Carbon::now(),
         ]);
+    }
+
+    private static function sanitizeLogMessage(string $text): string
+    {
+        $text = preg_replace('/(?i)(authorization\\s*:\\s*bearer\\s+)[^\\s"\']+/', '$1[REDACTED]', $text);
+        $text = preg_replace('/(?i)(api[_-]?key\\s*[":=]+\\s*)[^\\s,"\']+/', '$1[REDACTED]', $text);
+        return self::truncateForStorage($text, 600);
+    }
+
+    private static function truncateForStorage(?string $text, int $max = 8000): string
+    {
+        $text = (string) ($text ?? '');
+        if (strlen($text) > $max) {
+            return substr($text, 0, $max) . '...[truncated]';
+        }
+        return $text;
     }
 }

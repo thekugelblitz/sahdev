@@ -573,7 +573,6 @@ class AIController
             'providers'            => TaskProviderResolver::listActiveProvidersForRouting(),
             'provider'             => $ptype === 'lmstudio' ? 'lmstudio' : ($ptype === 'replicate' ? 'replicate' : 'google'),
             'api_url'              => $callSettings['api_url'] ?? '',
-            'api_key'              => $callSettings['api_key'] ?? '',
             'model'                => $callSettings['model_name'],
             'temperature'          => (float) $this->settings['temperature'],
             'max_tokens'           => (int) $this->settings['max_tokens'],
@@ -584,7 +583,6 @@ class AIController
             'custom_instruction'   => $customInstruction,
             'intent'               => $intent,
             'has_fallback'         => $stack['fallback'] !== null,
-            'fallback_api_key'     => ($stack['fallback_call_settings']['fallback_api_key'] ?? $this->settings['fallback_api_key']) ?? '',
             'summary_used'         => $summaryUsed,
             'summary_available'    => $this->getSummary() !== null,
             'message_count'        => count($context['messages'] ?? []),
@@ -641,7 +639,6 @@ class AIController
             'providers'            => TaskProviderResolver::listActiveProvidersForRouting(),
             'provider'             => ($callSettings['provider_type'] ?? '') === 'lmstudio' ? 'lmstudio' : ((($callSettings['provider_type'] ?? '') === 'replicate') ? 'replicate' : 'google'),
             'api_url'              => $callSettings['api_url'] ?? '',
-            'api_key'              => $callSettings['api_key'] ?? '',
             'model'                => $callSettings['model_name'],
             'temperature'          => (float) $this->settings['temperature'],
             'max_tokens'           => (int) $this->settings['max_tokens'],
@@ -652,7 +649,6 @@ class AIController
             'custom_instruction'   => $customInstruction,
             'intent'               => $intent,
             'has_fallback'         => $stack['fallback'] !== null,
-            'fallback_api_key'     => ($stack['fallback_call_settings']['fallback_api_key'] ?? $this->settings['fallback_api_key']) ?? '',
             'summary_used'         => false,
             'summary_available'    => false,
             'message_count'        => count($context['messages'] ?? []),
@@ -1163,7 +1159,6 @@ class AIController
             'effective_provider_id' => $stack['effective_provider_id'],
             'provider' => $rwPtype === 'lmstudio' ? 'lmstudio' : ($rwPtype === 'replicate' ? 'replicate' : 'google'),
             'api_url' => $callSettings['api_url'] ?? '',
-            'api_key' => $callSettings['api_key'] ?? '',
             'model' => $callSettings['model_name'],
             'temperature' => (float) $this->settings['temperature'],
             'max_tokens' => (int) $this->settings['max_tokens'],
@@ -1454,12 +1449,14 @@ class AIController
     private function logAuditEntry(string $actionType, string $prompt, string $response, int $tokensUsed, int $execTimeMs, string $providerName)
     {
         try {
+            $safePrompt = $this->redactForAudit($prompt);
+            $safeResponse = $this->redactForAudit($response);
             Capsule::table('tblsahdev_audit_trail')->insert([
                 'ticket_id' => $this->ticketId,
                 'admin_id' => $this->adminId,
                 'action_type' => $actionType,
-                'prompt_text' => $prompt,
-                'response_text' => $response,
+                'prompt_text' => $safePrompt,
+                'response_text' => $safeResponse,
                 'provider_used' => $providerName,
                 'tokens_used' => $tokensUsed,
                 'execution_time_ms' => $execTimeMs,
@@ -1469,6 +1466,17 @@ class AIController
             // Silently fail audit logging rather than breaking the user flow
             error_log("Sahdev Audit Log Error: " . $e->getMessage());
         }
+    }
+
+    private function redactForAudit(string $text): string
+    {
+        $text = preg_replace('/(?i)(authorization\\s*:\\s*bearer\\s+)[^\\s"\']+/', '$1[REDACTED]', $text);
+        $text = preg_replace('/(?i)(api[_-]?key\\s*[":=]+\\s*)[^\\s,"\']+/', '$1[REDACTED]', $text);
+        $text = preg_replace('/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}/', '[REDACTED_EMAIL]', $text);
+        if (strlen($text) > 2000) {
+            $text = substr($text, 0, 2000) . '...[truncated]';
+        }
+        return $text;
     }
 
     /**
