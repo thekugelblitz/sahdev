@@ -2746,7 +2746,8 @@ function sahdev_build_ticket_list_insights_html(): string
             JSON_UNESCAPED_SLASHES
         );
 
-        return sahdev_render_ticket_list_insights($ajaxUrlJs);
+        $csrfTokenJs = json_encode(function_exists('generate_token') ? generate_token('plain') : '', JSON_UNESCAPED_SLASHES);
+        return sahdev_render_ticket_list_insights($ajaxUrlJs, $csrfTokenJs);
     } catch (\Throwable $e) {
         return '';
     }
@@ -2849,8 +2850,9 @@ add_hook('AdminAreaFooterOutput', 1, function ($vars) {
  * Render the CSS + JS block injected into the support tickets list page.
  *
  * @param string $ajaxUrlJs JSON-encoded string literal for the ajax endpoint (e.g. from json_encode)
+ * @param string $csrfTokenJs JSON-encoded plain CSRF token value.
  */
-function sahdev_render_ticket_list_insights(string $ajaxUrlJs): string
+function sahdev_render_ticket_list_insights(string $ajaxUrlJs, string $csrfTokenJs): string
 {
     // language=HTML
     return <<<HTML
@@ -3064,6 +3066,15 @@ tr.sdv-row-sent-high td { background-color: rgba(220, 53, 69, 0.06) !important; 
             return raw;
         }
     })();
+    var SAHDEV_CSRF_TOKEN = {$csrfTokenJs};
+
+    function getCsrfToken() {
+        var el = document.querySelector('input[name="token"]');
+        if (el && typeof el.value === 'string' && el.value) {
+            return el.value;
+        }
+        return SAHDEV_CSRF_TOKEN || '';
+    }
 
     var URG_CLASS = {
         critical: 'sdv-urg-critical',
@@ -3464,6 +3475,8 @@ tr.sdv-row-sent-high td { background-color: rgba(220, 53, 69, 0.06) !important; 
 
         var fd = new FormData();
         fd.append('action', 'get_ticket_insights');
+        var token = getCsrfToken();
+        if (token) fd.append('token', token);
         idArr.forEach(function (id) { fd.append('ticket_ids[]', id); });
         maskArr.forEach(function (m) { fd.append('ticket_tids[]', m); });
 
@@ -3509,6 +3522,8 @@ tr.sdv-row-sent-high td { background-color: rgba(220, 53, 69, 0.06) !important; 
     function postListAjax(action, extra) {
         var fd = new FormData();
         fd.append('action', action);
+        var token = getCsrfToken();
+        if (token) fd.append('token', token);
         if (extra) {
             Object.keys(extra).forEach(function (k) {
                 var v = extra[k];
@@ -3831,6 +3846,8 @@ tr.sdv-row-sent-high td { background-color: rgba(220, 53, 69, 0.06) !important; 
             if (masks.length) {
                 var fd = new FormData();
                 fd.append('action', 'get_ticket_insights');
+                var token = getCsrfToken();
+                if (token) fd.append('token', token);
                 masks.forEach(function (m) { fd.append('ticket_tids[]', m); });
                 fetch(AJAX_URL, { method: 'POST', body: fd, credentials: 'same-origin' })
                     .then(function (r) { return r.json(); })
