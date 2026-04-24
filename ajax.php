@@ -53,6 +53,14 @@ if (!in_array($action, $allowedActions, true)) {
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isGetAllowed) {
     $requestToken = (string) ($_REQUEST['token'] ?? '');
+    if ($requestToken !== '' && strpos($requestToken, '<') !== false) {
+        // Some callers may accidentally pass the full generate_token("form") HTML.
+        if (preg_match('/name=["\']token["\'][^>]*value=["\']([^"\']+)["\']/i', $requestToken, $m)) {
+            $requestToken = (string) ($m[1] ?? '');
+        } elseif (preg_match('/value=["\']([^"\']+)["\']/i', $requestToken, $m)) {
+            $requestToken = (string) ($m[1] ?? '');
+        }
+    }
     $candidateTokens = [];
     if (!empty($_SESSION['token'])) {
         $candidateTokens[] = (string) $_SESSION['token'];

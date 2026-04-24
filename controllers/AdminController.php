@@ -5293,7 +5293,7 @@ class AdminController
                     <!-- Right: Maintenance Actions -->
                     <div class="col-md-8 text-right" style="border-left: 1px solid #ddd;">
                         <form method="post" action="<?php echo $actionUrl; ?>&log_table=<?php echo $selectedTable; ?>" class="form-inline" style="display:inline-block; margin-right: 15px;">
-                            <input type="hidden" name="token" value="<?php echo $csrfToken; ?>">
+                            <?php echo $csrfToken; ?>
                             <label><strong>Export Data:</strong></label><br>
                             <select name="download_days" class="form-control input-sm">
                                 <option value="0">All Time</option>
@@ -5308,7 +5308,7 @@ class AdminController
                         </form>
 
                         <form method="post" action="<?php echo $actionUrl; ?>&log_table=<?php echo $selectedTable; ?>" class="form-inline" style="display:inline-block;" onsubmit="return confirm('Are you sure you want to permanently delete these logs?');">
-                            <input type="hidden" name="token" value="<?php echo $csrfToken; ?>">
+                            <?php echo $csrfToken; ?>
                             <label><strong>Cleanup Table:</strong></label><br>
                             <select name="delete_days" class="form-control input-sm">
                                 <option value="-1">-- select age --</option>
