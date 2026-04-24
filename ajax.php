@@ -53,8 +53,36 @@ if (!in_array($action, $allowedActions, true)) {
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isGetAllowed) {
     $requestToken = (string) ($_REQUEST['token'] ?? '');
-    $sessionToken = (string) ($_SESSION['token'] ?? '');
-    if ($requestToken === '' || $sessionToken === '' || !hash_equals($sessionToken, $requestToken)) {
+    $candidateTokens = [];
+    if (!empty($_SESSION['token'])) {
+        $candidateTokens[] = (string) $_SESSION['token'];
+    }
+    if (!empty($_SESSION['tkval'])) {
+        $candidateTokens[] = (string) $_SESSION['tkval'];
+    }
+    if (function_exists('generate_token')) {
+        try {
+            $generatedToken = (string) generate_token('plain');
+            if ($generatedToken !== '') {
+                $candidateTokens[] = $generatedToken;
+            }
+        } catch (\Throwable $e) {
+            // Ignore token helper failures and rely on session candidates.
+        }
+    }
+    $candidateTokens = array_values(array_unique(array_filter($candidateTokens, static function ($v) {
+        return is_string($v) && $v !== '';
+    })));
+
+    $isTokenValid = false;
+    foreach ($candidateTokens as $candidate) {
+        if (hash_equals($candidate, $requestToken)) {
+            $isTokenValid = true;
+            break;
+        }
+    }
+
+    if ($requestToken === '' || !$isTokenValid) {
         header('HTTP/1.1 403 Forbidden');
         echo json_encode(['status' => 'error', 'message' => 'Invalid CSRF token. Please refresh the page and try again.']);
         exit;
