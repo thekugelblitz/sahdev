@@ -221,12 +221,8 @@ function sahdev_inject_ticket_panel($vars)
     <div class="panel-heading" style="background-color: #0d6efd; color: white; display: flex; justify-content: space-between; align-items: center; cursor: pointer;" onclick="$('#sahdev-ai-body').slideToggle();">
         <h3 class="panel-title" style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;"><i class="fas fa-robot"></i> Sahdev AI Ticket Intelligence
             <a href="addonmodules.php?module=sahdev&amp;action=my_preferences" style="font-size:12px;color:#e7f1ff;font-weight:500;" onclick="event.stopPropagation();">My preferences</a>
-            <span class="label" style="background:rgba(255,255,255,0.2);font-size:10px;padding:2px 8px;border-radius:10px;">Classic</span>
         </h3>
-        <div style="display:flex;align-items:center;gap:8px;" onclick="event.stopPropagation();">
-            <button type="button" class="btn btn-xs" id="sahdev-theme-switch" data-target="remastered" style="background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);border-radius:4px;font-size:11px;padding:2px 8px;" title="Switch to Remastered Theme"><i class="fas fa-magic"></i> Remastered</button>
-            <i class="fas fa-chevron-down" onclick="$('#sahdev-ai-body').slideToggle();"></i>
-        </div>
+        <i class="fas fa-chevron-down"></i>
     </div>
     <div class="panel-body" id="sahdev-ai-body" style="display: none; background: #f8f9fa;">
         
@@ -2542,38 +2538,6 @@ EOT;
             $output .= "\n<script>\n$(function(){ " . file_get_contents($rmJsPath) . " });\n</script>";
         }
     }
-
-    // --- Theme Switch Handler (always injected) ---
-    $themeAjaxUrl = "addonmodules.php?module=sahdev&sahdev_act=ajax_handler";
-    $output .= "\n<script>\n";
-    $output .= "(function(){\n";
-    $output .= "  var _sahdevThemeUrl = " . json_encode($themeAjaxUrl) . ";\n";
-    $output .= "  \$(document).on('click', '#sahdev-theme-switch', function(e) {\n";
-    $output .= "    e.preventDefault(); e.stopPropagation();\n";
-    $output .= "    var target = \$(this).attr('data-target') || 'remastered';\n";
-    $output .= "    var btn = this;\n";
-    $output .= "    \$(btn).prop('disabled', true).html('<i class=\"fas fa-spinner fa-spin\"></i>');\n";
-    $output .= "    var tkn = \$('#sahdev-ai-form input[name=\"token\"]').val() || \$('input[name=\"token\"]').first().val() || '';\n";
-    $output .= "    \$.ajax({\n";
-    $output .= "      url: _sahdevThemeUrl,\n";
-    $output .= "      type: 'POST',\n";
-    $output .= "      data: { action: 'set_ui_theme', theme: target, token: tkn },\n";
-    $output .= "      dataType: 'json',\n";
-    $output .= "      success: function(res) {\n";
-    $output .= "        if (res && res.status === 'success') { location.reload(); return; }\n";
-    $output .= "        alert('Theme switch failed: ' + (res && res.message ? res.message : JSON.stringify(res)));\n";
-    $output .= "        \$(btn).prop('disabled', false).html(target === 'remastered' ? '<i class=\"fas fa-magic\"></i> Remastered' : '<i class=\"fas fa-undo\"></i> Classic');\n";
-    $output .= "      },\n";
-    $output .= "      error: function(xhr) {\n";
-    $output .= "        var msg = 'HTTP ' + xhr.status;\n";
-    $output .= "        try { var j = JSON.parse(xhr.responseText); msg = j.message || msg; } catch(ex) { msg += ': ' + (xhr.responseText||'').substring(0,200); }\n";
-    $output .= "        alert('Theme switch error: ' + msg);\n";
-    $output .= "        \$(btn).prop('disabled', false).html(target === 'remastered' ? '<i class=\"fas fa-magic\"></i> Remastered' : '<i class=\"fas fa-undo\"></i> Classic');\n";
-    $output .= "      }\n";
-    $output .= "    });\n";
-    $output .= "  });\n";
-    $output .= "})();\n";
-    $output .= "</script>\n";
 
     return $output;
 

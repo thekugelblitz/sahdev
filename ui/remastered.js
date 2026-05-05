@@ -16,15 +16,6 @@
     var $body = $('#sahdev-ai-body');
     $body.show();
 
-    // --- 2b. Swap header badge + switch button for Remastered context ---
-    var $switchBtn = $('#sahdev-theme-switch');
-    if ($switchBtn.length) {
-        $switchBtn.attr('data-target', 'classic').attr('title', 'Switch to Classic Theme')
-            .html('<i class="fas fa-undo"></i> Classic');
-    }
-    $panel.find('.panel-heading .label').text('Remastered')
-        .css({ background: 'rgba(99,102,241,0.3)', color: '#c7d2fe' });
-
     // --- 3. Build Tab Bar ---
     var tabs = [
         { id: 'rm-tab-analysis', icon: '⚡', label: 'Analysis', pane: 'rm-pane-analysis' },
