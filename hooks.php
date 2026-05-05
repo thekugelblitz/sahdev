@@ -2548,7 +2548,7 @@ EOT;
 <script>
 $(document).on('click', '#sahdev-theme-switch', function(e) {
     e.preventDefault();
-    var target = $(this).data('target') || 'remastered';
+    var target = $(this).attr('data-target') || 'remastered';
     var $btn = $(this);
     $btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i>');
     $.ajax({

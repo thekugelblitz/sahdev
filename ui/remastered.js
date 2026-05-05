@@ -19,7 +19,7 @@
     // --- 2b. Swap header badge + switch button for Remastered context ---
     var $switchBtn = $('#sahdev-theme-switch');
     if ($switchBtn.length) {
-        $switchBtn.data('target', 'classic').attr('title', 'Switch to Classic Theme')
+        $switchBtn.attr('data-target', 'classic').attr('title', 'Switch to Classic Theme')
             .html('<i class="fas fa-undo"></i> Classic');
     }
     $panel.find('.panel-heading .label').text('Remastered')

@@ -572,6 +572,7 @@ class AdminController
                 $incoming = [
                     'default_provider_id' => (int) ($_POST['default_provider_id'] ?? 0),
                     'tone_default'        => $toneDefault,
+                    'ui_theme'            => strtolower(trim((string) ($_POST['ui_theme'] ?? 'remastered'))),
                     'features'            => [],
                 ];
                 foreach (\Sahdev\Lib\AdminPreferences::allFeatureKeys() as $k) {
@@ -654,6 +655,14 @@ class AdminController
                                 <option value="Strict"<?php echo (($prefs['tone_default'] ?? '') === 'Strict') ? ' selected' : ''; ?>>Strict</option>
                                 <option value="Custom"<?php echo (($prefs['tone_default'] ?? '') === 'Custom') ? ' selected' : ''; ?>>Custom</option>
                             </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Ticket panel UI theme</label>
+                            <select name="ui_theme" class="form-control" style="max-width:320px;">
+                                <option value="remastered"<?php echo (($prefs['ui_theme'] ?? 'remastered') === 'remastered') ? ' selected' : ''; ?>>✨ Remastered (compact tabs)</option>
+                                <option value="classic"<?php echo (($prefs['ui_theme'] ?? '') === 'classic') ? ' selected' : ''; ?>>📋 Classic (stacked panels)</option>
+                            </select>
+                            <p class="help-block">Choose the layout for the Sahdev AI panel on ticket pages. You can also switch instantly from the panel header.</p>
                         </div>
                     </div>
                 </div>
