@@ -2662,24 +2662,39 @@ function sahdev_is_admin_ticket_open_page(?array $vars = null): bool
 }
 
 add_hook('AdminAreaFooterOutput', 1, function ($vars) {
-    // Robust Ticket ID detection (handles different themes and routing)
+    // ------------------------------------------------------------------
+    // "Open New Ticket" page: inject the full Sahdev AI panel so admins
+    // can generate AI replies while composing a new ticket for a client.
+    // The panel's existing JS "open context mode" relocates itself above
+    // the ticket form and uses userid-based AJAX actions.
+    // ------------------------------------------------------------------
+    if (sahdev_is_admin_ticket_open_page($vars)) {
+        static $openTicketPanelInjected = false;
+        if ($openTicketPanelInjected) {
+            return '';
+        }
+        $openTicketPanelInjected = true;
+
+        $userId = (int) ($_GET['userid'] ?? ($vars['userid'] ?? 0));
+        $panelVars = is_array($vars) ? $vars : [];
+        $panelVars['ticketid'] = 0;       // No ticket yet — triggers open context mode
+        $panelVars['userid']   = $userId;
+
+        return sahdev_inject_ticket_panel($panelVars);
+    }
+
+    // Existing ticket pages — leave the lightweight comment marker
     $ticketId = (int) ($_GET['id'] ?? ($vars['ticketid'] ?? 0));
     $userId = (int) ($_GET['userid'] ?? ($vars['userid'] ?? 0));
-    
-    // Broad page check: only inject on Ticket View, Client Summary, or Open Ticket pages
+
     $uri = $_SERVER['REQUEST_URI'] ?? '';
     $isTicketPage = ($ticketId > 0 || strpos($uri, 'supporttickets.php') !== false || strpos($uri, 'viewticket') !== false);
-    
+
     if (!$isTicketPage) {
         return '';
     }
 
-    $panelVars = $vars;
-    if ($ticketId > 0) $panelVars['ticketid'] = $ticketId;
-
-    $output = "";
-    
-    $output .= "\n<!-- Sahdev Note Tool Active (Ticket ID: $ticketId) -->\n";
+    $output = "\n<!-- Sahdev Note Tool Active (Ticket ID: $ticketId) -->\n";
     return $output;
 });
 
