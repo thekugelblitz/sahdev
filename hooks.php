@@ -216,18 +216,20 @@ function sahdev_inject_ticket_panel($vars)
     
     $jsIntentLabelsJson = json_encode($jsIntentLabels);
 
-    // Add loading class server-side to prevent flash when Remastered theme transforms the DOM
-    $rmLoadingClass = ($uiTheme === \Sahdev\Lib\AdminPreferences::THEME_REMASTERED) ? ' sahdev-rm-loading' : '';
+    // When Remastered: hide body via inline style to prevent flash of Classic layout
+    $rmBodyStyle = ($uiTheme === \Sahdev\Lib\AdminPreferences::THEME_REMASTERED)
+        ? 'display:none;visibility:hidden;'
+        : 'display: none; background: #f8f9fa;';
 
     $htmlPanel = <<<HTML
-<div class="panel panel-info{$rmLoadingClass}" id="sahdev-ai-panel" style="margin-top: 20px; border-color: #0d6efd;">
+<div class="panel panel-info" id="sahdev-ai-panel" style="margin-top: 20px; border-color: #0d6efd;">
     <div class="panel-heading" style="background-color: #0d6efd; color: white; display: flex; justify-content: space-between; align-items: center; cursor: pointer;" onclick="$('#sahdev-ai-body').slideToggle();">
         <h3 class="panel-title" style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;"><i class="fas fa-robot"></i> Sahdev AI Ticket Intelligence
             <a href="addonmodules.php?module=sahdev&amp;action=my_preferences" style="font-size:12px;color:#e7f1ff;font-weight:500;" onclick="event.stopPropagation();">My preferences</a>
         </h3>
         <i class="fas fa-chevron-down"></i>
     </div>
-    <div class="panel-body" id="sahdev-ai-body" style="display: none; background: #f8f9fa;">
+    <div class="panel-body" id="sahdev-ai-body" style="{$rmBodyStyle}">
         
         <form id="sahdev-ai-form">
             {$csrfToken}
@@ -687,7 +689,7 @@ function sahdev_inject_ticket_panel($vars)
 HTML;
 
 
-    // Output: CSS first (for flash prevention), then HTML
+    // Output: CSS first (for remastered styling), then HTML
     $output = '';
     if ($uiTheme === \Sahdev\Lib\AdminPreferences::THEME_REMASTERED) {
         $rmCssPath = __DIR__ . '/ui/remastered.css';

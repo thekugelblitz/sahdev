@@ -3,9 +3,10 @@
    Applied when #sahdev-ai-panel has .sahdev-remastered class.
    ================================================================ */
 
-/* --- Flash Prevention: hide body until JS finishes transform --- */
-#sahdev-ai-panel.sahdev-rm-loading > #sahdev-ai-body,
-#sahdev-ai-panel.sahdev-rm-loading > .panel-body { opacity: 0 !important; height: 0 !important; overflow: hidden !important; padding: 0 !important; transition: none !important; }
+/* --- Checkbox + Action Row (compact, wrappable) --- */
+.sahdev-remastered .form-group.text-right { flex-wrap: wrap !important; gap: 8px !important; }
+.sahdev-remastered .form-group.text-right > label { font-size: 12px !important; white-space: nowrap; }
+.sahdev-remastered .form-group.text-right > label input[type="checkbox"] { width: 14px; height: 14px; }
 
 /* --- Main Panel Shell --- */
 .sahdev-remastered.panel { border: none !important; border-radius: 10px !important; overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,0.08) !important; margin-top: 14px !important; }
@@ -134,6 +135,12 @@
     .sahdev-remastered .sahdev-rm-rewrite .btn { width: 100%; text-align: center; }
     .sahdev-remastered #sahdev-core-ai-wrap .form-control { font-size: 13px !important; height: 34px !important; }
     .sahdev-remastered .sahdev-intent-btn { font-size: 10px !important; padding: 3px 8px !important; }
+    /* Checkbox row: stack vertically on mobile */
+    .sahdev-remastered .form-group.text-right { flex-direction: column !important; align-items: flex-start !important; gap: 10px !important; }
+    .sahdev-remastered .form-group.text-right > label { font-size: 13px !important; display: flex !important; align-items: center; gap: 6px; }
+    .sahdev-remastered .form-group.text-right > label input[type="checkbox"] { width: 16px; height: 16px; min-width: 16px; }
+    .sahdev-remastered .form-group.text-right > div { width: 100%; }
+    .sahdev-remastered .form-group.text-right > div .btn { width: 100%; }
 }
 
 /* --- Small mobile (max-width: 480px) --- */

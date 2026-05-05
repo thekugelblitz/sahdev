@@ -9,10 +9,10 @@
     var $panel = $('#sahdev-ai-panel');
     if (!$panel.length) return;
 
-    // --- 1. Add .sahdev-remastered class; keep loading state to prevent flash ---
-    $panel.addClass('sahdev-remastered sahdev-rm-loading');
+    // --- 1. Add .sahdev-remastered class ---
+    $panel.addClass('sahdev-remastered');
 
-    // --- 2. Ensure panel body exists (will be revealed after transform) ---
+    // --- 2. Reference panel body (hidden server-side via inline style) ---
     var $body = $('#sahdev-ai-body');
 
     // --- 3. Build Tab Bar ---
@@ -167,8 +167,7 @@
         $instructionGroup.removeClass('col-md-6').css({ padding: 0 });
     }
 
-    // --- 9. Remove loading state — reveal transformed panel ---
-    $body.show();
-    $panel.removeClass('sahdev-rm-loading');
+    // --- 9. Reveal transformed panel (clear inline hiding set by server) ---
+    $body.css({ display: 'block', visibility: 'visible', background: '#ffffff' });
 
 })();
