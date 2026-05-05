@@ -1,0 +1,101 @@
+/* ================================================================
+   Sahdev AI — Remastered Theme (CSS-only visual layer)
+   Applied when #sahdev-ai-panel has .sahdev-remastered class.
+   ================================================================ */
+
+/* --- Main Panel Shell --- */
+.sahdev-remastered.panel { border: none !important; border-radius: 10px !important; overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,0.08) !important; margin-top: 14px !important; }
+
+.sahdev-remastered > .panel-heading { background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%) !important; color: #e2e8f0 !important; padding: 10px 16px !important; border: none !important; border-radius: 0 !important; }
+.sahdev-remastered > .panel-heading .panel-title { font-size: 14px !important; font-weight: 700 !important; letter-spacing: 0.3px; }
+.sahdev-remastered > .panel-heading .panel-title i.fa-robot { color: #818cf8; }
+.sahdev-remastered > .panel-heading a { color: #94a3b8 !important; font-size: 11px !important; }
+
+/* --- Panel Body --- */
+.sahdev-remastered > #sahdev-ai-body,
+.sahdev-remastered > .panel-body { background: #ffffff !important; padding: 0 !important; }
+
+/* --- Tab Bar --- */
+.sahdev-rm-tabs { display: flex; gap: 0; border-bottom: 2px solid #e2e8f0; background: #f8fafc; padding: 0 12px; overflow-x: auto; }
+.sahdev-rm-tab { padding: 9px 14px; font-size: 12px; font-weight: 600; color: #64748b; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -2px; white-space: nowrap; transition: all 0.15s ease; display: flex; align-items: center; gap: 5px; user-select: none; }
+.sahdev-rm-tab:hover { color: #334155; background: #f1f5f9; }
+.sahdev-rm-tab.active { color: #4f46e5; border-bottom-color: #4f46e5; background: transparent; }
+.sahdev-rm-tab .rm-tab-icon { font-size: 13px; }
+
+/* --- Tab Panes --- */
+.sahdev-rm-pane { display: none; padding: 14px 16px; }
+.sahdev-rm-pane.active { display: block; }
+
+/* --- Compact Form Controls --- */
+.sahdev-remastered #sahdev-core-ai-wrap .form-group { margin-bottom: 8px !important; }
+.sahdev-remastered #sahdev-core-ai-wrap label { font-size: 12px !important; margin-bottom: 3px !important; }
+.sahdev-remastered #sahdev-core-ai-wrap .form-control { font-size: 12px !important; padding: 4px 8px !important; height: 30px !important; }
+.sahdev-remastered #sahdev_technical_context { height: auto !important; }
+.sahdev-remastered #sahdev-core-ai-wrap textarea.form-control { height: auto !important; min-height: 32px; }
+
+/* --- Compact Controls Row --- */
+.sahdev-remastered .sahdev-rm-controls { display: grid; grid-template-columns: 120px 130px 1fr; gap: 8px; align-items: end; margin-bottom: 10px; }
+.sahdev-remastered .sahdev-rm-controls .form-group { margin-bottom: 0 !important; }
+
+/* --- Intent Pills (smaller) --- */
+.sahdev-remastered .sahdev-intent-btn { font-size: 11px !important; padding: 2px 10px !important; border-radius: 14px !important; }
+
+/* --- Model select compact --- */
+.sahdev-remastered #sahdev_override_provider { max-width: 100% !important; font-size: 12px !important; height: 30px !important; }
+
+/* --- Results Grid --- */
+.sahdev-remastered #sahdev-results .row { margin: 0; }
+.sahdev-remastered #sahdev-results .well { padding: 8px 10px !important; margin-bottom: 8px !important; font-size: 12px !important; border-radius: 6px !important; }
+.sahdev-remastered #sahdev-results .well strong { font-size: 12px !important; }
+.sahdev-remastered #sahdev-results .well p { font-size: 12px !important; margin-top: 3px !important; }
+.sahdev-remastered #sahdev-results .panel { margin-bottom: 8px !important; border-radius: 6px !important; }
+.sahdev-remastered #sahdev-results .panel-heading { padding: 6px 10px !important; font-size: 12px !important; }
+.sahdev-remastered #sahdev-results .panel-body { padding: 8px 10px !important; max-height: 200px !important; font-size: 12px !important; }
+
+/* --- Checkboxes inline --- */
+.sahdev-remastered .sahdev-rm-checks { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; font-size: 12px; margin-bottom: 8px; }
+.sahdev-remastered .sahdev-rm-checks label { font-size: 12px !important; margin: 0 !important; }
+
+/* --- Action Bar --- */
+.sahdev-remastered .sahdev-rm-actions { display: flex; justify-content: flex-end; align-items: center; gap: 8px; padding: 8px 0; }
+.sahdev-remastered .sahdev-rm-actions .btn { font-size: 12px !important; padding: 5px 12px !important; }
+
+/* --- Rewrite Bar --- */
+.sahdev-remastered .sahdev-rm-rewrite { border-top: 1px solid #e2e8f0; padding: 10px 16px; background: #fafbfc; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.sahdev-remastered .sahdev-rm-rewrite label { font-size: 12px !important; font-weight: 600; margin: 0; color: #334155; }
+.sahdev-remastered .sahdev-rm-rewrite .btn { font-size: 11px !important; padding: 4px 10px !important; }
+
+/* --- Sub-panels (Summary, Canned, History) as tab panes --- */
+.sahdev-remastered #sahdev-summarizer-outer,
+.sahdev-remastered #sahdev-canned-outer,
+.sahdev-remastered #sahdev-history-outer,
+.sahdev-remastered #sahdev-snapshot-outer { margin-top: 0 !important; }
+.sahdev-remastered #sahdev-summarizer-outer .panel,
+.sahdev-remastered #sahdev-canned-outer .panel,
+.sahdev-remastered #sahdev-history-outer .panel,
+.sahdev-remastered #sahdev-snapshot-outer .panel { border: none !important; box-shadow: none !important; margin: 0 !important; }
+.sahdev-remastered #sahdev-summarizer-outer .panel-heading,
+.sahdev-remastered #sahdev-canned-outer .panel-heading,
+.sahdev-remastered #sahdev-history-outer .panel-heading,
+.sahdev-remastered #sahdev-snapshot-outer .panel-heading { display: none !important; }
+.sahdev-remastered #sahdev-summarizer-outer .panel-body,
+.sahdev-remastered #sahdev-canned-outer .panel-body,
+.sahdev-remastered #sahdev-history-outer .panel-body,
+.sahdev-remastered #sahdev-snapshot-outer .panel-body { display: block !important; padding: 4px 0 !important; background: transparent !important; }
+
+/* --- Tools panel compact --- */
+.sahdev-remastered #sahdev-tools-panel { font-size: 12px !important; padding: 8px !important; }
+.sahdev-remastered #sahdev-tools-panel label { font-size: 11px !important; }
+.sahdev-remastered #sahdev-tools-panel .form-control { font-size: 12px !important; }
+
+/* --- Tech context collapsible --- */
+.sahdev-remastered .sahdev-rm-tech-toggle { font-size: 11px; color: #64748b; cursor: pointer; display: flex; align-items: center; gap: 4px; margin-bottom: 6px; }
+.sahdev-remastered .sahdev-rm-tech-toggle:hover { color: #4f46e5; }
+
+/* --- Loading states --- */
+.sahdev-remastered #sahdev-loading { padding: 14px !important; }
+.sahdev-remastered #sahdev-loading p { font-size: 13px !important; }
+
+/* --- Theme switch button --- */
+.sahdev-rm-theme-btn { background: rgba(255,255,255,0.1) !important; color: #94a3b8 !important; border: 1px solid rgba(255,255,255,0.15) !important; border-radius: 4px !important; font-size: 11px !important; padding: 2px 8px !important; transition: all 0.15s ease; }
+.sahdev-rm-theme-btn:hover { background: rgba(255,255,255,0.2) !important; color: #e2e8f0 !important; }

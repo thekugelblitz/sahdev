@@ -316,7 +316,7 @@ class AdminPreferences
     /** Actions that skip per-admin feature checks (organizational / power). */
     public static function unguardedActions(): array
     {
-        return [];
+        return ['set_ui_theme'];
     }
 
     /**

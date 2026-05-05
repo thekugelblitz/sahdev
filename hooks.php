@@ -2531,7 +2531,50 @@ EOT;
 
     $output .= $jsContentStart . $jsContentMain . "\n</script>";
 
+    // --- Remastered Theme: inject CSS + JS if active ---
+    if ($uiTheme === \Sahdev\Lib\AdminPreferences::THEME_REMASTERED) {
+        $rmCssPath = __DIR__ . '/ui/remastered.css';
+        $rmJsPath  = __DIR__ . '/ui/remastered.js';
+        if (file_exists($rmCssPath)) {
+            $output .= "\n<style>\n" . file_get_contents($rmCssPath) . "\n</style>";
+        }
+        if (file_exists($rmJsPath)) {
+            $output .= "\n<script>\n$(function(){ " . file_get_contents($rmJsPath) . " });\n</script>";
+        }
+    }
+
+    // --- Theme Switch Handler (always injected) ---
+    $output .= <<<'THEMEJS'
+<script>
+$(document).on('click', '#sahdev-theme-switch', function(e) {
+    e.preventDefault();
+    var target = $(this).data('target') || 'remastered';
+    var $btn = $(this);
+    $btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i>');
+    $.ajax({
+        url: sahdevAjaxUrl.replace('sahdev_act=ajax_handler', 'sahdev_act=ajax_handler'),
+        type: 'POST',
+        data: { action: 'set_ui_theme', theme: target, token: $('input[name="token"]').val() },
+        dataType: 'json',
+        success: function(res) {
+            if (res && res.status === 'success') {
+                location.reload();
+            } else {
+                alert('Failed to switch theme: ' + (res.message || 'Unknown error'));
+                $btn.prop('disabled', false).html('<i class="fas fa-magic"></i> ' + (target === 'remastered' ? 'Remastered' : 'Classic'));
+            }
+        },
+        error: function() {
+            alert('Network error switching theme.');
+            $btn.prop('disabled', false);
+        }
+    });
+});
+</script>
+THEMEJS;
+
     return $output;
+
 }
 
 // Helper to determine selected dropdown inside HEREDOC
