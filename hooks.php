@@ -2544,34 +2544,36 @@ EOT;
     }
 
     // --- Theme Switch Handler (always injected) ---
-    $output .= <<<'THEMEJS'
-<script>
-$(document).on('click', '#sahdev-theme-switch', function(e) {
-    e.preventDefault();
-    var target = $(this).attr('data-target') || 'remastered';
-    var $btn = $(this);
-    $btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i>');
-    $.ajax({
-        url: sahdevAjaxUrl.replace('sahdev_act=ajax_handler', 'sahdev_act=ajax_handler'),
-        type: 'POST',
-        data: { action: 'set_ui_theme', theme: target, token: $('input[name="token"]').val() },
-        dataType: 'json',
-        success: function(res) {
-            if (res && res.status === 'success') {
-                location.reload();
-            } else {
-                alert('Failed to switch theme: ' + (res.message || 'Unknown error'));
-                $btn.prop('disabled', false).html('<i class="fas fa-magic"></i> ' + (target === 'remastered' ? 'Remastered' : 'Classic'));
-            }
-        },
-        error: function() {
-            alert('Network error switching theme.');
-            $btn.prop('disabled', false);
-        }
-    });
-});
-</script>
-THEMEJS;
+    $themeAjaxUrl = "addonmodules.php?module=sahdev&sahdev_act=ajax_handler";
+    $output .= "\n<script>\n";
+    $output .= "(function(){\n";
+    $output .= "  var _sahdevThemeUrl = " . json_encode($themeAjaxUrl) . ";\n";
+    $output .= "  \$(document).on('click', '#sahdev-theme-switch', function(e) {\n";
+    $output .= "    e.preventDefault(); e.stopPropagation();\n";
+    $output .= "    var target = \$(this).attr('data-target') || 'remastered';\n";
+    $output .= "    var btn = this;\n";
+    $output .= "    \$(btn).prop('disabled', true).html('<i class=\"fas fa-spinner fa-spin\"></i>');\n";
+    $output .= "    var tkn = \$('#sahdev-ai-form input[name=\"token\"]').val() || \$('input[name=\"token\"]').first().val() || '';\n";
+    $output .= "    \$.ajax({\n";
+    $output .= "      url: _sahdevThemeUrl,\n";
+    $output .= "      type: 'POST',\n";
+    $output .= "      data: { action: 'set_ui_theme', theme: target, token: tkn },\n";
+    $output .= "      dataType: 'json',\n";
+    $output .= "      success: function(res) {\n";
+    $output .= "        if (res && res.status === 'success') { location.reload(); return; }\n";
+    $output .= "        alert('Theme switch failed: ' + (res && res.message ? res.message : JSON.stringify(res)));\n";
+    $output .= "        \$(btn).prop('disabled', false).html(target === 'remastered' ? '<i class=\"fas fa-magic\"></i> Remastered' : '<i class=\"fas fa-undo\"></i> Classic');\n";
+    $output .= "      },\n";
+    $output .= "      error: function(xhr) {\n";
+    $output .= "        var msg = 'HTTP ' + xhr.status;\n";
+    $output .= "        try { var j = JSON.parse(xhr.responseText); msg = j.message || msg; } catch(ex) { msg += ': ' + (xhr.responseText||'').substring(0,200); }\n";
+    $output .= "        alert('Theme switch error: ' + msg);\n";
+    $output .= "        \$(btn).prop('disabled', false).html(target === 'remastered' ? '<i class=\"fas fa-magic\"></i> Remastered' : '<i class=\"fas fa-undo\"></i> Classic');\n";
+    $output .= "      }\n";
+    $output .= "    });\n";
+    $output .= "  });\n";
+    $output .= "})();\n";
+    $output .= "</script>\n";
 
     return $output;
 
