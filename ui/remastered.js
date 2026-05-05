@@ -9,8 +9,8 @@
     var $panel = $('#sahdev-ai-panel');
     if (!$panel.length) return;
 
-    // --- 1. Add .sahdev-remastered class ---
-    $panel.addClass('sahdev-remastered');
+    // Panel already has .sahdev-remastered class from server-side rendering.
+    // Body is hidden via inline style — will be revealed at the end after transform.
 
     // --- 2. Reference panel body (hidden server-side via inline style) ---
     var $body = $('#sahdev-ai-body');

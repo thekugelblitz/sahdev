@@ -216,20 +216,35 @@ function sahdev_inject_ticket_panel($vars)
     
     $jsIntentLabelsJson = json_encode($jsIntentLabels);
 
-    // When Remastered: hide body via inline style to prevent flash of Classic layout
-    $rmBodyStyle = ($uiTheme === \Sahdev\Lib\AdminPreferences::THEME_REMASTERED)
+    // Server-side inline styles for each theme — eliminates flash entirely
+    $isRemastered = ($uiTheme === \Sahdev\Lib\AdminPreferences::THEME_REMASTERED);
+    $panelStyle   = $isRemastered
+        ? 'margin-top:14px;border:none;border-radius:10px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08);'
+        : 'margin-top: 20px; border-color: #0d6efd;';
+    $panelClass   = $isRemastered ? 'panel panel-info sahdev-remastered' : 'panel panel-info';
+    $headingStyle = $isRemastered
+        ? 'background:linear-gradient(135deg,#0f172a 0%,#1e293b 100%);color:#e2e8f0;padding:10px 16px;border:none;display:flex;justify-content:space-between;align-items:center;cursor:pointer;'
+        : 'background-color: #0d6efd; color: white; display: flex; justify-content: space-between; align-items: center; cursor: pointer;';
+    $titleStyle   = $isRemastered
+        ? 'display:flex;align-items:center;flex-wrap:wrap;gap:8px;font-size:14px;font-weight:700;letter-spacing:0.3px;'
+        : 'display:flex;align-items:center;flex-wrap:wrap;gap:8px;';
+    $robotColor   = $isRemastered ? 'color:#818cf8;' : '';
+    $linkStyle    = $isRemastered
+        ? 'font-size:11px;color:#94a3b8;font-weight:500;'
+        : 'font-size:12px;color:#e7f1ff;font-weight:500;';
+    $bodyStyle    = $isRemastered
         ? 'display:none;visibility:hidden;'
         : 'display: none; background: #f8f9fa;';
 
     $htmlPanel = <<<HTML
-<div class="panel panel-info" id="sahdev-ai-panel" style="margin-top: 20px; border-color: #0d6efd;">
-    <div class="panel-heading" style="background-color: #0d6efd; color: white; display: flex; justify-content: space-between; align-items: center; cursor: pointer;" onclick="$('#sahdev-ai-body').slideToggle();">
-        <h3 class="panel-title" style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;"><i class="fas fa-robot"></i> Sahdev AI Ticket Intelligence
-            <a href="addonmodules.php?module=sahdev&amp;action=my_preferences" style="font-size:12px;color:#e7f1ff;font-weight:500;" onclick="event.stopPropagation();">My preferences</a>
+<div class="{$panelClass}" id="sahdev-ai-panel" style="{$panelStyle}">
+    <div class="panel-heading" style="{$headingStyle}" onclick="$('#sahdev-ai-body').slideToggle();">
+        <h3 class="panel-title" style="{$titleStyle}"><i class="fas fa-robot" style="{$robotColor}"></i> Sahdev AI Ticket Intelligence
+            <a href="addonmodules.php?module=sahdev&amp;action=my_preferences" style="{$linkStyle}" onclick="event.stopPropagation();">My preferences</a>
         </h3>
         <i class="fas fa-chevron-down"></i>
     </div>
-    <div class="panel-body" id="sahdev-ai-body" style="{$rmBodyStyle}">
+    <div class="panel-body" id="sahdev-ai-body" style="{$bodyStyle}">
         
         <form id="sahdev-ai-form">
             {$csrfToken}
