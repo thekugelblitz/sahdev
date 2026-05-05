@@ -3,6 +3,10 @@
    Applied when #sahdev-ai-panel has .sahdev-remastered class.
    ================================================================ */
 
+/* --- Flash Prevention: hide body until JS finishes transform --- */
+#sahdev-ai-panel.sahdev-rm-loading > #sahdev-ai-body,
+#sahdev-ai-panel.sahdev-rm-loading > .panel-body { opacity: 0 !important; height: 0 !important; overflow: hidden !important; padding: 0 !important; transition: none !important; }
+
 /* --- Main Panel Shell --- */
 .sahdev-remastered.panel { border: none !important; border-radius: 10px !important; overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,0.08) !important; margin-top: 14px !important; }
 
@@ -16,7 +20,7 @@
 .sahdev-remastered > .panel-body { background: #ffffff !important; padding: 0 !important; }
 
 /* --- Tab Bar --- */
-.sahdev-rm-tabs { display: flex; gap: 0; border-bottom: 2px solid #e2e8f0; background: #f8fafc; padding: 0 12px; overflow-x: auto; }
+.sahdev-rm-tabs { display: flex; gap: 0; border-bottom: 2px solid #e2e8f0; background: #f8fafc; padding: 0 12px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .sahdev-rm-tab { padding: 9px 14px; font-size: 12px; font-weight: 600; color: #64748b; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -2px; white-space: nowrap; transition: all 0.15s ease; display: flex; align-items: center; gap: 5px; user-select: none; }
 .sahdev-rm-tab:hover { color: #334155; background: #f1f5f9; }
 .sahdev-rm-tab.active { color: #4f46e5; border-bottom-color: #4f46e5; background: transparent; }
@@ -96,6 +100,46 @@
 .sahdev-remastered #sahdev-loading { padding: 14px !important; }
 .sahdev-remastered #sahdev-loading p { font-size: 13px !important; }
 
-/* --- Theme switch button --- */
-.sahdev-rm-theme-btn { background: rgba(255,255,255,0.1) !important; color: #94a3b8 !important; border: 1px solid rgba(255,255,255,0.15) !important; border-radius: 4px !important; font-size: 11px !important; padding: 2px 8px !important; transition: all 0.15s ease; }
-.sahdev-rm-theme-btn:hover { background: rgba(255,255,255,0.2) !important; color: #e2e8f0 !important; }
+/* ================================================================
+   RESPONSIVE BREAKPOINTS
+   ================================================================ */
+
+/* --- Tablet (max-width: 992px) --- */
+@media (max-width: 992px) {
+    .sahdev-remastered .sahdev-rm-controls { grid-template-columns: 1fr 1fr; }
+    .sahdev-remastered .sahdev-rm-controls > *:nth-child(3) { grid-column: 1 / -1; }
+    .sahdev-remastered #sahdev-results .col-md-4,
+    .sahdev-remastered #sahdev-results .col-md-8 { width: 100% !important; float: none !important; }
+    .sahdev-rm-tab { padding: 8px 10px; font-size: 11px; }
+    .sahdev-rm-pane { padding: 10px 12px; }
+}
+
+/* --- Mobile (max-width: 768px) --- */
+@media (max-width: 768px) {
+    .sahdev-remastered.panel { border-radius: 6px !important; margin-top: 8px !important; }
+    .sahdev-remastered > .panel-heading { padding: 8px 12px !important; }
+    .sahdev-remastered > .panel-heading .panel-title { font-size: 13px !important; flex-wrap: wrap; }
+    .sahdev-rm-tabs { padding: 0 6px; }
+    .sahdev-rm-tab { padding: 7px 8px; font-size: 10px; gap: 3px; }
+    .sahdev-rm-tab .rm-tab-icon { font-size: 11px; }
+    .sahdev-rm-pane { padding: 8px 10px; }
+    .sahdev-remastered .sahdev-rm-controls { grid-template-columns: 1fr; }
+    .sahdev-remastered .sahdev-rm-controls > *:nth-child(3) { grid-column: auto; }
+    .sahdev-remastered #sahdev-results .col-md-4,
+    .sahdev-remastered #sahdev-results .col-md-8,
+    .sahdev-remastered #sahdev-results .col-md-6,
+    .sahdev-remastered #sahdev-results .col-md-3 { width: 100% !important; float: none !important; padding-left: 0 !important; padding-right: 0 !important; }
+    .sahdev-remastered #sahdev-results .well { margin-bottom: 6px !important; }
+    .sahdev-remastered .sahdev-rm-rewrite { padding: 8px 10px; gap: 6px; }
+    .sahdev-remastered .sahdev-rm-rewrite .btn { width: 100%; text-align: center; }
+    .sahdev-remastered #sahdev-core-ai-wrap .form-control { font-size: 13px !important; height: 34px !important; }
+    .sahdev-remastered .sahdev-intent-btn { font-size: 10px !important; padding: 3px 8px !important; }
+}
+
+/* --- Small mobile (max-width: 480px) --- */
+@media (max-width: 480px) {
+    .sahdev-rm-tabs { flex-wrap: nowrap; }
+    .sahdev-rm-tab { padding: 6px 6px; font-size: 10px; }
+    .sahdev-rm-tab .rm-tab-icon { display: none; }
+    .sahdev-remastered > .panel-heading .panel-title a { display: none; }
+}

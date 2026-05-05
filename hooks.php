@@ -216,8 +216,11 @@ function sahdev_inject_ticket_panel($vars)
     
     $jsIntentLabelsJson = json_encode($jsIntentLabels);
 
+    // Add loading class server-side to prevent flash when Remastered theme transforms the DOM
+    $rmLoadingClass = ($uiTheme === \Sahdev\Lib\AdminPreferences::THEME_REMASTERED) ? ' sahdev-rm-loading' : '';
+
     $htmlPanel = <<<HTML
-<div class="panel panel-info" id="sahdev-ai-panel" style="margin-top: 20px; border-color: #0d6efd;">
+<div class="panel panel-info{$rmLoadingClass}" id="sahdev-ai-panel" style="margin-top: 20px; border-color: #0d6efd;">
     <div class="panel-heading" style="background-color: #0d6efd; color: white; display: flex; justify-content: space-between; align-items: center; cursor: pointer;" onclick="$('#sahdev-ai-body').slideToggle();">
         <h3 class="panel-title" style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;"><i class="fas fa-robot"></i> Sahdev AI Ticket Intelligence
             <a href="addonmodules.php?module=sahdev&amp;action=my_preferences" style="font-size:12px;color:#e7f1ff;font-weight:500;" onclick="event.stopPropagation();">My preferences</a>
@@ -683,8 +686,16 @@ function sahdev_inject_ticket_panel($vars)
 
 HTML;
 
-    // Output the HTML first
-    $output = $htmlPanel;
+
+    // Output: CSS first (for flash prevention), then HTML
+    $output = '';
+    if ($uiTheme === \Sahdev\Lib\AdminPreferences::THEME_REMASTERED) {
+        $rmCssPath = __DIR__ . '/ui/remastered.css';
+        if (file_exists($rmCssPath)) {
+            $output .= "<style>\n" . file_get_contents($rmCssPath) . "\n</style>\n";
+        }
+    }
+    $output .= $htmlPanel;
 
 
     // Use string concatenation instead of output buffering to prevent WHMCS from dropping the buffer
@@ -2527,13 +2538,9 @@ EOT;
 
     $output .= $jsContentStart . $jsContentMain . "\n</script>";
 
-    // --- Remastered Theme: inject CSS + JS if active ---
+    // --- Remastered Theme: inject JS if active (CSS already injected before HTML) ---
     if ($uiTheme === \Sahdev\Lib\AdminPreferences::THEME_REMASTERED) {
-        $rmCssPath = __DIR__ . '/ui/remastered.css';
         $rmJsPath  = __DIR__ . '/ui/remastered.js';
-        if (file_exists($rmCssPath)) {
-            $output .= "\n<style>\n" . file_get_contents($rmCssPath) . "\n</style>";
-        }
         if (file_exists($rmJsPath)) {
             $output .= "\n<script>\n$(function(){ " . file_get_contents($rmJsPath) . " });\n</script>";
         }
