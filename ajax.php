@@ -43,7 +43,7 @@ $allowedActions = [
     'save_canned_response', 'save_kb_article', 'get_analytics', 'get_ticket_insights',
     'trigger_cron_run', 'get_insights_queue', 'analyze_single_insight', 'test_whmcs_cron_http',
     'run_tools_for_ticket', 'get_tools_ticket_status', 'run_tools_queue', 'get_tools_operations',
-    'run_manual_tool', 'autopilot_test_run'
+    'run_manual_tool', 'autopilot_test_run', 'set_ui_theme'
 ];
 if (!in_array($action, $allowedActions, true)) {
     header('HTTP/1.1 400 Bad Request');
@@ -121,7 +121,7 @@ $ticketNotRequiredActions = [
     'get_analytics', 'get_ticket_insights', 'trigger_cron_run', 'get_insights_queue', 'analyze_single_insight',
     'test_whmcs_cron_http', 'run_tools_queue', 'get_tools_operations',
     'get_open_payload', 'analyze_open_context',
-    'autopilot_test_run',
+    'autopilot_test_run', 'set_ui_theme',
 ];
 if (!$ticketId && !in_array($action, $ticketNotRequiredActions) && !$isGetAllowed) {
     header('HTTP/1.1 400 Bad Request');
@@ -651,6 +651,18 @@ try {
             $bypassSafety = !empty($_POST['bypass_safety']) && $_POST['bypass_safety'] === '1';
             $autopilot = new \Sahdev\Lib\AutopilotProcessor($settingsArray, $prov, null);
             $response = $autopilot->runForceTicket($forceTicketId, $bypassSafety);
+        }
+    } elseif ($action === 'set_ui_theme') {
+        // Quick-switch UI theme preference (classic / remastered)
+        $theme = strtolower(trim((string) ($_POST['theme'] ?? '')));
+        $allowed = [\Sahdev\Lib\AdminPreferences::THEME_CLASSIC, \Sahdev\Lib\AdminPreferences::THEME_REMASTERED];
+        if (!in_array($theme, $allowed, true)) {
+            $response = ['status' => 'error', 'message' => 'Invalid theme value.'];
+        } else {
+            $prefs = \Sahdev\Lib\AdminPreferences::load((int) $adminId);
+            $prefs['ui_theme'] = $theme;
+            \Sahdev\Lib\AdminPreferences::save((int) $adminId, $prefs);
+            $response = ['status' => 'success', 'theme' => $theme];
         }
     } else {
         // Default analyze_ticket (server-side generation)

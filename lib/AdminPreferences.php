@@ -79,6 +79,12 @@ class AdminPreferences
     /**
      * @return array{default_provider_id:int,tone_default:?string,features:array<string,bool>}
      */
+    /** Valid UI theme identifiers. */
+    public const THEME_CLASSIC     = 'classic';
+    public const THEME_REMASTERED  = 'remastered';
+
+    private static array $validThemes = [self::THEME_CLASSIC, self::THEME_REMASTERED];
+
     public static function load(int $adminId): array
     {
         self::ensureSchema();
@@ -126,6 +132,10 @@ class AdminPreferences
                 $out['tone_default'] = self::sanitizeTone((string) $t);
             }
         }
+        if (array_key_exists('ui_theme', $raw)) {
+            $theme = strtolower(trim((string) ($raw['ui_theme'] ?? '')));
+            $out['ui_theme'] = in_array($theme, self::$validThemes, true) ? $theme : self::THEME_REMASTERED;
+        }
         $featIn = isset($raw['features']) && is_array($raw['features']) ? $raw['features'] : [];
         foreach (self::allFeatureKeys() as $k) {
             if (array_key_exists($k, $featIn)) {
@@ -134,6 +144,15 @@ class AdminPreferences
         }
 
         return $out;
+    }
+
+    /**
+     * Convenience helper: get effective UI theme for an admin.
+     */
+    public static function getUiTheme(int $adminId): string
+    {
+        $prefs = self::load($adminId);
+        return $prefs['ui_theme'] ?? self::THEME_REMASTERED;
     }
 
     /**
@@ -337,6 +356,7 @@ class AdminPreferences
         return [
             'default_provider_id' => 0,
             'tone_default'        => null,
+            'ui_theme'            => self::THEME_REMASTERED,
             'features'            => $features,
         ];
     }

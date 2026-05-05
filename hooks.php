@@ -33,6 +33,7 @@ function sahdev_inject_ticket_panel($vars)
     require_once __DIR__ . '/lib/AdminPreferences.php';
     \Sahdev\Lib\AdminPreferences::ensureSchema();
     $adminPrefs = \Sahdev\Lib\AdminPreferences::load((int) $adminId);
+    $uiTheme = $adminPrefs['ui_theme'] ?? \Sahdev\Lib\AdminPreferences::THEME_REMASTERED;
 
     $defaultTone = 'Professional';
     if ($adminPrefs['tone_default'] !== null && $adminPrefs['tone_default'] !== '') {
@@ -220,8 +221,12 @@ function sahdev_inject_ticket_panel($vars)
     <div class="panel-heading" style="background-color: #0d6efd; color: white; display: flex; justify-content: space-between; align-items: center; cursor: pointer;" onclick="$('#sahdev-ai-body').slideToggle();">
         <h3 class="panel-title" style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;"><i class="fas fa-robot"></i> Sahdev AI Ticket Intelligence
             <a href="addonmodules.php?module=sahdev&amp;action=my_preferences" style="font-size:12px;color:#e7f1ff;font-weight:500;" onclick="event.stopPropagation();">My preferences</a>
+            <span class="label" style="background:rgba(255,255,255,0.2);font-size:10px;padding:2px 8px;border-radius:10px;">Classic</span>
         </h3>
-        <i class="fas fa-chevron-down"></i>
+        <div style="display:flex;align-items:center;gap:8px;" onclick="event.stopPropagation();">
+            <button type="button" class="btn btn-xs" id="sahdev-theme-switch" data-target="remastered" style="background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);border-radius:4px;font-size:11px;padding:2px 8px;" title="Switch to Remastered Theme"><i class="fas fa-magic"></i> Remastered</button>
+            <i class="fas fa-chevron-down" onclick="$('#sahdev-ai-body').slideToggle();"></i>
+        </div>
     </div>
     <div class="panel-body" id="sahdev-ai-body" style="display: none; background: #f8f9fa;">
         
