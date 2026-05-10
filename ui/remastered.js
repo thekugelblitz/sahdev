@@ -132,74 +132,16 @@
         $('#' + paneId).addClass('active');
     });
 
-    // --- 6. Compact Tech Context (collapsible — eye-catching banner) ---
+    // --- 6. Compact Tech Context (collapsible) ---
     var $techGroup = $('#sahdev_technical_context').closest('.row');
     if ($techGroup.length) {
-        // Inject keyframe animations via style tag (only once)
-        if (!document.getElementById('sahdev-tech-anim')) {
-            var styleTag = document.createElement('style');
-            styleTag.id = 'sahdev-tech-anim';
-            styleTag.textContent =
-                '@keyframes sahdevTechPulse{0%,100%{box-shadow:0 0 0 0 rgba(99,102,241,0.25)}50%{box-shadow:0 0 0 6px rgba(99,102,241,0)}}' +
-                '@keyframes sahdevTechShimmer{0%{left:-100%}100%{left:200%}}' +
-                '.sahdev-rm-tech-toggle::before{content:"";position:absolute;top:0;left:-100%;width:60%;height:100%;' +
-                    'background:linear-gradient(90deg,transparent,rgba(255,255,255,0.55),transparent);' +
-                    'animation:sahdevTechShimmer 2s ease-in-out 1s 1;pointer-events:none}' +
-                '.sahdev-rm-tech-toggle:hover{transform:translateY(-1px) !important;' +
-                    'box-shadow:0 4px 14px rgba(79,70,229,0.18) !important;border-color:#818cf8 !important}' +
-                '.sahdev-rm-tech-toggle:active{transform:translateY(0) !important}' +
-                '.sahdev-rm-tech-toggle.open .sahdev-tech-chevron{transform:rotate(90deg) !important}' +
-                '.sahdev-rm-tech-toggle.open .sahdev-tech-badge{display:none !important}' +
-                '@media(max-width:480px){.sahdev-rm-tech-toggle .sahdev-tech-badge{display:none !important}' +
-                    '.sahdev-rm-tech-toggle{padding:10px 12px !important;gap:8px !important}}';
-            document.head.appendChild(styleTag);
-        }
-
-        var toggleHtml =
-            '<div class="sahdev-rm-tech-toggle" style="' +
-                'cursor:pointer;display:flex;align-items:center;gap:12px;' +
-                'margin:4px 0 12px;padding:12px 16px;' +
-                'background:linear-gradient(135deg,#eef2ff 0%,#e0e7ff 50%,#ede9fe 100%);' +
-                'border:1.5px solid #a5b4fc;border-radius:10px;' +
-                'font-size:13px;font-weight:600;color:#312e81;letter-spacing:0.2px;' +
-                'transition:all 0.2s ease;position:relative;overflow:hidden;user-select:none;' +
-                'animation:sahdevTechPulse 2.5s ease-in-out 2s 3' +
-            '">' +
-                '<span class="sahdev-tech-icon" style="' +
-                    'display:inline-flex;align-items:center;justify-content:center;' +
-                    'width:32px;height:32px;min-width:32px;' +
-                    'background:linear-gradient(135deg,#4f46e5,#7c3aed);' +
-                    'border-radius:8px;color:#fff;font-size:14px;' +
-                    'box-shadow:0 2px 6px rgba(79,70,229,0.35)' +
-                '"><i class="fas fa-code"></i></span>' +
-                '<span style="flex:1;display:flex;flex-direction:column;line-height:1.35">' +
-                    '<span style="font-size:13px;font-weight:700;color:#312e81">📎 Technical Context</span>' +
-                    '<small style="font-size:11px;font-weight:400;color:#6366f1;margin-top:1px">Paste logs, errors or server info for smarter analysis</small>' +
-                '</span>' +
-                '<span class="sahdev-tech-badge" style="' +
-                    'font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;' +
-                    'background:linear-gradient(135deg,#4f46e5,#7c3aed);color:#fff;' +
-                    'padding:3px 9px;border-radius:12px;white-space:nowrap;' +
-                    'box-shadow:0 1px 4px rgba(124,58,237,0.3)' +
-                '">OPTIONAL</span>' +
-                '<i class="fas fa-chevron-right sahdev-tech-chevron" style="' +
-                    'font-size:12px;color:#6366f1;transition:transform 0.25s cubic-bezier(0.4,0,0.2,1);flex-shrink:0' +
-                '"></i>' +
-            '</div>';
-
-        $techGroup.before(toggleHtml);
-        $techGroup.wrap('<div class="sahdev-rm-tech-wrap" style="' +
-            'border:1px solid #c7d2fe;border-top:none;border-radius:0 0 10px 10px;' +
-            'margin-top:-12px;margin-bottom:12px;padding:12px 16px;background:#f8faff' +
-        '"></div>');
-
+        var $techWrap = $('<div class="sahdev-rm-tech-wrap" style="display:none;"></div>');
+        $techGroup.before('<div class="sahdev-rm-tech-toggle"><i class="fas fa-chevron-right" style="font-size:10px;transition:transform 0.15s;"></i> Technical Context</div>');
+        $techGroup.wrap($techWrap.clone().removeAttr('style'));
         $(document).on('click', '.sahdev-rm-tech-toggle', function() {
-            var $toggle = $(this);
-            var $wrap = $toggle.next('.sahdev-rm-tech-wrap');
-            $wrap.slideToggle(200);
-            $toggle.toggleClass('open');
-            // Stop pulse animation after first interaction
-            $toggle.css('animation', 'none');
+            var $wrap = $(this).next();
+            $wrap.slideToggle(150);
+            $(this).find('i').toggleClass('fa-chevron-right fa-chevron-down');
         });
         // Start collapsed
         $techGroup.parent().hide();
