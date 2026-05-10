@@ -136,12 +136,24 @@
     var $techGroup = $('#sahdev_technical_context').closest('.row');
     if ($techGroup.length) {
         var $techWrap = $('<div class="sahdev-rm-tech-wrap" style="display:none;"></div>');
-        $techGroup.before('<div class="sahdev-rm-tech-toggle"><i class="fas fa-chevron-right" style="font-size:10px;transition:transform 0.15s;"></i> Technical Context</div>');
+        var toggleHtml =
+            '<div class="sahdev-rm-tech-toggle" style="' +
+                'font-size:12px;color:#4338ca;cursor:pointer;display:flex;align-items:center;gap:6px;' +
+                'margin-bottom:8px;padding:6px 10px;' +
+                'background:#eef2ff;border-left:3px solid #6366f1;border-radius:4px;' +
+                'font-weight:600;transition:all 0.15s ease;user-select:none' +
+            '">' +
+                '<i class="fas fa-chevron-right" style="font-size:9px;color:#6366f1;transition:transform 0.15s"></i>' +
+                '<i class="fas fa-paperclip" style="font-size:10px;color:#6366f1"></i> ' +
+                'Technical Context' +
+                '<span style="font-size:9px;font-weight:700;color:#6366f1;margin-left:auto;opacity:0.7;text-transform:uppercase;letter-spacing:0.4px">optional</span>' +
+            '</div>';
+        $techGroup.before(toggleHtml);
         $techGroup.wrap($techWrap.clone().removeAttr('style'));
         $(document).on('click', '.sahdev-rm-tech-toggle', function() {
             var $wrap = $(this).next();
             $wrap.slideToggle(150);
-            $(this).find('i').toggleClass('fa-chevron-right fa-chevron-down');
+            $(this).find('.fa-chevron-right, .fa-chevron-down').toggleClass('fa-chevron-right fa-chevron-down');
         });
         // Start collapsed
         $techGroup.parent().hide();
