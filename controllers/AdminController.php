@@ -5873,11 +5873,11 @@ class AdminController
                 </div>
 
                 <div style="flex: 1; background: #fff; padding: 16px; border-radius: 8px; border: 1px solid #e2e8f0; border-left: 4px solid #805ad5;">
-                    <div style="font-size: 12px; color: #718096; text-transform: uppercase; font-weight: 600;">Reseller-Safe Polling</div>
+                    <div style="font-size: 12px; color: #718096; text-transform: uppercase; font-weight: 600;">Multi-Panel Telemetry</div>
                     <div style="font-size: 24px; font-weight: 700; color: #6b46c1;">
-                        cPanel / WHM / Plesk
+                        cPanel • Virtualizor • Plesk
                     </div>
-                    <small class="text-muted">Zero root privileges required</small>
+                    <small class="text-muted">Real-time service daemons & mount points</small>
                 </div>
             </div>
 
@@ -5892,7 +5892,7 @@ class AdminController
                     <?php if ($activeIncidents->isEmpty()): ?>
                         <div style="padding: 25px; text-align: center; color: #718096;">
                             <i class="fas fa-shield-alt fa-3x" style="color: #48bb78; margin-bottom: 10px; display: block;"></i>
-                            <strong>No active incidents detected.</strong> All ticket flows are within normal baseline thresholds.
+                            <strong>No active incidents detected.</strong> All ticket flows and server health baselines are normal.
                         </div>
                     <?php else: ?>
                         <?php foreach ($activeIncidents as $inc): ?>
@@ -5980,35 +5980,162 @@ class AdminController
                                     $acctCount = is_array($accounts) ? count($accounts) : 0;
                                     $load = (string) ($srv->server_load ?? 'N/A');
                                     $lastPolled = !empty($srv->last_polled_at) ? substr((string)$srv->last_polled_at, 0, 16) : 'Never';
+                                    
+                                    $statsPayload = !empty($srv->server_stats_json) ? json_decode($srv->server_stats_json, true) : [];
+                                    $servicesList = $statsPayload['services'] ?? [];
+                                    $disksList = $statsPayload['disks'] ?? [];
+                                    $flaggedItems = $statsPayload['flagged_items'] ?? [];
+                                    
+                                    // Build unified items table (Services + System metrics + Disks)
+                                    $tableRows = [];
+
+                                    // 1. Services
+                                    foreach ($servicesList as $s) {
+                                        $tableRows[] = [
+                                            'name' => $s['name'] ?? '',
+                                            'details' => $s['details'] ?? 'up',
+                                            'status' => $s['status'] ?? 'ok',
+                                            'message' => $s['message'] ?? ("“" . ($s['name'] ?? '') . "” is ok."),
+                                        ];
+                                    }
+
+                                    // 2. System Metrics
+                                    if ($load !== 'N/A' && $load !== '') {
+                                        $tableRows[] = [
+                                            'name' => 'Server Load',
+                                            'details' => $load,
+                                            'status' => 'ok',
+                                            'message' => '“Server Load” is ok.',
+                                        ];
+                                    }
+                                    if (!empty($statsPayload['cpu_count'])) {
+                                        $tableRows[] = [
+                                            'name' => 'CPU Count',
+                                            'details' => (string) $statsPayload['cpu_count'],
+                                            'status' => 'ok',
+                                            'message' => '“CPU Count” is ok.',
+                                        ];
+                                    }
+                                    if (isset($statsPayload['memory_used_percent'])) {
+                                        $memVal = round((float) $statsPayload['memory_used_percent'], 2);
+                                        $tableRows[] = [
+                                            'name' => 'Memory Used',
+                                            'details' => "{$memVal}%",
+                                            'status' => $memVal >= 90 ? 'warning' : 'ok',
+                                            'message' => "“Memory Used” is " . ($memVal >= 90 ? 'reporting high usage.' : 'ok.'),
+                                        ];
+                                    }
+                                    if (isset($statsPayload['swap_used_percent'])) {
+                                        $swapVal = round((float) $statsPayload['swap_used_percent'], 2);
+                                        $tableRows[] = [
+                                            'name' => 'Swap',
+                                            'details' => "{$swapVal}%",
+                                            'status' => $swapVal >= 80 ? 'warning' : 'ok',
+                                            'message' => "“Swap” is " . ($swapVal >= 80 ? 'reporting warnings.' : 'ok.'),
+                                        ];
+                                    }
+
+                                    // 3. Disks
+                                    foreach ($disksList as $d) {
+                                        $tableRows[] = [
+                                            'name' => $d['name'] ?? ("Disk " . ($d['mount'] ?? '')),
+                                            'details' => $d['details'] ?? (($d['percent'] ?? '0') . '%'),
+                                            'status' => $d['status'] ?? 'ok',
+                                            'message' => $d['message'] ?? ("“Disk " . ($d['mount'] ?? '') . "” is ok."),
+                                        ];
+                                    }
+
+                                    $totalItemsCount = count($tableRows);
+                                    $hasFlags = !empty($flaggedItems);
+                                    $cardBorder = !$isReachable ? '#feb2b2' : ($hasFlags ? '#fbd38d' : '#e2e8f0');
+                                    $cardTopBorder = !$isReachable ? '#e53e3e' : ($hasFlags ? '#dd6b20' : '#38a169');
                                 ?>
-                                <div style="flex: 1; min-width: 320px; max-width: 450px; background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 14px;">
-                                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
-                                        <div>
-                                            <strong style="font-size: 15px; color: #2d3748;"><?php echo htmlspecialchars($srv->server_name); ?></strong>
-                                            <div style="font-size: 12px; color: #718096;"><?php echo htmlspecialchars($srv->hostname ?: $srv->ipaddress); ?></div>
+                                <div style="flex: 1; min-width: 320px; max-width: 460px; background: #fff; border: 1px solid <?php echo $cardBorder; ?>; border-top: 3px solid <?php echo $cardTopBorder; ?>; border-radius: 6px; padding: 14px; display: flex; flex-direction: column; justify-content: space-between;">
+                                    <div>
+                                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+                                            <div>
+                                                <strong style="font-size: 15px; color: #2d3748;"><?php echo htmlspecialchars($srv->server_name); ?></strong>
+                                                <div style="font-size: 12px; color: #718096;"><?php echo htmlspecialchars($srv->hostname ?: $srv->ipaddress); ?></div>
+                                            </div>
+                                            <div>
+                                                <?php if ($isReachable): ?>
+                                                    <span class="label label-success"><i class="fas fa-check"></i> Online</span>
+                                                <?php else: ?>
+                                                    <span class="label label-danger"><i class="fas fa-times"></i> Offline</span>
+                                                <?php endif; ?>
+                                            </div>
                                         </div>
-                                        <div>
-                                            <?php if ($isReachable): ?>
-                                                <span class="label label-success"><i class="fas fa-check"></i> Online</span>
-                                            <?php else: ?>
-                                                <span class="label label-danger"><i class="fas fa-times"></i> Offline</span>
-                                            <?php endif; ?>
+
+                                        <div style="font-size: 12px; margin: 8px 0; display: flex; justify-content: space-between; background: #f7fafc; padding: 6px 10px; border-radius: 4px;">
+                                            <div><strong>Load:</strong> <?php echo htmlspecialchars($load); ?></div>
+                                            <div><strong>Type:</strong> <?php echo strtoupper(htmlspecialchars($srv->server_type ?: 'cPanel')); ?></div>
+                                            <div><strong>Accounts/VPS:</strong> <?php echo $acctCount; ?></div>
                                         </div>
+
+                                        <!-- Flagged Warnings on TOP -->
+                                        <?php if ($hasFlags): ?>
+                                            <div style="background: #fffaf0; border: 1px solid #feebc8; border-radius: 5px; padding: 8px 10px; margin: 8px 0;">
+                                                <strong style="font-size: 11px; color: #c05621; text-transform: uppercase; display: block; margin-bottom: 4px;">
+                                                    <i class="fas fa-exclamation-triangle"></i> Flagged Warnings (<?php echo count($flaggedItems); ?>)
+                                                </strong>
+                                                <?php foreach ($flaggedItems as $flag): ?>
+                                                    <div style="font-size: 12px; color: #7b341e; margin-bottom: 2px;">
+                                                        <?php echo htmlspecialchars($flag); ?>
+                                                    </div>
+                                                <?php endforeach; ?>
+                                            </div>
+                                        <?php elseif ($isReachable && $totalItemsCount > 0): ?>
+                                            <div style="font-size: 11px; color: #276749; background: #f0fff4; border: 1px solid #c6f6d5; border-radius: 4px; padding: 4px 8px; margin: 6px 0;">
+                                                <i class="fas fa-check-circle"></i> All <?php echo $totalItemsCount; ?> monitored services & partitions operational.
+                                            </div>
+                                        <?php endif; ?>
+
+                                        <?php if (!$isReachable && !empty($srv->reachability_error)): ?>
+                                            <div class="text-danger" style="font-size: 11px; margin: 6px 0;">
+                                                <i class="fas fa-exclamation-circle"></i> <?php echo htmlspecialchars($srv->reachability_error); ?>
+                                            </div>
+                                        <?php endif; ?>
+
+                                        <!-- Collapsible Service Information Table -->
+                                        <?php if ($totalItemsCount > 0): ?>
+                                            <div style="margin-top: 8px;">
+                                                <button class="btn btn-default btn-xs" type="button" data-toggle="collapse" data-target="#srvCollapse<?php echo $srv->server_id; ?>" style="width: 100%; text-align: left; display: flex; justify-content: space-between; align-items: center; background: #f8fafc; font-size: 11px; font-weight: 600; color: #4a5568;">
+                                                    <span><i class="fas fa-list-ul"></i> Service Information (<?php echo $totalItemsCount; ?>)</span>
+                                                    <i class="fas fa-chevron-down"></i>
+                                                </button>
+
+                                                <div class="collapse" id="srvCollapse<?php echo $srv->server_id; ?>" style="margin-top: 6px; max-height: 280px; overflow-y: auto; border: 1px solid #edf2f7; border-radius: 4px;">
+                                                    <table class="table table-condensed table-striped" style="font-size: 11px; margin-bottom: 0;">
+                                                        <thead>
+                                                            <tr style="background: #edf2f7; color: #4a5568;">
+                                                                <th>Service / Resource</th>
+                                                                <th>Details</th>
+                                                                <th>Status</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            <?php foreach ($tableRows as $row): ?>
+                                                                <?php 
+                                                                    $st = $row['status'] ?? 'ok';
+                                                                    $stColor = ($st === 'critical') ? '#e53e3e' : (($st === 'warning') ? '#dd6b20' : '#38a169');
+                                                                    $stIcon = ($st === 'critical') ? 'fa-times-circle' : (($st === 'warning') ? 'fa-exclamation-circle' : 'fa-check-circle');
+                                                                ?>
+                                                                <tr>
+                                                                    <td><strong><?php echo htmlspecialchars($row['name']); ?></strong></td>
+                                                                    <td><?php echo htmlspecialchars($row['details']); ?></td>
+                                                                    <td style="color: <?php echo $stColor; ?>; font-weight: <?php echo $st !== 'ok' ? '600' : 'normal'; ?>;">
+                                                                        <i class="fas <?php echo $stIcon; ?>"></i> <?php echo htmlspecialchars($row['message']); ?>
+                                                                    </td>
+                                                                </tr>
+                                                            <?php endforeach; ?>
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            </div>
+                                        <?php endif; ?>
                                     </div>
 
-                                    <div style="font-size: 13px; margin: 8px 0; display: flex; justify-content: space-between; background: #f7fafc; padding: 8px 10px; border-radius: 4px;">
-                                        <div><strong>Load:</strong> <?php echo htmlspecialchars($load); ?></div>
-                                        <div><strong>Type:</strong> <?php echo strtoupper(htmlspecialchars($srv->server_type ?: 'cPanel')); ?></div>
-                                        <div><strong>Accounts:</strong> <?php echo $acctCount; ?></div>
-                                    </div>
-
-                                    <?php if (!$isReachable && !empty($srv->reachability_error)): ?>
-                                        <div class="text-danger" style="font-size: 11px; margin-top: 4px;">
-                                            <i class="fas fa-exclamation-circle"></i> <?php echo htmlspecialchars($srv->reachability_error); ?>
-                                        </div>
-                                    <?php endif; ?>
-
-                                    <div style="font-size: 11px; color: #a0aec0; margin-top: 8px;">
+                                    <div style="font-size: 11px; color: #a0aec0; margin-top: 10px; border-top: 1px solid #f0f4f8; padding-top: 6px;">
                                         Last Polled: <?php echo htmlspecialchars($lastPolled); ?>
                                     </div>
                                 </div>

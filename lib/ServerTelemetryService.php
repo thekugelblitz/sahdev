@@ -10,19 +10,17 @@ require_once __DIR__ . '/ModuleLogger.php';
 /**
  * ServerTelemetryService
  *
- * Proactively polls server health and account quota metrics using
- * unprivileged / reseller-safe API endpoints (cPanel/WHM, Plesk, DirectAdmin).
- * Never requires root access. Caches snapshots in tblsahdev_server_telemetry.
+ * Proactively polls server health, service daemons, CPU/RAM/Swap/Disk partitions,
+ * and hosted account quotas for cPanel/WHM, Virtualizor, Plesk, and DirectAdmin.
+ * Compatible with reseller accounts. Caches snapshots in tblsahdev_server_telemetry.
  */
 class ServerTelemetryService
 {
     private const DEFAULT_CACHE_TTL_MINS = 15;
-    private const HTTP_TIMEOUT_SEC = 6;
+    private const HTTP_TIMEOUT_SEC = 7;
 
     /**
-     * Poll all active servers or servers tied to open tickets.
-     * @param bool $forcePoll
-     * @return array
+     * Poll all active servers in WHMCS.
      */
     public static function pollActiveServers(bool $forcePoll = false): array
     {
@@ -44,7 +42,7 @@ class ServerTelemetryService
 
             $cacheCutoff = Carbon::now()->subMinutes(self::DEFAULT_CACHE_TTL_MINS);
 
-            // Fetch active servers in WHMCS
+            // Fetch all active servers in WHMCS
             $servers = Capsule::table('tblservers')
                 ->where('disabled', 0)
                 ->get();
@@ -56,7 +54,6 @@ class ServerTelemetryService
             foreach ($servers as $srv) {
                 $serverId = (int) $srv->id;
 
-                // Check cache if not forcing
                 if (!$forcePoll) {
                     $recent = Capsule::table('tblsahdev_server_telemetry')
                         ->where('server_id', $serverId)
@@ -84,7 +81,7 @@ class ServerTelemetryService
     }
 
     /**
-     * Poll a single server record.
+     * Poll a single server record and persist its telemetry snapshot.
      */
     public static function pollSingleServer(\stdClass $server): array
     {
@@ -95,32 +92,34 @@ class ServerTelemetryService
 
         $telemetry = [
             'load' => null,
-            'is_reachable' => true,
+            'is_reachable' => false,
             'error' => null,
             'accounts' => [],
             'stats' => [],
+            'services' => [],
+            'disks' => [],
+            'flagged_items' => [],
         ];
 
-        switch ($serverType) {
-            case 'cpanel':
-            case 'cpanelwhm':
-                $telemetry = self::pollCpanelServer($server);
-                break;
-
-            case 'plesk':
-                $telemetry = self::pollPleskServer($server);
-                break;
-
-            case 'directadmin':
-                $telemetry = self::pollDirectAdminServer($server);
-                break;
-
-            default:
-                $telemetry = self::pollGenericServer($server);
-                break;
+        if (strpos($serverType, 'virtualizor') !== false) {
+            $telemetry = self::pollVirtualizorServer($server);
+        } elseif (strpos($serverType, 'cpanel') !== false) {
+            $telemetry = self::pollCpanelServer($server);
+        } elseif (strpos($serverType, 'plesk') !== false) {
+            $telemetry = self::pollPleskServer($server);
+        } elseif (strpos($serverType, 'directadmin') !== false) {
+            $telemetry = self::pollDirectAdminServer($server);
+        } else {
+            $telemetry = self::pollGenericServer($server);
         }
 
         $now = Carbon::now();
+        $statsPayload = array_merge($telemetry['stats'] ?? [], [
+            'services' => $telemetry['services'] ?? [],
+            'disks' => $telemetry['disks'] ?? [],
+            'flagged_items' => $telemetry['flagged_items'] ?? [],
+        ]);
+
         Capsule::table('tblsahdev_server_telemetry')->updateOrInsert(
             ['server_id' => $serverId],
             [
@@ -131,7 +130,7 @@ class ServerTelemetryService
                 'is_reachable' => !empty($telemetry['is_reachable']) ? 1 : 0,
                 'reachability_error' => $telemetry['error'],
                 'accounts_data_json' => !empty($telemetry['accounts']) ? json_encode($telemetry['accounts']) : null,
-                'server_stats_json' => !empty($telemetry['stats']) ? json_encode($telemetry['stats']) : null,
+                'server_stats_json' => !empty($statsPayload) ? json_encode($statsPayload) : null,
                 'last_polled_at' => $now,
                 'updated_at' => $now,
             ]
@@ -141,14 +140,14 @@ class ServerTelemetryService
     }
 
     /**
-     * Reseller-Safe cPanel/WHM Poller.
-     * Uses WHM API 1 endpoints (systemloadavg, listaccts, servicestatus) compatible with Reseller permissions.
+     * Comprehensive cPanel / WHM Poller.
+     * Fetches Services, Load, CPU Count, RAM, Swap, Disk Mounts (/tmp, /, etc.), and Accounts.
      */
     private static function pollCpanelServer(\stdClass $server): array
     {
         $host = trim((string) ($server->hostname ?: $server->ipaddress));
-        $secure = !isset($server->secure) || (int) $server->secure === 1;
-        $port = $secure ? 2087 : 2086;
+        $secure = !isset($server->secure) || $server->secure === 'on' || $server->secure === '1' || $server->secure === 1 || $server->secure === true;
+        $port = !empty($server->port) ? (int) $server->port : ($secure ? 2087 : 2086);
         $user = trim((string) ($server->username ?? ''));
         $pass = !empty($server->password) ? decrypt($server->password) : '';
         $token = trim((string) ($server->accesshash ?? ''));
@@ -160,39 +159,152 @@ class ServerTelemetryService
                 'error' => 'Missing server host or authentication credentials.',
                 'accounts' => [],
                 'stats' => [],
+                'services' => [],
+                'disks' => [],
+                'flagged_items' => ['Missing authentication credentials (WHM Access Token / Password)'],
             ];
         }
 
-        $baseUrl = ($secure ? 'https://' : 'http://') . $host . ':' . $port . '/json-api/';
+        $scheme = $secure ? 'https://' : 'http://';
+        $baseUrl = "{$scheme}{$host}:{$port}/json-api/";
 
-        $authHeader = '';
+        // Build authorization headers
+        $authHeaders = [];
         if ($token !== '') {
-            $cleanedToken = preg_replace('/\s+/', '', $token);
-            $authHeader = "Authorization: whm {$user}:{$cleanedToken}";
-        } else {
-            $authHeader = "Authorization: Basic " . base64_encode("{$user}:{$pass}");
+            $cleanToken = preg_replace('/\r|\n/', '', trim($token));
+            $authHeaders[] = "Authorization: whm {$user}:{$cleanToken}";
         }
+        if ($user !== '' && $pass !== '') {
+            $authHeaders[] = "Authorization: Basic " . base64_encode("{$user}:{$pass}");
+        }
+        $authHeaders[] = 'Accept: application/json';
 
-        $headers = [$authHeader, 'Accept: application/json'];
-
-        // 1. Fetch system load averages
-        $loadStr = null;
+        $services = [];
+        $disks = [];
         $stats = [];
-        $loadRes = self::curlGet($baseUrl . 'systemloadavg?api.version=1', $headers);
+        $accounts = [];
+        $flagged = [];
+        $reachable = false;
+        $lastError = null;
+
+        // 1. Fetch System Load
+        $loadStr = null;
+        $loadRes = self::curlGet($baseUrl . 'systemloadavg?api.version=1', $authHeaders);
         if ($loadRes['ok'] && !empty($loadRes['data'])) {
+            $reachable = true;
             $json = json_decode($loadRes['data'], true);
             if (!empty($json['data']['one'])) {
-                $loadStr = sprintf('%.2f, %.2f, %.2f', (float) $json['data']['one'], (float) $json['data']['five'], (float) $json['data']['fifteen']);
-                $stats['load_one'] = (float) $json['data']['one'];
-                $stats['load_five'] = (float) $json['data']['five'];
-                $stats['load_fifteen'] = (float) $json['data']['fifteen'];
+                $one = (float) $json['data']['one'];
+                $five = (float) $json['data']['five'];
+                $fifteen = (float) $json['data']['fifteen'];
+                $loadStr = sprintf('%.2f, %.2f, %.2f', $one, $five, $fifteen);
+                $stats['load_one'] = $one;
+                $stats['load_five'] = $five;
+                $stats['load_fifteen'] = $fifteen;
+
+                $stats['server_load_val'] = $one;
+            }
+        } else {
+            $lastError = $loadRes['error'];
+        }
+
+        // 2. Fetch Service Status daemons (httpd, mysql, exim, ftpd, cpdavd, named, etc.)
+        $servRes = self::curlGet($baseUrl . 'servicestatus?api.version=1', $authHeaders);
+        if ($servRes['ok'] && !empty($servRes['data'])) {
+            $reachable = true;
+            $json = json_decode($servRes['data'], true);
+            $serviceList = $json['data']['service'] ?? [];
+
+            foreach ($serviceList as $s) {
+                $name = (string) ($s['name'] ?? '');
+                if ($name === '') continue;
+
+                $installed = !empty($s['installed']);
+                $monitored = !empty($s['monitored']);
+                $running = !empty($s['running']);
+                $version = !empty($s['version']) ? " ({$s['version']})" : '';
+
+                if (!$installed && !$monitored && !$running) {
+                    continue;
+                }
+
+                $statusText = $running ? 'up' : 'down';
+                $isOk = $running;
+                $message = "“{$name}” is " . ($isOk ? 'ok.' : 'DOWN.');
+
+                $services[] = [
+                    'name' => $name,
+                    'details' => $statusText . $version,
+                    'status' => $isOk ? 'ok' : 'critical',
+                    'message' => $message,
+                ];
+
+                if (!$isOk && $monitored) {
+                    $flagged[] = "🚨 Service '{$name}' is DOWN";
+                }
             }
         }
 
-        // 2. Fetch Accounts Quota & Status (Reseller listaccts)
-        $accounts = [];
-        $acctRes = self::curlGet($baseUrl . 'listaccts?api.version=1', $headers);
+        // 3. Fetch Disk Usage & Partitions (/tmp, /, /var/tmp, /boot/efi, etc.)
+        $diskRes = self::curlGet($baseUrl . 'get_disk_usage?api.version=1', $authHeaders);
+        if ($diskRes['ok'] && !empty($diskRes['data'])) {
+            $reachable = true;
+            $json = json_decode($diskRes['data'], true);
+            $partitionList = $json['data']['partition'] ?? [];
+
+            foreach ($partitionList as $p) {
+                $mount = (string) ($p['mount'] ?? $p['mountpoint'] ?? '');
+                if ($mount === '') continue;
+
+                $percentVal = (int) preg_replace('/[^0-9]/', '', (string) ($p['percentage'] ?? '0'));
+                $total = (string) ($p['total'] ?? $p['size'] ?? '');
+                $used = (string) ($p['used'] ?? '');
+                $humanSize = ($used !== '' && $total !== '') ? " ({$used} / {$total})" : '';
+
+                $status = 'ok';
+                $msg = "“Disk {$mount} ({$mount})” is ok.";
+                if ($percentVal >= 90) {
+                    $status = 'critical';
+                    $msg = "“Disk {$mount} ({$mount})” is CRITICALLY FULL ({$percentVal}%).";
+                    $flagged[] = "⚠️ Disk {$mount} is {$percentVal}% full (Critical)";
+                } elseif ($percentVal >= 80) {
+                    $status = 'warning';
+                    $msg = "“Disk {$mount} ({$mount})” is reporting warnings ({$percentVal}%).";
+                    $flagged[] = "⚠️ Disk {$mount} is {$percentVal}% full (Warning)";
+                }
+
+                $disks[] = [
+                    'name' => "Disk {$mount} ({$mount})",
+                    'mount' => $mount,
+                    'percent' => $percentVal,
+                    'details' => "{$percentVal}%" . $humanSize,
+                    'status' => $status,
+                    'message' => $msg,
+                ];
+            }
+        }
+
+        // 4. Fetch System Resource Details (CPU Count, Memory, Swap)
+        $sysRes = self::curlGet($baseUrl . 'get_system_information?api.version=1', $authHeaders);
+        if ($sysRes['ok'] && !empty($sysRes['data'])) {
+            $json = json_decode($sysRes['data'], true);
+            $sysData = $json['data'] ?? [];
+
+            if (!empty($sysData['cpu_count'])) {
+                $stats['cpu_count'] = (int) $sysData['cpu_count'];
+            }
+            if (!empty($sysData['memory_used_percent'])) {
+                $stats['memory_used_percent'] = (float) $sysData['memory_used_percent'];
+            }
+            if (!empty($sysData['swap_used_percent'])) {
+                $stats['swap_used_percent'] = (float) $sysData['swap_used_percent'];
+            }
+        }
+
+        // 5. Fetch Accounts List (Reseller listaccts)
+        $acctRes = self::curlGet($baseUrl . 'listaccts?api.version=1', $authHeaders);
         if ($acctRes['ok'] && !empty($acctRes['data'])) {
+            $reachable = true;
             $json = json_decode($acctRes['data'], true);
             $acctList = $json['data']['acct'] ?? [];
             foreach ($acctList as $a) {
@@ -206,7 +318,6 @@ class ServerTelemetryService
                 $plan = (string) ($a['plan'] ?? '');
                 $domain = (string) ($a['domain'] ?? '');
 
-                // Parse percent
                 $percent = 0;
                 $usedMb = self::parseMegabytes($diskUsed);
                 $limitMb = self::parseMegabytes($diskLimit);
@@ -227,15 +338,161 @@ class ServerTelemetryService
             }
         }
 
-        $reachable = $loadRes['ok'] || $acctRes['ok'];
-        $error = !$reachable ? ($loadRes['error'] ?: $acctRes['error'] ?: 'Connection failed') : null;
+        // Flag high load if applicable
+        if (isset($stats['server_load_val']) && !empty($stats['cpu_count'])) {
+            if ($stats['server_load_val'] > ($stats['cpu_count'] * 2.5)) {
+                $flagged[] = "🔥 High Server Load: {$stats['server_load_val']} on {$stats['cpu_count']} CPUs";
+            }
+        }
 
         return [
             'load' => $loadStr,
             'is_reachable' => $reachable,
-            'error' => $error,
+            'error' => !$reachable ? ($lastError ?: 'Connection timed out on WHM port ' . $port) : null,
             'accounts' => $accounts,
             'stats' => $stats,
+            'services' => $services,
+            'disks' => $disks,
+            'flagged_items' => $flagged,
+        ];
+    }
+
+    /**
+     * Virtualizor Master/Slave Node Poller.
+     * Fetches Node CPU, RAM, Disk utilization, Virtualizor status, and hosted VPS instances.
+     */
+    private static function pollVirtualizorServer(\stdClass $server): array
+    {
+        $host = trim((string) ($server->hostname ?: $server->ipaddress));
+        $port = !empty($server->port) ? (int) $server->port : 4085;
+        $secure = !isset($server->secure) || $server->secure === 'on' || $server->secure === '1' || $server->secure === 1 || $server->secure === true;
+        $scheme = $secure ? 'https://' : 'http://';
+
+        $apiKey = trim((string) ($server->username ?? ''));
+        $apiPass = !empty($server->password) ? decrypt($server->password) : trim((string) ($server->accesshash ?? ''));
+
+        if (empty($host) || empty($apiKey) || empty($apiPass)) {
+            // Attempt generic connection test
+            return self::pollGenericVirtualizor($host, $port, $scheme);
+        }
+
+        $baseUrl = "{$scheme}{$host}:{$port}/index.php?api=json&apikey=" . urlencode($apiKey) . "&apipass=" . urlencode($apiPass);
+
+        $services = [];
+        $disks = [];
+        $stats = [];
+        $accounts = [];
+        $flagged = [];
+        $reachable = false;
+        $loadStr = null;
+
+        // 1. Fetch Server Info & Stats
+        $statRes = self::curlGet($baseUrl . "&act=server_stats");
+        if ($statRes['ok'] && !empty($statRes['data'])) {
+            $reachable = true;
+            $json = json_decode($statRes['data'], true);
+
+            $statsData = $json['server_stats'] ?? $json ?? [];
+            if (!empty($statsData['load'])) {
+                $loadStr = (string) $statsData['load'];
+                $stats['load_one'] = (float) $statsData['load'];
+            }
+            if (!empty($statsData['cpu_percent'])) {
+                $stats['cpu_percent'] = (float) $statsData['cpu_percent'];
+            }
+            if (!empty($statsData['ram_percent'])) {
+                $stats['memory_used_percent'] = (float) $statsData['ram_percent'];
+            }
+            if (!empty($statsData['disk_percent'])) {
+                $disks[] = [
+                    'name' => 'Storage Pool (/)',
+                    'mount' => '/',
+                    'percent' => (int) $statsData['disk_percent'],
+                    'details' => ((int) $statsData['disk_percent']) . '%',
+                    'status' => (int) $statsData['disk_percent'] >= 90 ? 'critical' : ((int) $statsData['disk_percent'] >= 80 ? 'warning' : 'ok'),
+                    'message' => "Virtualizor Storage is at " . ((int) $statsData['disk_percent']) . "%",
+                ];
+            }
+        }
+
+        // 2. Fetch VPS Instances (act=vs)
+        $vsRes = self::curlGet($baseUrl . "&act=vs");
+        if ($vsRes['ok'] && !empty($vsRes['data'])) {
+            $reachable = true;
+            $json = json_decode($vsRes['data'], true);
+            $vpsList = $json['vps'] ?? [];
+
+            $services[] = [
+                'name' => 'Virtualizor Daemon',
+                'details' => 'up (v4.x)',
+                'status' => 'ok',
+                'message' => 'Virtualizor Node daemon is running.',
+            ];
+
+            foreach ($vpsList as $vpsId => $v) {
+                $vHost = (string) ($v['hostname'] ?? $v['vps_name'] ?? 'VPS #' . $vpsId);
+                $statusVal = (int) ($v['status'] ?? 1);
+                $isOnline = ($statusVal === 1);
+                $ram = (string) ($v['ram'] ?? '0') . ' MB';
+                $disk = (string) ($v['space'] ?? '0') . ' GB';
+                $isSusp = !empty($v['suspended']);
+
+                $accounts['vps_' . $vpsId] = [
+                    'user' => $vHost,
+                    'domain' => $vHost,
+                    'disk_used' => $disk,
+                    'disk_limit' => $disk,
+                    'percent' => 0,
+                    'suspended' => $isSusp,
+                    'suspend_reason' => $isSusp ? 'Suspended in Virtualizor' : '',
+                    'plan' => "RAM: {$ram}, Disk: {$disk}",
+                ];
+            }
+        }
+
+        if (!$reachable) {
+            $generic = self::pollGenericVirtualizor($host, $port, $scheme);
+            return $generic;
+        }
+
+        return [
+            'load' => $loadStr,
+            'is_reachable' => true,
+            'error' => null,
+            'accounts' => $accounts,
+            'stats' => $stats,
+            'services' => $services,
+            'disks' => $disks,
+            'flagged_items' => $flagged,
+        ];
+    }
+
+    /**
+     * Fallback probe for Virtualizor port 4085 / 4084 / 4082.
+     */
+    private static function pollGenericVirtualizor(string $host, int $port, string $scheme): array
+    {
+        $fp = @fsockopen($host, $port, $errno, $errstr, 3);
+        if (!is_resource($fp) && $port === 4085) {
+            // try 4084
+            $fp = @fsockopen($host, 4084, $errno, $errstr, 3);
+        }
+        $reachable = is_resource($fp);
+        if ($reachable) {
+            fclose($fp);
+        }
+
+        return [
+            'load' => null,
+            'is_reachable' => $reachable,
+            'error' => !$reachable ? "Virtualizor node unreachable on port {$port} ({$errstr})" : null,
+            'accounts' => [],
+            'stats' => [],
+            'services' => [
+                ['name' => 'Virtualizor Node', 'details' => $reachable ? 'Port open' : 'down', 'status' => $reachable ? 'ok' : 'critical', 'message' => $reachable ? 'Virtualizor port responsive' : 'Node port connection refused']
+            ],
+            'disks' => [],
+            'flagged_items' => !$reachable ? ["Virtualizor node unreachable on {$host}:{$port}"] : [],
         ];
     }
 
@@ -249,7 +506,7 @@ class ServerTelemetryService
         $user = trim((string) ($server->username ?? ''));
 
         if (empty($host) || empty($user) || empty($pass)) {
-            return ['load' => null, 'is_reachable' => false, 'error' => 'Missing Plesk credentials', 'accounts' => [], 'stats' => []];
+            return ['load' => null, 'is_reachable' => false, 'error' => 'Missing Plesk credentials', 'accounts' => [], 'stats' => [], 'services' => [], 'disks' => [], 'flagged_items' => ['Missing credentials']];
         }
 
         $url = 'https://' . $host . ':8443/api/v2/server';
@@ -261,12 +518,25 @@ class ServerTelemetryService
         $res = self::curlGet($url, $headers);
         $reachable = $res['ok'];
         $loadStr = null;
+        $stats = [];
+        $services = [];
+        $disks = [];
+        $flagged = [];
 
         if ($res['ok'] && !empty($res['data'])) {
             $json = json_decode($res['data'], true);
             if (isset($json['stat']['loadAvg'])) {
                 $loadStr = (string) $json['stat']['loadAvg'];
+                $stats['load_one'] = (float) $loadStr;
             }
+            $services[] = [
+                'name' => 'Plesk Core Engine',
+                'details' => 'up',
+                'status' => 'ok',
+                'message' => 'Plesk API engine is responsive.',
+            ];
+        } else {
+            $flagged[] = "Plesk server unreachable or auth failed";
         }
 
         return [
@@ -274,7 +544,10 @@ class ServerTelemetryService
             'is_reachable' => $reachable,
             'error' => $res['error'],
             'accounts' => [],
-            'stats' => [],
+            'stats' => $stats,
+            'services' => $services,
+            'disks' => $disks,
+            'flagged_items' => $flagged,
         ];
     }
 
@@ -288,7 +561,7 @@ class ServerTelemetryService
         $pass = !empty($server->password) ? decrypt($server->password) : '';
 
         if (empty($host) || empty($user) || empty($pass)) {
-            return ['load' => null, 'is_reachable' => false, 'error' => 'Missing DirectAdmin credentials', 'accounts' => [], 'stats' => []];
+            return ['load' => null, 'is_reachable' => false, 'error' => 'Missing DirectAdmin credentials', 'accounts' => [], 'stats' => [], 'services' => [], 'disks' => [], 'flagged_items' => ['Missing credentials']];
         }
 
         $url = 'https://' . $host . ':2222/CMD_API_SYSTEM_INFO';
@@ -298,12 +571,25 @@ class ServerTelemetryService
 
         $res = self::curlGet($url, $headers);
         $loadStr = null;
+        $stats = [];
+        $services = [];
+        $disks = [];
+        $flagged = [];
 
         if ($res['ok'] && !empty($res['data'])) {
             parse_str($res['data'], $parsed);
             if (!empty($parsed['LoadAvg'])) {
                 $loadStr = (string) $parsed['LoadAvg'];
+                $stats['load_one'] = (float) $loadStr;
             }
+            $services[] = [
+                'name' => 'DirectAdmin Core Engine',
+                'details' => 'up',
+                'status' => 'ok',
+                'message' => 'DirectAdmin API is responsive.',
+            ];
+        } else {
+            $flagged[] = "DirectAdmin unreachable or auth failed";
         }
 
         return [
@@ -311,7 +597,10 @@ class ServerTelemetryService
             'is_reachable' => $res['ok'],
             'error' => $res['error'],
             'accounts' => [],
-            'stats' => [],
+            'stats' => $stats,
+            'services' => $services,
+            'disks' => $disks,
+            'flagged_items' => $flagged,
         ];
     }
 
@@ -322,6 +611,9 @@ class ServerTelemetryService
     {
         $host = trim((string) ($server->hostname ?: $server->ipaddress));
         $fp = @fsockopen($host, 80, $errno, $errstr, 3);
+        if (!is_resource($fp)) {
+            $fp = @fsockopen($host, 443, $errno, $errstr, 3);
+        }
         $reachable = is_resource($fp);
         if ($reachable) {
             fclose($fp);
@@ -330,9 +622,12 @@ class ServerTelemetryService
         return [
             'load' => null,
             'is_reachable' => $reachable,
-            'error' => !$reachable ? "TCP port 80 unreachable ({$errstr})" : null,
+            'error' => !$reachable ? "Host unreachable ({$errstr})" : null,
             'accounts' => [],
             'stats' => [],
+            'services' => [],
+            'disks' => [],
+            'flagged_items' => !$reachable ? ["Host unreachable on port 80/443"] : [],
         ];
     }
 
@@ -350,15 +645,21 @@ class ServerTelemetryService
             return null;
         }
 
+        $statsParsed = !empty($row->server_stats_json) ? json_decode($row->server_stats_json, true) : [];
+
         return [
             'server_id' => (int) $row->server_id,
             'server_name' => (string) $row->server_name,
             'server_host' => (string) $row->server_host,
+            'server_type' => (string) $row->server_type,
             'server_load' => (string) $row->server_load,
             'is_reachable' => (bool) $row->is_reachable,
             'error' => (string) $row->reachability_error,
             'accounts' => !empty($row->accounts_data_json) ? json_decode($row->accounts_data_json, true) : [],
-            'stats' => !empty($row->server_stats_json) ? json_decode($row->server_stats_json, true) : [],
+            'stats' => $statsParsed,
+            'services' => $statsParsed['services'] ?? [],
+            'disks' => $statsParsed['disks'] ?? [],
+            'flagged_items' => $statsParsed['flagged_items'] ?? [],
             'last_polled_at' => (string) $row->last_polled_at,
         ];
     }
@@ -406,12 +707,20 @@ class ServerTelemetryService
             $parts[] = "Server Load: {$srv['server_load']}";
         }
 
+        // Include any disk warnings if present
+        $disks = $srv['disks'] ?? [];
+        foreach ($disks as $d) {
+            if (($d['status'] ?? '') === 'warning' || ($d['status'] ?? '') === 'critical') {
+                $parts[] = "⚠️ Disk {$d['mount']} is {$d['percent']}% full";
+            }
+        }
+
         if (!empty($username)) {
             $acct = self::getAccountHealth($serverId, $username);
             if ($acct) {
                 if (!empty($acct['suspended'])) {
                     $reason = !empty($acct['suspend_reason']) ? " ({$acct['suspend_reason']})" : '';
-                    $parts[] = "⚠️ ACCOUNT IS SUSPENDED IN WHM{$reason}";
+                    $parts[] = "⚠️ ACCOUNT IS SUSPENDED IN CONTROL PANEL{$reason}";
                 }
                 if (!empty($acct['percent'])) {
                     $parts[] = "Disk Quota: {$acct['percent']}% used ({$acct['disk_used']} / {$acct['disk_limit']})";
