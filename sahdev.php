@@ -1107,6 +1107,90 @@ function sahdev_activate()
             }
         }
 
+        // Create tblsahdev_server_telemetry
+        try {
+            Capsule::table('tblsahdev_server_telemetry')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->create('tblsahdev_server_telemetry', function ($table) {
+                $table->increments('id');
+                $table->integer('server_id')->unsigned()->index();
+                $table->string('server_name', 128)->nullable();
+                $table->string('server_host', 255)->nullable();
+                $table->string('server_type', 32)->default('cpanel');
+                $table->string('server_load', 64)->nullable();
+                $table->boolean('is_reachable')->default(1);
+                $table->string('reachability_error', 255)->nullable();
+                $table->longText('accounts_data_json')->nullable();
+                $table->longText('server_stats_json')->nullable();
+                $table->timestamp('last_polled_at')->useCurrent()->index();
+                $table->timestamps();
+            });
+        }
+
+        // Create tblsahdev_incidents
+        try {
+            Capsule::table('tblsahdev_incidents')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->create('tblsahdev_incidents', function ($table) {
+                $table->increments('id');
+                $table->string('incident_num', 32)->unique();
+                $table->string('title', 255);
+                $table->string('severity', 16)->default('Medium');
+                $table->string('status', 32)->default('Active');
+                $table->integer('server_id')->unsigned()->nullable()->index();
+                $table->string('server_name', 128)->nullable();
+                $table->string('cluster_key', 128)->nullable()->index();
+                $table->text('root_cause_summary')->nullable();
+                $table->text('action_plan')->nullable();
+                $table->text('broadcast_template')->nullable();
+                $table->longText('ticket_ids_json')->nullable();
+                $table->timestamp('detected_at')->useCurrent()->index();
+                $table->timestamp('resolved_at')->nullable();
+                $table->timestamps();
+            });
+        }
+
+        // Create tblsahdev_knowledge_embeddings
+        try {
+            Capsule::table('tblsahdev_knowledge_embeddings')->first();
+        } catch (\Exception $e) {
+            Capsule::schema()->create('tblsahdev_knowledge_embeddings', function ($table) {
+                $table->increments('id');
+                $table->string('source_type', 32)->index();
+                $table->integer('source_id')->unsigned()->nullable()->index();
+                $table->string('title', 255);
+                $table->longText('content_chunk');
+                $table->longText('embedding_vector')->nullable();
+                $table->timestamps();
+            });
+        }
+
+        // Migrate: Next-Gen intelligence settings columns
+        $intelColMap = [
+            'telemetry_enabled'           => ['boolean', 1],
+            'telemetry_poll_interval_mins'=> ['integer', 15],
+            'incident_detection_enabled'  => ['boolean', 1],
+            'incident_threshold_tickets'  => ['integer', 3],
+            'incident_window_hours'       => ['integer', 3],
+            'rag_knowledge_enabled'       => ['boolean', 1],
+            'rag_max_snippets'            => ['integer', 3],
+        ];
+        foreach ($intelColMap as $col => [$type, $default]) {
+            try {
+                Capsule::table('tblsahdev_settings')->select($col)->first();
+            } catch (\Exception $e) {
+                try {
+                    Capsule::schema()->table('tblsahdev_settings', function ($tbl) use ($col, $type, $default) {
+                        switch ($type) {
+                            case 'boolean': $tbl->boolean($col)->default($default ?? 0); break;
+                            case 'integer': $tbl->integer($col)->default($default ?? 0); break;
+                            default: $tbl->string($col, 128)->nullable();
+                        }
+                    });
+                } catch (\Exception $ex) {}
+            }
+        }
+
         return [
             // Supported values here include: success, error or info
             'status' => 'success',

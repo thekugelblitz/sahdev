@@ -590,7 +590,72 @@ Global configuration. Always has exactly 1 row (id=1).
 | `context_enrichment_activity_log` | boolean | 0 | Include recent client portal activity logs |
 | `context_enrichment_custom_fields` | boolean | 1 | Include non-sensitive custom fields on client/product |
 | `context_enrichment_custom_field_allowlist` | text | null | Optional comma-separated allowlist for custom fields |
+| `telemetry_enabled` | boolean | 1 | Proactive background polling of server health & account quotas |
+| `telemetry_poll_interval_mins` | int | 15 | Polling frequency for server metrics in minutes |
+| `incident_detection_enabled` | boolean | 1 | Automatic surge clustering & outage detection |
+| `incident_threshold_tickets` | int | 3 | Minimum correlated tickets in window to declare an incident |
+| `incident_window_hours` | int | 3 | Rolling time window for ticket surge analysis |
+| `rag_knowledge_enabled` | boolean | 1 | Multi-layer RAG search across KBs, runbooks, predefined replies |
+| `rag_max_snippets` | int | 3 | Maximum ranked knowledge snippets injected into prompt |
 | `created_at`, `updated_at` | timestamps | — | — |
+
+---
+
+### `tblsahdev_server_telemetry`
+
+Stores cached server load, reachability status, and per-account disk/quota snapshots fetched using unprivileged / reseller-safe API queries (cPanel/WHM, Plesk, DirectAdmin).
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | int PK | auto-increment |
+| `server_id` | int | FK → `tblservers.id` |
+| `server_name` | varchar(128) | Display name of server |
+| `server_host` | varchar(255) | Hostname or IP address |
+| `server_type` | varchar(32) | cpanel, plesk, directadmin |
+| `server_load` | varchar(64) | 1m, 5m, 15m load average string |
+| `is_reachable` | boolean | 1 = online and responsive |
+| `reachability_error` | varchar(255) | Connection or HTTP error message if unreachable |
+| `accounts_data_json` | longtext | JSON array of account quotas, disk usage, and suspension states |
+| `server_stats_json` | longtext | JSON object of additional server health indicators |
+| `last_polled_at` | timestamp | Timestamp of last poll |
+
+---
+
+### `tblsahdev_incidents`
+
+Stores declared outages, server surges, and issue clusters detected by `IncidentDetectionService`.
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | int PK | auto-increment |
+| `incident_num` | varchar(32) | Unique identifier (e.g. `INC-20260902-123`) |
+| `title` | varchar(255) | Incident headline |
+| `severity` | varchar(16) | `Low`, `Medium`, `High`, `Critical` |
+| `status` | varchar(32) | `Active`, `Investigating`, `Monitoring`, `Resolved` |
+| `server_id` | int nullable | FK → `tblservers.id` if server-correlated |
+| `server_name` | varchar(128) | Associated server display name |
+| `cluster_key` | varchar(128) | Deduplication hash / cluster identifier |
+| `root_cause_summary` | text | Executive root cause summary |
+| `action_plan` | text | Recommended remediation plan for staff |
+| `broadcast_template` | text | Ready-to-send broadcast reply template for affected clients |
+| `ticket_ids_json` | longtext | JSON array of correlated ticket IDs |
+| `detected_at` | timestamp | When the surge was first declared |
+| `resolved_at` | timestamp nullable | When marked resolved |
+
+---
+
+### `tblsahdev_knowledge_embeddings`
+
+Stores chunked vector embeddings for multi-layer RAG semantic search.
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | int PK | auto-increment |
+| `source_type` | varchar(32) | `kb`, `runbook`, `predefined`, `golden_ticket` |
+| `source_id` | int nullable | ID in source table if applicable |
+| `title` | varchar(255) | Title / chunk identifier |
+| `content_chunk` | longtext | Text content indexed for retrieval |
+| `embedding_vector` | longtext nullable | JSON array of embedding vector floats |
 
 ---
 

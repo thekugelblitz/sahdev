@@ -139,6 +139,16 @@ class CronProcessor
             } catch (\Throwable $e) {
                 $result['autopilot'] = ['enabled' => false, 'errors' => ['Autopilot fatal: ' . $e->getMessage()]];
             }
+
+            // Proactive Server Telemetry & Incident Cluster Evaluation
+            try {
+                require_once __DIR__ . '/ServerTelemetryService.php';
+                require_once __DIR__ . '/IncidentDetectionService.php';
+                ServerTelemetryService::pollActiveServers(false);
+                IncidentDetectionService::evaluateClusters();
+            } catch (\Throwable $e) {
+                // Background telemetry/incident detection is best-effort and must never fail cron
+            }
         } catch (\Throwable $e) {
             $result['errors'][] = 'Fatal error: ' . $e->getMessage();
             $this->logError(0, 'CronProcessor::run() fatal: ' . $e->getMessage());

@@ -6,6 +6,9 @@ use WHMCS\Database\Capsule;
 
 require_once __DIR__ . '/ClientAccountEnrichment.php';
 require_once __DIR__ . '/ModuleLogger.php';
+require_once __DIR__ . '/ServerTelemetryService.php';
+require_once __DIR__ . '/IncidentDetectionService.php';
+require_once __DIR__ . '/RagKnowledgeService.php';
 
 class TicketDataExtractor
 {
@@ -66,9 +69,31 @@ class TicketDataExtractor
         $context['userid'] = (int) $ticket->userid;
         $context['ticket_id'] = (int) $ticket->id;
 
-        // 2. Fetch Client Info
+        // 2. Fetch Client Info & Services
         $context['client_name'] = $this->extractClientName($ticket);
         $context['services_summary'] = $this->buildServicesSummaryBlock($ticket, $scrubPII, null);
+
+        // 2.5 Active Incident Alert (if ticket is part of an ongoing outage)
+        try {
+            $activeInc = IncidentDetectionService::getActiveIncidentForTicket($this->ticketId);
+            if ($activeInc) {
+                $incAlert = "=== ⚠️ ACTIVE OUTAGE / INCIDENT ALERT ({$activeInc['incident_num']}) ===\n" .
+                    "Title: {$activeInc['title']}\n" .
+                    "Severity: {$activeInc['severity']} | Status: {$activeInc['status']}\n" .
+                    "Root Cause: {$activeInc['root_cause_summary']}\n" .
+                    "Recommended Action: {$activeInc['action_plan']}\n" .
+                    "Suggested Template: {$activeInc['broadcast_template']}";
+                $context['services_summary'] = $incAlert . "\n\n" . $context['services_summary'];
+            }
+        } catch (\Throwable $e) {}
+
+        // 2.6 RAG Knowledge Guidance
+        try {
+            $ragGuide = RagKnowledgeService::buildPromptBlock($ticket->title, (string) $ticket->message, 3);
+            if ($ragGuide !== '') {
+                $context['services_summary'] .= "\n\n" . $ragGuide;
+            }
+        } catch (\Throwable $e) {}
 
         // 3. Fetch Message History (Replies + Original Message)
         $context['messages'] = $this->extractMessages($ticket);

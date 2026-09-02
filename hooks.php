@@ -216,6 +216,51 @@ function sahdev_inject_ticket_panel($vars)
     
     $jsIntentLabelsJson = json_encode($jsIntentLabels);
 
+    // Active Incident Alert Banner
+    $incidentAlertBanner = '';
+    try {
+        require_once __DIR__ . '/lib/IncidentDetectionService.php';
+        $activeInc = \Sahdev\Lib\IncidentDetectionService::getActiveIncidentForTicket($ticketId);
+        if ($activeInc) {
+            $incNum = htmlspecialchars($activeInc['incident_num']);
+            $incTitle = htmlspecialchars($activeInc['title']);
+            $incSummary = htmlspecialchars($activeInc['root_cause_summary']);
+            $incidentAlertBanner = <<<INC_HTML
+<div class="alert alert-danger" style="margin-top: 15px; border-left: 5px solid #c53030; background: #fff5f5; color: #742a2a; box-shadow: 0 2px 8px rgba(0,0,0,0.06);">
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 10px;">
+        <div>
+            <strong style="font-size: 14px;"><i class="fas fa-exclamation-triangle"></i> ACTIVE OUTAGE / INCIDENT: {$incNum} — {$incTitle}</strong>
+            <p style="margin: 4px 0 0 0; font-size: 12px; color: #4a5568;">{$incSummary}</p>
+        </div>
+        <a href="addonmodules.php?module=sahdev&amp;action=incidents" class="btn btn-xs btn-danger" target="_blank"><i class="fas fa-satellite-dish"></i> Incident Center</a>
+    </div>
+</div>
+INC_HTML;
+        }
+    } catch (\Throwable $e) {}
+
+    // Live Server Health Badge
+    $serverHealthBadge = '';
+    try {
+        require_once __DIR__ . '/lib/ServerTelemetryService.php';
+        $ticketRow = Capsule::table('tbltickets')->where('id', $ticketId)->first();
+        if ($ticketRow && !empty($ticketRow->userid)) {
+            $hRow = Capsule::table('tblhosting')->where('userid', (int)$ticketRow->userid)->whereIn('domainstatus', ['Active', 'Suspended'])->orderBy('id', 'desc')->first();
+            if ($hRow && !empty($hRow->server)) {
+                $srvHealth = \Sahdev\Lib\ServerTelemetryService::getServerHealth((int)$hRow->server);
+                if ($srvHealth) {
+                    $srvName = htmlspecialchars($srvHealth['server_name'] ?: 'Server #' . $hRow->server);
+                    $srvLoad = htmlspecialchars($srvHealth['server_load'] ?: '');
+                    $loadPill = $srvLoad !== '' ? " | Load: {$srvLoad}" : '';
+                    $isOnline = !empty($srvHealth['is_reachable']);
+                    $badgeColor = $isOnline ? '#38a169' : '#e53e3e';
+                    $badgeIcon = $isOnline ? 'fa-server' : 'fa-exclamation-circle';
+                    $serverHealthBadge = '<span class="badge" style="background:' . $badgeColor . '; font-size: 11px; margin-left: 8px; vertical-align: middle; font-weight: 500;"><i class="fas ' . $badgeIcon . '"></i> ' . $srvName . $loadPill . '</span>';
+                }
+            }
+        }
+    } catch (\Throwable $e) {}
+
     // Server-side inline styles for each theme — eliminates flash entirely
     $isRemastered = ($uiTheme === \Sahdev\Lib\AdminPreferences::THEME_REMASTERED);
     $panelStyle   = $isRemastered
@@ -237,9 +282,10 @@ function sahdev_inject_ticket_panel($vars)
         : 'display: none; background: #f8f9fa;';
 
     $htmlPanel = <<<HTML
+{$incidentAlertBanner}
 <div class="{$panelClass}" id="sahdev-ai-panel" style="{$panelStyle}">
     <div class="panel-heading" style="{$headingStyle}" onclick="$('#sahdev-ai-body').slideToggle();">
-        <h3 class="panel-title" style="{$titleStyle}"><i class="fas fa-robot" style="{$robotColor}"></i> Sahdev AI Ticket Intelligence
+        <h3 class="panel-title" style="{$titleStyle}"><i class="fas fa-robot" style="{$robotColor}"></i> Sahdev AI Ticket Intelligence {$serverHealthBadge}
             <a href="addonmodules.php?module=sahdev&amp;action=my_preferences" style="{$linkStyle}" onclick="event.stopPropagation();">My preferences</a>
         </h3>
         <i class="fas fa-chevron-down"></i>

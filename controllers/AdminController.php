@@ -470,6 +470,7 @@ class AdminController
     {
         $base = htmlspecialchars($this->moduleVars['modulelink']);
         $tabs = [
+            'incidents' => ['label' => '<i class="fas fa-satellite-dish"></i> Incident & Server Monitoring', 'url' => $base . '&action=incidents'],
             'settings' => ['label' => '<i class="fas fa-cog"></i> General Settings', 'url' => $base],
             'my_preferences' => ['label' => '<i class="fas fa-user-cog"></i> My Preferences', 'url' => $base . '&action=my_preferences'],
             'providers' => ['label' => '<i class="fas fa-microchip"></i> AI Providers', 'url' => $base . '&action=providers'],
@@ -862,6 +863,92 @@ class AdminController
             }
         }
 
+        // Migrate Next-Gen intelligence settings columns
+        $intelColMap = [
+            'telemetry_enabled'           => 1,
+            'telemetry_poll_interval_mins'=> 15,
+            'incident_detection_enabled'  => 1,
+            'incident_threshold_tickets'  => 3,
+            'incident_window_hours'       => 3,
+            'rag_knowledge_enabled'       => 1,
+            'rag_max_snippets'            => 3,
+        ];
+        foreach ($intelColMap as $col => $defaultVal) {
+            try {
+                Capsule::table('tblsahdev_settings')->select($col)->first();
+            } catch (\Exception $e) {
+                try {
+                    Capsule::schema()->table('tblsahdev_settings', function ($tbl) use ($col, $defaultVal) {
+                        $tbl->integer($col)->default($defaultVal);
+                    });
+                } catch (\Exception $ex) {}
+            }
+        }
+
+        // Create tblsahdev_server_telemetry
+        try {
+            Capsule::table('tblsahdev_server_telemetry')->first();
+        } catch (\Exception $e) {
+            try {
+                Capsule::schema()->create('tblsahdev_server_telemetry', function ($table) {
+                    $table->increments('id');
+                    $table->integer('server_id')->unsigned()->index();
+                    $table->string('server_name', 128)->nullable();
+                    $table->string('server_host', 255)->nullable();
+                    $table->string('server_type', 32)->default('cpanel');
+                    $table->string('server_load', 64)->nullable();
+                    $table->boolean('is_reachable')->default(1);
+                    $table->string('reachability_error', 255)->nullable();
+                    $table->longText('accounts_data_json')->nullable();
+                    $table->longText('server_stats_json')->nullable();
+                    $table->timestamp('last_polled_at')->useCurrent()->index();
+                    $table->timestamps();
+                });
+            } catch (\Exception $ex) {}
+        }
+
+        // Create tblsahdev_incidents
+        try {
+            Capsule::table('tblsahdev_incidents')->first();
+        } catch (\Exception $e) {
+            try {
+                Capsule::schema()->create('tblsahdev_incidents', function ($table) {
+                    $table->increments('id');
+                    $table->string('incident_num', 32)->unique();
+                    $table->string('title', 255);
+                    $table->string('severity', 16)->default('Medium');
+                    $table->string('status', 32)->default('Active');
+                    $table->integer('server_id')->unsigned()->nullable()->index();
+                    $table->string('server_name', 128)->nullable();
+                    $table->string('cluster_key', 128)->nullable()->index();
+                    $table->text('root_cause_summary')->nullable();
+                    $table->text('action_plan')->nullable();
+                    $table->text('broadcast_template')->nullable();
+                    $table->longText('ticket_ids_json')->nullable();
+                    $table->timestamp('detected_at')->useCurrent()->index();
+                    $table->timestamp('resolved_at')->nullable();
+                    $table->timestamps();
+                });
+            } catch (\Exception $ex) {}
+        }
+
+        // Create tblsahdev_knowledge_embeddings
+        try {
+            Capsule::table('tblsahdev_knowledge_embeddings')->first();
+        } catch (\Exception $e) {
+            try {
+                Capsule::schema()->create('tblsahdev_knowledge_embeddings', function ($table) {
+                    $table->increments('id');
+                    $table->string('source_type', 32)->index();
+                    $table->integer('source_id')->unsigned()->nullable()->index();
+                    $table->string('title', 255);
+                    $table->longText('content_chunk');
+                    $table->longText('embedding_vector')->nullable();
+                    $table->timestamps();
+                });
+            } catch (\Exception $ex) {}
+        }
+
         try {
             Capsule::table('tblsahdev_settings')->select('scrub_phones')->first();
         } catch (\Exception $e) {
@@ -934,6 +1021,14 @@ class AdminController
             $contextEnrichmentContacts = !empty($_POST['context_enrichment_contacts']) ? 1 : 0;
             $contextEnrichmentClientProfile = !empty($_POST['context_enrichment_client_profile']) ? 1 : 0;
 
+            $telemetryEnabled = !empty($_POST['telemetry_enabled']) ? 1 : 0;
+            $telemetryPollIntervalMins = max(5, min(60, (int) ($_POST['telemetry_poll_interval_mins'] ?? 15)));
+            $incidentDetectionEnabled = !empty($_POST['incident_detection_enabled']) ? 1 : 0;
+            $incidentThresholdTickets = max(2, min(50, (int) ($_POST['incident_threshold_tickets'] ?? 3)));
+            $incidentWindowHours = max(1, min(24, (int) ($_POST['incident_window_hours'] ?? 3)));
+            $ragKnowledgeEnabled = !empty($_POST['rag_knowledge_enabled']) ? 1 : 0;
+            $ragMaxSnippets = max(1, min(5, (int) ($_POST['rag_max_snippets'] ?? 3)));
+
             $taskProviderMap = [];
             $taskMapRaw = $_POST['task_provider_map'] ?? [];
             if (is_array($taskMapRaw)) {
@@ -999,6 +1094,13 @@ class AdminController
                     'context_enrichment_activity_log' => $contextEnrichmentActivityLog,
                     'context_enrichment_contacts' => $contextEnrichmentContacts,
                     'context_enrichment_client_profile' => $contextEnrichmentClientProfile,
+                    'telemetry_enabled' => $telemetryEnabled,
+                    'telemetry_poll_interval_mins' => $telemetryPollIntervalMins,
+                    'incident_detection_enabled' => $incidentDetectionEnabled,
+                    'incident_threshold_tickets' => $incidentThresholdTickets,
+                    'incident_window_hours' => $incidentWindowHours,
+                    'rag_knowledge_enabled' => $ragKnowledgeEnabled,
+                    'rag_max_snippets' => $ragMaxSnippets,
                     'updated_at' => \Carbon\Carbon::now(),
                 ]
             );
@@ -1051,6 +1153,13 @@ class AdminController
                 'context_enrichment_activity_log' => 0,
                 'context_enrichment_contacts' => 1,
                 'context_enrichment_client_profile' => 1,
+                'telemetry_enabled' => 1,
+                'telemetry_poll_interval_mins' => 15,
+                'incident_detection_enabled' => 1,
+                'incident_threshold_tickets' => 3,
+                'incident_window_hours' => 3,
+                'rag_knowledge_enabled' => 1,
+                'rag_max_snippets' => 3,
             ];
         }
 
@@ -1272,6 +1381,81 @@ class AdminController
                             <input type="text" name="context_enrichment_custom_field_allowlist" class="form-control" placeholder="e.g. VAT Number, 12, Company Name"
                                 value="<?php echo htmlspecialchars((string) ($settings->context_enrichment_custom_field_allowlist ?? '')); ?>">
                             <small class="text-muted">Comma-separated field names or numeric field IDs. If empty, all non-sensitive fields are included.</small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Next-Gen Intelligence: Server Telemetry, Incidents & RAG -->
+                <div class="panel panel-default" style="margin-bottom: 25px; border-left: 4px solid #20c997;">
+                    <div class="panel-heading" style="background: #f0fbf7;">
+                        <h4 style="margin: 0; font-size: 15px; color:#0e7c5b;"><i class="fas fa-satellite-dish"></i> Next-Gen Intelligence: Telemetry, Outages & RAG Knowledge <span class="label label-success" style="font-size: 11px; vertical-align: middle; margin-left: 6px;">Proactive</span></h4>
+                    </div>
+                    <div class="panel-body">
+                        <p class="text-muted" style="margin-top: 0; font-size: 13px;">
+                            Configure proactive background server health polling, ticket surge & outage clustering, and multi-layer RAG knowledge retrieval.
+                        </p>
+                        
+                        <div class="row" style="display: flex; flex-wrap: wrap; gap: 20px;">
+                            <!-- Server Telemetry -->
+                            <div style="flex: 1; min-width: 280px; background: #fafdfc; padding: 14px; border-radius: 6px; border: 1px solid #e1f5ed;">
+                                <div class="checkbox" style="margin-top: 0;">
+                                    <label style="font-weight: 600; font-size: 14px; color:#0e7c5b;">
+                                        <input type="checkbox" name="telemetry_enabled" value="1" <?php echo !empty($settings->telemetry_enabled) ? 'checked' : ''; ?>>
+                                        &nbsp;Live Server Telemetry (cPanel/WHM/Plesk)
+                                    </label>
+                                </div>
+                                <p class="text-muted" style="font-size: 12px; margin-bottom: 10px;">
+                                    Proactively polls server load, disk quota, and suspension status using reseller-safe API calls (never requires root).
+                                </p>
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label style="font-size: 12px; font-weight: 600;">Poll Interval (Minutes):</label>
+                                    <input type="number" name="telemetry_poll_interval_mins" class="form-control input-sm" min="5" max="60" style="max-width: 120px;"
+                                        value="<?php echo htmlspecialchars((string) ($settings->telemetry_poll_interval_mins ?? 15)); ?>">
+                                </div>
+                            </div>
+
+                            <!-- Incident Surge Clustering -->
+                            <div style="flex: 1; min-width: 280px; background: #fdfaf8; padding: 14px; border-radius: 6px; border: 1px solid #f9eee6;">
+                                <div class="checkbox" style="margin-top: 0;">
+                                    <label style="font-weight: 600; font-size: 14px; color:#c05621;">
+                                        <input type="checkbox" name="incident_detection_enabled" value="1" <?php echo !empty($settings->incident_detection_enabled) ? 'checked' : ''; ?>>
+                                        &nbsp;Outage & Surge Clustering
+                                    </label>
+                                </div>
+                                <p class="text-muted" style="font-size: 12px; margin-bottom: 10px;">
+                                    Detects server disruptions when multiple clients open tickets about the same server or issue topic within a rolling window.
+                                </p>
+                                <div style="display: flex; gap: 10px;">
+                                    <div class="form-group" style="margin-bottom: 0; flex: 1;">
+                                        <label style="font-size: 12px; font-weight: 600;">Surge Threshold (Tickets):</label>
+                                        <input type="number" name="incident_threshold_tickets" class="form-control input-sm" min="2" max="50"
+                                            value="<?php echo htmlspecialchars((string) ($settings->incident_threshold_tickets ?? 3)); ?>">
+                                    </div>
+                                    <div class="form-group" style="margin-bottom: 0; flex: 1;">
+                                        <label style="font-size: 12px; font-weight: 600;">Rolling Window (Hours):</label>
+                                        <input type="number" name="incident_window_hours" class="form-control input-sm" min="1" max="24"
+                                            value="<?php echo htmlspecialchars((string) ($settings->incident_window_hours ?? 3)); ?>">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- RAG Knowledge Retrieval -->
+                            <div style="flex: 1; min-width: 280px; background: #f8faff; padding: 14px; border-radius: 6px; border: 1px solid #e2edff;">
+                                <div class="checkbox" style="margin-top: 0;">
+                                    <label style="font-weight: 600; font-size: 14px; color:#2b4c7e;">
+                                        <input type="checkbox" name="rag_knowledge_enabled" value="1" <?php echo !empty($settings->rag_knowledge_enabled) ? 'checked' : ''; ?>>
+                                        &nbsp;Multi-Layer RAG Knowledgebase
+                                    </label>
+                                </div>
+                                <p class="text-muted" style="font-size: 12px; margin-bottom: 10px;">
+                                    Indexes WHMCS KB articles, canned replies, and company runbooks to inject authoritative guidance into the prompt.
+                                </p>
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label style="font-size: 12px; font-weight: 600;">Max Injected Snippets:</label>
+                                    <input type="number" name="rag_max_snippets" class="form-control input-sm" min="1" max="5" style="max-width: 120px;"
+                                        value="<?php echo htmlspecialchars((string) ($settings->rag_max_snippets ?? 3)); ?>">
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -5524,5 +5708,320 @@ class AdminController
         return ob_get_clean();
     }
 
+    /**
+     * Incident & Server Monitoring Center Dashboard
+     */
+    public function incidents(): string
+    {
+        require_once dirname(__DIR__) . '/lib/ServerTelemetryService.php';
+        require_once dirname(__DIR__) . '/lib/IncidentDetectionService.php';
+
+        $actionUrl = htmlspecialchars($this->moduleVars['modulelink']) . '&action=incidents';
+        $csrfToken = generate_token("form");
+        $successMessage = '';
+        $errorMessage = '';
+
+        // Handle POST Actions
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            check_token("form");
+
+            if (isset($_POST['trigger_server_poll'])) {
+                try {
+                    $pollRes = \Sahdev\Lib\ServerTelemetryService::pollActiveServers(true);
+                    $successMessage = "Polled {$pollRes['polled']} server(s) successfully.";
+                } catch (\Throwable $e) {
+                    $errorMessage = "Error polling servers: " . $e->getMessage();
+                }
+            } elseif (isset($_POST['trigger_cluster_eval'])) {
+                try {
+                    $evalRes = \Sahdev\Lib\IncidentDetectionService::evaluateClusters();
+                    $successMessage = "Incident evaluation completed. Scanned {$evalRes['tickets_scanned']} ticket(s), found {$evalRes['clusters_found']} cluster(s).";
+                } catch (\Throwable $e) {
+                    $errorMessage = "Error evaluating incidents: " . $e->getMessage();
+                }
+            } elseif (isset($_POST['update_incident_status'])) {
+                $incId = (int) ($_POST['incident_id'] ?? 0);
+                $newStatus = trim((string) ($_POST['new_status'] ?? 'Active'));
+                if ($incId > 0 && in_array($newStatus, ['Active', 'Investigating', 'Monitoring', 'Resolved'])) {
+                    $upData = ['status' => $newStatus, 'updated_at' => \Carbon\Carbon::now()];
+                    if ($newStatus === 'Resolved') {
+                        $upData['resolved_at'] = \Carbon\Carbon::now();
+                    }
+                    Capsule::table('tblsahdev_incidents')->where('id', $incId)->update($upData);
+                    $successMessage = "Incident #{$incId} status updated to {$newStatus}.";
+                }
+            } elseif (isset($_POST['apply_broadcast_reply'])) {
+                $incId = (int) ($_POST['incident_id'] ?? 0);
+                $replyBody = trim((string) ($_POST['broadcast_message'] ?? ''));
+                $inc = Capsule::table('tblsahdev_incidents')->where('id', $incId)->first();
+                if ($inc && $replyBody !== '') {
+                    $ticketIds = !empty($inc->ticket_ids_json) ? json_decode($inc->ticket_ids_json, true) : [];
+                    $repliedCount = 0;
+                    $adminUser = 'System';
+                    try {
+                        $adminUser = Capsule::table('tbladmins')->where('id', (int) ($_SESSION['adminid'] ?? 1))->value('username') ?: 'System';
+                    } catch (\Throwable $e) {}
+
+                    foreach ($ticketIds as $tid) {
+                        try {
+                            Capsule::table('tblticketreplies')->insert([
+                                'tid' => (int) $tid,
+                                'admin' => $adminUser,
+                                'date' => \Carbon\Carbon::now(),
+                                'message' => $replyBody,
+                                'rating' => 0,
+                            ]);
+                            Capsule::table('tbltickets')->where('id', (int) $tid)->update([
+                                'status' => 'Answered',
+                                'lastreply' => \Carbon\Carbon::now(),
+                            ]);
+                            $repliedCount++;
+                        } catch (\Throwable $e) {}
+                    }
+                    $successMessage = "Broadcast reply posted to {$repliedCount} ticket(s) under Incident {$inc->incident_num}.";
+                }
+            }
+        }
+
+        // Fetch Incidents
+        $activeIncidents = Capsule::table('tblsahdev_incidents')
+            ->whereIn('status', ['Active', 'Investigating', 'Monitoring'])
+            ->orderBy('id', 'desc')
+            ->get();
+
+        $resolvedIncidents = Capsule::table('tblsahdev_incidents')
+            ->where('status', 'Resolved')
+            ->orderBy('id', 'desc')
+            ->limit(10)
+            ->get();
+
+        // Fetch Server Telemetry
+        $servers = Capsule::table('tblservers as s')
+            ->leftJoin('tblsahdev_server_telemetry as st', 's.id', '=', 'st.server_id')
+            ->where('s.disabled', 0)
+            ->select(
+                's.id as server_id',
+                's.name as server_name',
+                's.hostname',
+                's.ipaddress',
+                's.type as server_type',
+                'st.server_load',
+                'st.is_reachable',
+                'st.reachability_error',
+                'st.accounts_data_json',
+                'st.last_polled_at'
+            )
+            ->get();
+
+        $totalServers = $servers->count();
+        $reachableServers = $servers->where('is_reachable', 1)->count();
+        $totalIncidentsCount = $activeIncidents->count();
+
+        ob_start();
+        ?>
+        <div class="sahdev-container">
+            <?php echo $this->getNavigationMarkup('incidents'); ?>
+
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <div>
+                    <h2 style="margin: 0; font-size: 22px; color: #1a202c; font-weight: 700;">
+                        <i class="fas fa-satellite-dish" style="color: #20c997;"></i> Incident & Server Monitoring Center
+                    </h2>
+                    <p class="text-muted" style="margin: 5px 0 0 0; font-size: 13px;">
+                        Real-time reseller-safe server health, automated outage surge detection, and 1-click broadcast replies.
+                    </p>
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <form method="post" action="<?php echo $actionUrl; ?>" style="display:inline;">
+                        <?php echo $csrfToken; ?>
+                        <button type="submit" name="trigger_server_poll" value="1" class="btn btn-default btn-sm">
+                            <i class="fas fa-sync-alt"></i> Poll Servers Now
+                        </button>
+                    </form>
+                    <form method="post" action="<?php echo $actionUrl; ?>" style="display:inline;">
+                        <?php echo $csrfToken; ?>
+                        <button type="submit" name="trigger_cluster_eval" value="1" class="btn btn-primary btn-sm" style="background:#20c997; border-color:#20c997;">
+                            <i class="fas fa-search"></i> Scan Incident Surges
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <?php if ($successMessage): ?>
+                <div class="alert alert-success"><i class="fas fa-check-circle"></i> <?php echo htmlspecialchars($successMessage); ?></div>
+            <?php endif; ?>
+            <?php if ($errorMessage): ?>
+                <div class="alert alert-danger"><i class="fas fa-exclamation-triangle"></i> <?php echo htmlspecialchars($errorMessage); ?></div>
+            <?php endif; ?>
+
+            <!-- Metrics Summary Cards -->
+            <div class="row" style="display: flex; gap: 15px; margin-bottom: 25px;">
+                <div style="flex: 1; background: #fff; padding: 16px; border-radius: 8px; border: 1px solid #e2e8f0; border-left: 4px solid <?php echo $totalIncidentsCount > 0 ? '#e53e3e' : '#38a169'; ?>;">
+                    <div style="font-size: 12px; color: #718096; text-transform: uppercase; font-weight: 600;">Active Incidents</div>
+                    <div style="font-size: 24px; font-weight: 700; color: <?php echo $totalIncidentsCount > 0 ? '#e53e3e' : '#38a169'; ?>;">
+                        <?php echo $totalIncidentsCount; ?>
+                    </div>
+                    <small class="text-muted"><?php echo $totalIncidentsCount > 0 ? 'Surge clusters requiring attention' : 'All systems operating normally'; ?></small>
+                </div>
+
+                <div style="flex: 1; background: #fff; padding: 16px; border-radius: 8px; border: 1px solid #e2e8f0; border-left: 4px solid #3182ce;">
+                    <div style="font-size: 12px; color: #718096; text-transform: uppercase; font-weight: 600;">Monitored Servers</div>
+                    <div style="font-size: 24px; font-weight: 700; color: #2b6cb0;">
+                        <?php echo $reachableServers; ?> / <?php echo $totalServers; ?>
+                    </div>
+                    <small class="text-muted">Reachable & responsive</small>
+                </div>
+
+                <div style="flex: 1; background: #fff; padding: 16px; border-radius: 8px; border: 1px solid #e2e8f0; border-left: 4px solid #805ad5;">
+                    <div style="font-size: 12px; color: #718096; text-transform: uppercase; font-weight: 600;">Reseller-Safe Polling</div>
+                    <div style="font-size: 24px; font-weight: 700; color: #6b46c1;">
+                        cPanel / WHM / Plesk
+                    </div>
+                    <small class="text-muted">Zero root privileges required</small>
+                </div>
+            </div>
+
+            <!-- Active Incidents Section -->
+            <div class="panel panel-default" style="margin-bottom: 25px; border-left: 4px solid #e53e3e;">
+                <div class="panel-heading" style="background: #fff5f5; display: flex; justify-content: space-between; align-items: center;">
+                    <h4 style="margin: 0; font-size: 16px; color: #c53030; font-weight: 700;">
+                        <i class="fas fa-fire"></i> Active Outages & Surges (<?php echo $activeIncidents->count(); ?>)
+                    </h4>
+                </div>
+                <div class="panel-body">
+                    <?php if ($activeIncidents->isEmpty()): ?>
+                        <div style="padding: 25px; text-align: center; color: #718096;">
+                            <i class="fas fa-shield-alt fa-3x" style="color: #48bb78; margin-bottom: 10px; display: block;"></i>
+                            <strong>No active incidents detected.</strong> All ticket flows are within normal baseline thresholds.
+                        </div>
+                    <?php else: ?>
+                        <?php foreach ($activeIncidents as $inc): ?>
+                            <?php 
+                                $ticketIds = !empty($inc->ticket_ids_json) ? json_decode($inc->ticket_ids_json, true) : [];
+                                $ticketCount = count($ticketIds);
+                            ?>
+                            <div style="background: #fff; border: 1px solid #feb2b2; border-radius: 6px; padding: 16px; margin-bottom: 15px;">
+                                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;">
+                                    <div>
+                                        <span class="label label-danger" style="font-size: 12px;"><?php echo htmlspecialchars($inc->incident_num); ?></span>
+                                        <span class="label label-warning" style="font-size: 12px; margin-left: 5px;"><?php echo htmlspecialchars($inc->severity); ?> Severity</span>
+                                        <span class="label label-default" style="font-size: 12px; margin-left: 5px;"><?php echo htmlspecialchars($inc->status); ?></span>
+                                        <h4 style="margin: 8px 0 4px; font-weight: 700; color: #2d3748;"><?php echo htmlspecialchars($inc->title); ?></h4>
+                                    </div>
+                                    <div>
+                                        <!-- Status Update Form -->
+                                        <form method="post" action="<?php echo $actionUrl; ?>" class="form-inline">
+                                            <?php echo $csrfToken; ?>
+                                            <input type="hidden" name="incident_id" value="<?php echo $inc->id; ?>">
+                                            <input type="hidden" name="update_incident_status" value="1">
+                                            <select name="new_status" class="form-control input-sm" onchange="this.form.submit()">
+                                                <option value="Active" <?php echo $inc->status === 'Active' ? 'selected' : ''; ?>>Status: Active</option>
+                                                <option value="Investigating" <?php echo $inc->status === 'Investigating' ? 'selected' : ''; ?>>Status: Investigating</option>
+                                                <option value="Monitoring" <?php echo $inc->status === 'Monitoring' ? 'selected' : ''; ?>>Status: Monitoring</option>
+                                                <option value="Resolved" <?php echo $inc->status === 'Resolved' ? 'selected' : ''; ?>>Status: Resolved</option>
+                                            </select>
+                                        </form>
+                                    </div>
+                                </div>
+
+                                <p style="margin: 6px 0; font-size: 13px;"><strong>Root Cause Summary:</strong> <?php echo htmlspecialchars($inc->root_cause_summary); ?></p>
+                                <p style="margin: 6px 0; font-size: 13px; color: #4a5568;"><strong>Action Plan:</strong> <?php echo nl2br(htmlspecialchars($inc->action_plan)); ?></p>
+
+                                <div style="margin-top: 10px; background: #f7fafc; padding: 10px; border-radius: 4px; font-size: 12px;">
+                                    <strong>Correlated Tickets (<?php echo $ticketCount; ?>):</strong>
+                                    <?php foreach ($ticketIds as $tid): ?>
+                                        <a href="supporttickets.php?action=view&id=<?php echo $tid; ?>" target="_blank" class="label label-info" style="margin-right: 4px;">#<?php echo $tid; ?></a>
+                                    <?php endforeach; ?>
+                                </div>
+
+                                <!-- 1-Click Broadcast Reply -->
+                                <div style="margin-top: 12px;">
+                                    <button class="btn btn-warning btn-xs" type="button" data-toggle="collapse" data-target="#broadcastCollapse<?php echo $inc->id; ?>">
+                                        <i class="fas fa-bullhorn"></i> 1-Click Broadcast Reply to All <?php echo $ticketCount; ?> Tickets
+                                    </button>
+
+                                    <div class="collapse" id="broadcastCollapse<?php echo $inc->id; ?>" style="margin-top: 10px;">
+                                        <form method="post" action="<?php echo $actionUrl; ?>" onsubmit="return confirm('Send this broadcast message to all <?php echo $ticketCount; ?> tickets?');">
+                                            <?php echo $csrfToken; ?>
+                                            <input type="hidden" name="incident_id" value="<?php echo $inc->id; ?>">
+                                            <input type="hidden" name="apply_broadcast_reply" value="1">
+                                            <div class="form-group">
+                                                <label style="font-size: 12px; font-weight: 600;">Broadcast Message Template:</label>
+                                                <textarea name="broadcast_message" class="form-control" rows="4" style="font-family: monospace; font-size: 13px;"><?php echo htmlspecialchars($inc->broadcast_template); ?></textarea>
+                                            </div>
+                                            <button type="submit" class="btn btn-success btn-sm">
+                                                <i class="fas fa-paper-plane"></i> Send Broadcast to <?php echo $ticketCount; ?> Tickets
+                                            </button>
+                                        </form>
+                                    </div>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                </div>
+            </div>
+
+            <!-- Monitored Servers Health Grid -->
+            <div class="panel panel-default" style="border-left: 4px solid #3182ce;">
+                <div class="panel-heading" style="background: #ebf8ff;">
+                    <h4 style="margin: 0; font-size: 16px; color: #2b6cb0; font-weight: 700;">
+                        <i class="fas fa-server"></i> Monitored Hosting Servers & Control Panels (<?php echo $totalServers; ?>)
+                    </h4>
+                </div>
+                <div class="panel-body">
+                    <?php if ($servers->isEmpty()): ?>
+                        <p class="text-muted">No active servers found in WHMCS.</p>
+                    <?php else: ?>
+                        <div class="row" style="display: flex; flex-wrap: wrap; gap: 15px;">
+                            <?php foreach ($servers as $srv): ?>
+                                <?php 
+                                    $isReachable = !empty($srv->is_reachable);
+                                    $accounts = !empty($srv->accounts_data_json) ? json_decode($srv->accounts_data_json, true) : [];
+                                    $acctCount = is_array($accounts) ? count($accounts) : 0;
+                                    $load = (string) ($srv->server_load ?? 'N/A');
+                                    $lastPolled = !empty($srv->last_polled_at) ? substr((string)$srv->last_polled_at, 0, 16) : 'Never';
+                                ?>
+                                <div style="flex: 1; min-width: 320px; max-width: 450px; background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 14px;">
+                                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+                                        <div>
+                                            <strong style="font-size: 15px; color: #2d3748;"><?php echo htmlspecialchars($srv->server_name); ?></strong>
+                                            <div style="font-size: 12px; color: #718096;"><?php echo htmlspecialchars($srv->hostname ?: $srv->ipaddress); ?></div>
+                                        </div>
+                                        <div>
+                                            <?php if ($isReachable): ?>
+                                                <span class="label label-success"><i class="fas fa-check"></i> Online</span>
+                                            <?php else: ?>
+                                                <span class="label label-danger"><i class="fas fa-times"></i> Offline</span>
+                                            <?php endif; ?>
+                                        </div>
+                                    </div>
+
+                                    <div style="font-size: 13px; margin: 8px 0; display: flex; justify-content: space-between; background: #f7fafc; padding: 8px 10px; border-radius: 4px;">
+                                        <div><strong>Load:</strong> <?php echo htmlspecialchars($load); ?></div>
+                                        <div><strong>Type:</strong> <?php echo strtoupper(htmlspecialchars($srv->server_type ?: 'cPanel')); ?></div>
+                                        <div><strong>Accounts:</strong> <?php echo $acctCount; ?></div>
+                                    </div>
+
+                                    <?php if (!$isReachable && !empty($srv->reachability_error)): ?>
+                                        <div class="text-danger" style="font-size: 11px; margin-top: 4px;">
+                                            <i class="fas fa-exclamation-circle"></i> <?php echo htmlspecialchars($srv->reachability_error); ?>
+                                        </div>
+                                    <?php endif; ?>
+
+                                    <div style="font-size: 11px; color: #a0aec0; margin-top: 8px;">
+                                        Last Polled: <?php echo htmlspecialchars($lastPolled); ?>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    <?php endif; ?>
+                </div>
+            </div>
+
+        </div>
+        <?php
+        return ob_get_clean();
+    }
 }
+
 
