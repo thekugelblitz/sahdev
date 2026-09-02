@@ -1256,7 +1256,9 @@ function sahdev_upgrade($vars)
     // Ensure new tables exist after uploading files (without requiring re-activate)
     try {
         require_once __DIR__ . '/lib/AdminPreferences.php';
+        require_once __DIR__ . '/lib/PermissionService.php';
         \Sahdev\Lib\AdminPreferences::ensureSchema();
+        \Sahdev\Lib\PermissionService::ensureSchema();
     } catch (\Throwable $e) {
         // Non-fatal; ticket/ajax/admin paths also run ensureSchema
     }

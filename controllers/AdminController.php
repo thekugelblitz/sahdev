@@ -469,25 +469,59 @@ class AdminController
     private function getNavigationMarkup(string $activeTab = 'settings'): string
     {
         $base = htmlspecialchars($this->moduleVars['modulelink']);
-        $tabs = [
-            'incidents' => ['label' => '<i class="fas fa-satellite-dish"></i> Incident & Server Monitoring', 'url' => $base . '&action=incidents'],
-            'settings' => ['label' => '<i class="fas fa-cog"></i> General Settings', 'url' => $base],
-            'my_preferences' => ['label' => '<i class="fas fa-user-cog"></i> My Preferences', 'url' => $base . '&action=my_preferences'],
-            'providers' => ['label' => '<i class="fas fa-microchip"></i> AI Providers', 'url' => $base . '&action=providers'],
-            'knowledgebase' => ['label' => '<i class="fas fa-book"></i> Knowledgebase', 'url' => $base . '&action=knowledgebase'],
-            'prompt_manager' => ['label' => '<i class="fas fa-magic"></i> Prompt Manager', 'url' => $base . '&action=prompt_manager'],
-            'summaries' => ['label' => '<i class="fas fa-file-alt"></i> Ticket Summaries', 'url' => $base . '&action=summaries'],
-            'canned_responses' => ['label' => '<i class="fas fa-save"></i> Canned Responses', 'url' => $base . '&action=canned_responses'],
-            'intents' => ['label' => '<i class="fas fa-bullseye"></i> Intents Manager', 'url' => $base . '&action=intents'],
-            'tools' => ['label' => '<i class="fas fa-tools"></i> Tools Execution', 'url' => $base . '&action=tools'],
-            'autopilot' => ['label' => '<i class="fas fa-robot"></i> Autopilot', 'url' => $base . '&action=autopilot'],
-            'cron_center' => ['label' => '<i class="fas fa-clock"></i> Separate Cron', 'url' => $base . '&action=cron_center'],
-            'ticket_insights' => ['label' => '<i class="fas fa-brain"></i> Ticket Insights', 'url' => $base . '&action=ticket_insights'],
-            'analytics' => ['label' => '<i class="fas fa-chart-line"></i> Analytics & ROI', 'url' => $base . '&action=analytics'],
-            'audit_trail' => ['label' => '<i class="fas fa-history"></i> Audit Trail', 'url' => $base . '&action=audit_trail'],
-            'module_logs' => ['label' => '<i class="fas fa-clipboard-list"></i> Module log', 'url' => $base . '&action=module_logs'],
-            'logs_maintenance' => ['label' => '<i class="fas fa-database"></i> Logs & Maintenance', 'url' => $base . '&action=logs_maintenance'],
-        ];
+        $adminId = (int) ($_SESSION['adminid'] ?? 0);
+        require_once dirname(__DIR__) . '/lib/PermissionService.php';
+        \Sahdev\Lib\PermissionService::ensureSchema();
+
+        $hasSettingsPerm = \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_SETTINGS_MANAGE);
+        $hasIncidentsPerm = \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_INCIDENTS_MANAGE) || \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_TELEMETRY_VIEW);
+        $hasToolsPerm = \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_TOOLS_EXECUTE);
+        $hasKbPerm = \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_KNOWLEDGE_MANAGE);
+        $hasCannedPerm = \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_CANNED_KB) || $hasKbPerm;
+        $hasAnalyticsPerm = \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_ANALYTICS_VIEW);
+        $hasAuditPerm = \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_AUDIT_MANAGE);
+
+        $tabs = [];
+        if ($hasIncidentsPerm) {
+            $tabs['incidents'] = ['label' => '<i class="fas fa-satellite-dish"></i> Incident & Server Monitoring', 'url' => $base . '&action=incidents'];
+        }
+        if ($hasSettingsPerm) {
+            $tabs['settings'] = ['label' => '<i class="fas fa-cog"></i> General Settings', 'url' => $base];
+            $tabs['permissions'] = ['label' => '<i class="fas fa-user-shield"></i> Role Permissions', 'url' => $base . '&action=permissions'];
+        }
+        $tabs['my_preferences'] = ['label' => '<i class="fas fa-user-cog"></i> My Preferences', 'url' => $base . '&action=my_preferences'];
+        if ($hasSettingsPerm) {
+            $tabs['providers'] = ['label' => '<i class="fas fa-microchip"></i> AI Providers', 'url' => $base . '&action=providers'];
+        }
+        if ($hasKbPerm) {
+            $tabs['knowledgebase'] = ['label' => '<i class="fas fa-book"></i> Knowledgebase', 'url' => $base . '&action=knowledgebase'];
+        }
+        if ($hasSettingsPerm) {
+            $tabs['prompt_manager'] = ['label' => '<i class="fas fa-magic"></i> Prompt Manager', 'url' => $base . '&action=prompt_manager'];
+        }
+        $tabs['summaries'] = ['label' => '<i class="fas fa-file-alt"></i> Ticket Summaries', 'url' => $base . '&action=summaries'];
+        if ($hasCannedPerm) {
+            $tabs['canned_responses'] = ['label' => '<i class="fas fa-save"></i> Canned Responses', 'url' => $base . '&action=canned_responses'];
+        }
+        if ($hasSettingsPerm) {
+            $tabs['intents'] = ['label' => '<i class="fas fa-bullseye"></i> Intents Manager', 'url' => $base . '&action=intents'];
+        }
+        if ($hasToolsPerm) {
+            $tabs['tools'] = ['label' => '<i class="fas fa-tools"></i> Tools Execution', 'url' => $base . '&action=tools'];
+        }
+        if ($hasSettingsPerm) {
+            $tabs['autopilot'] = ['label' => '<i class="fas fa-robot"></i> Autopilot', 'url' => $base . '&action=autopilot'];
+            $tabs['cron_center'] = ['label' => '<i class="fas fa-clock"></i> Separate Cron', 'url' => $base . '&action=cron_center'];
+        }
+        $tabs['ticket_insights'] = ['label' => '<i class="fas fa-brain"></i> Ticket Insights', 'url' => $base . '&action=ticket_insights'];
+        if ($hasAnalyticsPerm) {
+            $tabs['analytics'] = ['label' => '<i class="fas fa-chart-line"></i> Analytics & ROI', 'url' => $base . '&action=analytics'];
+        }
+        if ($hasAuditPerm) {
+            $tabs['audit_trail'] = ['label' => '<i class="fas fa-history"></i> Audit Trail', 'url' => $base . '&action=audit_trail'];
+            $tabs['module_logs'] = ['label' => '<i class="fas fa-clipboard-list"></i> Module log', 'url' => $base . '&action=module_logs'];
+            $tabs['logs_maintenance'] = ['label' => '<i class="fas fa-database"></i> Logs & Maintenance', 'url' => $base . '&action=logs_maintenance'];
+        }
 
         $html = '<style>
             .sahdev-nav-wrapper { 
@@ -5729,8 +5763,20 @@ class AdminController
      */
     public function incidents(): string
     {
+        $adminId = (int) ($_SESSION['adminid'] ?? 0);
         require_once dirname(__DIR__) . '/lib/ServerTelemetryService.php';
         require_once dirname(__DIR__) . '/lib/IncidentDetectionService.php';
+        require_once dirname(__DIR__) . '/lib/PermissionService.php';
+        \Sahdev\Lib\PermissionService::ensureSchema();
+
+        $canViewTelemetry = \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_TELEMETRY_VIEW);
+        $canManageIncidents = \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_INCIDENTS_MANAGE);
+        $canAccessServer = \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_SERVER_ACCESS);
+        $canManageSettings = \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_SETTINGS_MANAGE);
+
+        if (!$canViewTelemetry && !$canManageIncidents) {
+            return $this->getNavigationMarkup('incidents') . '<div class="alert alert-danger" style="margin:20px;"><i class="fas fa-lock"></i> Access Denied: Your WHMCS admin role does not have permission to access Incident & Server Monitoring.</div>';
+        }
 
         $actionUrl = htmlspecialchars($this->moduleVars['modulelink']) . '&action=incidents';
         $csrfToken = generate_token("form");
@@ -5741,21 +5787,21 @@ class AdminController
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             check_token("form");
 
-            if (isset($_POST['trigger_server_poll'])) {
+            if (isset($_POST['trigger_server_poll']) && ($canViewTelemetry || $canManageIncidents)) {
                 try {
                     $pollRes = \Sahdev\Lib\ServerTelemetryService::pollActiveServers(true);
                     $successMessage = "Polled {$pollRes['polled']} server(s) successfully.";
                 } catch (\Throwable $e) {
                     $errorMessage = "Error polling servers: " . $e->getMessage();
                 }
-            } elseif (isset($_POST['trigger_cluster_eval'])) {
+            } elseif (isset($_POST['trigger_cluster_eval']) && $canManageIncidents) {
                 try {
                     $evalRes = \Sahdev\Lib\IncidentDetectionService::evaluateClusters();
                     $successMessage = "Incident evaluation completed. Scanned {$evalRes['tickets_scanned']} ticket(s), found {$evalRes['clusters_found']} cluster(s).";
                 } catch (\Throwable $e) {
                     $errorMessage = "Error evaluating incidents: " . $e->getMessage();
                 }
-            } elseif (isset($_POST['update_incident_status'])) {
+            } elseif (isset($_POST['update_incident_status']) && $canManageIncidents) {
                 $incId = (int) ($_POST['incident_id'] ?? 0);
                 $newStatus = trim((string) ($_POST['new_status'] ?? 'Active'));
                 if ($incId > 0 && in_array($newStatus, ['Active', 'Investigating', 'Monitoring', 'Resolved'])) {
@@ -5766,7 +5812,7 @@ class AdminController
                     Capsule::table('tblsahdev_incidents')->where('id', $incId)->update($upData);
                     $successMessage = "Incident #{$incId} status updated to {$newStatus}.";
                 }
-            } elseif (isset($_POST['apply_broadcast_reply'])) {
+            } elseif (isset($_POST['apply_broadcast_reply']) && $canManageIncidents) {
                 $incId = (int) ($_POST['incident_id'] ?? 0);
                 $replyBody = trim((string) ($_POST['broadcast_message'] ?? ''));
                 $inc = Capsule::table('tblsahdev_incidents')->where('id', $incId)->first();
@@ -5796,7 +5842,7 @@ class AdminController
                     }
                     $successMessage = "Broadcast reply posted to {$repliedCount} ticket(s) under Incident {$inc->incident_num}.";
                 }
-            } elseif (isset($_POST['save_server_monitoring'])) {
+            } elseif (isset($_POST['save_server_monitoring']) && ($canManageSettings || $canManageIncidents)) {
                 $monitoredInput = (array) ($_POST['monitored_servers'] ?? []);
                 $rolesInput = (array) ($_POST['server_roles'] ?? []);
 
@@ -5838,26 +5884,49 @@ class AdminController
             ->get();
 
         // Fetch Server Telemetry
-        $servers = Capsule::table('tblservers as s')
-            ->leftJoin('tblsahdev_server_telemetry as st', 's.id', '=', 'st.server_id')
-            ->where('s.disabled', 0)
-            ->select(
-                's.id as server_id',
-                's.name as server_name',
-                's.hostname',
-                's.ipaddress',
-                's.type as server_type',
-                's.username',
-                'st.server_role',
-                'st.is_monitored',
-                'st.server_load',
-                'st.is_reachable',
-                'st.reachability_error',
-                'st.accounts_data_json',
-                'st.server_stats_json',
-                'st.last_polled_at'
-            )
-            ->get();
+        \Sahdev\Lib\ServerTelemetryService::ensureSchema();
+        try {
+            $servers = Capsule::table('tblservers as s')
+                ->leftJoin('tblsahdev_server_telemetry as st', 's.id', '=', 'st.server_id')
+                ->where('s.disabled', 0)
+                ->select(
+                    's.id as server_id',
+                    's.name as server_name',
+                    's.hostname',
+                    's.ipaddress',
+                    's.type as server_type',
+                    's.username',
+                    Capsule::raw('COALESCE(st.server_role, "auto") as server_role'),
+                    Capsule::raw('COALESCE(st.is_monitored, 1) as is_monitored'),
+                    'st.server_load',
+                    'st.is_reachable',
+                    'st.reachability_error',
+                    'st.accounts_data_json',
+                    'st.server_stats_json',
+                    'st.last_polled_at'
+                )
+                ->get();
+        } catch (\Throwable $ex) {
+            \Sahdev\Lib\ServerTelemetryService::ensureSchema();
+            $servers = Capsule::table('tblservers as s')
+                ->leftJoin('tblsahdev_server_telemetry as st', 's.id', '=', 'st.server_id')
+                ->where('s.disabled', 0)
+                ->select(
+                    's.id as server_id',
+                    's.name as server_name',
+                    's.hostname',
+                    's.ipaddress',
+                    's.type as server_type',
+                    's.username',
+                    'st.server_load',
+                    'st.is_reachable',
+                    'st.reachability_error',
+                    'st.accounts_data_json',
+                    'st.server_stats_json',
+                    'st.last_polled_at'
+                )
+                ->get();
+        }
 
         $totalServers = $servers->count();
         $monitoredServersCount = $servers->filter(function($s) { return !isset($s->is_monitored) || (int)$s->is_monitored === 1; })->count();
@@ -5879,21 +5948,25 @@ class AdminController
                     </p>
                 </div>
                 <div style="display: flex; gap: 10px;">
-                    <button type="button" class="btn btn-default btn-sm" data-toggle="modal" data-target="#modalServerMonitoring">
-                        <i class="fas fa-sliders-h"></i> Manage Servers & Roles
-                    </button>
+                    <?php if ($canManageSettings || $canManageIncidents): ?>
+                        <button type="button" class="btn btn-default btn-sm" data-toggle="modal" data-target="#modalServerMonitoring">
+                            <i class="fas fa-sliders-h"></i> Manage Servers & Roles
+                        </button>
+                    <?php endif; ?>
                     <form method="post" action="<?php echo $actionUrl; ?>" style="display:inline;">
                         <?php echo $csrfToken; ?>
                         <button type="submit" name="trigger_server_poll" value="1" class="btn btn-primary btn-sm">
                             <i class="fas fa-sync-alt"></i> Poll Servers Now
                         </button>
                     </form>
-                    <form method="post" action="<?php echo $actionUrl; ?>" style="display:inline;">
-                        <?php echo $csrfToken; ?>
-                        <button type="submit" name="trigger_cluster_eval" value="1" class="btn btn-success btn-sm">
-                            <i class="fas fa-search"></i> Scan Incident Surges
-                        </button>
-                    </form>
+                    <?php if ($canManageIncidents): ?>
+                        <form method="post" action="<?php echo $actionUrl; ?>" style="display:inline;">
+                            <?php echo $csrfToken; ?>
+                            <button type="submit" name="trigger_cluster_eval" value="1" class="btn btn-success btn-sm">
+                                <i class="fas fa-search"></i> Scan Incident Surges
+                            </button>
+                        </form>
+                    <?php endif; ?>
                 </div>
             </div>
 
@@ -5994,372 +6067,591 @@ class AdminController
                                     </div>
                                 <?php endif; ?>
 
-                                <?php if (!empty($inc->broadcast_template)): ?>
-                                    <div style="margin-top: 12px; background: #fff; border: 1px solid #edf2f7; border-radius: 5px; padding: 10px;">
-                                        <div style="font-size: 12px; font-weight: 700; color: #2b6cb0; margin-bottom: 5px;">
-                                            <i class="fas fa-bullhorn"></i> Proposed Broadcast / Mass Reply:
-                                        </div>
-                                        <pre style="font-size: 12px; background: #f7fafc; padding: 8px; border-radius: 4px; margin-bottom: 8px; white-space: pre-wrap;"><?php echo htmlspecialchars($inc->broadcast_template); ?></pre>
-                                        
-                                        <form method="post" action="<?php echo $actionUrl; ?>" onsubmit="return confirm('Broadcast this reply to all <?php echo $ticketCount; ?> affected tickets?');">
-                                            <?php echo $csrfToken; ?>
-                                            <input type="hidden" name="incident_id" value="<?php echo $inc->id; ?>" />
-                                            <button type="submit" name="send_broadcast_reply" value="1" class="btn btn-primary btn-xs">
-                                                <i class="fas fa-paper-plane"></i> 1-Click Broadcast Reply to All <?php echo $ticketCount; ?> Tickets
-                                            </button>
-                                        </form>
-                                    </div>
-                                <?php endif; ?>
-                            </div>
-                        <?php endforeach; ?>
-                    <?php endif; ?>
-                </div>
-            </div>
-
-            <!-- Monitored Servers Grid -->
-            <div class="panel panel-default" style="border-radius: 6px; border: 1px solid #e2e8f0;">
-                <div class="panel-heading" style="background: #fff; border-bottom: 2px solid #3182ce; font-weight: 700; color: #2b6cb0;">
-                    <i class="fas fa-server"></i> Monitored Hosting Servers & Control Panels (<?php echo $totalServers; ?>)
-                </div>
-                <div class="panel-body">
-                    <?php if ($servers->isEmpty()): ?>
-                        <p class="text-muted">No active servers found in WHMCS.</p>
-                    <?php else: ?>
-                        <div class="row" style="display: flex; flex-wrap: wrap; gap: 15px;">
-                            <?php foreach ($servers as $srv): ?>
-                                <?php 
-                                    $isReachable = !empty($srv->is_reachable);
-                                    $isMonitored = !isset($srv->is_monitored) || (int) $srv->is_monitored === 1;
-                                    $accounts = !empty($srv->accounts_data_json) ? json_decode($srv->accounts_data_json, true) : [];
-                                    $acctCount = is_array($accounts) ? count($accounts) : 0;
-                                    $load = (string) ($srv->server_load ?? 'N/A');
-                                    $lastPolled = !empty($srv->last_polled_at) ? substr((string)$srv->last_polled_at, 0, 16) : 'Never';
-                                    
-                                    // Determine Server Role Badge
-                                    $resolvedRole = (string) ($srv->server_role ?? 'auto');
-                                    if ($resolvedRole === 'auto' || empty($resolvedRole)) {
-                                        $resolvedRole = \Sahdev\Lib\ServerTelemetryService::detectServerRole($srv);
-                                    }
-
-                                    $roleBadgeHtml = '';
-                                    if ($resolvedRole === 'root') {
-                                        $roleBadgeHtml = '<span class="label" style="background: #1a365d; color: #fff; font-size: 10px; padding: 2px 6px; border-radius: 3px;" title="Root Administrator Access"><i class="fas fa-shield-alt"></i> ROOT SERVER</span>';
-                                    } elseif ($resolvedRole === 'reseller') {
-                                        $roleBadgeHtml = '<span class="label" style="background: #553c9e; color: #fff; font-size: 10px; padding: 2px 6px; border-radius: 3px;" title="WHM Reseller Account"><i class="fas fa-server"></i> RESELLER WHM</span>';
-                                    } elseif ($resolvedRole === 'vps_node') {
-                                        $roleBadgeHtml = '<span class="label" style="background: #234e52; color: #fff; font-size: 10px; padding: 2px 6px; border-radius: 3px;" title="Virtualizor VPS Node"><i class="fas fa-network-wired"></i> VPS NODE</span>';
-                                    } else {
-                                        $roleBadgeHtml = '<span class="label label-info" style="font-size: 10px; padding: 2px 6px;">' . strtoupper(htmlspecialchars($srv->server_type ?: 'cPanel')) . '</span>';
-                                    }
-
-                                    $statsPayload = !empty($srv->server_stats_json) ? json_decode($srv->server_stats_json, true) : [];
-                                    $servicesList = $statsPayload['services'] ?? [];
-                                    $disksList = $statsPayload['disks'] ?? [];
-                                    
-                                    // Categorized Flagged Warnings
-                                    $serviceOutages = $statsPayload['flagged_service_outages'] ?? [];
-                                    $systemWarnings = $statsPayload['flagged_system_warnings'] ?? [];
-                                    $accountNotices = $statsPayload['flagged_account_notices'] ?? [];
-
-                                    // Graceful backward compatibility
-                                    if (empty($serviceOutages) && empty($systemWarnings) && !empty($statsPayload['flagged_items'])) {
-                                        foreach ($statsPayload['flagged_items'] as $item) {
-                                            if (strpos($item, 'Account') !== false) {
-                                                $accountNotices[] = $item;
-                                            } elseif (strpos($item, 'DOWN') !== false || strpos($item, 'unreachable') !== false || strpos($item, 'Critical') !== false) {
-                                                $serviceOutages[] = $item;
-                                            } else {
-                                                $systemWarnings[] = $item;
-                                            }
-                                        }
-                                    }
-                                    
-                                    // Build unified items table (Services + System metrics + Disks)
-                                    $tableRows = [];
-
-                                    // 1. Services
-                                    foreach ($servicesList as $s) {
-                                        $tableRows[] = [
-                                            'name' => $s['name'] ?? '',
-                                            'details' => $s['details'] ?? 'up',
-                                            'status' => $s['status'] ?? 'ok',
-                                            'message' => $s['message'] ?? ("“" . ($s['name'] ?? '') . "” is ok."),
-                                        ];
-                                    }
-
-                                    // 2. System Metrics (Only if reported)
-                                    if ($load !== 'N/A' && $load !== '') {
-                                        $tableRows[] = [
-                                            'name' => 'Server Load',
-                                            'details' => $load,
-                                            'status' => 'ok',
-                                            'message' => '“Server Load” is ok.',
-                                        ];
-                                    }
-                                    if (!empty($statsPayload['cpu_count'])) {
-                                        $tableRows[] = [
-                                            'name' => 'CPU Count',
-                                            'details' => (string) $statsPayload['cpu_count'],
-                                            'status' => 'ok',
-                                            'message' => '“CPU Count” is ok.',
-                                        ];
-                                    }
-                                    if (isset($statsPayload['memory_used_percent'])) {
-                                        $memVal = round((float) $statsPayload['memory_used_percent'], 2);
-                                        $tableRows[] = [
-                                            'name' => 'Memory Used',
-                                            'details' => "{$memVal}%",
-                                            'status' => $memVal >= 90 ? 'warning' : 'ok',
-                                            'message' => "“Memory Used” is " . ($memVal >= 90 ? 'reporting high usage.' : 'ok.'),
-                                        ];
-                                    }
-                                    if (isset($statsPayload['swap_used_percent'])) {
-                                        $swapVal = round((float) $statsPayload['swap_used_percent'], 2);
-                                        $tableRows[] = [
-                                            'name' => 'Swap',
-                                            'details' => "{$swapVal}%",
-                                            'status' => $swapVal >= 80 ? 'warning' : 'ok',
-                                            'message' => "“Swap” is " . ($swapVal >= 80 ? 'reporting warnings.' : 'ok.'),
-                                        ];
-                                    }
-
-                                    // 3. Disks
-                                    foreach ($disksList as $d) {
-                                        $tableRows[] = [
-                                            'name' => $d['name'] ?? ("Disk " . ($d['mount'] ?? '')),
-                                            'details' => $d['details'] ?? (($d['percent'] ?? '0') . '%'),
-                                            'status' => $d['status'] ?? 'ok',
-                                            'message' => $d['message'] ?? ("“Disk " . ($d['mount'] ?? '') . "” is ok."),
-                                        ];
-                                    }
-
-                                    $totalItemsCount = count($tableRows);
-                                    $hasOutages = !empty($serviceOutages);
-                                    $hasWarnings = !empty($systemWarnings);
-                                    $hasIssues = $hasOutages || $hasWarnings;
-
-                                    $cardBorder = !$isReachable ? '#feb2b2' : ($hasOutages ? '#feb2b2' : ($hasWarnings ? '#fbd38d' : '#e2e8f0'));
-                                    $cardTopBorder = !$isReachable ? '#e53e3e' : ($hasOutages ? '#e53e3e' : ($hasWarnings ? '#dd6b20' : '#38a169'));
-                                ?>
-                                <div style="flex: 1; min-width: 320px; max-width: 460px; background: #fff; border: 1px solid <?php echo $cardBorder; ?>; border-top: 3px solid <?php echo $cardTopBorder; ?>; border-radius: 6px; padding: 14px; display: flex; flex-direction: column; justify-content: space-between;">
-                                    <div>
-                                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
-                                            <div>
-                                                <div style="display: flex; align-items: center; gap: 6px;">
-                                                    <strong style="font-size: 15px; color: #2d3748;"><?php echo htmlspecialchars($srv->server_name); ?></strong>
-                                                    <?php echo $roleBadgeHtml; ?>
+                                        <?php if (!empty($inc->broadcast_template)): ?>
+                                            <div style="margin-top: 12px; background: #fff; border: 1px solid #edf2f7; border-radius: 5px; padding: 10px;">
+                                                <div style="font-size: 12px; font-weight: 700; color: #2b6cb0; margin-bottom: 5px;">
+                                                    <i class="fas fa-bullhorn"></i> Proposed Broadcast / Mass Reply:
                                                 </div>
-                                                <div style="font-size: 12px; color: #718096;"><?php echo htmlspecialchars($srv->hostname ?: $srv->ipaddress); ?></div>
-                                            </div>
-                                            <div style="display: flex; align-items: center; gap: 6px;">
-                                                <a href="configservers.php?action=manage&id=<?php echo $srv->server_id; ?>" target="_blank" class="btn btn-default btn-xs" style="font-size: 11px; font-weight: 600;" title="Login to Server Control Panel">
-                                                    <i class="fas fa-external-link-alt"></i> Access
-                                                </a>
-                                                <?php if (!$isMonitored): ?>
-                                                    <span class="label label-default" style="background: #edf2f7; color: #718096;" title="Polling Paused in Cron"><i class="fas fa-pause"></i> Paused</span>
-                                                <?php elseif ($isReachable && !$hasOutages): ?>
-                                                    <span class="label label-success"><i class="fas fa-check"></i> Online</span>
-                                                <?php elseif ($isReachable && $hasOutages): ?>
-                                                    <span class="label label-warning"><i class="fas fa-exclamation-triangle"></i> Degraded</span>
-                                                <?php else: ?>
-                                                    <span class="label label-danger"><i class="fas fa-times"></i> Offline</span>
+                                                <pre style="font-size: 12px; background: #f7fafc; padding: 8px; border-radius: 4px; margin-bottom: 8px; white-space: pre-wrap;"><?php echo htmlspecialchars($inc->broadcast_template); ?></pre>
+                                                
+                                                <?php if ($canManageIncidents): ?>
+                                                    <form method="post" action="<?php echo $actionUrl; ?>" onsubmit="return confirm('Broadcast this reply to all <?php echo $ticketCount; ?> affected tickets?');">
+                                                        <?php echo $csrfToken; ?>
+                                                        <input type="hidden" name="incident_id" value="<?php echo $inc->id; ?>" />
+                                                        <button type="submit" name="apply_broadcast_reply" value="1" class="btn btn-primary btn-xs">
+                                                            <i class="fas fa-paper-plane"></i> 1-Click Broadcast Reply to All <?php echo $ticketCount; ?> Tickets
+                                                        </button>
+                                                    </form>
                                                 <?php endif; ?>
                                             </div>
-                                        </div>
-
-                                        <div style="font-size: 12px; margin: 8px 0; display: flex; justify-content: space-between; background: #f7fafc; padding: 6px 10px; border-radius: 4px;">
-                                            <div><strong>Load:</strong> <?php echo htmlspecialchars($load); ?></div>
-                                            <div><strong>Type:</strong> <?php echo strtoupper(htmlspecialchars($srv->server_type ?: 'cPanel')); ?></div>
-                                            <div><strong>Accounts/VPS:</strong> <?php echo $acctCount; ?></div>
-                                        </div>
-
-                                        <!-- Tier 1: Service Outages (Top Priority - Red) -->
-                                        <?php if (!empty($serviceOutages)): ?>
-                                            <div style="background: #fff5f5; border: 1px solid #feb2b2; border-radius: 6px; padding: 8px 10px; margin: 8px 0;">
-                                                <strong style="font-size: 11px; color: #c53030; text-transform: uppercase; display: block; margin-bottom: 4px;">
-                                                    <i class="fas fa-fire"></i> Service Outages (<?php echo count($serviceOutages); ?>)
-                                                </strong>
-                                                <?php foreach ($serviceOutages as $outage): ?>
-                                                    <div style="font-size: 12px; color: #9b2c2c; font-weight: 600; margin-bottom: 2px;">
-                                                        <?php echo htmlspecialchars($outage); ?>
-                                                    </div>
-                                                <?php endforeach; ?>
-                                            </div>
-                                        <?php endif; ?>
-
-                                        <!-- Tier 2: System Health Warnings (Medium Priority - Orange) -->
-                                        <?php if (!empty($systemWarnings)): ?>
-                                            <div style="background: #fffaf0; border: 1px solid #feebc8; border-radius: 6px; padding: 8px 10px; margin: 8px 0;">
-                                                <strong style="font-size: 11px; color: #c05621; text-transform: uppercase; display: block; margin-bottom: 4px;">
-                                                    <i class="fas fa-exclamation-triangle"></i> System Warnings (<?php echo count($systemWarnings); ?>)
-                                                </strong>
-                                                <?php foreach ($systemWarnings as $warn): ?>
-                                                    <div style="font-size: 12px; color: #7b341e; margin-bottom: 2px;">
-                                                        <?php echo htmlspecialchars($warn); ?>
-                                                    </div>
-                                                <?php endforeach; ?>
-                                            </div>
-                                        <?php endif; ?>
-
-                                        <!-- Tier 3: Client Account Quota Notices (Low Priority - Collapsible) -->
-                                        <?php if (!empty($accountNotices)): ?>
-                                            <div style="margin: 6px 0;">
-                                                <span class="label label-default" style="font-size: 11px; background: #edf2f7; color: #4a5568; border: 1px solid #cbd5e0; cursor: pointer; display: inline-block;" data-toggle="collapse" data-target="#acctNotice<?php echo $srv->server_id; ?>">
-                                                    <i class="fas fa-user-clock"></i> <?php echo count($accountNotices); ?> Account Quota Notices <i class="fas fa-caret-down"></i>
-                                                </span>
-                                                <div class="collapse" id="acctNotice<?php echo $srv->server_id; ?>" style="margin-top: 4px; font-size: 11px; color: #718096; background: #f7fafc; padding: 6px 8px; border-radius: 4px; max-height: 110px; overflow-y: auto; border: 1px solid #e2e8f0;">
-                                                    <?php foreach ($accountNotices as $notice): ?>
-                                                        <div style="margin-bottom: 2px;">• <?php echo htmlspecialchars($notice); ?></div>
-                                                    <?php endforeach; ?>
-                                                </div>
-                                            </div>
-                                        <?php endif; ?>
-
-                                        <!-- All Healthy Indicator -->
-                                        <?php if ($isReachable && !$hasIssues && $totalItemsCount > 0): ?>
-                                            <div style="font-size: 11px; color: #276749; background: #f0fff4; border: 1px solid #c6f6d5; border-radius: 4px; padding: 4px 8px; margin: 6px 0;">
-                                                <i class="fas fa-check-circle"></i> All <?php echo $totalItemsCount; ?> monitored services & partitions operational.
-                                            </div>
-                                        <?php endif; ?>
-
-                                        <?php if (!$isReachable && !empty($srv->reachability_error)): ?>
-                                            <div class="text-danger" style="font-size: 11px; margin: 6px 0;">
-                                                <i class="fas fa-exclamation-circle"></i> <?php echo htmlspecialchars($srv->reachability_error); ?>
-                                            </div>
-                                        <?php endif; ?>
-
-                                        <!-- Collapsible Service Information Table -->
-                                        <?php if ($totalItemsCount > 0): ?>
-                                            <div style="margin-top: 8px;">
-                                                <button class="btn btn-default btn-xs" type="button" data-toggle="collapse" data-target="#srvCollapse<?php echo $srv->server_id; ?>" style="width: 100%; text-align: left; display: flex; justify-content: space-between; align-items: center; background: #f8fafc; font-size: 11px; font-weight: 600; color: #4a5568;">
-                                                    <span><i class="fas fa-list-ul"></i> Service Information (<?php echo $totalItemsCount; ?>)</span>
-                                                    <i class="fas fa-chevron-down"></i>
-                                                </button>
-
-                                                <div class="collapse" id="srvCollapse<?php echo $srv->server_id; ?>" style="margin-top: 6px; max-height: 280px; overflow-y: auto; border: 1px solid #edf2f7; border-radius: 4px;">
-                                                    <table class="table table-condensed table-striped" style="font-size: 11px; margin-bottom: 0;">
-                                                        <thead>
-                                                            <tr style="background: #edf2f7; color: #4a5568;">
-                                                                <th>Service / Resource</th>
-                                                                <th>Details</th>
-                                                                <th>Status</th>
-                                                            </tr>
-                                                        </thead>
-                                                        <tbody>
-                                                            <?php foreach ($tableRows as $row): ?>
-                                                                <?php 
-                                                                    $st = $row['status'] ?? 'ok';
-                                                                    $stColor = ($st === 'critical') ? '#e53e3e' : (($st === 'warning') ? '#dd6b20' : '#38a169');
-                                                                    $stIcon = ($st === 'critical') ? 'fa-times-circle' : (($st === 'warning') ? 'fa-exclamation-circle' : 'fa-check-circle');
-                                                                ?>
-                                                                <tr>
-                                                                    <td><strong><?php echo htmlspecialchars($row['name']); ?></strong></td>
-                                                                    <td><?php echo htmlspecialchars($row['details']); ?></td>
-                                                                    <td style="color: <?php echo $stColor; ?>; font-weight: <?php echo $st !== 'ok' ? '600' : 'normal'; ?>;">
-                                                                        <i class="fas <?php echo $stIcon; ?>"></i> <?php echo htmlspecialchars($row['message']); ?>
-                                                                    </td>
-                                                                </tr>
-                                                            <?php endforeach; ?>
-                                                        </tbody>
-                                                    </table>
-                                                </div>
-                                            </div>
                                         <?php endif; ?>
                                     </div>
-
-                                    <div style="font-size: 11px; color: #a0aec0; margin-top: 10px; border-top: 1px solid #f0f4f8; padding-top: 6px;">
-                                        Last Polled: <?php echo htmlspecialchars($lastPolled); ?>
-                                    </div>
-                                </div>
-                            <?php endforeach; ?>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
                         </div>
-                    <?php endif; ?>
-                </div>
-            </div>
+                    </div>
 
-            <!-- Modal: Manage Monitored Servers & Roles -->
-            <div class="modal fade" id="modalServerMonitoring" tabindex="-1" role="dialog">
-                <div class="modal-dialog modal-lg" role="document">
-                    <div class="modal-content">
-                        <form method="post" action="<?php echo $actionUrl; ?>">
-                            <?php echo $csrfToken; ?>
-                            <input type="hidden" name="save_server_monitoring" value="1" />
-                            
-                            <div class="modal-header" style="background: #f8fafc; border-bottom: 1px solid #e2e8f0;">
-                                <button type="button" class="close" data-dismiss="modal">&times;</button>
-                                <h4 class="modal-title" style="font-weight: 700; color: #2d3748;">
-                                    <i class="fas fa-sliders-h" style="color: #3182ce;"></i> Manage Server Telemetry & Roles
-                                </h4>
-                            </div>
-                            
-                            <div class="modal-body" style="max-height: 500px; overflow-y: auto;">
-                                <p class="text-muted" style="font-size: 13px; margin-bottom: 15px;">
-                                    Select which servers should be actively polled during cron and assign custom server roles (e.g. Root Administrator vs Reseller WHM vs Virtualizor Node).
-                                </p>
+                    <!-- Monitored Servers Grid -->
+                    <div class="panel panel-default" style="border-radius: 6px; border: 1px solid #e2e8f0;">
+                        <div class="panel-heading" style="background: #fff; border-bottom: 2px solid #3182ce; font-weight: 700; color: #2b6cb0;">
+                            <i class="fas fa-server"></i> Monitored Hosting Servers & Control Panels (<?php echo $totalServers; ?>)
+                        </div>
+                        <div class="panel-body">
+                            <?php if ($servers->isEmpty()): ?>
+                                <p class="text-muted">No active servers found in WHMCS.</p>
+                            <?php else: ?>
+                                <div class="row" style="display: flex; flex-wrap: wrap; gap: 15px;">
+                                    <?php foreach ($servers as $srv): ?>
+                                        <?php 
+                                            $isReachable = !empty($srv->is_reachable);
+                                            $isMonitored = !isset($srv->is_monitored) || (int) $srv->is_monitored === 1;
+                                            $accounts = !empty($srv->accounts_data_json) ? json_decode($srv->accounts_data_json, true) : [];
+                                            $acctCount = is_array($accounts) ? count($accounts) : 0;
+                                            $load = (string) ($srv->server_load ?? 'N/A');
+                                            $lastPolled = !empty($srv->last_polled_at) ? substr((string)$srv->last_polled_at, 0, 16) : 'Never';
+                                            
+                                            // Determine Server Role Badge
+                                            $resolvedRole = (string) ($srv->server_role ?? 'auto');
+                                            if ($resolvedRole === 'auto' || empty($resolvedRole)) {
+                                                $resolvedRole = \Sahdev\Lib\ServerTelemetryService::detectServerRole($srv);
+                                            }
 
-                                <div style="margin-bottom: 12px; display: flex; gap: 8px;">
-                                    <button type="button" class="btn btn-default btn-xs" onclick="$('.srv-chk').prop('checked', true);">
-                                        <i class="fas fa-check-square"></i> Select All
-                                    </button>
-                                    <button type="button" class="btn btn-default btn-xs" onclick="$('.srv-chk').prop('checked', false);">
-                                        <i class="fas fa-square"></i> Deselect All
-                                    </button>
+                                            $roleBadgeHtml = '';
+                                            if ($resolvedRole === 'root') {
+                                                $roleBadgeHtml = '<span class="label" style="background: #1a365d; color: #fff; font-size: 10px; padding: 2px 6px; border-radius: 3px;" title="Root Administrator Access"><i class="fas fa-shield-alt"></i> ROOT SERVER</span>';
+                                            } elseif ($resolvedRole === 'reseller') {
+                                                $roleBadgeHtml = '<span class="label" style="background: #553c9e; color: #fff; font-size: 10px; padding: 2px 6px; border-radius: 3px;" title="WHM Reseller Account"><i class="fas fa-server"></i> RESELLER WHM</span>';
+                                            } elseif ($resolvedRole === 'vps_node') {
+                                                $roleBadgeHtml = '<span class="label" style="background: #234e52; color: #fff; font-size: 10px; padding: 2px 6px; border-radius: 3px;" title="Virtualizor VPS Node"><i class="fas fa-network-wired"></i> VPS NODE</span>';
+                                            } else {
+                                                $roleBadgeHtml = '<span class="label label-info" style="font-size: 10px; padding: 2px 6px;">' . strtoupper(htmlspecialchars($srv->server_type ?: 'cPanel')) . '</span>';
+                                            }
+
+                                            $statsPayload = !empty($srv->server_stats_json) ? json_decode($srv->server_stats_json, true) : [];
+                                            $servicesList = $statsPayload['services'] ?? [];
+                                            $disksList = $statsPayload['disks'] ?? [];
+                                            
+                                            // Categorized Flagged Warnings
+                                            $serviceOutages = $statsPayload['flagged_service_outages'] ?? [];
+                                            $systemWarnings = $statsPayload['flagged_system_warnings'] ?? [];
+                                            $accountNotices = $statsPayload['flagged_account_notices'] ?? [];
+
+                                            // Graceful backward compatibility
+                                            if (empty($serviceOutages) && empty($systemWarnings) && !empty($statsPayload['flagged_items'])) {
+                                                foreach ($statsPayload['flagged_items'] as $item) {
+                                                    if (strpos($item, 'Account') !== false) {
+                                                        $accountNotices[] = $item;
+                                                    } elseif (strpos($item, 'DOWN') !== false || strpos($item, 'unreachable') !== false || strpos($item, 'Critical') !== false) {
+                                                        $serviceOutages[] = $item;
+                                                    } else {
+                                                        $systemWarnings[] = $item;
+                                                    }
+                                                }
+                                            }
+                                            
+                                            // Build unified items table (Services + System metrics + Disks)
+                                            $tableRows = [];
+
+                                            // 1. Services
+                                            foreach ($servicesList as $s) {
+                                                $tableRows[] = [
+                                                    'name' => $s['name'] ?? 'Service',
+                                                    'details' => $s['details'] ?? ($s['version'] ?? 'up'),
+                                                    'status' => $s['status'] ?? 'ok',
+                                                    'message' => $s['message'] ?? ("“" . ($s['name'] ?? 'Service') . "” is ok."),
+                                                ];
+                                            }
+
+                                            // 2. System Metrics
+                                            if (isset($statsPayload['cpu_count'])) {
+                                                $tableRows[] = [
+                                                    'name' => 'CPUs',
+                                                    'details' => (string)$statsPayload['cpu_count'],
+                                                    'status' => 'ok',
+                                                    'message' => '“CPUs” is ok.',
+                                                ];
+                                            }
+                                            if (isset($statsPayload['memory_used_percent'])) {
+                                                $memVal = round((float) $statsPayload['memory_used_percent'], 2);
+                                                $tableRows[] = [
+                                                    'name' => 'Memory',
+                                                    'details' => "{$memVal}%",
+                                                    'status' => $memVal >= 90 ? 'critical' : ($memVal >= 80 ? 'warning' : 'ok'),
+                                                    'message' => "“Memory” is " . ($memVal >= 80 ? 'reporting high utilization.' : 'ok.'),
+                                                ];
+                                            }
+                                            if (isset($statsPayload['swap_used_percent'])) {
+                                                $swapVal = round((float) $statsPayload['swap_used_percent'], 2);
+                                                $tableRows[] = [
+                                                    'name' => 'Swap',
+                                                    'details' => "{$swapVal}%",
+                                                    'status' => $swapVal >= 80 ? 'warning' : 'ok',
+                                                    'message' => "“Swap” is " . ($swapVal >= 80 ? 'reporting warnings.' : 'ok.'),
+                                                ];
+                                            }
+
+                                            // 3. Disks
+                                            foreach ($disksList as $d) {
+                                                $tableRows[] = [
+                                                    'name' => $d['name'] ?? ("Disk " . ($d['mount'] ?? '')),
+                                                    'details' => $d['details'] ?? (($d['percent'] ?? '0') . '%'),
+                                                    'status' => $d['status'] ?? 'ok',
+                                                    'message' => $d['message'] ?? ("“Disk " . ($d['mount'] ?? '') . "” is ok."),
+                                                ];
+                                            }
+
+                                            $totalItemsCount = count($tableRows);
+                                            $hasOutages = !empty($serviceOutages);
+                                            $hasWarnings = !empty($systemWarnings);
+                                            $hasIssues = $hasOutages || $hasWarnings;
+
+                                            $cardBorder = !$isReachable ? '#feb2b2' : ($hasOutages ? '#feb2b2' : ($hasWarnings ? '#fbd38d' : '#e2e8f0'));
+                                            $cardTopBorder = !$isReachable ? '#e53e3e' : ($hasOutages ? '#e53e3e' : ($hasWarnings ? '#dd6b20' : '#38a169'));
+                                        ?>
+                                        <div style="flex: 1; min-width: 320px; max-width: 460px; background: #fff; border: 1px solid <?php echo $cardBorder; ?>; border-top: 3px solid <?php echo $cardTopBorder; ?>; border-radius: 6px; padding: 14px; display: flex; flex-direction: column; justify-content: space-between;">
+                                            <div>
+                                                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+                                                    <div>
+                                                        <div style="display: flex; align-items: center; gap: 6px;">
+                                                            <strong style="font-size: 15px; color: #2d3748;"><?php echo htmlspecialchars($srv->server_name); ?></strong>
+                                                            <?php echo $roleBadgeHtml; ?>
+                                                        </div>
+                                                        <div style="font-size: 12px; color: #718096;"><?php echo htmlspecialchars($srv->hostname ?: $srv->ipaddress); ?></div>
+                                                    </div>
+                                                    <div style="display: flex; align-items: center; gap: 6px;">
+                                                        <?php if ($canAccessServer): ?>
+                                                            <a href="configservers.php?action=manage&id=<?php echo $srv->server_id; ?>" target="_blank" class="btn btn-default btn-xs" style="font-size: 11px; font-weight: 600;" title="Login to Server Control Panel">
+                                                                <i class="fas fa-external-link-alt"></i> Access
+                                                            </a>
+                                                        <?php endif; ?>
+                                                        <?php if (!$isMonitored): ?>
+                                                            <span class="label label-default" style="background: #edf2f7; color: #718096;" title="Polling Paused in Cron"><i class="fas fa-pause"></i> Paused</span>
+                                                        <?php elseif ($isReachable && !$hasOutages): ?>
+                                                            <span class="label label-success"><i class="fas fa-check"></i> Online</span>
+                                                        <?php elseif ($isReachable && $hasOutages): ?>
+                                                            <span class="label label-warning"><i class="fas fa-exclamation-triangle"></i> Degraded</span>
+                                                        <?php else: ?>
+                                                            <span class="label label-danger"><i class="fas fa-times"></i> Offline</span>
+                                                        <?php endif; ?>
+                                                    </div>
+                                                </div>
+
+                                                <div style="font-size: 12px; margin: 8px 0; display: flex; justify-content: space-between; background: #f7fafc; padding: 6px 10px; border-radius: 4px;">
+                                                    <div><strong>Load:</strong> <?php echo htmlspecialchars($load); ?></div>
+                                                    <div><strong>Type:</strong> <?php echo strtoupper(htmlspecialchars($srv->server_type ?: 'cPanel')); ?></div>
+                                                    <div><strong>Accounts/VPS:</strong> <?php echo $acctCount; ?></div>
+                                                </div>
+
+                                                <!-- Tier 1: Service Outages (Top Priority - Red) -->
+                                                <?php if (!empty($serviceOutages)): ?>
+                                                    <div style="background: #fff5f5; border: 1px solid #feb2b2; border-radius: 6px; padding: 8px 10px; margin: 8px 0;">
+                                                        <strong style="font-size: 11px; color: #c53030; text-transform: uppercase; display: block; margin-bottom: 4px;">
+                                                            <i class="fas fa-fire"></i> Service Outages (<?php echo count($serviceOutages); ?>)
+                                                        </strong>
+                                                        <?php foreach ($serviceOutages as $outage): ?>
+                                                            <div style="font-size: 12px; color: #9b2c2c; font-weight: 600; margin-bottom: 2px;">
+                                                                <?php echo htmlspecialchars($outage); ?>
+                                                            </div>
+                                                        <?php endforeach; ?>
+                                                    </div>
+                                                <?php endif; ?>
+
+                                                <!-- Tier 2: System Health Warnings (Medium Priority - Orange) -->
+                                                <?php if (!empty($systemWarnings)): ?>
+                                                    <div style="background: #fffaf0; border: 1px solid #feebc8; border-radius: 6px; padding: 8px 10px; margin: 8px 0;">
+                                                        <strong style="font-size: 11px; color: #c05621; text-transform: uppercase; display: block; margin-bottom: 4px;">
+                                                            <i class="fas fa-exclamation-triangle"></i> System Warnings (<?php echo count($systemWarnings); ?>)
+                                                        </strong>
+                                                        <?php foreach ($systemWarnings as $warn): ?>
+                                                            <div style="font-size: 12px; color: #7b341e; margin-bottom: 2px;">
+                                                                <?php echo htmlspecialchars($warn); ?>
+                                                            </div>
+                                                        <?php endforeach; ?>
+                                                    </div>
+                                                <?php endif; ?>
+
+                                                <!-- Tier 3: Client Account Quota Notices (Low Priority - Collapsible) -->
+                                                <?php if (!empty($accountNotices)): ?>
+                                                    <div style="margin: 6px 0;">
+                                                        <span class="label label-default" style="font-size: 11px; background: #edf2f7; color: #4a5568; border: 1px solid #cbd5e0; cursor: pointer; display: inline-block;" data-toggle="collapse" data-target="#acctNotice<?php echo $srv->server_id; ?>">
+                                                            <i class="fas fa-user-clock"></i> <?php echo count($accountNotices); ?> Account Quota Notices <i class="fas fa-caret-down"></i>
+                                                        </span>
+                                                        <div class="collapse" id="acctNotice<?php echo $srv->server_id; ?>" style="margin-top: 4px; font-size: 11px; color: #718096; background: #f7fafc; padding: 6px 8px; border-radius: 4px; max-height: 110px; overflow-y: auto; border: 1px solid #e2e8f0;">
+                                                            <?php foreach ($accountNotices as $notice): ?>
+                                                                <div style="margin-bottom: 2px;">• <?php echo htmlspecialchars($notice); ?></div>
+                                                            <?php endforeach; ?>
+                                                        </div>
+                                                    </div>
+                                                <?php elseif ($totalItemsCount > 0 && !$hasIssues): ?>
+                                                    <div style="font-size: 11px; color: #276749; background: #f0fff4; border: 1px solid #c6f6d5; border-radius: 4px; padding: 4px 8px; margin: 6px 0;">
+                                                        <i class="fas fa-check-circle"></i> All <?php echo $totalItemsCount; ?> monitored services & partitions operational.
+                                                    </div>
+                                                <?php endif; ?>
+
+                                                <?php if (!$isReachable && !empty($srv->reachability_error)): ?>
+                                                    <div class="text-danger" style="font-size: 11px; margin: 6px 0;">
+                                                        <i class="fas fa-exclamation-circle"></i> <?php echo htmlspecialchars($srv->reachability_error); ?>
+                                                    </div>
+                                                <?php endif; ?>
+
+                                                <!-- Collapsible Service Information Table -->
+                                                <?php if ($totalItemsCount > 0): ?>
+                                                    <div style="margin-top: 8px;">
+                                                        <button class="btn btn-default btn-xs" type="button" data-toggle="collapse" data-target="#srvCollapse<?php echo $srv->server_id; ?>" style="width: 100%; text-align: left; display: flex; justify-content: space-between; align-items: center; background: #f8fafc; font-size: 11px; font-weight: 600; color: #4a5568;">
+                                                            <span><i class="fas fa-list-ul"></i> Service Information (<?php echo $totalItemsCount; ?>)</span>
+                                                            <i class="fas fa-chevron-down"></i>
+                                                        </button>
+
+                                                        <div class="collapse" id="srvCollapse<?php echo $srv->server_id; ?>" style="margin-top: 6px; max-height: 280px; overflow-y: auto; border: 1px solid #edf2f7; border-radius: 4px;">
+                                                            <table class="table table-condensed table-striped" style="font-size: 11px; margin-bottom: 0;">
+                                                                <thead>
+                                                                    <tr style="background: #edf2f7; color: #4a5568;">
+                                                                        <th>Service / Resource</th>
+                                                                        <th>Details</th>
+                                                                        <th>Status</th>
+                                                                    </tr>
+                                                                </thead>
+                                                                <tbody>
+                                                                    <?php foreach ($tableRows as $row): ?>
+                                                                        <?php 
+                                                                            $st = $row['status'] ?? 'ok';
+                                                                            $stColor = ($st === 'critical') ? '#e53e3e' : (($st === 'warning') ? '#dd6b20' : '#38a169');
+                                                                            $stIcon = ($st === 'critical') ? 'fa-times-circle' : (($st === 'warning') ? 'fa-exclamation-circle' : 'fa-check-circle');
+                                                                        ?>
+                                                                        <tr>
+                                                                            <td><strong><?php echo htmlspecialchars($row['name']); ?></strong></td>
+                                                                            <td><?php echo htmlspecialchars($row['details']); ?></td>
+                                                                            <td style="color: <?php echo $stColor; ?>; font-weight: <?php echo $st !== 'ok' ? '600' : 'normal'; ?>;">
+                                                                                <i class="fas <?php echo $stIcon; ?>"></i> <?php echo htmlspecialchars($row['message']); ?>
+                                                                            </td>
+                                                                        </tr>
+                                                                    <?php endforeach; ?>
+                                                                </tbody>
+                                                            </table>
+                                                        </div>
+                                                    </div>
+                                                <?php endif; ?>
+                                            </div>
+
+                                            <div style="font-size: 11px; color: #a0aec0; margin-top: 10px; border-top: 1px solid #f0f4f8; padding-top: 6px;">
+                                                Last Polled: <?php echo htmlspecialchars($lastPolled); ?>
+                                            </div>
+                                        </div>
+                                    <?php endforeach; ?>
                                 </div>
+                            <?php endif; ?>
+                        </div>
+                    </div>
 
-                                <table class="table table-striped table-bordered" style="font-size: 12px;">
-                                    <thead>
-                                        <tr style="background: #edf2f7; color: #4a5568;">
-                                            <th style="width: 40px; text-align: center;">Poll</th>
-                                            <th>Server Name & Host</th>
-                                            <th>Type</th>
-                                            <th style="width: 200px;">Server Role</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <?php foreach ($servers as $sObj): ?>
-                                            <?php 
-                                                $sId = (int) $sObj->server_id;
-                                                $isMon = !isset($sObj->is_monitored) || (int) $sObj->is_monitored === 1;
-                                                $curRole = (string) ($sObj->server_role ?? 'auto');
-                                            ?>
-                                            <tr>
-                                                <td style="text-align: center; vertical-align: middle;">
-                                                    <input type="checkbox" name="monitored_servers[<?php echo $sId; ?>]" value="1" class="srv-chk" <?php echo $isMon ? 'checked' : ''; ?> />
-                                                </td>
-                                                <td>
-                                                    <strong><?php echo htmlspecialchars($sObj->server_name); ?></strong>
-                                                    <div style="font-size: 11px; color: #718096;"><?php echo htmlspecialchars($sObj->hostname ?: $sObj->ipaddress); ?></div>
-                                                </td>
-                                                <td style="vertical-align: middle;">
-                                                    <span class="label label-default"><?php echo strtoupper(htmlspecialchars($sObj->server_type ?: 'cpanel')); ?></span>
-                                                </td>
-                                                <td style="vertical-align: middle;">
-                                                    <select name="server_roles[<?php echo $sId; ?>]" class="form-control input-sm">
-                                                        <option value="auto" <?php echo $curRole === 'auto' ? 'selected' : ''; ?>>Auto-Detect</option>
-                                                        <option value="root" <?php echo $curRole === 'root' ? 'selected' : ''; ?>>Root Server</option>
-                                                        <option value="reseller" <?php echo $curRole === 'reseller' ? 'selected' : ''; ?>>Reseller WHM</option>
-                                                        <option value="vps_node" <?php echo $curRole === 'vps_node' ? 'selected' : ''; ?>>Virtualizor VPS Node</option>
-                                                        <option value="plesk" <?php echo $curRole === 'plesk' ? 'selected' : ''; ?>>Plesk Server</option>
-                                                        <option value="directadmin" <?php echo $curRole === 'directadmin' ? 'selected' : ''; ?>>DirectAdmin</option>
-                                                    </select>
-                                                </td>
-                                            </tr>
-                                        <?php endforeach; ?>
-                                    </tbody>
-                                </table>
+                    <!-- Modal: Manage Monitored Servers & Roles -->
+                    <div class="modal fade" id="modalServerMonitoring" tabindex="-1" role="dialog">
+                        <div class="modal-dialog modal-lg" role="document">
+                            <div class="modal-content">
+                                <form method="post" action="<?php echo $actionUrl; ?>">
+                                    <?php echo $csrfToken; ?>
+                                    <input type="hidden" name="save_server_monitoring" value="1" />
+                                    
+                                    <div class="modal-header" style="background: #f8fafc; border-bottom: 1px solid #e2e8f0;">
+                                        <button type="button" class="close" data-dismiss="modal">&times;</button>
+                                        <h4 class="modal-title" style="font-weight: 700; color: #2d3748;">
+                                            <i class="fas fa-sliders-h" style="color: #3182ce;"></i> Manage Server Telemetry & Roles
+                                        </h4>
+                                    </div>
+                                    
+                                    <div class="modal-body" style="max-height: 500px; overflow-y: auto;">
+                                        <p class="text-muted" style="font-size: 13px; margin-bottom: 15px;">
+                                            Select which servers should be actively polled during cron and assign custom server roles (e.g. Root Administrator vs Reseller WHM vs Virtualizor Node).
+                                        </p>
+
+                                        <div style="margin-bottom: 12px; display: flex; gap: 8px;">
+                                            <button type="button" class="btn btn-default btn-xs" onclick="$('.srv-chk').prop('checked', true);">
+                                                <i class="fas fa-check-square"></i> Select All
+                                            </button>
+                                            <button type="button" class="btn btn-default btn-xs" onclick="$('.srv-chk').prop('checked', false);">
+                                                <i class="fas fa-square"></i> Deselect All
+                                            </button>
+                                        </div>
+
+                                        <table class="table table-striped table-bordered" style="font-size: 12px;">
+                                            <thead>
+                                                <tr style="background: #edf2f7; color: #4a5568;">
+                                                    <th style="width: 40px; text-align: center;">Poll</th>
+                                                    <th>Server Name & Host</th>
+                                                    <th>Type</th>
+                                                    <th style="width: 200px;">Server Role</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <?php foreach ($servers as $sObj): ?>
+                                                    <?php 
+                                                        $sId = (int) $sObj->server_id;
+                                                        $isMon = !isset($sObj->is_monitored) || (int) $sObj->is_monitored === 1;
+                                                        $curRole = (string) ($sObj->server_role ?? 'auto');
+                                                    ?>
+                                                    <tr>
+                                                        <td style="text-align: center; vertical-align: middle;">
+                                                            <input type="checkbox" name="monitored_servers[<?php echo $sId; ?>]" value="1" class="srv-chk" <?php echo $isMon ? 'checked' : ''; ?> />
+                                                        </td>
+                                                        <td>
+                                                            <strong><?php echo htmlspecialchars($sObj->server_name); ?></strong>
+                                                            <div style="font-size: 11px; color: #718096;"><?php echo htmlspecialchars($sObj->hostname ?: $sObj->ipaddress); ?></div>
+                                                        </td>
+                                                        <td style="vertical-align: middle;">
+                                                            <span class="label label-default"><?php echo strtoupper(htmlspecialchars($sObj->server_type ?: 'cpanel')); ?></span>
+                                                        </td>
+                                                        <td style="vertical-align: middle;">
+                                                            <select name="server_roles[<?php echo $sId; ?>]" class="form-control input-sm">
+                                                                <option value="auto" <?php echo $curRole === 'auto' ? 'selected' : ''; ?>>Auto-Detect</option>
+                                                                <option value="root" <?php echo $curRole === 'root' ? 'selected' : ''; ?>>Root Server</option>
+                                                                <option value="reseller" <?php echo $curRole === 'reseller' ? 'selected' : ''; ?>>Reseller WHM</option>
+                                                                <option value="vps_node" <?php echo $curRole === 'vps_node' ? 'selected' : ''; ?>>Virtualizor VPS Node</option>
+                                                                <option value="plesk" <?php echo $curRole === 'plesk' ? 'selected' : ''; ?>>Plesk Server</option>
+                                                                <option value="directadmin" <?php echo $curRole === 'directadmin' ? 'selected' : ''; ?>>DirectAdmin</option>
+                                                            </select>
+                                                        </td>
+                                                    </tr>
+                                                <?php endforeach; ?>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    
+                                    <div class="modal-footer" style="background: #f8fafc; border-top: 1px solid #e2e8f0;">
+                                        <button type="button" class="btn btn-default" data-dismiss="modal">Cancel</button>
+                                        <button type="submit" class="btn btn-primary">
+                                            <i class="fas fa-save"></i> Save Preferences
+                                        </button>
+                                    </div>
+                                </form>
                             </div>
-                            
-                            <div class="modal-footer" style="background: #f8fafc; border-top: 1px solid #e2e8f0;">
-                                <button type="button" class="btn btn-default" data-dismiss="modal">Cancel</button>
-                                <button type="submit" class="btn btn-primary">
-                                    <i class="fas fa-save"></i> Save Preferences
-                                </button>
-                            </div>
-                        </form>
+                        </div>
+                    </div>
+
+                </div>
+                <?php
+                return ob_get_clean();
+    }
+
+    /**
+     * Role-Based Access Control (RBAC) Management Center.
+     * Allows administrators to configure which WHMCS Admin Roles have access to
+     * Server Telemetry, WHM SSO, Ticket AI, Diagnostics, Incidents, and Settings.
+     *
+     * @return string
+     */
+    public function permissions()
+    {
+        $adminId = (int) ($_SESSION['adminid'] ?? 0);
+        require_once dirname(__DIR__) . '/lib/PermissionService.php';
+        \Sahdev\Lib\PermissionService::ensureSchema();
+
+        if (!\Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_SETTINGS_MANAGE)) {
+            return $this->getNavigationMarkup('settings') . '<div class="alert alert-danger" style="margin:20px;"><i class="fas fa-lock"></i> Access Denied: Your WHMCS admin role does not have permission to manage Role Permissions.</div>';
+        }
+
+        $csrfToken = generate_token("form");
+        $successMessage = '';
+        $errorMessage = '';
+        $actionUrl = htmlspecialchars($this->moduleVars['modulelink']) . '&action=permissions';
+
+        $allRoles = \Sahdev\Lib\PermissionService::getAllRoles();
+        $definitions = \Sahdev\Lib\PermissionService::getPermissionDefinitions();
+
+        // Extract flat list of all permission keys
+        $allPermKeys = [];
+        foreach ($definitions as $catKey => $cat) {
+            foreach ($cat['permissions'] as $pKey => $pDef) {
+                $allPermKeys[] = $pKey;
+            }
+        }
+
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            check_token("form");
+
+            if (isset($_POST['save_role_permissions'])) {
+                try {
+                    $postedPerms = (array) ($_POST['role_perms'] ?? []);
+                    foreach ($allRoles as $role) {
+                        $rId = (int) $role['id'];
+                        $roleMap = [];
+                        foreach ($allPermKeys as $pKey) {
+                            $roleMap[$pKey] = !empty($postedPerms[$rId][$pKey]);
+                        }
+                        // Super Admin role (1) always retains settings_manage
+                        if ($rId === 1) {
+                            $roleMap[\Sahdev\Lib\PermissionService::PERM_SETTINGS_MANAGE] = true;
+                        }
+                        \Sahdev\Lib\PermissionService::saveRolePermissions($rId, $roleMap);
+                    }
+                    $successMessage = 'Role permissions successfully saved.';
+                } catch (\Throwable $e) {
+                    $errorMessage = 'Failed to save permissions: ' . $e->getMessage();
+                }
+            } elseif (isset($_POST['reset_role_defaults'])) {
+                try {
+                    foreach ($allRoles as $role) {
+                        $defaults = \Sahdev\Lib\PermissionService::getDefaultPermissionsForRole((int) $role['id'], (string) $role['name']);
+                        \Sahdev\Lib\PermissionService::saveRolePermissions((int) $role['id'], $defaults);
+                    }
+                    $successMessage = 'Role permissions reset to recommended security defaults.';
+                } catch (\Throwable $e) {
+                    $errorMessage = 'Failed to reset permissions: ' . $e->getMessage();
+                }
+            }
+        }
+
+        // Load active permissions for each role
+        $rolePermissionsMap = [];
+        foreach ($allRoles as $role) {
+            $rolePermissionsMap[$role['id']] = \Sahdev\Lib\PermissionService::getRolePermissions((int) $role['id']);
+        }
+
+        ob_start();
+        ?>
+        <div class="sahdev-page-container" style="max-width: 1400px; margin: 0 auto; padding: 20px;">
+            <?php echo $this->getNavigationMarkup('permissions'); ?>
+
+            <?php if ($successMessage): ?>
+                <div class="alert alert-success" style="border-left: 4px solid #38a169; box-shadow: 0 1px 3px rgba(0,0,0,0.05); margin-bottom: 20px;">
+                    <i class="fas fa-check-circle"></i> <?php echo htmlspecialchars($successMessage); ?>
+                </div>
+            <?php endif; ?>
+
+            <?php if ($errorMessage): ?>
+                <div class="alert alert-danger" style="border-left: 4px solid #e53e3e; box-shadow: 0 1px 3px rgba(0,0,0,0.05); margin-bottom: 20px;">
+                    <i class="fas fa-exclamation-circle"></i> <?php echo htmlspecialchars($errorMessage); ?>
+                </div>
+            <?php endif; ?>
+
+            <!-- Header Card -->
+            <div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 24px; margin-bottom: 25px; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
+                    <div>
+                        <h3 style="margin: 0 0 6px 0; font-size: 20px; font-weight: 700; color: #1a202c;">
+                            <i class="fas fa-user-shield" style="color: #3182ce;"></i> Role-Based Access Control (RBAC) & Feature Permissions
+                        </h3>
+                        <p style="margin: 0; font-size: 13px; color: #718096; max-width: 850px;">
+                            Configure granular feature access for each WHMCS Admin Role group. Restrict server health metrics, WHM single-sign-on access, diagnostics tools, and intelligence data from sales or billing operators to prevent data leaks and unauthorized access.
+                        </p>
+                    </div>
+                    <div style="display: flex; gap: 10px;">
+                        <span class="label label-info" style="font-size: 12px; padding: 6px 12px; display: inline-flex; align-items: center; gap: 6px;">
+                            <i class="fas fa-shield-alt"></i> <?php echo count($allRoles); ?> Admin Role Groups
+                        </span>
                     </div>
                 </div>
             </div>
 
+            <!-- Permissions Form -->
+            <form method="post" action="<?php echo $actionUrl; ?>">
+                <?php echo $csrfToken; ?>
+
+                <div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.03); margin-bottom: 25px;">
+                    <div style="overflow-x: auto;">
+                        <table class="table table-hover" style="margin-bottom: 0; vertical-align: middle;">
+                            <thead>
+                                <tr style="background: #f8fafc; border-bottom: 2px solid #e2e8f0;">
+                                    <th style="min-width: 320px; padding: 14px 18px; font-size: 13px; color: #2d3748;">
+                                        Feature / Permission Capability
+                                    </th>
+                                    <th style="width: 90px; text-align: center; padding: 14px 10px; font-size: 12px; color: #718096;">
+                                        Risk
+                                    </th>
+                                    <?php foreach ($allRoles as $role): ?>
+                                        <?php 
+                                            $isSuper = ((int)$role['id'] === 1 || stripos($role['name'], 'admin') !== false);
+                                            $headerBg = $isSuper ? '#edf2f7' : '#f8fafc';
+                                        ?>
+                                        <th style="min-width: 140px; text-align: center; padding: 14px 10px; background: <?php echo $headerBg; ?>;">
+                                            <div style="font-size: 13px; font-weight: 700; color: #2d3748;">
+                                                <?php if ($isSuper): ?><i class="fas fa-crown" style="color: #d69e2e;"></i> <?php endif; ?>
+                                                <?php echo htmlspecialchars($role['name']); ?>
+                                            </div>
+                                            <div style="font-size: 11px; font-weight: 400; color: #718096; margin-top: 2px;">
+                                                <?php echo $role['admin_count']; ?> operator<?php echo $role['admin_count'] === 1 ? '' : 's'; ?>
+                                            </div>
+                                        </th>
+                                    <?php endforeach; ?>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($definitions as $catKey => $category): ?>
+                                    <!-- Category Header Row -->
+                                    <tr style="background: #edf2f7; border-top: 2px solid #e2e8f0;">
+                                        <td colspan="<?php echo count($allRoles) + 2; ?>" style="padding: 10px 18px; font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: #4a5568;">
+                                            <i class="fas <?php echo htmlspecialchars($category['category_icon']); ?>" style="color: #3182ce; margin-right: 6px;"></i>
+                                            <?php echo htmlspecialchars($category['category_label']); ?>
+                                        </td>
+                                    </tr>
+
+                                    <?php foreach ($category['permissions'] as $pKey => $pDef): ?>
+                                        <?php 
+                                            $risk = $pDef['risk'] ?? 'low';
+                                            $riskBadge = '';
+                                            if ($risk === 'critical') {
+                                                $riskBadge = '<span class="label label-danger" style="font-size: 10px;">Critical</span>';
+                                            } elseif ($risk === 'high') {
+                                                $riskBadge = '<span class="label label-warning" style="font-size: 10px; background: #dd6b20;">High</span>';
+                                            } elseif ($risk === 'medium') {
+                                                $riskBadge = '<span class="label label-info" style="font-size: 10px; background: #3182ce;">Medium</span>';
+                                            } else {
+                                                $riskBadge = '<span class="label label-default" style="font-size: 10px; background: #e2e8f0; color: #4a5568;">Low</span>';
+                                            }
+                                        ?>
+                                        <tr style="border-bottom: 1px solid #edf2f7;">
+                                            <td style="padding: 12px 18px;">
+                                                <strong style="font-size: 13px; color: #2d3748; display: block; margin-bottom: 2px;">
+                                                    <?php echo htmlspecialchars($pDef['label']); ?>
+                                                </strong>
+                                                <span style="font-size: 12px; color: #718096; line-height: 1.4; display: block;">
+                                                    <?php echo htmlspecialchars($pDef['description']); ?>
+                                                </span>
+                                            </td>
+                                            <td style="text-align: center; vertical-align: middle; padding: 10px;">
+                                                <?php echo $riskBadge; ?>
+                                            </td>
+                                            <?php foreach ($allRoles as $role): ?>
+                                                <?php 
+                                                    $rId = (int) $role['id'];
+                                                    $isChecked = !empty($rolePermissionsMap[$rId][$pKey]);
+                                                    $isLocked = ($rId === 1 && $pKey === \Sahdev\Lib\PermissionService::PERM_SETTINGS_MANAGE);
+                                                ?>
+                                                <td style="text-align: center; vertical-align: middle; padding: 10px;">
+                                                    <?php if ($isLocked): ?>
+                                                        <input type="hidden" name="role_perms[<?php echo $rId; ?>][<?php echo $pKey; ?>]" value="1" />
+                                                        <span class="label label-success" style="font-size: 11px; padding: 4px 8px;" title="Super Administrator always has settings access">
+                                                            <i class="fas fa-lock"></i> Always
+                                                        </span>
+                                                    <?php else: ?>
+                                                        <input type="checkbox" 
+                                                               name="role_perms[<?php echo $rId; ?>][<?php echo $pKey; ?>]" 
+                                                               value="1" 
+                                                               style="width: 17px; height: 17px; cursor: pointer; accent-color: #3182ce;" 
+                                                               <?php echo $isChecked ? 'checked' : ''; ?> />
+                                                    <?php endif; ?>
+                                                </td>
+                                            <?php endforeach; ?>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Footer Action Bar -->
+                <div style="display: flex; justify-content: space-between; align-items: center; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
+                    <div>
+                        <button type="submit" name="reset_role_defaults" value="1" class="btn btn-default" onclick="return confirm('Reset all permissions to recommended defaults for each role?');">
+                            <i class="fas fa-undo"></i> Reset to Recommended Defaults
+                        </button>
+                    </div>
+                    <div style="display: flex; gap: 10px;">
+                        <button type="submit" name="save_role_permissions" value="1" class="btn btn-primary btn-lg" style="font-size: 14px; font-weight: 600; padding: 8px 24px;">
+                            <i class="fas fa-save"></i> Save Role Permissions
+                        </button>
+                    </div>
+                </div>
+            </form>
         </div>
         <?php
         return ob_get_clean();

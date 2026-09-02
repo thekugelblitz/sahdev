@@ -116,18 +116,71 @@ if ($intensity > 3) {
     $instruction = empty($instruction) ? $intensityContext : $instruction . "\n\n" . $intensityContext;
 }
 
-$ticketNotRequiredActions = [
-    'search_canned_responses', 'generate_canned_template', 'save_canned_response', 'save_kb_article', 'delete_audit_entries',
-    'get_analytics', 'get_ticket_insights', 'trigger_cron_run', 'get_insights_queue', 'analyze_single_insight',
-    'test_whmcs_cron_http', 'run_tools_queue', 'get_tools_operations',
-    'get_open_payload', 'analyze_open_context',
-    'autopilot_test_run', 'set_ui_theme',
-];
-if (!$ticketId && !in_array($action, $ticketNotRequiredActions) && !$isGetAllowed) {
-    header('HTTP/1.1 400 Bad Request');
-    echo json_encode(['status' => 'error', 'message' => 'Missing Ticket ID.']);
-    exit;
-}
+    $ticketNotRequiredActions = [
+        'search_canned_responses', 'generate_canned_template', 'save_canned_response', 'save_kb_article', 'delete_audit_entries',
+        'get_analytics', 'get_ticket_insights', 'trigger_cron_run', 'get_insights_queue', 'analyze_single_insight',
+        'test_whmcs_cron_http', 'run_tools_queue', 'get_tools_operations',
+        'get_open_payload', 'analyze_open_context',
+        'autopilot_test_run', 'set_ui_theme', 'get_header_server_widget',
+    ];
+    if (!$ticketId && !in_array($action, $ticketNotRequiredActions) && !$isGetAllowed) {
+        header('HTTP/1.1 400 Bad Request');
+        echo json_encode(['status' => 'error', 'message' => 'Missing Ticket ID.']);
+        exit;
+    }
+
+    // Role-Based Access Control (RBAC) Permission Enforcement
+    require_once __DIR__ . '/lib/PermissionService.php';
+    \Sahdev\Lib\PermissionService::ensureSchema();
+
+    $actionPermissionMap = [
+        'get_header_server_widget'    => \Sahdev\Lib\PermissionService::PERM_TELEMETRY_VIEW,
+        'analyze_ticket'              => \Sahdev\Lib\PermissionService::PERM_TICKET_AI,
+        'get_payload'                 => \Sahdev\Lib\PermissionService::PERM_TICKET_AI,
+        'auto_analyze'                => \Sahdev\Lib\PermissionService::PERM_TICKET_AI,
+        'get_open_payload'            => \Sahdev\Lib\PermissionService::PERM_TICKET_AI,
+        'analyze_open_context'        => \Sahdev\Lib\PermissionService::PERM_TICKET_AI,
+        'save_response'               => \Sahdev\Lib\PermissionService::PERM_TICKET_AI,
+        'score_reply'                 => \Sahdev\Lib\PermissionService::PERM_ANALYTICS_VIEW,
+        'get_rewrite_payload'         => \Sahdev\Lib\PermissionService::PERM_REWRITE_REPLY,
+        'rewrite_reply'               => \Sahdev\Lib\PermissionService::PERM_REWRITE_REPLY,
+        'generate_summary'            => \Sahdev\Lib\PermissionService::PERM_SUMMARIZER,
+        'get_summary'                 => \Sahdev\Lib\PermissionService::PERM_SUMMARIZER,
+        'delete_summary'              => \Sahdev\Lib\PermissionService::PERM_SUMMARIZER,
+        'generate_historical_context' => \Sahdev\Lib\PermissionService::PERM_HISTORICAL_CTX,
+        'get_historical_context'      => \Sahdev\Lib\PermissionService::PERM_HISTORICAL_CTX,
+        'delete_historical_context'   => \Sahdev\Lib\PermissionService::PERM_HISTORICAL_CTX,
+        'search_canned_responses'     => \Sahdev\Lib\PermissionService::PERM_CANNED_KB,
+        'generate_canned_template'    => \Sahdev\Lib\PermissionService::PERM_KNOWLEDGE_MANAGE,
+        'save_canned_response'        => \Sahdev\Lib\PermissionService::PERM_KNOWLEDGE_MANAGE,
+        'save_kb_article'             => \Sahdev\Lib\PermissionService::PERM_KNOWLEDGE_MANAGE,
+        'run_tools_for_ticket'        => \Sahdev\Lib\PermissionService::PERM_TOOLS_EXECUTE,
+        'get_tools_ticket_status'     => \Sahdev\Lib\PermissionService::PERM_TOOLS_EXECUTE,
+        'run_tools_queue'             => \Sahdev\Lib\PermissionService::PERM_TOOLS_EXECUTE,
+        'get_tools_operations'        => \Sahdev\Lib\PermissionService::PERM_TOOLS_EXECUTE,
+        'run_manual_tool'             => \Sahdev\Lib\PermissionService::PERM_TOOLS_EXECUTE,
+        'autopilot_test_run'          => \Sahdev\Lib\PermissionService::PERM_SETTINGS_MANAGE,
+        'trigger_cron_run'            => \Sahdev\Lib\PermissionService::PERM_SETTINGS_MANAGE,
+        'test_whmcs_cron_http'        => \Sahdev\Lib\PermissionService::PERM_SETTINGS_MANAGE,
+        'analyze_single_insight'      => \Sahdev\Lib\PermissionService::PERM_TICKET_AI,
+        'get_ticket_insights'         => \Sahdev\Lib\PermissionService::PERM_TICKET_AI,
+        'get_insights_queue'          => \Sahdev\Lib\PermissionService::PERM_TICKET_AI,
+        'get_analytics'               => \Sahdev\Lib\PermissionService::PERM_ANALYTICS_VIEW,
+        'get_analytics_period'        => \Sahdev\Lib\PermissionService::PERM_ANALYTICS_VIEW,
+        'delete_audit_entries'        => \Sahdev\Lib\PermissionService::PERM_AUDIT_MANAGE,
+    ];
+
+    if (isset($actionPermissionMap[$action])) {
+        $requiredPerm = $actionPermissionMap[$action];
+        if (!\Sahdev\Lib\PermissionService::hasPermission((int) $adminId, $requiredPerm)) {
+            header('HTTP/1.1 403 Forbidden');
+            echo json_encode([
+                'status' => 'error',
+                'message' => "Access Denied: Your WHMCS admin role does not have permission for '{$requiredPerm}'."
+            ]);
+            exit;
+        }
+    }
 
 try {
     require_once __DIR__ . '/lib/AIProviderInterface.php';
@@ -722,34 +775,68 @@ try {
             })
             ->toArray();
 
-        // Fetch all servers
-        $serversDb = Capsule::table('tblservers as s')
-            ->leftJoin('tblsahdev_server_telemetry as st', 's.id', '=', 'st.server_id')
-            ->where('s.disabled', 0)
-            ->select(
-                's.id as server_id',
-                's.name as server_name',
-                's.hostname',
-                's.ipaddress',
-                's.type as server_type',
-                's.username',
-                'st.server_role',
-                'st.is_monitored',
-                'st.server_load',
-                'st.is_reachable',
-                'st.reachability_error',
-                'st.accounts_data_json',
-                'st.server_stats_json',
-                'st.last_polled_at'
-            )
-            ->orderBy('s.name', 'asc')
-            ->get();
+        // Ensure schema is fully migrated before querying
+        require_once __DIR__ . '/lib/ServerTelemetryService.php';
+        \Sahdev\Lib\ServerTelemetryService::ensureSchema();
+
+        if (!empty($_GET['poll_now'])) {
+            try {
+                \Sahdev\Lib\ServerTelemetryService::pollActiveServers(true);
+            } catch (\Throwable $e) {}
+        }
+
+        // Fetch all servers with fallback protection
+        try {
+            $serversDb = Capsule::table('tblservers as s')
+                ->leftJoin('tblsahdev_server_telemetry as st', 's.id', '=', 'st.server_id')
+                ->where('s.disabled', 0)
+                ->select(
+                    's.id as server_id',
+                    's.name as server_name',
+                    's.hostname',
+                    's.ipaddress',
+                    's.type as server_type',
+                    's.username',
+                    Capsule::raw('COALESCE(st.server_role, "auto") as server_role'),
+                    Capsule::raw('COALESCE(st.is_monitored, 1) as is_monitored'),
+                    'st.server_load',
+                    'st.is_reachable',
+                    'st.reachability_error',
+                    'st.accounts_data_json',
+                    'st.server_stats_json',
+                    'st.last_polled_at'
+                )
+                ->orderBy('s.name', 'asc')
+                ->get();
+        } catch (\Throwable $dbEx) {
+            \Sahdev\Lib\ServerTelemetryService::ensureSchema();
+            $serversDb = Capsule::table('tblservers as s')
+                ->leftJoin('tblsahdev_server_telemetry as st', 's.id', '=', 'st.server_id')
+                ->where('s.disabled', 0)
+                ->select(
+                    's.id as server_id',
+                    's.name as server_name',
+                    's.hostname',
+                    's.ipaddress',
+                    's.type as server_type',
+                    's.username',
+                    'st.server_load',
+                    'st.is_reachable',
+                    'st.reachability_error',
+                    'st.accounts_data_json',
+                    'st.server_stats_json',
+                    'st.last_polled_at'
+                )
+                ->orderBy('s.name', 'asc')
+                ->get();
+        }
 
         $serverList = [];
         $totalOutagesCount = 0;
         $totalWarningsCount = 0;
         $reachableCount = 0;
         $monitoredCount = 0;
+        $canAccessServer = \Sahdev\Lib\PermissionService::hasPermission((int) $adminId, \Sahdev\Lib\PermissionService::PERM_SERVER_ACCESS);
 
         foreach ($serversDb as $srv) {
             $sId = (int) $srv->server_id;
@@ -817,7 +904,7 @@ try {
                 'service_outages' => $serviceOutages,
                 'system_warnings' => $systemWarnings,
                 'account_notices_count' => count($accountNotices),
-                'access_url' => \Sahdev\Lib\ServerTelemetryService::getServerAccessUrl($sId),
+                'access_url' => $canAccessServer ? \Sahdev\Lib\ServerTelemetryService::getServerAccessUrl($sId) : '',
                 'is_context_pinned' => ($sId === $contextServerId),
                 'context_account' => $accountInfo,
             ];

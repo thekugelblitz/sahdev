@@ -31,7 +31,15 @@ function sahdev_inject_ticket_panel($vars)
     // Load Tone Defaults from DB + per-admin preferences
     $settings = Capsule::table('tblsahdev_settings')->first();
     require_once __DIR__ . '/lib/AdminPreferences.php';
+    require_once __DIR__ . '/lib/PermissionService.php';
     \Sahdev\Lib\AdminPreferences::ensureSchema();
+    \Sahdev\Lib\PermissionService::ensureSchema();
+
+    // RBAC: Check if this admin's WHMCS role allows Ticket AI
+    if (!\Sahdev\Lib\PermissionService::hasPermission((int) $adminId, \Sahdev\Lib\PermissionService::PERM_TICKET_AI)) {
+        return '';
+    }
+
     $adminPrefs = \Sahdev\Lib\AdminPreferences::load((int) $adminId);
     $uiTheme = $adminPrefs['ui_theme'] ?? \Sahdev\Lib\AdminPreferences::THEME_REMASTERED;
 
@@ -42,41 +50,48 @@ function sahdev_inject_ticket_panel($vars)
         $defaultTone = (string) $settings->tone_default;
     }
 
+    // Combine per-admin preference + global setting + WHMCS Role Permission
     $featTicketAi = \Sahdev\Lib\AdminPreferences::isFeatureEnabledForUi(
         \Sahdev\Lib\AdminPreferences::FEATURE_TICKET_AI,
         (int) $adminId,
         $settings
-    );
+    ) && \Sahdev\Lib\PermissionService::hasPermission((int) $adminId, \Sahdev\Lib\PermissionService::PERM_TICKET_AI);
+
     $featTools = \Sahdev\Lib\AdminPreferences::isFeatureEnabledForUi(
         \Sahdev\Lib\AdminPreferences::FEATURE_TOOLS,
         (int) $adminId,
         $settings
-    );
+    ) && \Sahdev\Lib\PermissionService::hasPermission((int) $adminId, \Sahdev\Lib\PermissionService::PERM_TOOLS_EXECUTE);
+
     $featSummarizer = \Sahdev\Lib\AdminPreferences::isFeatureEnabledForUi(
         \Sahdev\Lib\AdminPreferences::FEATURE_SUMMARIZER,
         (int) $adminId,
         $settings
-    );
+    ) && \Sahdev\Lib\PermissionService::hasPermission((int) $adminId, \Sahdev\Lib\PermissionService::PERM_SUMMARIZER);
+
     $featCannedKb = \Sahdev\Lib\AdminPreferences::isFeatureEnabledForUi(
         \Sahdev\Lib\AdminPreferences::FEATURE_CANNED_KB,
         (int) $adminId,
         $settings
-    );
+    ) && \Sahdev\Lib\PermissionService::hasPermission((int) $adminId, \Sahdev\Lib\PermissionService::PERM_CANNED_KB);
+
     $featHistorical = \Sahdev\Lib\AdminPreferences::isFeatureEnabledForUi(
         \Sahdev\Lib\AdminPreferences::FEATURE_HISTORICAL_CONTEXT,
         (int) $adminId,
         $settings
-    );
+    ) && \Sahdev\Lib\PermissionService::hasPermission((int) $adminId, \Sahdev\Lib\PermissionService::PERM_HISTORICAL_CTX);
+
     $featRewrite = \Sahdev\Lib\AdminPreferences::isFeatureEnabledForUi(
         \Sahdev\Lib\AdminPreferences::FEATURE_REWRITE,
         (int) $adminId,
         $settings
-    );
+    ) && \Sahdev\Lib\PermissionService::hasPermission((int) $adminId, \Sahdev\Lib\PermissionService::PERM_REWRITE_REPLY);
+
     $featQuality = \Sahdev\Lib\AdminPreferences::isFeatureEnabledForUi(
         \Sahdev\Lib\AdminPreferences::FEATURE_QUALITY_SCORE,
         (int) $adminId,
         $settings
-    );
+    ) && \Sahdev\Lib\PermissionService::hasPermission((int) $adminId, \Sahdev\Lib\PermissionService::PERM_ANALYTICS_VIEW);
 
     $coreAiWrapStyle = $featTicketAi ? '' : 'display:none !important;';
     $toolsSectionStyle = $featTools ? '' : 'display:none !important;';
@@ -216,16 +231,17 @@ function sahdev_inject_ticket_panel($vars)
     
     $jsIntentLabelsJson = json_encode($jsIntentLabels);
 
-    // Active Incident Alert Banner
+    // Active Incident Alert Banner (Only if role has incidents_manage or telemetry_view permission)
     $incidentAlertBanner = '';
-    try {
-        require_once __DIR__ . '/lib/IncidentDetectionService.php';
-        $activeInc = \Sahdev\Lib\IncidentDetectionService::getActiveIncidentForTicket($ticketId);
-        if ($activeInc) {
-            $incNum = htmlspecialchars($activeInc['incident_num']);
-            $incTitle = htmlspecialchars($activeInc['title']);
-            $incSummary = htmlspecialchars($activeInc['root_cause_summary']);
-            $incidentAlertBanner = <<<INC_HTML
+    if (\Sahdev\Lib\PermissionService::hasPermission((int) $adminId, \Sahdev\Lib\PermissionService::PERM_INCIDENTS_MANAGE) || \Sahdev\Lib\PermissionService::hasPermission((int) $adminId, \Sahdev\Lib\PermissionService::PERM_TELEMETRY_VIEW)) {
+        try {
+            require_once __DIR__ . '/lib/IncidentDetectionService.php';
+            $activeInc = \Sahdev\Lib\IncidentDetectionService::getActiveIncidentForTicket($ticketId);
+            if ($activeInc) {
+                $incNum = htmlspecialchars($activeInc['incident_num']);
+                $incTitle = htmlspecialchars($activeInc['title']);
+                $incSummary = htmlspecialchars($activeInc['root_cause_summary']);
+                $incidentAlertBanner = <<<INC_HTML
 <div class="alert alert-danger" style="margin-top: 15px; border-left: 5px solid #c53030; background: #fff5f5; color: #742a2a; box-shadow: 0 2px 8px rgba(0,0,0,0.06);">
     <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 10px;">
         <div>
@@ -236,30 +252,33 @@ function sahdev_inject_ticket_panel($vars)
     </div>
 </div>
 INC_HTML;
-        }
-    } catch (\Throwable $e) {}
+            }
+        } catch (\Throwable $e) {}
+    }
 
-    // Live Server Health Badge
+    // Live Server Health Badge (Only if role has telemetry_view permission)
     $serverHealthBadge = '';
-    try {
-        require_once __DIR__ . '/lib/ServerTelemetryService.php';
-        $ticketRow = Capsule::table('tbltickets')->where('id', $ticketId)->first();
-        if ($ticketRow && !empty($ticketRow->userid)) {
-            $hRow = Capsule::table('tblhosting')->where('userid', (int)$ticketRow->userid)->whereIn('domainstatus', ['Active', 'Suspended'])->orderBy('id', 'desc')->first();
-            if ($hRow && !empty($hRow->server)) {
-                $srvHealth = \Sahdev\Lib\ServerTelemetryService::getServerHealth((int)$hRow->server);
-                if ($srvHealth) {
-                    $srvName = htmlspecialchars($srvHealth['server_name'] ?: 'Server #' . $hRow->server);
-                    $srvLoad = htmlspecialchars($srvHealth['server_load'] ?: '');
-                    $loadPill = $srvLoad !== '' ? " | Load: {$srvLoad}" : '';
-                    $isOnline = !empty($srvHealth['is_reachable']);
-                    $badgeColor = $isOnline ? '#38a169' : '#e53e3e';
-                    $badgeIcon = $isOnline ? 'fa-server' : 'fa-exclamation-circle';
-                    $serverHealthBadge = '<span class="badge" style="background:' . $badgeColor . '; font-size: 11px; margin-left: 8px; vertical-align: middle; font-weight: 500;"><i class="fas ' . $badgeIcon . '"></i> ' . $srvName . $loadPill . '</span>';
+    if (\Sahdev\Lib\PermissionService::hasPermission((int) $adminId, \Sahdev\Lib\PermissionService::PERM_TELEMETRY_VIEW)) {
+        try {
+            require_once __DIR__ . '/lib/ServerTelemetryService.php';
+            $ticketRow = Capsule::table('tbltickets')->where('id', $ticketId)->first();
+            if ($ticketRow && !empty($ticketRow->userid)) {
+                $hRow = Capsule::table('tblhosting')->where('userid', (int)$ticketRow->userid)->whereIn('domainstatus', ['Active', 'Suspended'])->orderBy('id', 'desc')->first();
+                if ($hRow && !empty($hRow->server)) {
+                    $srvHealth = \Sahdev\Lib\ServerTelemetryService::getServerHealth((int)$hRow->server);
+                    if ($srvHealth) {
+                        $srvName = htmlspecialchars($srvHealth['server_name'] ?: 'Server #' . $hRow->server);
+                        $srvLoad = htmlspecialchars($srvHealth['server_load'] ?: '');
+                        $loadPill = $srvLoad !== '' ? " | Load: {$srvLoad}" : '';
+                        $isOnline = !empty($srvHealth['is_reachable']);
+                        $badgeColor = $isOnline ? '#38a169' : '#e53e3e';
+                        $badgeIcon = $isOnline ? 'fa-server' : 'fa-exclamation-circle';
+                        $serverHealthBadge = '<span class="badge" style="background:' . $badgeColor . '; font-size: 11px; margin-left: 8px; vertical-align: middle; font-weight: 500;"><i class="fas ' . $badgeIcon . '"></i> ' . $srvName . $loadPill . '</span>';
+                    }
                 }
             }
-        }
-    } catch (\Throwable $e) {}
+        } catch (\Throwable $e) {}
+    }
 
     // Server-side inline styles for each theme — eliminates flash entirely
     $isRemastered = ($uiTheme === \Sahdev\Lib\AdminPreferences::THEME_REMASTERED);
@@ -2719,6 +2738,11 @@ function sahdev_render_clientservices_server_card($vars)
     $adminId = $_SESSION['adminid'] ?? null;
     if (!$adminId) return '';
 
+    require_once __DIR__ . '/lib/PermissionService.php';
+    if (!\Sahdev\Lib\PermissionService::hasPermission((int) $adminId, \Sahdev\Lib\PermissionService::PERM_TELEMETRY_VIEW)) {
+        return '';
+    }
+
     $filename = strtolower((string) (($vars['filename'] ?? '') ?: basename($_SERVER['SCRIPT_NAME'] ?? '')));
     if ($filename !== 'clientsservices' && $filename !== 'clientsservices.php') {
         return '';
@@ -2739,6 +2763,8 @@ function sahdev_render_clientservices_server_card($vars)
         $username = trim((string) ($service->username ?? ''));
 
         require_once __DIR__ . '/lib/ServerTelemetryService.php';
+        \Sahdev\Lib\ServerTelemetryService::ensureSchema();
+
         $srvRecord = Capsule::table('tblservers')->where('id', $serverId)->first();
         if (!$srvRecord) return '';
 
@@ -2749,21 +2775,22 @@ function sahdev_render_clientservices_server_card($vars)
         $srvName = htmlspecialchars($srvRecord->name ?: 'Server #' . $serverId);
         $srvHost = htmlspecialchars($srvRecord->hostname ?: $srvRecord->ipaddress);
         $accessUrl = \Sahdev\Lib\ServerTelemetryService::getServerAccessUrl($serverId);
+        $canAccessServer = \Sahdev\Lib\PermissionService::hasPermission((int) $adminId, \Sahdev\Lib\PermissionService::PERM_SERVER_ACCESS);
 
         $isReachable = !empty($telemetry->is_reachable);
         $serverLoad = (string) ($telemetry->server_load ?? 'N/A');
         $lastPolled = !empty($telemetry->last_polled_at) ? substr((string) $telemetry->last_polled_at, 0, 16) : 'Never';
 
-        // Role badge HTML
+        // Role badge HTML with gradients
         $roleBadge = '';
         if ($resolvedRole === 'root') {
-            $roleBadge = '<span class="label" style="background:#1a365d;color:#fff;font-size:10px;padding:2px 6px;border-radius:3px;"><i class="fas fa-shield-alt"></i> ROOT SERVER</span>';
+            $roleBadge = '<span class="sahdev-badge" style="background: linear-gradient(135deg, #1e3a8a, #2563eb); color: #fff;" title="Root Server Access"><i class="fas fa-shield-alt"></i> ROOT SERVER</span>';
         } elseif ($resolvedRole === 'reseller') {
-            $roleBadge = '<span class="label" style="background:#553c9e;color:#fff;font-size:10px;padding:2px 6px;border-radius:3px;"><i class="fas fa-server"></i> RESELLER WHM</span>';
+            $roleBadge = '<span class="sahdev-badge" style="background: linear-gradient(135deg, #581c87, #7c3aed); color: #fff;" title="WHM Reseller Account"><i class="fas fa-server"></i> RESELLER WHM</span>';
         } elseif ($resolvedRole === 'vps_node') {
-            $roleBadge = '<span class="label" style="background:#234e52;color:#fff;font-size:10px;padding:2px 6px;border-radius:3px;"><i class="fas fa-network-wired"></i> VPS NODE</span>';
+            $roleBadge = '<span class="sahdev-badge" style="background: linear-gradient(135deg, #065f46, #059669); color: #fff;" title="VPS Node"><i class="fas fa-network-wired"></i> VPS NODE</span>';
         } else {
-            $roleBadge = '<span class="label label-info" style="font-size:10px;">' . strtoupper(htmlspecialchars($srvRecord->type ?: 'cPanel')) . '</span>';
+            $roleBadge = '<span class="sahdev-badge" style="background: #e2e8f0; color: #4a5568;">' . strtoupper(htmlspecialchars($srvRecord->type ?: 'cPanel')) . '</span>';
         }
 
         // Account telemetry
@@ -2792,18 +2819,18 @@ function sahdev_render_clientservices_server_card($vars)
             ->first();
 
         $statusBadge = $isReachable && empty($outages)
-            ? '<span class="label label-success"><i class="fas fa-check"></i> Online</span>'
-            : ($isReachable ? '<span class="label label-warning"><i class="fas fa-exclamation-triangle"></i> Degraded</span>' : '<span class="label label-danger"><i class="fas fa-times"></i> Offline</span>');
+            ? '<span class="sahdev-badge" style="background: #def7ec; color: #03543f; border: 1px solid #bcf0da;"><span class="sahdev-pulse-green"></span> Online</span>'
+            : ($isReachable ? '<span class="sahdev-badge" style="background: #fef08a; color: #713f12; border: 1px solid #fde047;"><span class="sahdev-pulse-orange"></span> Degraded</span>' : '<span class="sahdev-badge" style="background: #fde8e8; color: #9b1c1c; border: 1px solid #f8b4b4;"><span class="sahdev-pulse-red"></span> Offline</span>');
 
         $outagesHtml = '';
         if ($activeInc) {
             $incNum = htmlspecialchars($activeInc->incident_num);
             $incTitle = htmlspecialchars($activeInc->title);
-            $outagesHtml .= "<div class='alert alert-danger' style='margin:8px 0 4px 0;padding:6px 10px;font-size:12px;'><i class='fas fa-fire'></i> <strong>Active Outage: [{$incNum}] {$incTitle}</strong> <a href='addonmodules.php?module=sahdev&action=incidents' target='_blank' class='btn btn-xs btn-danger pull-right'>View Incident</a></div>";
+            $outagesHtml .= "<div style='background: #fff5f5; border-top: 1px solid #fed7d7; padding: 8px 14px; font-size: 12px; color: #9b2c2c; display: flex; justify-content: space-between; align-items: center;'><div style='display: flex; align-items: center; gap: 6px;'><i class='fas fa-fire'></i> <strong>Active Outage: [{$incNum}] {$incTitle}</strong></div><a href='addonmodules.php?module=sahdev&action=incidents' target='_blank' class='btn btn-xs btn-danger' style='border-radius: 4px;'><i class='fas fa-search'></i> View Incident</a></div>";
         } elseif (!empty($outages)) {
             $outagesCount = count($outages);
             $outageText = htmlspecialchars(implode(', ', $outages));
-            $outagesHtml .= "<div class='alert alert-danger' style='margin:8px 0 4px 0;padding:6px 10px;font-size:12px;'><i class='fas fa-exclamation-circle'></i> <strong>{$outagesCount} Service Outage(s):</strong> {$outageText}</div>";
+            $outagesHtml .= "<div style='background: #fff5f5; border-top: 1px solid #fed7d7; padding: 8px 14px; font-size: 12px; color: #9b2c2c;'><i class='fas fa-exclamation-circle'></i> <strong>{$outagesCount} Service Outage(s):</strong> {$outageText}</div>";
         }
 
         // Disk quota progress bar
@@ -2812,38 +2839,108 @@ function sahdev_render_clientservices_server_card($vars)
             $diskUsed = htmlspecialchars($acctHealth['diskused'] ?? '0');
             $diskLimit = htmlspecialchars($acctHealth['disklimit'] ?? 'Unlimited');
             $pct = (float) str_replace('%', '', (string) ($acctHealth['percent_used'] ?? '0'));
-            $progressClass = $pct >= 90 ? 'progress-bar-danger' : ($pct >= 75 ? 'progress-bar-warning' : 'progress-bar-success');
-            $suspendedNotice = !empty($acctHealth['suspended']) ? '<span class="label label-danger" style="margin-left:8px;"><i class="fas fa-ban"></i> Suspended in WHM</span>' : '';
+            $progressColor = $pct >= 90 ? '#e53e3e' : ($pct >= 75 ? '#dd6b20' : '#38a169');
+            $suspendedNotice = !empty($acctHealth['suspended']) ? '<span class="label label-danger" style="margin-left:8px; font-size: 10px;"><i class="fas fa-ban"></i> Suspended in WHM</span>' : '';
 
             $diskHtml = <<<HTML
-            <div style="margin-top: 8px; font-size: 12px; background: #f8fafc; padding: 8px 12px; border-radius: 6px; border: 1px solid #edf2f7;">
-                <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
-                    <span><strong>Account Quota ({$username}):</strong> {$diskUsed} / {$diskLimit} ({$pct}%) {$suspendedNotice}</span>
+            <div style="background: #f8fafc; border-top: 1px solid #edf2f7; padding: 8px 14px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+                <div style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: #4a5568;">
+                    <i class="fas fa-hdd" style="color: #718096;"></i>
+                    <span><strong>Account Quota ({$username}):</strong> {$diskUsed} / {$diskLimit} ({$pct}%)</span>
+                    {$suspendedNotice}
                 </div>
-                <div class="progress" style="height: 8px; margin-bottom: 0; background: #e2e8f0; border-radius: 4px;">
-                    <div class="progress-bar {$progressClass}" role="progressbar" style="width: {$pct}%;"></div>
+                <div style="display: flex; align-items: center; gap: 8px; min-width: 140px; max-width: 200px; flex: 1;">
+                    <div style="flex: 1; height: 6px; background: #e2e8f0; border-radius: 3px; overflow: hidden;">
+                        <div style="height: 100%; width: {$pct}%; background: {$progressColor}; border-radius: 3px; transition: width 0.3s ease;"></div>
+                    </div>
+                    <span style="font-size: 11px; font-weight: 700; color: #718096;">{$pct}%</span>
                 </div>
             </div>
 HTML;
         }
 
+        $accessBtnHtml = $canAccessServer 
+            ? '<a href="' . $accessUrl . '" target="_blank" class="btn btn-default btn-xs" style="font-weight: 600; font-size: 11px; border-radius: 4px; padding: 4px 10px; background: #fff; border: 1px solid #cbd5e0; color: #2d3748;"><i class="fas fa-external-link-alt"></i> Access WHM</a>'
+            : '';
+
         return <<<HTML
 <!-- Sahdev Server Health Card for Client Service -->
-<div id="sahdev-clientservices-health-card" style="display:none; margin: 15px 0 20px 0; background: #fff; border: 1px solid #cbd5e0; border-left: 4px solid #3182ce; border-radius: 6px; padding: 12px 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
-    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+<style>
+#sahdev-clientservices-health-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    margin: 12px 0 16px 0;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+    overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+#sahdev-clientservices-health-card .sahdev-accent-bar {
+    height: 3px;
+    background: linear-gradient(90deg, #3182ce 0%, #805ad5 100%);
+}
+#sahdev-clientservices-health-card .sahdev-card-body {
+    padding: 10px 14px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+#sahdev-clientservices-health-card .sahdev-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    border-radius: 4px;
+}
+#sahdev-clientservices-health-card .sahdev-pulse-green {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #38a169;
+    box-shadow: 0 0 0 rgba(72, 187, 120, 0.6);
+    animation: sahdevPulseG 2s infinite;
+}
+#sahdev-clientservices-health-card .sahdev-pulse-orange {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #dd6b20;
+}
+#sahdev-clientservices-health-card .sahdev-pulse-red {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #e53e3e;
+}
+@keyframes sahdevPulseG {
+    0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(72, 187, 120, 0.7); }
+    70% { transform: scale(1); box-shadow: 0 0 0 5px rgba(72, 187, 120, 0); }
+    100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(72, 187, 120, 0); }
+}
+</style>
+
+<div id="sahdev-clientservices-health-card" style="display:none;">
+    <div class="sahdev-accent-bar"></div>
+    <div class="sahdev-card-body">
         <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-            <i class="fas fa-server" style="color: #3182ce; font-size: 16px;"></i>
-            <strong style="font-size: 14px; color: #2d3748;">{$srvName}</strong>
-            <span style="font-size: 12px; color: #718096;">({$srvHost})</span>
+            <div style="display: flex; align-items: center; gap: 6px;">
+                <i class="fas fa-server" style="color: #3182ce; font-size: 14px;"></i>
+                <strong style="font-size: 13px; color: #1a202c;">{$srvName}</strong>
+            </div>
+            <span style="font-size: 11px; color: #718096; background: #f7fafc; padding: 2px 6px; border-radius: 4px; border: 1px solid #edf2f7;">{$srvHost}</span>
             {$roleBadge}
             {$statusBadge}
-            <span style="font-size: 12px; color: #4a5568; margin-left: 6px;"><strong>Load:</strong> {$serverLoad}</span>
+            <span style="font-size: 11px; color: #4a5568; margin-left: 4px; background: #f8fafc; padding: 2px 6px; border-radius: 4px; border: 1px solid #edf2f7;">
+                <i class="fas fa-microchip" style="color: #718096;"></i> <strong>Load:</strong> {$serverLoad}
+            </span>
         </div>
-        <div style="display: flex; align-items: center; gap: 8px;">
-            <a href="{$accessUrl}" target="_blank" class="btn btn-default btn-xs" style="font-weight: 600; font-size: 11px;">
-                <i class="fas fa-external-link-alt"></i> Access WHM
-            </a>
-            <a href="addonmodules.php?module=sahdev&action=incidents" target="_blank" class="btn btn-default btn-xs" style="font-size: 11px;">
+        <div style="display: flex; align-items: center; gap: 6px;">
+            {$accessBtnHtml}
+            <a href="addonmodules.php?module=sahdev&action=incidents" target="_blank" class="btn btn-default btn-xs" style="font-size: 11px; border-radius: 4px; padding: 4px 8px; color: #4a5568;">
                 <i class="fas fa-satellite-dish"></i> Incident Center
             </a>
         </div>
@@ -2851,12 +2948,19 @@ HTML;
     {$outagesHtml}
     {$diskHtml}
 </div>
+
 <script>
 (function() {
     function injectCard() {
         var card = document.getElementById('sahdev-clientservices-health-card');
         if (!card) return;
-        var target = document.getElementById('tab1') || document.querySelector('form[name="packagefrm"]') || document.querySelector('.client-service-details') || document.querySelector('.contentarea');
+
+        // Precisely target right before the product details form table inside the active tab
+        var target = document.querySelector('form[name="packagefrm"] table.form') || 
+                     document.querySelector('form[name="packagefrm"] .table') ||
+                     document.querySelector('#tab1 .form') ||
+                     document.querySelector('form[name="packagefrm"]');
+
         if (target && target.parentNode) {
             target.parentNode.insertBefore(card, target);
             card.style.display = 'block';
@@ -2882,6 +2986,11 @@ function sahdev_render_header_topbar_widget($vars)
 {
     $adminId = $_SESSION['adminid'] ?? null;
     if (!$adminId) return '';
+
+    require_once __DIR__ . '/lib/PermissionService.php';
+    if (!\Sahdev\Lib\PermissionService::hasPermission((int) $adminId, \Sahdev\Lib\PermissionService::PERM_TELEMETRY_VIEW)) {
+        return '';
+    }
 
     // Check if header widget is enabled in settings
     try {
@@ -3117,6 +3226,10 @@ function sahdev_render_header_topbar_widget($vars)
                     outagesText = '<div style="font-size:11px; color:#c53030; font-weight:600; margin-top:3px;"><i class="fas fa-exclamation-circle"></i> ' + srv.service_outages.join(', ') + '</div>';
                 }
 
+                var accessBtnHtml = srv.access_url 
+                    ? '<a href="' + srv.access_url + '" target="_blank" class="btn btn-default btn-xs" style="font-size:10px; font-weight:600; padding:2px 6px;" title="Open Server Control Panel"><i class="fas fa-external-link-alt"></i> Access</a>' 
+                    : '';
+
                 html += '<div class="' + rowClass + '">' +
                     pinnedBanner +
                     '<div style="display:flex; justify-content:space-between; align-items:center;">' +
@@ -3125,7 +3238,7 @@ function sahdev_render_header_topbar_widget($vars)
                             '<div style="font-size:11px; color:#718096;">' + srv.server_host + ' | Load: ' + srv.server_load + '</div>' +
                         '</div>' +
                         '<div style="display:flex; align-items:center; gap:6px;">' +
-                            '<a href="' + srv.access_url + '" target="_blank" class="btn btn-default btn-xs" style="font-size:10px; font-weight:600; padding:2px 6px;" title="Open WHM Control Panel"><i class="fas fa-external-link-alt"></i> Access</a>' +
+                            accessBtnHtml +
                             '<span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:' + statusColor + ';" title="' + (srv.is_reachable ? 'Online' : 'Offline') + '"></span>' +
                         '</div>' +
                     '</div>' +
@@ -3146,9 +3259,24 @@ function sahdev_render_header_topbar_widget($vars)
             .then(function(d) {
                 if (d && d.status === 'success') {
                     renderWidget(d);
+                } else {
+                    var bodyEl = document.getElementById('sahdevPopoverBody');
+                    var summaryEl = document.getElementById('sahdevWidgetSummary');
+                    if (summaryEl) summaryEl.textContent = 'Error';
+                    if (bodyEl) {
+                        var errMsg = (d && d.message) ? d.message : 'Unable to retrieve server telemetry.';
+                        bodyEl.innerHTML = '<div style="text-align:center; padding:20px; color:#c53030; font-size:12px;"><i class="fas fa-exclamation-triangle" style="font-size:18px; margin-bottom:6px; display:block;"></i> ' + errMsg + '<div style="margin-top:8px;"><a href="javascript:void(0);" onclick="document.getElementById(\'sahdevPollNowBtn\').click();" class="btn btn-default btn-xs">Try Again</a></div></div>';
+                    }
                 }
             })
-            .catch(function(e) {});
+            .catch(function(e) {
+                var bodyEl = document.getElementById('sahdevPopoverBody');
+                var summaryEl = document.getElementById('sahdevWidgetSummary');
+                if (summaryEl) summaryEl.textContent = 'Error';
+                if (bodyEl) {
+                    bodyEl.innerHTML = '<div style="text-align:center; padding:20px; color:#c53030; font-size:12px;"><i class="fas fa-exclamation-circle" style="font-size:18px; margin-bottom:6px; display:block;"></i> Connection error loading telemetry.<div style="margin-top:8px;"><a href="javascript:void(0);" onclick="document.getElementById(\'sahdevPollNowBtn\').click();" class="btn btn-default btn-xs">Retry</a></div></div>';
+                }
+            });
     }
 
     function setupEvents() {

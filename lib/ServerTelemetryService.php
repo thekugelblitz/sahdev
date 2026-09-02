@@ -20,10 +20,67 @@ class ServerTelemetryService
     private const HTTP_TIMEOUT_SEC = 7;
 
     /**
+     * Ensure tblsahdev_server_telemetry table and all required columns exist.
+     */
+    public static function ensureSchema(): void
+    {
+        try {
+            if (!Capsule::schema()->hasTable('tblsahdev_server_telemetry')) {
+                Capsule::schema()->create('tblsahdev_server_telemetry', function ($table) {
+                    $table->increments('id');
+                    $table->integer('server_id')->unsigned()->index();
+                    $table->string('server_name', 128)->nullable();
+                    $table->string('server_host', 255)->nullable();
+                    $table->string('server_type', 32)->default('cpanel');
+                    $table->string('server_role', 32)->default('auto');
+                    $table->boolean('is_monitored')->default(1);
+                    $table->string('server_load', 64)->nullable();
+                    $table->boolean('is_reachable')->default(1);
+                    $table->string('reachability_error', 255)->nullable();
+                    $table->longText('accounts_data_json')->nullable();
+                    $table->longText('server_stats_json')->nullable();
+                    $table->timestamp('last_polled_at')->useCurrent()->index();
+                    $table->timestamps();
+                });
+                return;
+            }
+
+            // Verify and add missing columns dynamically on existing tables
+            try {
+                if (!Capsule::schema()->hasColumn('tblsahdev_server_telemetry', 'is_monitored')) {
+                    Capsule::schema()->table('tblsahdev_server_telemetry', function ($table) {
+                        $table->boolean('is_monitored')->default(1)->after('server_type');
+                    });
+                }
+            } catch (\Throwable $e) {
+                try {
+                    Capsule::statement("ALTER TABLE `tblsahdev_server_telemetry` ADD COLUMN IF NOT EXISTS `is_monitored` TINYINT(1) DEFAULT 1 AFTER `server_type`");
+                } catch (\Throwable $ex) {}
+            }
+
+            try {
+                if (!Capsule::schema()->hasColumn('tblsahdev_server_telemetry', 'server_role')) {
+                    Capsule::schema()->table('tblsahdev_server_telemetry', function ($table) {
+                        $table->string('server_role', 32)->default('auto')->after('server_type');
+                    });
+                }
+            } catch (\Throwable $e) {
+                try {
+                    Capsule::statement("ALTER TABLE `tblsahdev_server_telemetry` ADD COLUMN IF NOT EXISTS `server_role` VARCHAR(32) DEFAULT 'auto' AFTER `server_type`");
+                } catch (\Throwable $ex) {}
+            }
+        } catch (\Throwable $e) {
+            ModuleLogger::warning('ServerTelemetry.ensureSchema', $e->getMessage(), null);
+        }
+    }
+
+    /**
      * Poll all active servers in WHMCS.
      */
     public static function pollActiveServers(bool $forcePoll = false): array
     {
+        self::ensureSchema();
+
         $summary = [
             'polled' => 0,
             'skipped' => 0,
