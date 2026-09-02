@@ -570,6 +570,26 @@ Global configuration. Always has exactly 1 row (id=1).
 | `auto_tagging` | boolean | 0 | (Reserved) |
 | `quality_scorer_enabled` | boolean | 1 | Auto-score AI replies |
 | `custom_attachments_dir` | varchar(255) | null | Override WHMCS attachments path |
+| `context_enrichment_enabled` | boolean | 1 | Global toggle for read-only WHMCS account data enrichment |
+| `context_enrichment_max_chars` | int | 2500 | Character cap for the entire services & account enrichment block |
+| `context_enrichment_client_profile` | boolean | 1 | Include client status, credit balance, currency, last login, client group |
+| `context_enrichment_hosting` | boolean | 1 | Include hosting services, server info, suspend reasons, billing cycles |
+| `context_enrichment_domains` | boolean | 1 | Include domains, expiry dates, auto-renew status, DNS add-ons |
+| `context_enrichment_addons` | boolean | 1 | Include hosting product addons and status |
+| `context_enrichment_ssl` | boolean | 1 | Include SSL certificate orders and issue dates |
+| `context_enrichment_invoices` | boolean | 1 | Include recent invoice totals, status, and due dates |
+| `context_enrichment_invoice_items` | boolean | 1 | Include line-item breakdown of latest unpaid/recent invoice |
+| `context_enrichment_transactions` | boolean | 1 | Include transaction history and lifetime customer spend |
+| `context_enrichment_orders` | boolean | 1 | Include recent orders, gateways, linked invoices, fraud check flags |
+| `context_enrichment_cancellations` | boolean | 1 | Include active cancellation requests and churn reasons |
+| `context_enrichment_quotes` | boolean | 1 | Include active sales quotes, stage, total, and validity dates |
+| `context_enrichment_ticket_log` | boolean | 1 | Include ticket journey, department transfers, and status change log |
+| `context_enrichment_emails` | boolean | 1 | Include recent system email subjects sent to client |
+| `context_enrichment_contacts` | boolean | 1 | Include authorized sub-accounts and portal access contacts |
+| `context_enrichment_client_notes` | boolean | 0 | Include internal staff notes on client profile |
+| `context_enrichment_activity_log` | boolean | 0 | Include recent client portal activity logs |
+| `context_enrichment_custom_fields` | boolean | 1 | Include non-sensitive custom fields on client/product |
+| `context_enrichment_custom_field_allowlist` | text | null | Optional comma-separated allowlist for custom fields |
 | `created_at`, `updated_at` | timestamps | — | — |
 
 ---

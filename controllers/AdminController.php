@@ -821,15 +821,45 @@ class AdminController
                 $table->boolean('context_enrichment_hosting')->default(1);
                 $table->boolean('context_enrichment_client_notes')->default(0);
                 $table->text('context_enrichment_custom_field_allowlist')->nullable();
+                $table->boolean('context_enrichment_orders')->default(1);
+                $table->boolean('context_enrichment_cancellations')->default(1);
+                $table->boolean('context_enrichment_transactions')->default(1);
+                $table->boolean('context_enrichment_invoice_items')->default(1);
+                $table->boolean('context_enrichment_emails')->default(1);
+                $table->boolean('context_enrichment_ticket_log')->default(1);
+                $table->boolean('context_enrichment_ssl')->default(1);
+                $table->boolean('context_enrichment_quotes')->default(1);
+                $table->boolean('context_enrichment_activity_log')->default(0);
+                $table->boolean('context_enrichment_contacts')->default(1);
+                $table->boolean('context_enrichment_client_profile')->default(1);
             });
         }
 
-        try {
-            Capsule::table('tblsahdev_settings')->select('context_enrichment_hosting')->first();
-        } catch (\Exception $e) {
-            Capsule::schema()->table('tblsahdev_settings', function ($table) {
-                $table->boolean('context_enrichment_hosting')->default(1);
-            });
+        // Migrate individual new context enrichment columns if existing table lacks them
+        $newContextCols = [
+            'context_enrichment_hosting' => 1,
+            'context_enrichment_orders' => 1,
+            'context_enrichment_cancellations' => 1,
+            'context_enrichment_transactions' => 1,
+            'context_enrichment_invoice_items' => 1,
+            'context_enrichment_emails' => 1,
+            'context_enrichment_ticket_log' => 1,
+            'context_enrichment_ssl' => 1,
+            'context_enrichment_quotes' => 1,
+            'context_enrichment_activity_log' => 0,
+            'context_enrichment_contacts' => 1,
+            'context_enrichment_client_profile' => 1,
+        ];
+        foreach ($newContextCols as $colName => $defaultVal) {
+            try {
+                Capsule::table('tblsahdev_settings')->select($colName)->first();
+            } catch (\Exception $e) {
+                try {
+                    Capsule::schema()->table('tblsahdev_settings', function ($table) use ($colName, $defaultVal) {
+                        $table->boolean($colName)->default($defaultVal);
+                    });
+                } catch (\Exception $ex) {}
+            }
         }
 
         try {
@@ -892,6 +922,17 @@ class AdminController
             $contextEnrichmentCustomFields = !empty($_POST['context_enrichment_custom_fields']) ? 1 : 0;
             $contextEnrichmentClientNotes = !empty($_POST['context_enrichment_client_notes']) ? 1 : 0;
             $contextEnrichmentCustomFieldAllowlist = trim($_POST['context_enrichment_custom_field_allowlist'] ?? '');
+            $contextEnrichmentOrders = !empty($_POST['context_enrichment_orders']) ? 1 : 0;
+            $contextEnrichmentCancellations = !empty($_POST['context_enrichment_cancellations']) ? 1 : 0;
+            $contextEnrichmentTransactions = !empty($_POST['context_enrichment_transactions']) ? 1 : 0;
+            $contextEnrichmentInvoiceItems = !empty($_POST['context_enrichment_invoice_items']) ? 1 : 0;
+            $contextEnrichmentEmails = !empty($_POST['context_enrichment_emails']) ? 1 : 0;
+            $contextEnrichmentTicketLog = !empty($_POST['context_enrichment_ticket_log']) ? 1 : 0;
+            $contextEnrichmentSsl = !empty($_POST['context_enrichment_ssl']) ? 1 : 0;
+            $contextEnrichmentQuotes = !empty($_POST['context_enrichment_quotes']) ? 1 : 0;
+            $contextEnrichmentActivityLog = !empty($_POST['context_enrichment_activity_log']) ? 1 : 0;
+            $contextEnrichmentContacts = !empty($_POST['context_enrichment_contacts']) ? 1 : 0;
+            $contextEnrichmentClientProfile = !empty($_POST['context_enrichment_client_profile']) ? 1 : 0;
 
             $taskProviderMap = [];
             $taskMapRaw = $_POST['task_provider_map'] ?? [];
@@ -947,6 +988,17 @@ class AdminController
                     'context_enrichment_custom_fields' => $contextEnrichmentCustomFields,
                     'context_enrichment_client_notes' => $contextEnrichmentClientNotes,
                     'context_enrichment_custom_field_allowlist' => $contextEnrichmentCustomFieldAllowlist === '' ? null : $contextEnrichmentCustomFieldAllowlist,
+                    'context_enrichment_orders' => $contextEnrichmentOrders,
+                    'context_enrichment_cancellations' => $contextEnrichmentCancellations,
+                    'context_enrichment_transactions' => $contextEnrichmentTransactions,
+                    'context_enrichment_invoice_items' => $contextEnrichmentInvoiceItems,
+                    'context_enrichment_emails' => $contextEnrichmentEmails,
+                    'context_enrichment_ticket_log' => $contextEnrichmentTicketLog,
+                    'context_enrichment_ssl' => $contextEnrichmentSsl,
+                    'context_enrichment_quotes' => $contextEnrichmentQuotes,
+                    'context_enrichment_activity_log' => $contextEnrichmentActivityLog,
+                    'context_enrichment_contacts' => $contextEnrichmentContacts,
+                    'context_enrichment_client_profile' => $contextEnrichmentClientProfile,
                     'updated_at' => \Carbon\Carbon::now(),
                 ]
             );
@@ -988,6 +1040,17 @@ class AdminController
                 'context_enrichment_custom_fields' => 1,
                 'context_enrichment_client_notes' => 0,
                 'context_enrichment_custom_field_allowlist' => null,
+                'context_enrichment_orders' => 1,
+                'context_enrichment_cancellations' => 1,
+                'context_enrichment_transactions' => 1,
+                'context_enrichment_invoice_items' => 1,
+                'context_enrichment_emails' => 1,
+                'context_enrichment_ticket_log' => 1,
+                'context_enrichment_ssl' => 1,
+                'context_enrichment_quotes' => 1,
+                'context_enrichment_activity_log' => 0,
+                'context_enrichment_contacts' => 1,
+                'context_enrichment_client_profile' => 1,
             ];
         }
 
@@ -1167,20 +1230,48 @@ class AdminController
                             <input type="number" name="context_enrichment_max_chars" class="form-control" min="500" max="20000" step="100"
                                 value="<?php echo htmlspecialchars((string) ($settings->context_enrichment_max_chars ?? 2500)); ?>">
                         </div>
-                        <p style="font-weight: 600; margin: 16px 0 8px;">Include in enrichment</p>
-                        <div class="row" style="display: flex; flex-wrap: wrap; gap: 12px 24px;">
-                            <div class="checkbox" style="margin: 0;"><label><input type="checkbox" name="context_enrichment_invoices" value="1" <?php echo !empty($settings->context_enrichment_invoices) ? 'checked' : ''; ?>> Recent invoices</label></div>
-                            <div class="checkbox" style="margin: 0;"><label><input type="checkbox" name="context_enrichment_domains" value="1" <?php echo !empty($settings->context_enrichment_domains) ? 'checked' : ''; ?>> Domains</label></div>
-                            <div class="checkbox" style="margin: 0;"><label><input type="checkbox" name="context_enrichment_hosting" value="1" <?php echo !empty($settings->context_enrichment_hosting) ? 'checked' : ''; ?>> Hosting & Server context</label></div>
-                            <div class="checkbox" style="margin: 0;"><label><input type="checkbox" name="context_enrichment_addons" value="1" <?php echo !empty($settings->context_enrichment_addons) ? 'checked' : ''; ?>> Hosting addons</label></div>
-                            <div class="checkbox" style="margin: 0;"><label><input type="checkbox" name="context_enrichment_custom_fields" value="1" <?php echo !empty($settings->context_enrichment_custom_fields) ? 'checked' : ''; ?>> Custom fields (filtered)</label></div>
-                            <div class="checkbox" style="margin: 0;"><label><input type="checkbox" name="context_enrichment_client_notes" value="1" <?php echo !empty($settings->context_enrichment_client_notes) ? 'checked' : ''; ?>> Staff client notes (internal)</label></div>
+                        <p style="font-weight: 600; margin: 16px 0 8px;">Include in enrichment (organized by data source)</p>
+                        
+                        <div style="margin-bottom: 12px; background: #faf9fd; padding: 10px 14px; border-radius: 6px; border: 1px solid #ede8f5;">
+                            <strong style="color: #4a3b69; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 8px;"><i class="fas fa-user-circle"></i> Profile & Services</strong>
+                            <div class="row" style="display: flex; flex-wrap: wrap; gap: 10px 20px;">
+                                <div class="checkbox" style="margin: 0;"><label><input type="checkbox" name="context_enrichment_client_profile" value="1" <?php echo !empty($settings->context_enrichment_client_profile) ? 'checked' : ''; ?>> Client Profile & Group (VIP, Credit, Last Login)</label></div>
+                                <div class="checkbox" style="margin: 0;"><label><input type="checkbox" name="context_enrichment_hosting" value="1" <?php echo !empty($settings->context_enrichment_hosting) ? 'checked' : ''; ?>> Hosting, Server & Suspend Reasons</label></div>
+                                <div class="checkbox" style="margin: 0;"><label><input type="checkbox" name="context_enrichment_domains" value="1" <?php echo !empty($settings->context_enrichment_domains) ? 'checked' : ''; ?>> Domains & Auto-Renew</label></div>
+                                <div class="checkbox" style="margin: 0;"><label><input type="checkbox" name="context_enrichment_addons" value="1" <?php echo !empty($settings->context_enrichment_addons) ? 'checked' : ''; ?>> Hosting Addons</label></div>
+                                <div class="checkbox" style="margin: 0;"><label><input type="checkbox" name="context_enrichment_ssl" value="1" <?php echo !empty($settings->context_enrichment_ssl) ? 'checked' : ''; ?>> SSL Certificates</label></div>
+                            </div>
                         </div>
+
+                        <div style="margin-bottom: 12px; background: #f9fbf9; padding: 10px 14px; border-radius: 6px; border: 1px solid #e5f0e5;">
+                            <strong style="color: #2e6030; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 8px;"><i class="fas fa-file-invoice-dollar"></i> Billing & Orders</strong>
+                            <div class="row" style="display: flex; flex-wrap: wrap; gap: 10px 20px;">
+                                <div class="checkbox" style="margin: 0;"><label><input type="checkbox" name="context_enrichment_invoices" value="1" <?php echo !empty($settings->context_enrichment_invoices) ? 'checked' : ''; ?>> Invoices (Totals & Due Dates)</label></div>
+                                <div class="checkbox" style="margin: 0;"><label><input type="checkbox" name="context_enrichment_invoice_items" value="1" <?php echo !empty($settings->context_enrichment_invoice_items) ? 'checked' : ''; ?>> Invoice Line Items (Breakdown)</label></div>
+                                <div class="checkbox" style="margin: 0;"><label><input type="checkbox" name="context_enrichment_transactions" value="1" <?php echo !empty($settings->context_enrichment_transactions) ? 'checked' : ''; ?>> Transactions & Lifetime Spend</label></div>
+                                <div class="checkbox" style="margin: 0;"><label><input type="checkbox" name="context_enrichment_orders" value="1" <?php echo !empty($settings->context_enrichment_orders) ? 'checked' : ''; ?>> Recent Orders & Fraud Flags</label></div>
+                                <div class="checkbox" style="margin: 0;"><label><input type="checkbox" name="context_enrichment_cancellations" value="1" <?php echo !empty($settings->context_enrichment_cancellations) ? 'checked' : ''; ?>> Cancellation Requests (Churn)</label></div>
+                                <div class="checkbox" style="margin: 0;"><label><input type="checkbox" name="context_enrichment_quotes" value="1" <?php echo !empty($settings->context_enrichment_quotes) ? 'checked' : ''; ?>> Sales Quotes</label></div>
+                            </div>
+                        </div>
+
+                        <div style="margin-bottom: 12px; background: #f9fbff; padding: 10px 14px; border-radius: 6px; border: 1px solid #e5edfa;">
+                            <strong style="color: #2b4c7e; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 8px;"><i class="fas fa-history"></i> History, Logs & Notes</strong>
+                            <div class="row" style="display: flex; flex-wrap: wrap; gap: 10px 20px;">
+                                <div class="checkbox" style="margin: 0;"><label><input type="checkbox" name="context_enrichment_ticket_log" value="1" <?php echo !empty($settings->context_enrichment_ticket_log) ? 'checked' : ''; ?>> Ticket Journey & Transfer Log</label></div>
+                                <div class="checkbox" style="margin: 0;"><label><input type="checkbox" name="context_enrichment_emails" value="1" <?php echo !empty($settings->context_enrichment_emails) ? 'checked' : ''; ?>> Outgoing Email Dispatch Log</label></div>
+                                <div class="checkbox" style="margin: 0;"><label><input type="checkbox" name="context_enrichment_contacts" value="1" <?php echo !empty($settings->context_enrichment_contacts) ? 'checked' : ''; ?>> Authorized Sub-Accounts / Contacts</label></div>
+                                <div class="checkbox" style="margin: 0;"><label><input type="checkbox" name="context_enrichment_client_notes" value="1" <?php echo !empty($settings->context_enrichment_client_notes) ? 'checked' : ''; ?>> Staff Client Notes (Internal)</label></div>
+                                <div class="checkbox" style="margin: 0;"><label><input type="checkbox" name="context_enrichment_activity_log" value="1" <?php echo !empty($settings->context_enrichment_activity_log) ? 'checked' : ''; ?>> Client Portal Activity Log</label></div>
+                                <div class="checkbox" style="margin: 0;"><label><input type="checkbox" name="context_enrichment_custom_fields" value="1" <?php echo !empty($settings->context_enrichment_custom_fields) ? 'checked' : ''; ?>> Custom Fields (Safe Filtered)</label></div>
+                            </div>
+                        </div>
+
                         <div class="form-group" style="margin-top: 14px;">
                             <label style="font-weight: 600;">Custom field allowlist (optional)</label>
                             <input type="text" name="context_enrichment_custom_field_allowlist" class="form-control" placeholder="e.g. VAT Number, 12, Company Name"
                                 value="<?php echo htmlspecialchars((string) ($settings->context_enrichment_custom_field_allowlist ?? '')); ?>">
-                            <small class="text-muted">Comma-separated field names or numeric field IDs. If empty, only safe filtered fields are included.</small>
+                            <small class="text-muted">Comma-separated field names or numeric field IDs. If empty, all non-sensitive fields are included.</small>
                         </div>
                     </div>
                 </div>

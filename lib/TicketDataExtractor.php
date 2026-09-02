@@ -151,6 +151,17 @@ class TicketDataExtractor
                     'context_enrichment_custom_fields' => !empty($settings->context_enrichment_custom_fields),
                     'context_enrichment_client_notes' => !empty($settings->context_enrichment_client_notes),
                     'context_enrichment_custom_field_allowlist' => $settings->context_enrichment_custom_field_allowlist ?? null,
+                    'context_enrichment_orders' => !empty($settings->context_enrichment_orders),
+                    'context_enrichment_cancellations' => !empty($settings->context_enrichment_cancellations),
+                    'context_enrichment_transactions' => !empty($settings->context_enrichment_transactions),
+                    'context_enrichment_invoice_items' => !empty($settings->context_enrichment_invoice_items),
+                    'context_enrichment_emails' => !empty($settings->context_enrichment_emails),
+                    'context_enrichment_ticket_log' => !empty($settings->context_enrichment_ticket_log),
+                    'context_enrichment_ssl' => !empty($settings->context_enrichment_ssl),
+                    'context_enrichment_quotes' => !empty($settings->context_enrichment_quotes),
+                    'context_enrichment_activity_log' => !empty($settings->context_enrichment_activity_log),
+                    'context_enrichment_contacts' => !empty($settings->context_enrichment_contacts),
+                    'context_enrichment_client_profile' => !empty($settings->context_enrichment_client_profile),
                 ];
                 $extra = ClientAccountEnrichment::build($userid, $opts, (int) $ticket->id);
                 if ($extra !== '') {
@@ -272,6 +283,11 @@ class TicketDataExtractor
             $services = $query->select(
                     'p.name as product_name',
                     'h.domain',
+                    'h.domainstatus',
+                    'h.billingcycle',
+                    'h.amount',
+                    'h.nextduedate',
+                    'h.suspendreason',
                     'h.dedicatedip',
                     'h.assignedips',
                     's.name as server_name',
@@ -293,6 +309,19 @@ class TicketDataExtractor
                 if (!$ip) $ip = (string) $service->server_ip;
 
                 $details = [];
+                $st = (string) ($service->domainstatus ?? 'Active');
+                $details[] = "Status: {$st}";
+
+                if (strcasecmp($st, 'Suspended') === 0 && !empty($service->suspendreason)) {
+                    $details[] = "SUSPEND_REASON: " . strip_tags((string) $service->suspendreason);
+                }
+
+                if (!empty($service->billingcycle)) {
+                    $amtStr = !empty($service->amount) && (float)$service->amount > 0 ? " ({$service->amount})" : "";
+                    $dueStr = !empty($service->nextduedate) && (string)$service->nextduedate !== '0000-00-00' ? " | Due: {$service->nextduedate}" : "";
+                    $details[] = "Billing: {$service->billingcycle}{$amtStr}{$dueStr}";
+                }
+
                 if (!empty($service->server_name)) $details[] = "Server: {$service->server_name}";
                 if (!empty($service->server_host)) $details[] = "Hostname: {$service->server_host}";
                 if ($ip) $details[] = "IP: {$ip}";
@@ -316,10 +345,16 @@ class TicketDataExtractor
                         $dQuery->where('id', $targetDomainId);
                     }
                     
-                    $domains = $dQuery->select('domain', 'registrar')->get();
+                    $domains = $dQuery->select('domain', 'status', 'registrar', 'expirydate', 'autorenew')->get();
                     foreach ($domains as $d) {
-                        $registrarStr = !empty($d->registrar) ? " (Registrar: {$d->registrar})" : "";
-                        $summary[] = "- Domain: {$d->domain}{$registrarStr}";
+                        $dDetails = [];
+                        if (!empty($d->status)) $dDetails[] = "Status: {$d->status}";
+                        if (!empty($d->expirydate) && (string)$d->expirydate !== '0000-00-00') $dDetails[] = "Expires: {$d->expirydate}";
+                        if (isset($d->autorenew)) $dDetails[] = "Auto-Renew: " . ((int)$d->autorenew === 1 ? 'ON' : 'OFF');
+                        if (!empty($d->registrar)) $dDetails[] = "Registrar: {$d->registrar}";
+                        
+                        $dDetailStr = !empty($dDetails) ? (" (" . implode(' | ', $dDetails) . ")") : "";
+                        $summary[] = "- Domain: {$d->domain}{$dDetailStr}";
                     }
                 }
             } catch (\Throwable $e) {}

@@ -155,6 +155,17 @@ function sahdev_activate()
                     $table->boolean('context_enrichment_custom_fields')->default(1);
                     $table->boolean('context_enrichment_client_notes')->default(0);
                     $table->text('context_enrichment_custom_field_allowlist')->nullable();
+                    $table->boolean('context_enrichment_orders')->default(1);
+                    $table->boolean('context_enrichment_cancellations')->default(1);
+                    $table->boolean('context_enrichment_transactions')->default(1);
+                    $table->boolean('context_enrichment_invoice_items')->default(1);
+                    $table->boolean('context_enrichment_emails')->default(1);
+                    $table->boolean('context_enrichment_ticket_log')->default(1);
+                    $table->boolean('context_enrichment_ssl')->default(1);
+                    $table->boolean('context_enrichment_quotes')->default(1);
+                    $table->boolean('context_enrichment_activity_log')->default(0);
+                    $table->boolean('context_enrichment_contacts')->default(1);
+                    $table->boolean('context_enrichment_client_profile')->default(1);
                 });
             }
 
@@ -277,6 +288,17 @@ function sahdev_activate()
                     $table->boolean('context_enrichment_custom_fields')->default(1);
                     $table->boolean('context_enrichment_client_notes')->default(0);
                     $table->text('context_enrichment_custom_field_allowlist')->nullable();
+                    $table->boolean('context_enrichment_orders')->default(1);
+                    $table->boolean('context_enrichment_cancellations')->default(1);
+                    $table->boolean('context_enrichment_transactions')->default(1);
+                    $table->boolean('context_enrichment_invoice_items')->default(1);
+                    $table->boolean('context_enrichment_emails')->default(1);
+                    $table->boolean('context_enrichment_ticket_log')->default(1);
+                    $table->boolean('context_enrichment_ssl')->default(1);
+                    $table->boolean('context_enrichment_quotes')->default(1);
+                    $table->boolean('context_enrichment_activity_log')->default(0);
+                    $table->boolean('context_enrichment_contacts')->default(1);
+                    $table->boolean('context_enrichment_client_profile')->default(1);
                     $table->boolean('scrub_phones')->default(1);
                     $table->timestamps(); // creates created_at, updated_at
                 }
@@ -324,6 +346,17 @@ function sahdev_activate()
                 'context_enrichment_addons' => 1,
                 'context_enrichment_custom_fields' => 1,
                 'context_enrichment_client_notes' => 0,
+                'context_enrichment_orders' => 1,
+                'context_enrichment_cancellations' => 1,
+                'context_enrichment_transactions' => 1,
+                'context_enrichment_invoice_items' => 1,
+                'context_enrichment_emails' => 1,
+                'context_enrichment_ticket_log' => 1,
+                'context_enrichment_ssl' => 1,
+                'context_enrichment_quotes' => 1,
+                'context_enrichment_activity_log' => 0,
+                'context_enrichment_contacts' => 1,
+                'context_enrichment_client_profile' => 1,
                 'scrub_phones' => 1,
                 'created_at' => \Carbon\Carbon::now(),
                 'updated_at' => \Carbon\Carbon::now(),
@@ -750,7 +783,44 @@ function sahdev_activate()
                 $table->boolean('context_enrichment_custom_fields')->default(1);
                 $table->boolean('context_enrichment_client_notes')->default(0);
                 $table->text('context_enrichment_custom_field_allowlist')->nullable();
+                $table->boolean('context_enrichment_orders')->default(1);
+                $table->boolean('context_enrichment_cancellations')->default(1);
+                $table->boolean('context_enrichment_transactions')->default(1);
+                $table->boolean('context_enrichment_invoice_items')->default(1);
+                $table->boolean('context_enrichment_emails')->default(1);
+                $table->boolean('context_enrichment_ticket_log')->default(1);
+                $table->boolean('context_enrichment_ssl')->default(1);
+                $table->boolean('context_enrichment_quotes')->default(1);
+                $table->boolean('context_enrichment_activity_log')->default(0);
+                $table->boolean('context_enrichment_contacts')->default(1);
+                $table->boolean('context_enrichment_client_profile')->default(1);
             });
+        }
+
+        // Migrate individual new context enrichment columns if existing table lacks them
+        $newContextCols = [
+            'context_enrichment_orders' => 1,
+            'context_enrichment_cancellations' => 1,
+            'context_enrichment_transactions' => 1,
+            'context_enrichment_invoice_items' => 1,
+            'context_enrichment_emails' => 1,
+            'context_enrichment_ticket_log' => 1,
+            'context_enrichment_ssl' => 1,
+            'context_enrichment_quotes' => 1,
+            'context_enrichment_activity_log' => 0,
+            'context_enrichment_contacts' => 1,
+            'context_enrichment_client_profile' => 1,
+        ];
+        foreach ($newContextCols as $colName => $defaultVal) {
+            try {
+                Capsule::table('tblsahdev_settings')->select($colName)->first();
+            } catch (\Exception $e) {
+                try {
+                    Capsule::schema()->table('tblsahdev_settings', function ($table) use ($colName, $defaultVal) {
+                        $table->boolean($colName)->default($defaultVal);
+                    });
+                } catch (\Exception $ex) {}
+            }
         }
 
         try {
