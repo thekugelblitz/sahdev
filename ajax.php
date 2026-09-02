@@ -572,7 +572,7 @@ try {
         }
 
     } elseif ($action === 'trigger_cron_run') {
-        // Ticket Insights: manually trigger cron analysis from admin UI
+        // Manually trigger full background cron suite from admin UI
         @set_time_limit(600);
         @ignore_user_abort(true);
         require_once __DIR__ . '/lib/AIProviderInterface.php';
@@ -582,9 +582,42 @@ try {
         require_once __DIR__ . '/lib/TicketDataExtractor.php';
         require_once __DIR__ . '/lib/AIController.php';
         require_once __DIR__ . '/lib/CronProcessor.php';
+        require_once __DIR__ . '/lib/ServerTelemetryService.php';
+        require_once __DIR__ . '/lib/IncidentDetectionService.php';
+        require_once __DIR__ . '/modules/ToolsExecution/ToolsExecutionService.php';
 
-        $processor = new \Sahdev\Lib\CronProcessor();
-        $result    = $processor->run(true); // verbose=true returns diagnostic info
+        $cronSummary = [
+            'telemetry' => null,
+            'incidents' => null,
+            'insights'  => null,
+            'tools'     => null,
+            'errors'    => [],
+        ];
+
+        try {
+            $cronSummary['telemetry'] = \Sahdev\Lib\ServerTelemetryService::pollActiveServers(true);
+        } catch (\Throwable $te) {
+            $cronSummary['errors'][] = 'Telemetry error: ' . $te->getMessage();
+        }
+
+        try {
+            $cronSummary['incidents'] = \Sahdev\Lib\IncidentDetectionService::evaluateClusters();
+        } catch (\Throwable $ie) {
+            $cronSummary['errors'][] = 'Incident clustering error: ' . $ie->getMessage();
+        }
+
+        try {
+            $processor = new \Sahdev\Lib\CronProcessor();
+            $cronSummary['insights'] = $processor->run(true);
+        } catch (\Throwable $pe) {
+            $cronSummary['errors'][] = 'Insights error: ' . $pe->getMessage();
+        }
+
+        try {
+            $cronSummary['tools'] = \Sahdev\Modules\ToolsExecution\ToolsExecutionService::runCron(true);
+        } catch (\Throwable $txe) {
+            $cronSummary['errors'][] = 'Tools execution error: ' . $txe->getMessage();
+        }
 
         // Record successful heartbeat after manual run
         try {
@@ -594,26 +627,28 @@ try {
             ]);
         } catch (\Throwable $e) {}
 
-        $analyzed = $result['analyzed'] ?? 0;
-        $found    = $result['tickets_found'] ?? 0;
-        $errors   = $result['errors'] ?? [];
+        $insightsResult = $cronSummary['insights'] ?? [];
+        $analyzed = $insightsResult['analyzed'] ?? 0;
+        $found = $insightsResult['tickets_found'] ?? 0;
+        $telemetryResult = $cronSummary['telemetry'] ?? [];
+        $polledServers = $telemetryResult['polled'] ?? 0;
 
-        if ($analyzed > 0) {
-            $msg = "Done! Analyzed {$analyzed} of {$found} ticket(s) successfully.";
-            if (!empty($errors)) {
-                $msg .= ' ' . count($errors) . ' ticket(s) had errors (see Audit Trail).';
-            }
-            $response = ['status' => 'success', 'message' => $msg, 'result' => $result];
-        } elseif (!empty($errors)) {
-            // Nothing was analyzed AND there are errors — surface them
-            $response = [
-                'status'  => 'error',
-                'message' => implode(' | ', $errors),
-                'result'  => $result,
-            ];
-        } else {
-            $response = ['status' => 'success', 'message' => "No tickets needed analysis right now (found: {$found}).", 'result' => $result];
+        $msgParts = [];
+        if ($polledServers > 0) {
+            $msgParts[] = "Polled {$polledServers} server(s)";
         }
+        if ($analyzed > 0) {
+            $msgParts[] = "analyzed {$analyzed} of {$found} ticket(s)";
+        } else {
+            $msgParts[] = "0 tickets queued";
+        }
+
+        $msg = "Cron run complete! " . implode(', ', $msgParts) . ".";
+        if (!empty($cronSummary['errors'])) {
+            $msg .= ' Warnings: ' . implode(' | ', $cronSummary['errors']);
+        }
+
+        $response = ['status' => 'success', 'message' => $msg, 'result' => $cronSummary];
     } elseif ($action === 'run_tools_for_ticket') {
         $runTicketId = (int) ($_POST['ticket_id'] ?? 0);
         $force = !empty($_POST['force']) && $_POST['force'] === '1';

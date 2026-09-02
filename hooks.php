@@ -3049,19 +3049,29 @@ function sahdev_render_header_topbar_widget($vars)
     return <<<HTML
 <!-- Sahdev Global Top Header Bar Server Widget -->
 <style>
+.sahdev-header-li {
+    display: inline-flex !important;
+    align-items: center !important;
+    vertical-align: middle !important;
+    height: 100% !important;
+    list-style: none !important;
+    margin: 0 4px !important;
+    padding: 0 !important;
+}
 .sahdev-top-nav-widget {
-    position: relative;
-    display: inline-flex;
-    align-items: center;
-    vertical-align: middle;
-    margin: 0 4px;
-    height: 100%;
+    position: relative !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    vertical-align: middle !important;
+    margin: 0 !important;
+    height: auto !important;
+    z-index: 1000 !important;
 }
 .sahdev-nav-pill-btn {
-    background: rgba(255, 255, 255, 0.12) !important;
+    background: rgba(255, 255, 255, 0.16) !important;
     color: #ffffff !important;
-    border: 1px solid rgba(255, 255, 255, 0.22) !important;
-    border-radius: 16px !important;
+    border: 1px solid rgba(255, 255, 255, 0.3) !important;
+    border-radius: 14px !important;
     padding: 3px 10px !important;
     font-size: 12px !important;
     font-weight: 600 !important;
@@ -3072,15 +3082,15 @@ function sahdev_render_header_topbar_widget($vars)
     cursor: pointer !important;
     transition: all 0.2s ease !important;
     text-decoration: none !important;
-    height: 30px !important;
-    line-height: 1 !important;
+    height: 28px !important;
+    line-height: 28px !important;
     box-sizing: border-box !important;
     white-space: nowrap !important;
 }
 .sahdev-nav-pill-btn:hover, .sahdev-nav-pill-btn:focus {
-    background: rgba(255, 255, 255, 0.24) !important;
+    background: rgba(255, 255, 255, 0.28) !important;
     color: #ffffff !important;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.15) !important;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2) !important;
 }
 .sahdev-nav-dot {
     width: 8px;
@@ -3100,16 +3110,15 @@ function sahdev_render_header_topbar_widget($vars)
 }
 .sahdev-popover-menu {
     display: none;
-    position: absolute;
-    top: calc(100% + 6px);
-    right: 0;
-    width: 380px;
-    max-height: 520px;
+    position: fixed !important;
+    z-index: 9999999 !important;
+    width: 360px;
+    max-width: calc(100vw - 20px) !important;
+    max-height: calc(100vh - 80px) !important;
     background: #ffffff;
-    border: 1px solid #e2e8f0;
+    border: 1px solid #cbd5e0;
     border-radius: 8px;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.18);
-    z-index: 999999;
+    box-shadow: 0 12px 36px rgba(0,0,0,0.25);
     overflow: hidden;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
@@ -3124,7 +3133,7 @@ function sahdev_render_header_topbar_widget($vars)
     font-weight: 700;
 }
 .sahdev-popover-body {
-    max-height: 380px;
+    max-height: calc(100vh - 170px) !important;
     overflow-y: auto;
     padding: 8px;
     background: #f8fafc;
@@ -3157,8 +3166,8 @@ function sahdev_render_header_topbar_widget($vars)
 
 /* Mobile Responsiveness */
 @media (max-width: 768px) {
-    .sahdev-top-nav-widget {
-        margin: 0 3px !important;
+    .sahdev-header-li {
+        margin: 0 2px !important;
     }
     .sahdev-nav-pill-btn {
         width: 34px !important;
@@ -3181,16 +3190,6 @@ function sahdev_render_header_topbar_widget($vars)
         width: 7px !important;
         height: 7px !important;
         border: 1.5px solid #1a202c !important;
-    }
-    .sahdev-popover-menu {
-        position: fixed !important;
-        top: 52px !important;
-        left: 10px !important;
-        right: 10px !important;
-        width: auto !important;
-        max-width: 390px !important;
-        margin: 0 auto !important;
-        box-shadow: 0 12px 35px rgba(0,0,0,0.3) !important;
     }
 }
 </style>
@@ -3234,10 +3233,48 @@ function sahdev_render_header_topbar_widget($vars)
     var isMenuOpen = false;
     var cachedData = null;
 
+    function positionPopover() {
+        var btn = document.getElementById('sahdevNavPillBtn');
+        var popover = document.getElementById('sahdevPopoverMenu');
+        if (!btn || !popover) return;
+
+        var rect = btn.getBoundingClientRect();
+        var margin = 10;
+        var popoverWidth = Math.min(360, window.innerWidth - (margin * 2));
+
+        // Dynamic vertical position directly below button
+        var topPos = rect.bottom + 6;
+        popover.style.top = Math.max(margin, topPos) + 'px';
+
+        if (window.innerWidth <= 480) {
+            // Full mobile adaptation: pin to 10px on both sides
+            popover.style.left = margin + 'px';
+            popover.style.right = margin + 'px';
+            popover.style.width = 'auto';
+        } else {
+            popover.style.width = popoverWidth + 'px';
+            var rightPos = window.innerWidth - rect.right;
+            var leftPos = rect.right - popoverWidth;
+
+            if (leftPos < margin) {
+                popover.style.left = margin + 'px';
+                popover.style.right = 'auto';
+            } else if (rightPos < margin) {
+                popover.style.left = 'auto';
+                popover.style.right = margin + 'px';
+            } else {
+                popover.style.left = 'auto';
+                popover.style.right = Math.max(margin, rightPos) + 'px';
+            }
+        }
+    }
+
     function injectIntoNavbar() {
         var container = document.getElementById('sahdev-header-widget-container');
         var widgetWrap = document.getElementById('sahdevNavWidgetWrap');
         if (!container || !widgetWrap) return;
+
+        widgetWrap.style.display = 'inline-flex';
 
         // Target Strategy 1: Find WHMCS automation button (speedometer / gauge icon)
         var automateBtn = document.querySelector('a[href*="automationstatus.php"]') || 
@@ -3261,15 +3298,24 @@ function sahdev_render_header_topbar_widget($vars)
                             document.querySelector('#header .navbar-nav.navbar-right') || 
                             document.querySelector('.nav.navbar-nav.navbar-right') || 
                             document.querySelector('.top-navbar-right') ||
-                            document.querySelector('.navbar-header .navbar-right');
+                            document.querySelector('.navbar-header .navbar-right') ||
+                            document.querySelector('.navbar-right');
 
         // Target Strategy 4: Main navbar
         var navMenu = document.querySelector('#header .navbar-nav:first-child') || 
                       document.querySelector('#main-menu') ||
                       document.querySelector('.navbar-main');
 
-        if (automateBtn && automateBtn.parentNode) {
-            automateBtn.parentNode.insertBefore(widgetWrap, automateBtn);
+        if (automateBtn) {
+            var parentLi = automateBtn.closest('li');
+            if (parentLi && parentLi.parentNode) {
+                var li = document.createElement('li');
+                li.className = 'sahdev-header-li nav-item';
+                li.appendChild(widgetWrap);
+                parentLi.parentNode.insertBefore(li, parentLi);
+            } else if (automateBtn.parentNode) {
+                automateBtn.parentNode.insertBefore(widgetWrap, automateBtn);
+            }
         } else if (searchForm && searchForm.parentNode) {
             if (searchForm.nextSibling) {
                 searchForm.parentNode.insertBefore(widgetWrap, searchForm.nextSibling);
@@ -3279,9 +3325,7 @@ function sahdev_render_header_topbar_widget($vars)
         } else if (headerActions) {
             if (headerActions.tagName.toLowerCase() === 'ul') {
                 var li = document.createElement('li');
-                li.className = 'sahdev-header-li';
-                li.style.display = 'inline-flex';
-                li.style.alignItems = 'center';
+                li.className = 'sahdev-header-li nav-item';
                 li.appendChild(widgetWrap);
                 headerActions.insertBefore(li, headerActions.firstChild);
             } else {
@@ -3289,9 +3333,7 @@ function sahdev_render_header_topbar_widget($vars)
             }
         } else if (navMenu) {
             var li = document.createElement('li');
-            li.className = 'sahdev-header-li';
-            li.style.display = 'inline-flex';
-            li.style.alignItems = 'center';
+            li.className = 'sahdev-header-li nav-item';
             li.appendChild(widgetWrap);
             navMenu.appendChild(li);
         } else {
@@ -3368,21 +3410,21 @@ function sahdev_render_header_topbar_widget($vars)
 
                 var outagesText = '';
                 if (srv.service_outages && srv.service_outages.length > 0) {
-                    outagesText = '<div style="font-size:11px; color:#c53030; font-weight:600; margin-top:3px;"><i class="fas fa-exclamation-circle"></i> ' + srv.service_outages.join(', ') + '</div>';
+                    outagesText = '<div style="font-size:11px; color:#c53030; font-weight:600; margin-top:3px; word-break:break-word;"><i class="fas fa-exclamation-circle"></i> ' + srv.service_outages.join(', ') + '</div>';
                 }
 
                 var accessBtnHtml = srv.access_url 
-                    ? '<a href="' + srv.access_url + '" target="_blank" class="btn btn-default btn-xs" style="font-size:10px; font-weight:600; padding:2px 6px;" title="Open Server Control Panel"><i class="fas fa-external-link-alt"></i> Access</a>' 
+                    ? '<a href="' + srv.access_url + '" target="_blank" class="btn btn-default btn-xs" style="font-size:10px; font-weight:600; padding:2px 6px; flex-shrink:0;" title="Single Sign-On to Server Control Panel"><i class="fas fa-sign-in-alt"></i> Log in</a>' 
                     : '';
 
                 html += '<div class="' + rowClass + '">' +
                     pinnedBanner +
-                    '<div style="display:flex; justify-content:space-between; align-items:center;">' +
-                        '<div>' +
+                    '<div style="display:flex; justify-content:space-between; align-items:center; gap:6px;">' +
+                        '<div style="overflow:hidden; text-overflow:ellipsis;">' +
                             '<strong style="font-size:12px; color:#2d3748;">' + srv.server_name + '</strong> ' + roleBadge +
-                            '<div style="font-size:11px; color:#718096;">' + srv.server_host + ' | Load: ' + srv.server_load + '</div>' +
+                            '<div style="font-size:11px; color:#718096; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + srv.server_host + ' | Load: ' + srv.server_load + '</div>' +
                         '</div>' +
-                        '<div style="display:flex; align-items:center; gap:6px;">' +
+                        '<div style="display:flex; align-items:center; gap:6px; flex-shrink:0;">' +
                             accessBtnHtml +
                             '<span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:' + statusColor + ';" title="' + (srv.is_reachable ? 'Online' : 'Offline') + '"></span>' +
                         '</div>' +
@@ -3393,6 +3435,9 @@ function sahdev_render_header_topbar_widget($vars)
         }
 
         bodyEl.innerHTML = html;
+        if (isMenuOpen) {
+            positionPopover();
+        }
     }
 
     function fetchTelemetry(pollNow) {
@@ -3433,9 +3478,14 @@ function sahdev_render_header_topbar_widget($vars)
             btn.addEventListener('click', function(e) {
                 e.stopPropagation();
                 isMenuOpen = !isMenuOpen;
-                popover.style.display = isMenuOpen ? 'block' : 'none';
-                if (isMenuOpen && !cachedData) {
-                    fetchTelemetry(false);
+                if (isMenuOpen) {
+                    popover.style.display = 'block';
+                    positionPopover();
+                    if (!cachedData) {
+                        fetchTelemetry(false);
+                    }
+                } else {
+                    popover.style.display = 'none';
                 }
             });
 
@@ -3445,6 +3495,18 @@ function sahdev_render_header_topbar_widget($vars)
                     popover.style.display = 'none';
                 }
             });
+
+            window.addEventListener('resize', function() {
+                if (isMenuOpen) {
+                    positionPopover();
+                }
+            });
+
+            window.addEventListener('scroll', function() {
+                if (isMenuOpen) {
+                    positionPopover();
+                }
+            }, true);
         }
 
         if (pollBtn) {
@@ -3472,6 +3534,8 @@ function sahdev_render_header_topbar_widget($vars)
     } else {
         init();
     }
+    setTimeout(injectIntoNavbar, 150);
+    setTimeout(injectIntoNavbar, 500);
 })();
 </script>
 HTML;
@@ -3552,37 +3616,100 @@ add_hook('AdminAreaFooterOutput', 1, function ($vars) {
 });
 
 // ---------------------------------------------------------------------------
-// Ticket Insights: WHMCS CronJob hook — batch-analyzes Awaiting Reply tickets
+// Unified Sahdev Background Cron Runner
+// Executes server telemetry, incident surge clustering, ticket insights, and auto-tools.
 // ---------------------------------------------------------------------------
-add_hook('CronJob', 1, function () {
+function sahdev_execute_background_cron(bool $verbose = false): array
+{
+    $results = [
+        'telemetry' => null,
+        'incidents' => null,
+        'insights'  => null,
+        'tools'     => null,
+        'errors'    => [],
+    ];
+
     try {
-        $moduleDir = __DIR__;
-
-        // Guard: only run if the module tables exist
         if (!\WHMCS\Database\Capsule::schema()->hasTable('tblsahdev_settings')) {
-            return;
+            return $results;
         }
 
+        $moduleDir = __DIR__;
         $settings = \WHMCS\Database\Capsule::table('tblsahdev_settings')->first();
-        if (!$settings || empty($settings->cron_insights_enabled)) {
-            return;
+
+        // 1. Proactive Server Telemetry & Health Monitoring
+        if (!isset($settings->telemetry_enabled) || (int) $settings->telemetry_enabled !== 0) {
+            try {
+                require_once $moduleDir . '/lib/ServerTelemetryService.php';
+                $results['telemetry'] = \Sahdev\Lib\ServerTelemetryService::pollActiveServers(false);
+            } catch (\Throwable $te) {
+                $results['errors'][] = 'Server Telemetry polling error: ' . $te->getMessage();
+            }
         }
 
-        require_once $moduleDir . '/lib/AIProviderInterface.php';
-        require_once $moduleDir . '/lib/GoogleAIProvider.php';
-        require_once $moduleDir . '/lib/LMStudioAIProvider.php';
-        require_once $moduleDir . '/lib/ReplicateAIProvider.php';
-        require_once $moduleDir . '/lib/TicketDataExtractor.php';
-        require_once $moduleDir . '/lib/AIController.php';
-        require_once $moduleDir . '/lib/CronProcessor.php';
-    require_once $moduleDir . '/modules/ToolsExecution/ToolsExecutionService.php';
+        // 2. Incident & Surge Clustering
+        if (!isset($settings->incident_detection_enabled) || (int) $settings->incident_detection_enabled !== 0) {
+            try {
+                require_once $moduleDir . '/lib/IncidentDetectionService.php';
+                $results['incidents'] = \Sahdev\Lib\IncidentDetectionService::evaluateClusters();
+            } catch (\Throwable $ie) {
+                $results['errors'][] = 'Incident clustering error: ' . $ie->getMessage();
+            }
+        }
 
-        $processor = new \Sahdev\Lib\CronProcessor();
-        $processor->run();
-        \Sahdev\Modules\ToolsExecution\ToolsExecutionService::runCron(false);
+        // 3. Automated AI Ticket Insights & Sentiment
+        if ($settings && !empty($settings->cron_insights_enabled)) {
+            try {
+                require_once $moduleDir . '/lib/AIProviderInterface.php';
+                require_once $moduleDir . '/lib/GoogleAIProvider.php';
+                require_once $moduleDir . '/lib/LMStudioAIProvider.php';
+                require_once $moduleDir . '/lib/ReplicateAIProvider.php';
+                require_once $moduleDir . '/lib/TicketDataExtractor.php';
+                require_once $moduleDir . '/lib/AIController.php';
+                require_once $moduleDir . '/lib/CronProcessor.php';
+
+                $processor = new \Sahdev\Lib\CronProcessor();
+                $results['insights'] = $processor->run($verbose);
+            } catch (\Throwable $ce) {
+                $results['errors'][] = 'Insights cron error: ' . $ce->getMessage();
+            }
+        }
+
+        // 4. Tools Execution & Auto-Remediation
+        if ($settings && !empty($settings->tools_execution_enabled)) {
+            try {
+                require_once $moduleDir . '/modules/ToolsExecution/ToolsExecutionService.php';
+                $results['tools'] = \Sahdev\Modules\ToolsExecution\ToolsExecutionService::runCron($verbose);
+            } catch (\Throwable $txe) {
+                $results['errors'][] = 'Tools execution error: ' . $txe->getMessage();
+            }
+        }
+
+        // Record successful cron heartbeat
+        try {
+            \WHMCS\Database\Capsule::table('tblsahdev_settings')->where('id', 1)->update([
+                'last_cron_success' => \Carbon\Carbon::now(),
+                'updated_at'        => \Carbon\Carbon::now(),
+            ]);
+        } catch (\Throwable $e) {}
+
     } catch (\Throwable $e) {
-        // Silently swallow — never crash the WHMCS cron
+        $results['errors'][] = 'Global cron error: ' . $e->getMessage();
     }
+
+    return $results;
+}
+
+add_hook('CronJob', 1, function () {
+    sahdev_execute_background_cron(false);
+});
+
+add_hook('DailyCronJob', 1, function () {
+    sahdev_execute_background_cron(false);
+});
+
+add_hook('AfterCronJob', 1, function () {
+    sahdev_execute_background_cron(false);
 });
 
 // ---------------------------------------------------------------------------

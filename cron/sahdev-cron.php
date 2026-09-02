@@ -29,6 +29,8 @@ require_once dirname(__DIR__) . '/lib/WhmcsTicketTagHelper.php';
 require_once dirname(__DIR__) . '/lib/AIController.php';
 require_once dirname(__DIR__) . '/lib/AutopilotProcessor.php';
 require_once dirname(__DIR__) . '/lib/CronProcessor.php';
+require_once dirname(__DIR__) . '/lib/ServerTelemetryService.php';
+require_once dirname(__DIR__) . '/lib/IncidentDetectionService.php';
 require_once dirname(__DIR__) . '/modules/ToolsExecution/ToolsExecutionService.php';
 
 $argvList = isset($argv) && is_array($argv) ? $argv : [];
@@ -36,11 +38,27 @@ $verbose = in_array('--verbose', $argvList, true);
 
 $exitCode = 0;
 $summary = [
-    'ran_at' => date('c'),
-    'insights' => null,
-    'tools' => null,
-    'errors' => [],
+    'ran_at'    => date('c'),
+    'telemetry' => null,
+    'incidents' => null,
+    'insights'  => null,
+    'tools'     => null,
+    'errors'    => [],
 ];
+
+try {
+    $summary['telemetry'] = \Sahdev\Lib\ServerTelemetryService::pollActiveServers($verbose);
+} catch (\Throwable $e) {
+    $summary['errors'][] = 'Server telemetry polling failed: ' . $e->getMessage();
+    $exitCode = 1;
+}
+
+try {
+    $summary['incidents'] = \Sahdev\Lib\IncidentDetectionService::evaluateClusters();
+} catch (\Throwable $e) {
+    $summary['errors'][] = 'Incident clustering failed: ' . $e->getMessage();
+    $exitCode = 1;
+}
 
 try {
     $summary['tools'] = \Sahdev\Modules\ToolsExecution\ToolsExecutionService::runCron($verbose);

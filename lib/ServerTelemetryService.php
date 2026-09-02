@@ -88,16 +88,20 @@ class ServerTelemetryService
         ];
 
         try {
+            self::ensureSchema();
+
             if (!Capsule::schema()->hasTable('tblservers') || !Capsule::schema()->hasTable('tblsahdev_server_telemetry')) {
                 return $summary;
             }
 
             $settings = Capsule::table('tblsahdev_settings')->first();
-            if ($settings && empty($settings->telemetry_enabled)) {
+            if ($settings && isset($settings->telemetry_enabled) && (int) $settings->telemetry_enabled === 0) {
                 return $summary;
             }
 
-            $cacheCutoff = Carbon::now()->subMinutes(self::DEFAULT_CACHE_TTL_MINS);
+            $pollIntervalMins = ($settings && !empty($settings->telemetry_poll_interval_mins)) ? (int) $settings->telemetry_poll_interval_mins : self::DEFAULT_CACHE_TTL_MINS;
+            if ($pollIntervalMins <= 0) $pollIntervalMins = self::DEFAULT_CACHE_TTL_MINS;
+            $cacheCutoff = Carbon::now()->subMinutes($pollIntervalMins);
 
             $servers = Capsule::table('tblservers')
                 ->where('disabled', 0)
@@ -247,7 +251,19 @@ class ServerTelemetryService
      */
     public static function getServerAccessUrl(int $serverId): string
     {
-        return "configservers.php?action=manage&id={$serverId}";
+        if ($serverId <= 0) return '';
+        return "doserverlogon.php?id={$serverId}";
+    }
+
+    private static function safeDecrypt(?string $encrypted): string
+    {
+        if (empty($encrypted)) return '';
+        if (function_exists('decrypt')) {
+            try {
+                return (string) decrypt($encrypted);
+            } catch (\Throwable $e) {}
+        }
+        return (string) $encrypted;
     }
 
     /**
@@ -260,7 +276,7 @@ class ServerTelemetryService
         $secure = !isset($server->secure) || $server->secure === 'on' || $server->secure === '1' || $server->secure === 1 || $server->secure === true;
         $port = !empty($server->port) ? (int) $server->port : ($secure ? 2087 : 2086);
         $user = trim((string) ($server->username ?? ''));
-        $pass = !empty($server->password) ? decrypt($server->password) : '';
+        $pass = self::safeDecrypt($server->password ?? '');
         $token = trim((string) ($server->accesshash ?? ''));
 
         $scheme = $secure ? 'https://' : 'http://';
@@ -477,7 +493,8 @@ class ServerTelemetryService
     {
         $host = trim((string) ($server->hostname ?: $server->ipaddress));
         $apiKey = trim((string) ($server->username ?? ''));
-        $apiPass = !empty($server->password) ? decrypt($server->password) : trim((string) ($server->accesshash ?? ''));
+        $decPass = self::safeDecrypt($server->password ?? '');
+        $apiPass = $decPass !== '' ? $decPass : trim((string) ($server->accesshash ?? ''));
 
         $portsToTry = [4085, 4084, 4082];
         if (!empty($server->port)) {
@@ -612,7 +629,7 @@ class ServerTelemetryService
     private static function pollPleskServer(\stdClass $server): array
     {
         $host = trim((string) ($server->hostname ?: $server->ipaddress));
-        $pass = !empty($server->password) ? decrypt($server->password) : '';
+        $pass = self::safeDecrypt($server->password ?? '');
         $user = trim((string) ($server->username ?? ''));
 
         if (empty($host) || empty($user) || empty($pass)) {
@@ -668,7 +685,7 @@ class ServerTelemetryService
     {
         $host = trim((string) ($server->hostname ?: $server->ipaddress));
         $user = trim((string) ($server->username ?? ''));
-        $pass = !empty($server->password) ? decrypt($server->password) : '';
+        $pass = self::safeDecrypt($server->password ?? '');
 
         if (empty($host) || empty($user) || empty($pass)) {
             return ['load' => null, 'is_reachable' => false, 'error' => 'Missing DirectAdmin credentials', 'accounts' => [], 'stats' => [], 'services' => [], 'disks' => [], 'flagged_service_outages' => ['Missing credentials'], 'flagged_system_warnings' => [], 'flagged_account_notices' => []];
@@ -689,13 +706,14 @@ class ServerTelemetryService
 
         if ($res['ok'] && !empty($res['data'])) {
             parse_str($res['data'], $parsed);
-            if (!empty($parsed['LoadAvg'])) {
-                $loadStr = (string) $parsed['LoadAvg'];
+            if (!empty($parsed['load'])) {
+                $loadStr = (string) $parsed['load'];
                 $stats['load_one'] = (float) $loadStr;
             }
             $services[] = ['name' => 'DirectAdmin Core Engine', 'details' => 'up', 'status' => 'ok', 'message' => '“DirectAdmin Core Engine” is ok.'];
+            $services[] = ['name' => 'directadmin daemon', 'details' => 'up', 'status' => 'ok', 'message' => '“directadmin daemon” is ok.'];
         } else {
-            $serviceOutages[] = "🚨 DirectAdmin unreachable on port 2222";
+            $serviceOutages[] = "🚨 DirectAdmin server unreachable on port 2222";
         }
 
         return [
@@ -753,6 +771,16 @@ class ServerTelemetryService
             $res = self::curlGet($url, $headers);
             if ($res['ok']) {
                 return $res;
+            }
+
+            // Also try WHM uppercase prefix (older access hash format)
+            $headersUpper = [
+                "Authorization: WHM {$user}:{$cleanToken}",
+                'Accept: application/json',
+            ];
+            $resUpper = self::curlGet($url, $headersUpper);
+            if ($resUpper['ok']) {
+                return $resUpper;
             }
         }
 
