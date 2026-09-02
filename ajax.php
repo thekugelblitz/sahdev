@@ -774,11 +774,11 @@ try {
         require_once __DIR__ . '/lib/ServerTelemetryService.php';
 
         $pollNow = !empty($_REQUEST['poll_now']) && $_REQUEST['poll_now'] == '1';
-        if ($pollNow) {
-            try {
-                \Sahdev\Lib\ServerTelemetryService::pollActiveServers(true);
-            } catch (\Throwable $e) {}
-        }
+        try {
+            // If pollNow is true, force poll all servers immediately.
+            // Otherwise, pollActiveServers(false) automatically checks and polls any stale/unpolled servers respecting the cache TTL!
+            \Sahdev\Lib\ServerTelemetryService::pollActiveServers($pollNow);
+        } catch (\Throwable $e) {}
 
         // Determine context server (from service_id or ticket_id)
         $contextServiceId = (int) ($_REQUEST['service_id'] ?? 0);

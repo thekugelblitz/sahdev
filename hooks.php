@@ -3139,12 +3139,15 @@ function sahdev_render_header_topbar_widget($vars)
     align-items: center;
     font-size: 12px;
     font-weight: 700;
+    line-height: 1.2;
 }
 .sahdev-popover-body {
     max-height: calc(100vh - 170px) !important;
-    overflow-y: auto;
-    padding: 8px;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    padding: 8px 10px !important;
     background: #f8fafc;
+    box-sizing: border-box !important;
 }
 .sahdev-popover-footer {
     background: #edf2f7;
@@ -3162,6 +3165,8 @@ function sahdev_render_header_topbar_widget($vars)
     padding: 8px 10px;
     margin-bottom: 6px;
     transition: background 0.15s ease;
+    overflow: hidden !important;
+    box-sizing: border-box !important;
 }
 .sahdev-server-row:hover {
     background: #f7fafc;
@@ -3170,6 +3175,33 @@ function sahdev_render_header_topbar_widget($vars)
     border: 1px solid #bbeeeb;
     border-left: 4px solid #20c997;
     background: #f0fdf4;
+}
+.sahdev-sso-btn {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 4px !important;
+    padding: 2px 7px !important;
+    height: 22px !important;
+    line-height: 1 !important;
+    background: #edf2f7 !important;
+    color: #2b6cb0 !important;
+    border: 1px solid #cbd5e0 !important;
+    border-radius: 4px !important;
+    font-size: 10px !important;
+    font-weight: 700 !important;
+    text-decoration: none !important;
+    white-space: nowrap !important;
+    flex-shrink: 0 !important;
+    cursor: pointer !important;
+    box-sizing: border-box !important;
+    transition: all 0.15s ease !important;
+}
+.sahdev-sso-btn:hover {
+    background: #ebf8ff !important;
+    border-color: #3182ce !important;
+    color: #2b6cb0 !important;
+    text-decoration: none !important;
 }
 
 /* Mobile Responsiveness */
@@ -3212,8 +3244,11 @@ function sahdev_render_header_topbar_widget($vars)
         </a>
         <div class="sahdev-popover-menu" id="sahdevPopoverMenu">
             <div class="sahdev-popover-header">
-                <span><i class="fas fa-satellite-dish" style="color:#20c997; margin-right:5px;"></i> Server Health Intel</span>
-                <span id="sahdevWidgetSummary" style="font-size:11px; font-weight:normal; color:#cbd5e0;">Loading…</span>
+                <div style="display:flex; align-items:center; gap:6px;">
+                    <i class="fas fa-satellite-dish" style="color:#20c997; font-size:12px;"></i>
+                    <span>Server Health Intel</span>
+                </div>
+                <span id="sahdevWidgetSummary" style="font-size:11px; font-weight:600; color:#cbd5e0; background:rgba(255,255,255,0.1); padding:2px 6px; border-radius:10px;">Loading…</span>
             </div>
             <div class="sahdev-popover-body" id="sahdevPopoverBody">
                 <div style="text-align:center; padding: 25px; color:#718096; font-size:12px;">
@@ -3222,11 +3257,11 @@ function sahdev_render_header_topbar_widget($vars)
                 </div>
             </div>
             <div class="sahdev-popover-footer">
-                <a href="javascript:void(0);" id="sahdevPollNowBtn" style="color:#3182ce; font-weight:600; text-decoration:none;">
+                <a href="javascript:void(0);" id="sahdevPollNowBtn" style="color:#3182ce; font-weight:600; text-decoration:none; display:inline-flex; align-items:center; gap:4px;">
                     <i class="fas fa-sync-alt"></i> Refresh Now
                 </a>
-                <a href="addonmodules.php?module=sahdev&action=incidents" target="_blank" style="color:#4a5568; font-weight:600; text-decoration:none;">
-                    Incident Center <i class="fas fa-chevron-right" style="font-size:10px;"></i>
+                <a href="addonmodules.php?module=sahdev&action=incidents" target="_blank" style="color:#4a5568; font-weight:600; text-decoration:none; display:inline-flex; align-items:center; gap:4px;">
+                    Incident Center <i class="fas fa-chevron-right" style="font-size:9px;"></i>
                 </a>
             </div>
         </div>
@@ -3428,27 +3463,36 @@ function sahdev_render_header_topbar_widget($vars)
                 var rowClass = 'sahdev-server-row' + (isPinned ? ' is-pinned' : '');
                 var pinnedBanner = isPinned ? '<div style="font-size:10px; font-weight:700; color:#20c997; margin-bottom:4px;"><i class="fas fa-star"></i> CURRENT SERVICE SERVER</div>' : '';
 
+                var reachabilityHtml = '';
+                if (!srv.is_reachable) {
+                    var errText = srv.reachability_error || 'Server is unreachable';
+                    reachabilityHtml = '<div style="font-size:10px; color:#c53030; font-weight:600; margin-top:4px; padding:2px 6px; background:#fff5f5; border:1px solid #fed7d7; border-radius:3px; word-break:break-word;"><i class="fas fa-times-circle"></i> ' + errText + '</div>';
+                }
+
                 var outagesText = '';
                 if (srv.service_outages && srv.service_outages.length > 0) {
-                    outagesText = '<div style="font-size:11px; color:#c53030; font-weight:600; margin-top:3px; word-break:break-word;"><i class="fas fa-exclamation-circle"></i> ' + srv.service_outages.join(', ') + '</div>';
+                    outagesText = '<div style="font-size:10px; color:#c53030; font-weight:600; margin-top:4px; padding:2px 6px; background:#fff5f5; border:1px solid #fed7d7; border-radius:3px; word-break:break-word;"><i class="fas fa-exclamation-triangle"></i> ' + srv.service_outages.join(', ') + '</div>';
                 }
 
                 var accessBtnHtml = srv.access_url 
-                    ? '<a href="' + srv.access_url + '" target="_blank" class="btn btn-default btn-xs" style="font-size:10px; font-weight:600; padding:2px 6px; flex-shrink:0;" title="Single Sign-On to Server Control Panel"><i class="fas fa-sign-in-alt"></i> Log in</a>' 
+                    ? '<a href="' + srv.access_url + '" target="_blank" class="sahdev-sso-btn" title="Single Sign-On to Server Control Panel"><i class="fas fa-sign-in-alt"></i> Log in</a>' 
                     : '';
 
                 html += '<div class="' + rowClass + '">' +
                     pinnedBanner +
-                    '<div style="display:flex; justify-content:space-between; align-items:center; gap:6px;">' +
-                        '<div style="overflow:hidden; text-overflow:ellipsis;">' +
-                            '<strong style="font-size:12px; color:#2d3748;">' + srv.server_name + '</strong> ' + roleBadge +
-                            '<div style="font-size:11px; color:#718096; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + srv.server_host + ' | Load: ' + srv.server_load + '</div>' +
+                    '<div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">' +
+                        '<div style="min-width:0; flex:1; overflow:hidden;">' +
+                            '<div style="display:flex; align-items:center; gap:5px; flex-wrap:wrap;">' +
+                                '<strong style="font-size:12px; color:#2d3748; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:175px;" title="' + srv.server_name + '">' + srv.server_name + '</strong> ' + roleBadge +
+                            '</div>' +
+                            '<div style="font-size:10.5px; color:#718096; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:2px;">' + srv.server_host + ' | Load: ' + srv.server_load + '</div>' +
                         '</div>' +
                         '<div style="display:flex; align-items:center; gap:6px; flex-shrink:0;">' +
                             accessBtnHtml +
-                            '<span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:' + statusColor + ';" title="' + (srv.is_reachable ? 'Online' : 'Offline') + '"></span>' +
+                            '<span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:' + statusColor + '; flex-shrink:0;" title="' + (srv.is_reachable ? 'Online' : 'Offline') + '"></span>' +
                         '</div>' +
                     '</div>' +
+                    reachabilityHtml +
                     outagesText +
                 '</div>';
             });
