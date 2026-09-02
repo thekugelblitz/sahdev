@@ -3120,24 +3120,66 @@ function sahdev_render_header_topbar_widget($vars)
     display: none;
     position: fixed !important;
     z-index: 9999999 !important;
-    width: 360px;
+    width: 380px;
     max-width: calc(100vw - 20px) !important;
     max-height: calc(100vh - 80px) !important;
     background: #ffffff;
-    border: 1px solid #cbd5e0;
+    border: 1px solid #cbd5e1;
     border-radius: 8px;
-    box-shadow: 0 12px 36px rgba(0,0,0,0.25);
+    box-shadow: 0 16px 36px rgba(0,0,0,0.2), 0 4px 12px rgba(0,0,0,0.08);
     overflow: hidden;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
+.sahdev-popover-menu *,
+.sahdev-popover-menu a::after,
+.sahdev-popover-menu a::before,
+.sahdev-top-nav-widget a::after,
+.sahdev-top-nav-widget a::before,
+.sahdev-sso-btn::after,
+.sahdev-sso-btn::before,
+.sahdev-popover-footer a::after,
+.sahdev-popover-footer a::before,
+.sahdev-nav-pill-btn::after,
+.sahdev-nav-pill-btn::before {
+    box-sizing: border-box !important;
+}
+.sahdev-popover-menu a::after,
+.sahdev-popover-menu a::before,
+.sahdev-top-nav-widget a::after,
+.sahdev-top-nav-widget a::before,
+.sahdev-sso-btn::after,
+.sahdev-sso-btn::before,
+.sahdev-popover-footer a::after,
+.sahdev-popover-footer a::before,
+.sahdev-nav-pill-btn::after,
+.sahdev-nav-pill-btn::before {
+    display: none !important;
+    content: none !important;
+    content: "" !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 0 !important;
+    height: 0 !important;
+}
+.sahdev-popover-menu i,
+.sahdev-popover-menu .fas,
+.sahdev-popover-menu .far,
+.sahdev-popover-menu .fa {
+    position: static !important;
+    float: none !important;
+    display: inline-block !important;
+    line-height: 1 !important;
+    vertical-align: middle !important;
+    margin: 0 !important;
+}
 .sahdev-popover-header {
-    background: #1a202c;
-    color: #fff;
-    padding: 10px 14px;
+    background: #0f172a;
+    color: #ffffff;
+    padding: 11px 15px;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    font-size: 12px;
+    font-size: 12.5px;
     font-weight: 700;
     line-height: 1.2;
 }
@@ -3145,35 +3187,51 @@ function sahdev_render_header_topbar_widget($vars)
     max-height: calc(100vh - 170px) !important;
     overflow-y: auto !important;
     overflow-x: hidden !important;
-    padding: 8px 10px !important;
+    padding: 9px 11px !important;
     background: #f8fafc;
     box-sizing: border-box !important;
 }
+.sahdev-popover-body::-webkit-scrollbar {
+    width: 5px !important;
+}
+.sahdev-popover-body::-webkit-scrollbar-track {
+    background: transparent !important;
+}
+.sahdev-popover-body::-webkit-scrollbar-thumb {
+    background: #cbd5e1 !important;
+    border-radius: 4px !important;
+}
+.sahdev-popover-body::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8 !important;
+}
 .sahdev-popover-footer {
-    background: #edf2f7;
-    padding: 8px 12px;
+    background: #ffffff;
+    padding: 9px 14px;
     display: flex;
     justify-content: space-between;
     align-items: center;
     border-top: 1px solid #e2e8f0;
-    font-size: 11px;
+    font-size: 11.5px;
 }
 .sahdev-server-row {
-    background: #fff;
+    background: #ffffff;
     border: 1px solid #e2e8f0;
     border-radius: 6px;
-    padding: 8px 10px;
-    margin-bottom: 6px;
-    transition: background 0.15s ease;
+    padding: 9px 11px;
+    margin-bottom: 7px;
+    transition: all 0.15s ease;
     overflow: hidden !important;
     box-sizing: border-box !important;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.02);
 }
 .sahdev-server-row:hover {
-    background: #f7fafc;
+    background: #ffffff;
+    border-color: #cbd5e1;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
 }
 .sahdev-server-row.is-pinned {
-    border: 1px solid #bbeeeb;
-    border-left: 4px solid #20c997;
+    border: 1px solid #86efac;
+    border-left: 4px solid #10b981;
     background: #f0fdf4;
 }
 .sahdev-sso-btn {
@@ -3181,15 +3239,15 @@ function sahdev_render_header_topbar_widget($vars)
     align-items: center !important;
     justify-content: center !important;
     gap: 4px !important;
-    padding: 2px 7px !important;
-    height: 22px !important;
+    padding: 3px 8px !important;
+    height: 23px !important;
     line-height: 1 !important;
-    background: #edf2f7 !important;
-    color: #2b6cb0 !important;
-    border: 1px solid #cbd5e0 !important;
+    background: #f8fafc !important;
+    color: #2563eb !important;
+    border: 1px solid #cbd5e1 !important;
     border-radius: 4px !important;
-    font-size: 10px !important;
-    font-weight: 700 !important;
+    font-size: 11px !important;
+    font-weight: 600 !important;
     text-decoration: none !important;
     white-space: nowrap !important;
     flex-shrink: 0 !important;
@@ -3198,9 +3256,9 @@ function sahdev_render_header_topbar_widget($vars)
     transition: all 0.15s ease !important;
 }
 .sahdev-sso-btn:hover {
-    background: #ebf8ff !important;
-    border-color: #3182ce !important;
-    color: #2b6cb0 !important;
+    background: #eff6ff !important;
+    border-color: #3b82f6 !important;
+    color: #1d4ed8 !important;
     text-decoration: none !important;
 }
 
@@ -3245,10 +3303,10 @@ function sahdev_render_header_topbar_widget($vars)
         <div class="sahdev-popover-menu" id="sahdevPopoverMenu">
             <div class="sahdev-popover-header">
                 <div style="display:flex; align-items:center; gap:6px;">
-                    <i class="fas fa-satellite-dish" style="color:#20c997; font-size:12px;"></i>
+                    <i class="fas fa-satellite-dish" style="color:#10b981; font-size:12px;"></i>
                     <span>Server Health Intel</span>
                 </div>
-                <span id="sahdevWidgetSummary" style="font-size:11px; font-weight:600; color:#cbd5e0; background:rgba(255,255,255,0.1); padding:2px 6px; border-radius:10px;">Loading…</span>
+                <span id="sahdevWidgetSummary" style="font-size:11px; font-weight:600; color:#e2e8f0; background:rgba(255,255,255,0.12); padding:2px 8px; border-radius:10px;">Loading…</span>
             </div>
             <div class="sahdev-popover-body" id="sahdevPopoverBody">
                 <div style="text-align:center; padding: 25px; color:#718096; font-size:12px;">
@@ -3257,10 +3315,10 @@ function sahdev_render_header_topbar_widget($vars)
                 </div>
             </div>
             <div class="sahdev-popover-footer">
-                <a href="javascript:void(0);" id="sahdevPollNowBtn" style="color:#3182ce; font-weight:600; text-decoration:none; display:inline-flex; align-items:center; gap:4px;">
+                <a href="javascript:void(0);" id="sahdevPollNowBtn" style="color:#2563eb; font-weight:600; text-decoration:none; display:inline-flex; align-items:center; gap:5px;">
                     <i class="fas fa-sync-alt"></i> Refresh Now
                 </a>
-                <a href="addonmodules.php?module=sahdev&action=incidents" target="_blank" style="color:#4a5568; font-weight:600; text-decoration:none; display:inline-flex; align-items:center; gap:4px;">
+                <a href="addonmodules.php?module=sahdev&action=incidents" target="_blank" style="color:#475569; font-weight:600; text-decoration:none; display:inline-flex; align-items:center; gap:4px;">
                     Incident Center <i class="fas fa-chevron-right" style="font-size:9px;"></i>
                 </a>
             </div>
@@ -3283,7 +3341,7 @@ function sahdev_render_header_topbar_widget($vars)
 
         var rect = btn.getBoundingClientRect();
         var margin = 10;
-        var popoverWidth = Math.min(360, window.innerWidth - (margin * 2));
+        var popoverWidth = Math.min(380, window.innerWidth - (margin * 2));
 
         // Dynamic vertical position directly below button
         var topPos = rect.bottom + 6;
@@ -3418,14 +3476,14 @@ function sahdev_render_header_topbar_widget($vars)
         if (!dot || !label || !summaryEl || !bodyEl) return;
 
         if (summary.total_outages > 0 || activeIncidents.length > 0) {
-            dot.style.background = '#e53e3e';
+            dot.style.background = '#ef4444';
             var count = summary.total_outages + activeIncidents.length;
-            label.innerHTML = '<span style="color:#feb2b2;">' + count + ' Outage' + (count > 1 ? 's' : '') + '</span>';
+            label.innerHTML = '<span style="color:#fca5a5;">' + count + ' Outage' + (count > 1 ? 's' : '') + '</span>';
         } else if (summary.total_warnings > 0) {
-            dot.style.background = '#dd6b20';
+            dot.style.background = '#f59e0b';
             label.innerHTML = 'Servers (' + summary.reachable_servers + '/' + summary.monitored_servers + ')';
         } else {
-            dot.style.background = '#48bb78';
+            dot.style.background = '#10b981';
             label.innerHTML = 'Servers (' + summary.reachable_servers + '/' + summary.monitored_servers + ')';
         }
 
@@ -3436,46 +3494,48 @@ function sahdev_render_header_topbar_widget($vars)
         // Active incidents banner inside popover
         if (activeIncidents.length > 0) {
             activeIncidents.forEach(function(inc) {
-                html += '<div style="background:#fff5f5; border:1px solid #feb2b2; border-left:3px solid #e53e3e; border-radius:5px; padding:6px 8px; margin-bottom:6px; font-size:11px;">' +
-                    '<strong style="color:#c53030;"><i class="fas fa-fire"></i> [' + inc.incident_num + '] ' + inc.title + '</strong>' +
-                    '<div style="color:#742a2a; margin-top:2px;">' + (inc.server_name || 'Infrastructure') + '</div>' +
+                html += '<div style="background:#fef2f2; border:1px solid #fecaca; border-left:3px solid #ef4444; border-radius:5px; padding:6px 9px; margin-bottom:7px; font-size:11px;">' +
+                    '<strong style="color:#b91c1c;"><i class="fas fa-fire" style="color:#ef4444; margin-right:4px;"></i> [' + inc.incident_num + '] ' + inc.title + '</strong>' +
+                    '<div style="color:#7f1d1d; margin-top:2px;">' + (inc.server_name || 'Infrastructure') + '</div>' +
                 '</div>';
             });
         }
 
         if (!servers.length) {
-            html += '<div style="text-align:center; padding:20px; color:#718096; font-size:12px;">No monitored servers found.</div>';
+            html += '<div style="text-align:center; padding:20px; color:#64748b; font-size:12px;">No monitored servers found.</div>';
         } else {
             servers.forEach(function(srv) {
                 var isPinned = srv.is_context_pinned;
                 var srvStatus = srv.is_reachable && (!srv.service_outages || srv.service_outages.length === 0);
-                var statusColor = !srv.is_reachable ? '#e53e3e' : (srv.service_outages && srv.service_outages.length > 0 ? '#e53e3e' : (srv.system_warnings && srv.system_warnings.length > 0 ? '#dd6b20' : '#38a169'));
+                var statusColor = !srv.is_reachable ? '#ef4444' : (srv.service_outages && srv.service_outages.length > 0 ? '#ef4444' : (srv.system_warnings && srv.system_warnings.length > 0 ? '#f59e0b' : '#10b981'));
 
                 var roleBadge = '';
                 if (srv.server_role === 'root') {
-                    roleBadge = '<span class="label" style="background:#1a365d;color:#fff;font-size:9px;padding:1px 5px;border-radius:2px;">ROOT</span>';
+                    roleBadge = '<span style="background:#0f172a;color:#f8fafc;font-size:9px;font-weight:700;padding:2px 5px;border-radius:3px;letter-spacing:0.4px;">ROOT</span>';
                 } else if (srv.server_role === 'reseller') {
-                    roleBadge = '<span class="label" style="background:#553c9e;color:#fff;font-size:9px;padding:1px 5px;border-radius:2px;">RESELLER</span>';
+                    roleBadge = '<span style="background:#581c87;color:#fdf4ff;font-size:9px;font-weight:700;padding:2px 5px;border-radius:3px;letter-spacing:0.4px;">RESELLER</span>';
                 } else if (srv.server_role === 'vps_node') {
-                    roleBadge = '<span class="label" style="background:#234e52;color:#fff;font-size:9px;padding:1px 5px;border-radius:2px;">VPS NODE</span>';
+                    roleBadge = '<span style="background:#134e4a;color:#f0fdfa;font-size:9px;font-weight:700;padding:2px 5px;border-radius:3px;letter-spacing:0.4px;">VPS NODE</span>';
                 }
 
                 var rowClass = 'sahdev-server-row' + (isPinned ? ' is-pinned' : '');
-                var pinnedBanner = isPinned ? '<div style="font-size:10px; font-weight:700; color:#20c997; margin-bottom:4px;"><i class="fas fa-star"></i> CURRENT SERVICE SERVER</div>' : '';
+                var pinnedBanner = isPinned ? '<div style="font-size:10px; font-weight:700; color:#059669; margin-bottom:4px; display:flex; align-items:center; gap:4px;"><i class="fas fa-star" style="color:#10b981;"></i> CURRENT SERVICE SERVER</div>' : '';
 
                 var reachabilityHtml = '';
                 if (!srv.is_reachable) {
-                    var errText = srv.reachability_error || 'Server is unreachable';
-                    reachabilityHtml = '<div style="font-size:10px; color:#c53030; font-weight:600; margin-top:4px; padding:2px 6px; background:#fff5f5; border:1px solid #fed7d7; border-radius:3px; word-break:break-word;"><i class="fas fa-times-circle"></i> ' + errText + '</div>';
+                    var rawErr = (srv.reachability_error || 'Server is unreachable');
+                    var errText = rawErr.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '').trim();
+                    reachabilityHtml = '<div style="font-size:10.5px; color:#991b1b; font-weight:500; margin-top:6px; padding:4px 8px; background:#fef2f2; border:1px solid #fecaca; border-radius:4px; line-height:1.3; display:flex; align-items:center; gap:5px;"><i class="fas fa-plug" style="color:#dc2626; font-size:10px; flex-shrink:0;"></i><span>' + errText + '</span></div>';
                 }
 
                 var outagesText = '';
                 if (srv.service_outages && srv.service_outages.length > 0) {
-                    outagesText = '<div style="font-size:10px; color:#c53030; font-weight:600; margin-top:4px; padding:2px 6px; background:#fff5f5; border:1px solid #fed7d7; border-radius:3px; word-break:break-word;"><i class="fas fa-exclamation-triangle"></i> ' + srv.service_outages.join(', ') + '</div>';
+                    var cleanOutages = srv.service_outages.map(function(o) { return o.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '').trim(); }).join(' • ');
+                    outagesText = '<div style="font-size:10.5px; color:#991b1b; font-weight:500; margin-top:6px; padding:4px 8px; background:#fef2f2; border:1px solid #fecaca; border-radius:4px; line-height:1.3; display:flex; align-items:center; gap:5px;"><i class="fas fa-exclamation-circle" style="color:#dc2626; font-size:10px; flex-shrink:0;"></i><span>' + cleanOutages + '</span></div>';
                 }
 
                 var accessBtnHtml = srv.access_url 
-                    ? '<a href="' + srv.access_url + '" target="_blank" class="sahdev-sso-btn" title="Single Sign-On to Server Control Panel"><i class="fas fa-sign-in-alt"></i> Log in</a>' 
+                    ? '<a href="' + srv.access_url + '" target="_blank" class="sahdev-sso-btn" title="Single Sign-On to Server Control Panel"><i class="fas fa-sign-in-alt" style="font-size:9px;"></i> Log in</a>' 
                     : '';
 
                 html += '<div class="' + rowClass + '">' +
@@ -3483,9 +3543,9 @@ function sahdev_render_header_topbar_widget($vars)
                     '<div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">' +
                         '<div style="min-width:0; flex:1; overflow:hidden;">' +
                             '<div style="display:flex; align-items:center; gap:5px; flex-wrap:wrap;">' +
-                                '<strong style="font-size:12px; color:#2d3748; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:175px;" title="' + srv.server_name + '">' + srv.server_name + '</strong> ' + roleBadge +
+                                '<strong style="font-size:12px; color:#1e293b; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:185px;" title="' + srv.server_name + '">' + srv.server_name + '</strong> ' + roleBadge +
                             '</div>' +
-                            '<div style="font-size:10.5px; color:#718096; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:2px;">' + srv.server_host + ' | Load: ' + srv.server_load + '</div>' +
+                            '<div style="font-size:10.5px; color:#64748b; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:2px;">' + srv.server_host + ' | Load: ' + srv.server_load + '</div>' +
                         '</div>' +
                         '<div style="display:flex; align-items:center; gap:6px; flex-shrink:0;">' +
                             accessBtnHtml +

@@ -247,6 +247,36 @@ class ServerTelemetryService
     }
 
     /**
+     * Resolve default server control panel port based on module type and TLS setting.
+     */
+    public static function getDefaultServerPort(string $serverType, bool $isSecure = true): int
+    {
+        $type = strtolower(trim($serverType));
+        if (strpos($type, 'virtualizor') !== false) {
+            return $isSecure ? 4085 : 4084;
+        }
+        if (strpos($type, 'plesk') !== false) {
+            return 8443;
+        }
+        if (strpos($type, 'directadmin') !== false) {
+            return 2222;
+        }
+        if (strpos($type, 'solus') !== false) {
+            return $isSecure ? 5656 : 5353;
+        }
+        if (strpos($type, 'proxmox') !== false) {
+            return 8006;
+        }
+        if (strpos($type, 'centova') !== false) {
+            return $isSecure ? 2198 : 2199;
+        }
+        if (strpos($type, 'cpanel') !== false || $type === 'whm' || empty($type)) {
+            return $isSecure ? 2087 : 2086;
+        }
+        return $isSecure ? 443 : 80;
+    }
+
+    /**
      * Build WHMCS single-sign-on or panel access URL.
      */
     public static function getServerAccessUrl(int $serverId): string
@@ -277,19 +307,19 @@ class ServerTelemetryService
                 exit;
             }
 
+            $type = strtolower((string) ($server->type ?? 'cpanel'));
             $host = trim((string) ($server->hostname ?: $server->ipaddress));
             $secure = !isset($server->secure) || $server->secure === 'on' || $server->secure === '1' || $server->secure === 1 || $server->secure === true;
-            $port = !empty($server->port) ? (int) $server->port : ($secure ? 2087 : 2086);
+            $port = !empty($server->port) ? (int) $server->port : self::getDefaultServerPort($type, $secure);
             $user = trim((string) ($server->username ?? ''));
             $pass = self::safeDecrypt($server->password ?? '');
             $token = trim((string) ($server->accesshash ?? ''));
-            $type = strtolower((string) ($server->type ?? 'cpanel'));
 
             $scheme = $secure ? 'https://' : 'http://';
             $baseUrl = "{$scheme}{$host}:{$port}/json-api/";
 
             // For cPanel / WHM servers: Use official WHM API create_user_session
-            if ($type === 'cpanel' || empty($type)) {
+            if ($type === 'cpanel' || $type === 'whm' || empty($type)) {
                 $sessionRes = self::callWhmApi(
                     $baseUrl,
                     'create_user_session?api.version=1&user=' . urlencode($user ?: 'root') . '&service=whostmgrd&app=whostmgr',
@@ -477,7 +507,7 @@ class ServerTelemetryService
                     ];
 
                     if (!$isUp && $monitored) {
-                        $serviceOutages[] = "🚨 Service '{$name}' is DOWN";
+                        $serviceOutages[] = "Service '{$name}' is DOWN";
                     }
                 }
             }
@@ -526,11 +556,11 @@ class ServerTelemetryService
                     if ($percentVal >= 90) {
                         $status = 'critical';
                         $msg = "“Disk {$mount} ({$mount})” is CRITICALLY FULL ({$percentVal}%).";
-                        $serviceOutages[] = "🚨 Disk {$mount} ({$mount}) is {$percentVal}% full (Critical)";
+                        $serviceOutages[] = "Disk {$mount} ({$mount}) is {$percentVal}% full (Critical)";
                     } elseif ($percentVal >= 80) {
                         $status = 'warning';
                         $msg = "“Disk {$mount} ({$mount})” is reporting warnings ({$percentVal}%).";
-                        $systemWarnings[] = "⚠️ Disk {$mount} ({$mount}) is {$percentVal}% full (Warning)";
+                        $systemWarnings[] = "Disk {$mount} ({$mount}) is {$percentVal}% full (Warning)";
                     }
 
                     $disks[] = [
@@ -548,7 +578,7 @@ class ServerTelemetryService
         // Evaluate high load warning if applicable
         if (isset($stats['server_load_val']) && !empty($stats['cpu_count'])) {
             if ($stats['server_load_val'] > ($stats['cpu_count'] * 2.5)) {
-                $systemWarnings[] = "⚠️ High Server Load: {$stats['server_load_val']} on {$stats['cpu_count']} CPUs";
+                $systemWarnings[] = "High Server Load: {$stats['server_load_val']} on {$stats['cpu_count']} CPUs";
             }
         }
 
@@ -562,7 +592,7 @@ class ServerTelemetryService
         }
 
         if (!$reachable) {
-            $serviceOutages[] = "🚨 Server is UNREACHABLE on port {$port}";
+            $serviceOutages[] = "Server is unreachable on port {$port}";
         }
 
         return [
@@ -638,9 +668,9 @@ class ServerTelemetryService
                             'message' => "“Storage Pool (/)” is " . ($status !== 'ok' ? 'reporting warnings.' : 'ok.'),
                         ];
                         if ($dVal >= 90) {
-                            $serviceOutages[] = "🚨 Storage Pool is {$dVal}% full (Critical)";
+                            $serviceOutages[] = "Storage Pool is {$dVal}% full (Critical)";
                         } elseif ($dVal >= 80) {
-                            $systemWarnings[] = "⚠️ Storage Pool is {$dVal}% full (Warning)";
+                            $systemWarnings[] = "Storage Pool is {$dVal}% full (Warning)";
                         }
                     }
 
@@ -699,7 +729,7 @@ class ServerTelemetryService
         ];
 
         if (!$reachable) {
-            $serviceOutages[] = "🚨 Virtualizor Node unreachable on port 4085/4084";
+            $serviceOutages[] = "Virtualizor node unreachable on port 4085/4084";
         }
 
         return [
@@ -754,7 +784,7 @@ class ServerTelemetryService
             $services[] = ['name' => 'sw-cp-server', 'details' => 'up', 'status' => 'ok', 'message' => '“sw-cp-server” is ok.'];
             $services[] = ['name' => 'sw-engine', 'details' => 'up', 'status' => 'ok', 'message' => '“sw-engine” is ok.'];
         } else {
-            $serviceOutages[] = "🚨 Plesk server unreachable on port 8443";
+            $serviceOutages[] = "Plesk server unreachable on port 8443";
         }
 
         return [
@@ -806,7 +836,7 @@ class ServerTelemetryService
             $services[] = ['name' => 'DirectAdmin Core Engine', 'details' => 'up', 'status' => 'ok', 'message' => '“DirectAdmin Core Engine” is ok.'];
             $services[] = ['name' => 'directadmin daemon', 'details' => 'up', 'status' => 'ok', 'message' => '“directadmin daemon” is ok.'];
         } else {
-            $serviceOutages[] = "🚨 DirectAdmin server unreachable on port 2222";
+            $serviceOutages[] = "DirectAdmin server unreachable on port 2222";
         }
 
         return [
