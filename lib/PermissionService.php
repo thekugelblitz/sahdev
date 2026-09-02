@@ -70,7 +70,7 @@ class PermissionService
                     ],
                     self::PERM_SERVER_ACCESS => [
                         'label'       => 'Access WHM / Control Panel SSO Links',
-                        'description' => 'Single-sign-on 1-click access buttons to server control panels (doserverlogon.php?id=XX).',
+                        'description' => 'Single-sign-on 1-click access buttons to server control panels.',
                         'risk'        => 'high',
                     ],
                 ],

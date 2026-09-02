@@ -6220,7 +6220,7 @@ class AdminController
                                                     </div>
                                                     <div style="display: flex; align-items: center; gap: 6px;">
                                                         <?php if ($canAccessServer): ?>
-                                                            <a href="doserverlogon.php?id=<?php echo $srv->server_id; ?>" target="_blank" class="btn btn-default btn-xs" style="font-size: 11px; font-weight: 600;" title="Single Sign-On to Server Control Panel">
+                                                            <a href="<?php echo htmlspecialchars(\Sahdev\Lib\ServerTelemetryService::getServerAccessUrl((int)$srv->server_id)); ?>" target="_blank" class="btn btn-default btn-xs" style="font-size: 11px; font-weight: 600;" title="Single Sign-On to Server Control Panel">
                                                                 <i class="fas fa-sign-in-alt"></i> Log in to WHM
                                                             </a>
                                                         <?php endif; ?>

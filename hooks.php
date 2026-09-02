@@ -3284,22 +3284,9 @@ function sahdev_render_header_topbar_widget($vars)
 
         widgetWrap.style.display = 'inline-flex';
 
-        // Target Strategy 1 (Preferred): Search Box / Form in header (Places widget directly in the red box to the left of search bar)
-        var searchInput = document.querySelector('input[placeholder*="search" i]') || 
-                          document.querySelector('input[name="searchterm"]') ||
-                          document.querySelector('input[name="q"]') ||
-                          document.querySelector('#header_search');
+        var isMobile = (window.innerWidth <= 768);
 
-        var searchContainer = searchInput ? (searchInput.closest('form') || searchInput.closest('.navbar-form') || searchInput.closest('.header-search') || searchInput.closest('li') || searchInput.parentNode) : null;
-        if (!searchContainer) {
-            searchContainer = document.querySelector('form[action*="search"]') || 
-                              document.querySelector('form#headerSearchForm') || 
-                              document.querySelector('form[name="frmsearch"]') ||
-                              document.querySelector('.header-search') || 
-                              document.querySelector('.navbar-form');
-        }
-
-        // Target Strategy 2: Find WHMCS automation button (speedometer / gauge icon)
+        // Find WHMCS automation button (speedometer / gauge icon)
         var automateBtn = document.querySelector('a[href*="automationstatus.php"]') || 
                           document.querySelector('.btn-automation-status') ||
                           document.querySelector('a[title*="Automation"]') ||
@@ -3309,7 +3296,22 @@ function sahdev_render_header_topbar_widget($vars)
                           document.querySelector('header a i.fa-tachometer-alt')?.closest('a') ||
                           document.querySelector('header a i.fa-tachometer')?.closest('a');
 
-        // Target Strategy 3: Right header actions cluster
+        // Find Search Form / Search Box container
+        var searchInput = document.querySelector('input[placeholder*="search" i]') || 
+                          document.querySelector('input[name="searchterm"]') ||
+                          document.querySelector('input[name="q"]') ||
+                          document.querySelector('#header_search');
+
+        var searchContainer = searchInput ? (searchInput.closest('form') || searchInput.closest('.navbar-form') || searchInput.closest('.header-search') || searchInput.parentNode) : null;
+        if (!searchContainer) {
+            searchContainer = document.querySelector('form[action*="search"]') || 
+                              document.querySelector('form#headerSearchForm') || 
+                              document.querySelector('form[name="frmsearch"]') ||
+                              document.querySelector('.header-search') || 
+                              document.querySelector('.navbar-form');
+        }
+
+        // Find Right Header Actions
         var headerActions = document.querySelector('.header-actions') || 
                             document.querySelector('#header .navbar-nav.navbar-right') || 
                             document.querySelector('.nav.navbar-nav.navbar-right') || 
@@ -3317,50 +3319,49 @@ function sahdev_render_header_topbar_widget($vars)
                             document.querySelector('.navbar-header .navbar-right') ||
                             document.querySelector('.navbar-right');
 
-        // Target Strategy 4: Main navbar
-        var navMenu = document.querySelector('#header .navbar-nav:first-child') || 
-                      document.querySelector('#main-menu') ||
-                      document.querySelector('.navbar-main');
-
-        if (searchContainer && searchContainer.parentNode) {
-            if (searchContainer.tagName.toLowerCase() === 'li') {
-                var li = document.createElement('li');
-                li.className = 'sahdev-header-li nav-item';
-                li.appendChild(widgetWrap);
-                searchContainer.parentNode.insertBefore(li, searchContainer);
-            } else {
+        if (isMobile) {
+            // MOBILE: Position right next to WHMCS automation gauge button
+            if (automateBtn && automateBtn.parentNode) {
+                automateBtn.parentNode.insertBefore(widgetWrap, automateBtn);
+            } else if (headerActions) {
+                headerActions.insertBefore(widgetWrap, headerActions.firstChild);
+            } else if (searchContainer && searchContainer.parentNode) {
                 searchContainer.parentNode.insertBefore(widgetWrap, searchContainer);
             }
-        } else if (automateBtn) {
-            var parentLi = automateBtn.closest('li');
-            if (parentLi && parentLi.parentNode) {
-                var li = document.createElement('li');
-                li.className = 'sahdev-header-li nav-item';
-                li.appendChild(widgetWrap);
-                parentLi.parentNode.insertBefore(li, parentLi);
-            } else if (automateBtn.parentNode) {
-                automateBtn.parentNode.insertBefore(widgetWrap, automateBtn);
-            }
-        } else if (headerActions) {
-            if (headerActions.tagName.toLowerCase() === 'ul') {
-                var li = document.createElement('li');
-                li.className = 'sahdev-header-li nav-item';
-                li.appendChild(widgetWrap);
-                headerActions.insertBefore(li, headerActions.firstChild);
-            } else {
-                headerActions.insertBefore(widgetWrap, headerActions.firstChild);
-            }
-        } else if (navMenu) {
-            var li = document.createElement('li');
-            li.className = 'sahdev-header-li nav-item';
-            li.appendChild(widgetWrap);
-            navMenu.appendChild(li);
         } else {
-            widgetWrap.style.position = 'fixed';
-            widgetWrap.style.top = '10px';
-            widgetWrap.style.right = '240px';
-            widgetWrap.style.zIndex = '99999';
-            document.body.appendChild(widgetWrap);
+            // DESKTOP: Place inside search container directly to the left of the input in the same horizontal row
+            if (searchContainer) {
+                searchContainer.style.display = 'inline-flex';
+                searchContainer.style.alignItems = 'center';
+                searchContainer.style.verticalAlign = 'middle';
+                searchContainer.style.gap = '6px';
+                searchContainer.insertBefore(widgetWrap, searchContainer.firstChild);
+            } else if (automateBtn) {
+                var parentLi = automateBtn.closest('li');
+                if (parentLi && parentLi.parentNode) {
+                    var li = document.createElement('li');
+                    li.className = 'sahdev-header-li nav-item';
+                    li.appendChild(widgetWrap);
+                    parentLi.parentNode.insertBefore(li, parentLi);
+                } else if (automateBtn.parentNode) {
+                    automateBtn.parentNode.insertBefore(widgetWrap, automateBtn);
+                }
+            } else if (headerActions) {
+                if (headerActions.tagName.toLowerCase() === 'ul') {
+                    var li = document.createElement('li');
+                    li.className = 'sahdev-header-li nav-item';
+                    li.appendChild(widgetWrap);
+                    headerActions.insertBefore(li, headerActions.firstChild);
+                } else {
+                    headerActions.insertBefore(widgetWrap, headerActions.firstChild);
+                }
+            } else {
+                widgetWrap.style.position = 'fixed';
+                widgetWrap.style.top = '10px';
+                widgetWrap.style.right = '240px';
+                widgetWrap.style.zIndex = '99999';
+                document.body.appendChild(widgetWrap);
+            }
         }
 
         if (container && container.parentNode) {
@@ -3516,6 +3517,7 @@ function sahdev_render_header_topbar_widget($vars)
             });
 
             window.addEventListener('resize', function() {
+                injectIntoNavbar();
                 if (isMenuOpen) {
                     positionPopover();
                 }

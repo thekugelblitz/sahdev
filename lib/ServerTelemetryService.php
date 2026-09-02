@@ -252,7 +252,100 @@ class ServerTelemetryService
     public static function getServerAccessUrl(int $serverId): string
     {
         if ($serverId <= 0) return '';
-        return "doserverlogon.php?id={$serverId}";
+        $version = time();
+        return "addonmodules.php?module=sahdev&sahdev_act=ajax_handler&action=server_sso&server_id={$serverId}&v={$version}";
+    }
+
+    /**
+     * Perform Single Sign-On into server control panel (cPanel/WHM, Plesk, Virtualizor, DirectAdmin).
+     * Creates a one-time session token using WHM/cPanel API or module SingleSignOn and redirects.
+     */
+    public static function performServerSso(int $serverId): void
+    {
+        if (ob_get_length()) ob_clean();
+
+        if ($serverId <= 0) {
+            header('Location: index.php');
+            exit;
+        }
+
+        try {
+            $server = Capsule::table('tblservers')->where('id', $serverId)->first();
+            if (!$server) {
+                header('Content-Type: text/html; charset=utf-8');
+                echo '<!DOCTYPE html><html><head><title>Server Not Found</title><style>body{font-family:-apple-system,sans-serif;text-align:center;padding:50px;color:#333;}h2{color:#e53e3e;}</style></head><body><h2>Server Not Found</h2><p>The requested server record #' . (int)$serverId . ' could not be located in WHMCS.</p><p><a href="javascript:window.close();" style="color:#3182ce;">Close Window</a></p></body></html>';
+                exit;
+            }
+
+            $host = trim((string) ($server->hostname ?: $server->ipaddress));
+            $secure = !isset($server->secure) || $server->secure === 'on' || $server->secure === '1' || $server->secure === 1 || $server->secure === true;
+            $port = !empty($server->port) ? (int) $server->port : ($secure ? 2087 : 2086);
+            $user = trim((string) ($server->username ?? ''));
+            $pass = self::safeDecrypt($server->password ?? '');
+            $token = trim((string) ($server->accesshash ?? ''));
+            $type = strtolower((string) ($server->type ?? 'cpanel'));
+
+            $scheme = $secure ? 'https://' : 'http://';
+            $baseUrl = "{$scheme}{$host}:{$port}/json-api/";
+
+            // For cPanel / WHM servers: Use official WHM API create_user_session
+            if ($type === 'cpanel' || empty($type)) {
+                $sessionRes = self::callWhmApi(
+                    $baseUrl,
+                    'create_user_session?api.version=1&user=' . urlencode($user ?: 'root') . '&service=whostmgrd&app=whostmgr',
+                    $user,
+                    $token,
+                    $pass
+                );
+
+                if ($sessionRes['ok'] && !empty($sessionRes['data'])) {
+                    $json = json_decode($sessionRes['data'], true);
+                    if (!empty($json['data']['url'])) {
+                        $ssoUrl = (string) $json['data']['url'];
+                        header('Location: ' . $ssoUrl);
+                        exit;
+                    }
+                }
+            }
+
+            // Fallback 1: Try native WHMCS Module Single Sign-On function if available
+            $moduleName = $server->type ?: 'cpanel';
+            $ssoFn = $moduleName . '_AdminSingleSignOn';
+            $moduleFile = dirname(__DIR__, 3) . "/modules/servers/{$moduleName}/{$moduleName}.php";
+            if (file_exists($moduleFile)) {
+                require_once $moduleFile;
+            }
+            if (function_exists($ssoFn)) {
+                $params = [
+                    'server'           => true,
+                    'serverid'         => $server->id,
+                    'serverip'         => $server->ipaddress,
+                    'serverhostname'   => $server->hostname,
+                    'serverusername'   => $server->username,
+                    'serverpassword'   => $pass,
+                    'serveraccesshash' => $token,
+                    'serversecure'     => $secure,
+                    'serverport'       => $port,
+                ];
+                try {
+                    $ssoResult = $ssoFn($params);
+                    if (is_array($ssoResult) && !empty($ssoResult['redirectTo'])) {
+                        header('Location: ' . $ssoResult['redirectTo']);
+                        exit;
+                    }
+                } catch (\Throwable $e) {}
+            }
+
+            // Fallback 2: Direct control panel URL
+            $directUrl = "{$scheme}{$host}:{$port}";
+            header('Location: ' . $directUrl);
+            exit;
+
+        } catch (\Throwable $e) {
+            header('Content-Type: text/html; charset=utf-8');
+            echo '<!DOCTYPE html><html><head><title>Single Sign-On Error</title><style>body{font-family:-apple-system,sans-serif;text-align:center;padding:50px;color:#333;}h2{color:#e53e3e;}</style></head><body><h2>Single Sign-On Failed</h2><p>' . htmlspecialchars($e->getMessage()) . '</p><p><a href="javascript:window.close();" style="color:#3182ce;">Close Window</a></p></body></html>';
+            exit;
+        }
     }
 
     private static function safeDecrypt(?string $encrypted): string

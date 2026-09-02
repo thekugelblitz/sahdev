@@ -26,7 +26,7 @@ if (!$adminId) {
 }
 
 // Actions allowed via GET (no ticket/POST needed)
-$getAllowedActions = ['get_analytics_period', 'get_header_server_widget'];
+$getAllowedActions = ['get_analytics_period', 'get_header_server_widget', 'server_sso'];
 $isGetAllowed = in_array($_REQUEST['action'] ?? '', $getAllowedActions);
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST' && !$isGetAllowed) {
@@ -45,11 +45,27 @@ $allowedActions = [
     'save_canned_response', 'save_kb_article', 'get_analytics', 'get_ticket_insights',
     'trigger_cron_run', 'get_insights_queue', 'analyze_single_insight', 'test_whmcs_cron_http',
     'run_tools_for_ticket', 'get_tools_ticket_status', 'run_tools_queue', 'get_tools_operations',
-    'run_manual_tool', 'autopilot_test_run', 'set_ui_theme', 'get_header_server_widget'
+    'run_manual_tool', 'autopilot_test_run', 'set_ui_theme', 'get_header_server_widget',
+    'server_sso'
 ];
 if (!in_array($action, $allowedActions, true)) {
     header('HTTP/1.1 400 Bad Request');
     echo json_encode(['status' => 'error', 'message' => 'Unsupported action.']);
+    exit;
+}
+
+if ($action === 'server_sso') {
+    require_once __DIR__ . '/lib/PermissionService.php';
+    if (!\Sahdev\Lib\PermissionService::hasPermission((int) $adminId, \Sahdev\Lib\PermissionService::PERM_SERVER_ACCESS)) {
+        header('HTTP/1.1 403 Forbidden');
+        header('Content-Type: text/html; charset=utf-8');
+        echo '<!DOCTYPE html><html><head><title>Access Denied</title><style>body{font-family:-apple-system,sans-serif;text-align:center;padding:50px;color:#333;}h2{color:#e53e3e;}</style></head><body><h2>Access Denied</h2><p>Your WHMCS admin role does not have permission to access server control panels.</p><p><a href="javascript:window.close();" style="color:#3182ce;">Close Window</a></p></body></html>';
+        exit;
+    }
+
+    $serverId = (int) ($_REQUEST['server_id'] ?? ($_GET['server_id'] ?? 0));
+    require_once __DIR__ . '/lib/ServerTelemetryService.php';
+    \Sahdev\Lib\ServerTelemetryService::performServerSso($serverId);
     exit;
 }
 
