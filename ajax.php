@@ -24,7 +24,7 @@ if (!$adminId) {
 }
 
 // Actions allowed via GET (no ticket/POST needed)
-$getAllowedActions = ['get_analytics_period'];
+$getAllowedActions = ['get_analytics_period', 'get_header_server_widget'];
 $isGetAllowed = in_array($_REQUEST['action'] ?? '', $getAllowedActions);
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST' && !$isGetAllowed) {
@@ -43,7 +43,7 @@ $allowedActions = [
     'save_canned_response', 'save_kb_article', 'get_analytics', 'get_ticket_insights',
     'trigger_cron_run', 'get_insights_queue', 'analyze_single_insight', 'test_whmcs_cron_http',
     'run_tools_for_ticket', 'get_tools_ticket_status', 'run_tools_queue', 'get_tools_operations',
-    'run_manual_tool', 'autopilot_test_run', 'set_ui_theme'
+    'run_manual_tool', 'autopilot_test_run', 'set_ui_theme', 'get_header_server_widget'
 ];
 if (!in_array($action, $allowedActions, true)) {
     header('HTTP/1.1 400 Bad Request');
@@ -664,6 +664,194 @@ try {
             \Sahdev\Lib\AdminPreferences::save((int) $adminId, $prefs);
             $response = ['status' => 'success', 'theme' => $theme];
         }
+    } elseif ($action === 'get_header_server_widget') {
+        require_once __DIR__ . '/lib/ServerTelemetryService.php';
+
+        $pollNow = !empty($_REQUEST['poll_now']) && $_REQUEST['poll_now'] == '1';
+        if ($pollNow) {
+            try {
+                \Sahdev\Lib\ServerTelemetryService::pollActiveServers(true);
+            } catch (\Throwable $e) {}
+        }
+
+        // Determine context server (from service_id or ticket_id)
+        $contextServiceId = (int) ($_REQUEST['service_id'] ?? 0);
+        $contextTicketId = (int) ($_REQUEST['ticket_id'] ?? 0);
+        $contextServerId = 0;
+        $contextAccountUsername = '';
+        $contextAccountData = null;
+
+        if ($contextServiceId > 0) {
+            $hRow = Capsule::table('tblhosting')->where('id', $contextServiceId)->first();
+            if ($hRow) {
+                $contextServerId = (int) ($hRow->server ?? 0);
+                $contextAccountUsername = (string) ($hRow->username ?? '');
+            }
+        } elseif ($contextTicketId > 0) {
+            $ticketRow = Capsule::table('tbltickets')->where('id', $contextTicketId)->first();
+            if ($ticketRow && !empty($ticketRow->userid)) {
+                $hRow = Capsule::table('tblhosting')
+                    ->where('userid', (int) $ticketRow->userid)
+                    ->whereIn('domainstatus', ['Active', 'Suspended'])
+                    ->orderBy('id', 'desc')
+                    ->first();
+                if ($hRow) {
+                    $contextServerId = (int) ($hRow->server ?? 0);
+                    $contextAccountUsername = (string) ($hRow->username ?? '');
+                }
+            }
+        }
+
+        // Fetch active incidents
+        $activeIncidents = Capsule::table('tblsahdev_incidents')
+            ->whereIn('status', ['Active', 'Investigating', 'Monitoring'])
+            ->orderBy('id', 'desc')
+            ->get()
+            ->map(function ($inc) {
+                return [
+                    'id' => (int) $inc->id,
+                    'incident_num' => (string) $inc->incident_num,
+                    'title' => (string) $inc->title,
+                    'severity' => (string) $inc->severity,
+                    'status' => (string) $inc->status,
+                    'server_id' => (int) ($inc->server_id ?? 0),
+                    'server_name' => (string) ($inc->server_name ?? ''),
+                    'root_cause' => (string) ($inc->root_cause_summary ?? ''),
+                    'detected_at' => (string) $inc->detected_at,
+                ];
+            })
+            ->toArray();
+
+        // Fetch all servers
+        $serversDb = Capsule::table('tblservers as s')
+            ->leftJoin('tblsahdev_server_telemetry as st', 's.id', '=', 'st.server_id')
+            ->where('s.disabled', 0)
+            ->select(
+                's.id as server_id',
+                's.name as server_name',
+                's.hostname',
+                's.ipaddress',
+                's.type as server_type',
+                's.username',
+                'st.server_role',
+                'st.is_monitored',
+                'st.server_load',
+                'st.is_reachable',
+                'st.reachability_error',
+                'st.accounts_data_json',
+                'st.server_stats_json',
+                'st.last_polled_at'
+            )
+            ->orderBy('s.name', 'asc')
+            ->get();
+
+        $serverList = [];
+        $totalOutagesCount = 0;
+        $totalWarningsCount = 0;
+        $reachableCount = 0;
+        $monitoredCount = 0;
+
+        foreach ($serversDb as $srv) {
+            $sId = (int) $srv->server_id;
+            $isMon = !isset($srv->is_monitored) || (int) $srv->is_monitored === 1;
+            $isReachable = !empty($srv->is_reachable);
+            if ($isMon) $monitoredCount++;
+            if ($isReachable) $reachableCount++;
+
+            $statsPayload = !empty($srv->server_stats_json) ? json_decode($srv->server_stats_json, true) : [];
+            $serviceOutages = $statsPayload['flagged_service_outages'] ?? [];
+            $systemWarnings = $statsPayload['flagged_system_warnings'] ?? [];
+            $accountNotices = $statsPayload['flagged_account_notices'] ?? [];
+
+            // Backward compatibility for old payloads
+            if (empty($serviceOutages) && empty($systemWarnings) && !empty($statsPayload['flagged_items'])) {
+                foreach ($statsPayload['flagged_items'] as $fi) {
+                    if (strpos($fi, 'Account') !== false) {
+                        $accountNotices[] = $fi;
+                    } elseif (strpos($fi, 'DOWN') !== false || strpos($fi, 'unreachable') !== false || strpos($fi, 'Critical') !== false) {
+                        $serviceOutages[] = $fi;
+                    } else {
+                        $systemWarnings[] = $fi;
+                    }
+                }
+            }
+
+            if (!$isReachable) {
+                $totalOutagesCount++;
+            } else {
+                $totalOutagesCount += count($serviceOutages);
+                $totalWarningsCount += count($systemWarnings);
+            }
+
+            // Role detection
+            $curRole = (string) ($srv->server_role ?? 'auto');
+            if ($curRole === 'auto' || empty($curRole)) {
+                $curRole = \Sahdev\Lib\ServerTelemetryService::detectServerRole($srv);
+            }
+
+            // Check if context account is on this server
+            $accountInfo = null;
+            if ($sId === $contextServerId && $contextAccountUsername !== '') {
+                $accounts = !empty($srv->accounts_data_json) ? json_decode($srv->accounts_data_json, true) : [];
+                if (is_array($accounts)) {
+                    foreach ($accounts as $acct) {
+                        if (strtolower($acct['user'] ?? '') === strtolower($contextAccountUsername)) {
+                            $accountInfo = $acct;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            $serverItem = [
+                'server_id' => $sId,
+                'server_name' => (string) ($srv->server_name ?: 'Server #' . $sId),
+                'server_host' => (string) ($srv->hostname ?: $srv->ipaddress),
+                'server_type' => (string) ($srv->server_type ?: 'cpanel'),
+                'server_role' => $curRole,
+                'is_monitored' => $isMon,
+                'is_reachable' => $isReachable,
+                'reachability_error' => (string) ($srv->reachability_error ?? ''),
+                'server_load' => (string) ($srv->server_load ?? 'N/A'),
+                'last_polled_at' => !empty($srv->last_polled_at) ? substr((string) $srv->last_polled_at, 0, 16) : 'Never',
+                'service_outages' => $serviceOutages,
+                'system_warnings' => $systemWarnings,
+                'account_notices_count' => count($accountNotices),
+                'access_url' => \Sahdev\Lib\ServerTelemetryService::getServerAccessUrl($sId),
+                'is_context_pinned' => ($sId === $contextServerId),
+                'context_account' => $accountInfo,
+            ];
+
+            if ($sId === $contextServerId) {
+                // Pin context server to the very top
+                array_unshift($serverList, $serverItem);
+            } else {
+                $serverList[] = $serverItem;
+            }
+        }
+
+        $overallStatus = 'healthy';
+        if ($totalOutagesCount > 0 || count($activeIncidents) > 0 || $reachableCount < $monitoredCount) {
+            $overallStatus = 'critical';
+        } elseif ($totalWarningsCount > 0) {
+            $overallStatus = 'warning';
+        }
+
+        $response = [
+            'status' => 'success',
+            'summary' => [
+                'total_servers' => count($serversDb),
+                'monitored_servers' => $monitoredCount,
+                'reachable_servers' => $reachableCount,
+                'total_outages' => $totalOutagesCount,
+                'total_warnings' => $totalWarningsCount,
+                'active_incidents_count' => count($activeIncidents),
+                'overall_status' => $overallStatus,
+            ],
+            'context_server_id' => $contextServerId,
+            'servers' => $serverList,
+            'active_incidents' => $activeIncidents,
+        ];
     } else {
         // Default analyze_ticket (server-side generation)
         $response = $controller->getAnalysis($tone, $instruction, $forceRegenerate, $forceFallback, $intent, $useSummary, $includeHistory, $technicalContext, $overrideProviderId, $includeTools, $includeAdminNotes);

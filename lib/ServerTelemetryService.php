@@ -53,12 +53,18 @@ class ServerTelemetryService
             foreach ($servers as $srv) {
                 $serverId = (int) $srv->id;
 
-                if (!$forcePoll) {
-                    $recent = Capsule::table('tblsahdev_server_telemetry')
-                        ->where('server_id', $serverId)
-                        ->where('last_polled_at', '>', $cacheCutoff)
-                        ->first();
-                    if ($recent) {
+                // Check if server monitoring is disabled for this server
+                $existingRow = Capsule::table('tblsahdev_server_telemetry')
+                    ->where('server_id', $serverId)
+                    ->first();
+
+                if ($existingRow && isset($existingRow->is_monitored) && (int) $existingRow->is_monitored === 0) {
+                    $summary['skipped']++;
+                    continue;
+                }
+
+                if (!$forcePoll && $existingRow && !empty($existingRow->last_polled_at)) {
+                    if (Carbon::parse($existingRow->last_polled_at)->greaterThan($cacheCutoff)) {
                         $summary['skipped']++;
                         continue;
                     }
@@ -89,6 +95,10 @@ class ServerTelemetryService
         $serverHost = (string) ($server->hostname ?: $server->ipaddress);
         $serverType = strtolower((string) ($server->type ?? 'cpanel'));
 
+        // Retrieve existing role preference if set
+        $existingRow = Capsule::table('tblsahdev_server_telemetry')->where('server_id', $serverId)->first();
+        $configuredRole = (string) ($existingRow->server_role ?? 'auto');
+
         $telemetry = [
             'load' => null,
             'is_reachable' => false,
@@ -114,6 +124,8 @@ class ServerTelemetryService
             $telemetry = self::pollGenericServer($server);
         }
 
+        $detectedRole = self::detectServerRole($server, $configuredRole);
+
         $now = Carbon::now();
         $statsPayload = array_merge($telemetry['stats'] ?? [], [
             'services' => $telemetry['services'] ?? [],
@@ -129,6 +141,7 @@ class ServerTelemetryService
                 'server_name' => $serverName,
                 'server_host' => $serverHost,
                 'server_type' => $serverType,
+                'server_role' => $detectedRole,
                 'server_load' => $telemetry['load'],
                 'is_reachable' => !empty($telemetry['is_reachable']) ? 1 : 0,
                 'reachability_error' => $telemetry['error'],
@@ -140,6 +153,44 @@ class ServerTelemetryService
         );
 
         return $telemetry;
+    }
+
+    /**
+     * Auto-detect or resolve server role (Root, Reseller, Virtualizor, etc.)
+     */
+    public static function detectServerRole(\stdClass $server, string $configuredRole = 'auto'): string
+    {
+        if ($configuredRole !== '' && $configuredRole !== 'auto') {
+            return $configuredRole;
+        }
+
+        $type = strtolower((string) ($server->type ?? 'cpanel'));
+        $username = strtolower(trim((string) ($server->username ?? '')));
+
+        if (strpos($type, 'virtualizor') !== false) {
+            return 'vps_node';
+        }
+        if (strpos($type, 'plesk') !== false) {
+            return 'plesk';
+        }
+        if (strpos($type, 'directadmin') !== false) {
+            return 'directadmin';
+        }
+
+        // cPanel / WHM heuristic
+        if ($username === 'root') {
+            return 'root';
+        }
+
+        return 'reseller';
+    }
+
+    /**
+     * Build WHMCS single-sign-on or panel access URL.
+     */
+    public static function getServerAccessUrl(int $serverId): string
+    {
+        return "configservers.php?action=manage&id={$serverId}";
     }
 
     /**

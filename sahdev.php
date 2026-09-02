@@ -1110,6 +1110,18 @@ function sahdev_activate()
         // Create tblsahdev_server_telemetry
         try {
             Capsule::table('tblsahdev_server_telemetry')->first();
+
+            // Migrate: add is_monitored and server_role if missing
+            try {
+                Capsule::table('tblsahdev_server_telemetry')->select('is_monitored')->first();
+            } catch (\Exception $e) {
+                try {
+                    Capsule::schema()->table('tblsahdev_server_telemetry', function ($table) {
+                        $table->boolean('is_monitored')->default(1);
+                        $table->string('server_role', 32)->default('auto');
+                    });
+                } catch (\Exception $ex) {}
+            }
         } catch (\Exception $e) {
             Capsule::schema()->create('tblsahdev_server_telemetry', function ($table) {
                 $table->increments('id');
@@ -1117,6 +1129,8 @@ function sahdev_activate()
                 $table->string('server_name', 128)->nullable();
                 $table->string('server_host', 255)->nullable();
                 $table->string('server_type', 32)->default('cpanel');
+                $table->string('server_role', 32)->default('auto');
+                $table->boolean('is_monitored')->default(1);
                 $table->string('server_load', 64)->nullable();
                 $table->boolean('is_reachable')->default(1);
                 $table->string('reachability_error', 255)->nullable();
@@ -1167,13 +1181,15 @@ function sahdev_activate()
 
         // Migrate: Next-Gen intelligence settings columns
         $intelColMap = [
-            'telemetry_enabled'           => ['boolean', 1],
-            'telemetry_poll_interval_mins'=> ['integer', 15],
-            'incident_detection_enabled'  => ['boolean', 1],
-            'incident_threshold_tickets'  => ['integer', 3],
-            'incident_window_hours'       => ['integer', 3],
-            'rag_knowledge_enabled'       => ['boolean', 1],
-            'rag_max_snippets'            => ['integer', 3],
+            'telemetry_enabled'            => ['boolean', 1],
+            'telemetry_poll_interval_mins' => ['integer', 15],
+            'incident_detection_enabled'   => ['boolean', 1],
+            'incident_threshold_tickets'   => ['integer', 3],
+            'incident_window_hours'        => ['integer', 3],
+            'rag_knowledge_enabled'        => ['boolean', 1],
+            'rag_max_snippets'             => ['integer', 3],
+            'header_widget_enabled'        => ['boolean', 1],
+            'service_page_widget_enabled'  => ['boolean', 1],
         ];
         foreach ($intelColMap as $col => [$type, $default]) {
             try {

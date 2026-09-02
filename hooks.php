@@ -2699,14 +2699,510 @@ HTML;
 </style>
 HTML;
 
+        // Top navbar server widget
+        $output .= sahdev_render_header_topbar_widget($vars);
+
+        // Client service page server health card (clientsservices.php)
+        $output .= sahdev_render_clientservices_server_card($vars);
+
         return $output;
     } catch (\Throwable $e) {
     }
     return '';
 });
 
-// Since we are inside hooks.php, let's declare helper at file scope but use it via string replacement or just manual checks
-// Let's refactor the HEREDOC slightly for the dropdown to be exact and clean instead of calling function inside heredoc
+/**
+ * Render compact live Server Health Card on clientsservices.php
+ */
+function sahdev_render_clientservices_server_card($vars)
+{
+    $adminId = $_SESSION['adminid'] ?? null;
+    if (!$adminId) return '';
+
+    $filename = strtolower((string) (($vars['filename'] ?? '') ?: basename($_SERVER['SCRIPT_NAME'] ?? '')));
+    if ($filename !== 'clientsservices' && $filename !== 'clientsservices.php') {
+        return '';
+    }
+
+    $serviceId = (int) ($_GET['id'] ?? ($_GET['serviceid'] ?? 0));
+    if ($serviceId <= 0) {
+        return '';
+    }
+
+    try {
+        $service = Capsule::table('tblhosting')->where('id', $serviceId)->first();
+        if (!$service || empty($service->server)) {
+            return '';
+        }
+
+        $serverId = (int) $service->server;
+        $username = trim((string) ($service->username ?? ''));
+
+        require_once __DIR__ . '/lib/ServerTelemetryService.php';
+        $srvRecord = Capsule::table('tblservers')->where('id', $serverId)->first();
+        if (!$srvRecord) return '';
+
+        $telemetry = Capsule::table('tblsahdev_server_telemetry')->where('server_id', $serverId)->first();
+        $configuredRole = (string) ($telemetry->server_role ?? 'auto');
+        $resolvedRole = \Sahdev\Lib\ServerTelemetryService::detectServerRole($srvRecord, $configuredRole);
+
+        $srvName = htmlspecialchars($srvRecord->name ?: 'Server #' . $serverId);
+        $srvHost = htmlspecialchars($srvRecord->hostname ?: $srvRecord->ipaddress);
+        $accessUrl = \Sahdev\Lib\ServerTelemetryService::getServerAccessUrl($serverId);
+
+        $isReachable = !empty($telemetry->is_reachable);
+        $serverLoad = (string) ($telemetry->server_load ?? 'N/A');
+        $lastPolled = !empty($telemetry->last_polled_at) ? substr((string) $telemetry->last_polled_at, 0, 16) : 'Never';
+
+        // Role badge HTML
+        $roleBadge = '';
+        if ($resolvedRole === 'root') {
+            $roleBadge = '<span class="label" style="background:#1a365d;color:#fff;font-size:10px;padding:2px 6px;border-radius:3px;"><i class="fas fa-shield-alt"></i> ROOT SERVER</span>';
+        } elseif ($resolvedRole === 'reseller') {
+            $roleBadge = '<span class="label" style="background:#553c9e;color:#fff;font-size:10px;padding:2px 6px;border-radius:3px;"><i class="fas fa-server"></i> RESELLER WHM</span>';
+        } elseif ($resolvedRole === 'vps_node') {
+            $roleBadge = '<span class="label" style="background:#234e52;color:#fff;font-size:10px;padding:2px 6px;border-radius:3px;"><i class="fas fa-network-wired"></i> VPS NODE</span>';
+        } else {
+            $roleBadge = '<span class="label label-info" style="font-size:10px;">' . strtoupper(htmlspecialchars($srvRecord->type ?: 'cPanel')) . '</span>';
+        }
+
+        // Account telemetry
+        $acctHealth = null;
+        if ($username !== '' && !empty($telemetry->accounts_data_json)) {
+            $accts = json_decode($telemetry->accounts_data_json, true);
+            if (is_array($accts)) {
+                foreach ($accts as $a) {
+                    if (strtolower($a['user'] ?? '') === strtolower($username)) {
+                        $acctHealth = $a;
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Outages & Warnings
+        $statsPayload = !empty($telemetry->server_stats_json) ? json_decode($telemetry->server_stats_json, true) : [];
+        $outages = $statsPayload['flagged_service_outages'] ?? [];
+        $warnings = $statsPayload['flagged_system_warnings'] ?? [];
+
+        // Active incident
+        $activeInc = Capsule::table('tblsahdev_incidents')
+            ->where('server_id', $serverId)
+            ->whereIn('status', ['Active', 'Investigating', 'Monitoring'])
+            ->first();
+
+        $statusBadge = $isReachable && empty($outages)
+            ? '<span class="label label-success"><i class="fas fa-check"></i> Online</span>'
+            : ($isReachable ? '<span class="label label-warning"><i class="fas fa-exclamation-triangle"></i> Degraded</span>' : '<span class="label label-danger"><i class="fas fa-times"></i> Offline</span>');
+
+        $outagesHtml = '';
+        if ($activeInc) {
+            $incNum = htmlspecialchars($activeInc->incident_num);
+            $incTitle = htmlspecialchars($activeInc->title);
+            $outagesHtml .= "<div class='alert alert-danger' style='margin:8px 0 4px 0;padding:6px 10px;font-size:12px;'><i class='fas fa-fire'></i> <strong>Active Outage: [{$incNum}] {$incTitle}</strong> <a href='addonmodules.php?module=sahdev&action=incidents' target='_blank' class='btn btn-xs btn-danger pull-right'>View Incident</a></div>";
+        } elseif (!empty($outages)) {
+            $outagesCount = count($outages);
+            $outageText = htmlspecialchars(implode(', ', $outages));
+            $outagesHtml .= "<div class='alert alert-danger' style='margin:8px 0 4px 0;padding:6px 10px;font-size:12px;'><i class='fas fa-exclamation-circle'></i> <strong>{$outagesCount} Service Outage(s):</strong> {$outageText}</div>";
+        }
+
+        // Disk quota progress bar
+        $diskHtml = '';
+        if ($acctHealth) {
+            $diskUsed = htmlspecialchars($acctHealth['diskused'] ?? '0');
+            $diskLimit = htmlspecialchars($acctHealth['disklimit'] ?? 'Unlimited');
+            $pct = (float) str_replace('%', '', (string) ($acctHealth['percent_used'] ?? '0'));
+            $progressClass = $pct >= 90 ? 'progress-bar-danger' : ($pct >= 75 ? 'progress-bar-warning' : 'progress-bar-success');
+            $suspendedNotice = !empty($acctHealth['suspended']) ? '<span class="label label-danger" style="margin-left:8px;"><i class="fas fa-ban"></i> Suspended in WHM</span>' : '';
+
+            $diskHtml = <<<HTML
+            <div style="margin-top: 8px; font-size: 12px; background: #f8fafc; padding: 8px 12px; border-radius: 6px; border: 1px solid #edf2f7;">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                    <span><strong>Account Quota ({$username}):</strong> {$diskUsed} / {$diskLimit} ({$pct}%) {$suspendedNotice}</span>
+                </div>
+                <div class="progress" style="height: 8px; margin-bottom: 0; background: #e2e8f0; border-radius: 4px;">
+                    <div class="progress-bar {$progressClass}" role="progressbar" style="width: {$pct}%;"></div>
+                </div>
+            </div>
+HTML;
+        }
+
+        return <<<HTML
+<!-- Sahdev Server Health Card for Client Service -->
+<div id="sahdev-clientservices-health-card" style="display:none; margin: 15px 0 20px 0; background: #fff; border: 1px solid #cbd5e0; border-left: 4px solid #3182ce; border-radius: 6px; padding: 12px 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+            <i class="fas fa-server" style="color: #3182ce; font-size: 16px;"></i>
+            <strong style="font-size: 14px; color: #2d3748;">{$srvName}</strong>
+            <span style="font-size: 12px; color: #718096;">({$srvHost})</span>
+            {$roleBadge}
+            {$statusBadge}
+            <span style="font-size: 12px; color: #4a5568; margin-left: 6px;"><strong>Load:</strong> {$serverLoad}</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <a href="{$accessUrl}" target="_blank" class="btn btn-default btn-xs" style="font-weight: 600; font-size: 11px;">
+                <i class="fas fa-external-link-alt"></i> Access WHM
+            </a>
+            <a href="addonmodules.php?module=sahdev&action=incidents" target="_blank" class="btn btn-default btn-xs" style="font-size: 11px;">
+                <i class="fas fa-satellite-dish"></i> Incident Center
+            </a>
+        </div>
+    </div>
+    {$outagesHtml}
+    {$diskHtml}
+</div>
+<script>
+(function() {
+    function injectCard() {
+        var card = document.getElementById('sahdev-clientservices-health-card');
+        if (!card) return;
+        var target = document.getElementById('tab1') || document.querySelector('form[name="packagefrm"]') || document.querySelector('.client-service-details') || document.querySelector('.contentarea');
+        if (target && target.parentNode) {
+            target.parentNode.insertBefore(card, target);
+            card.style.display = 'block';
+        }
+    }
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', injectCard);
+    } else {
+        injectCard();
+    }
+})();
+</script>
+HTML;
+    } catch (\Throwable $e) {
+        return '';
+    }
+}
+
+/**
+ * Render Global Top Header Bar Widget for WHMCS Admin
+ */
+function sahdev_render_header_topbar_widget($vars)
+{
+    $adminId = $_SESSION['adminid'] ?? null;
+    if (!$adminId) return '';
+
+    // Check if header widget is enabled in settings
+    try {
+        $settings = Capsule::table('tblsahdev_settings')->where('id', 1)->first();
+        if ($settings && isset($settings->header_widget_enabled) && (int) $settings->header_widget_enabled === 0) {
+            return '';
+        }
+    } catch (\Throwable $e) {}
+
+    $versionBuster = time();
+    $ajaxUrl = "addonmodules.php?module=sahdev&sahdev_act=ajax_handler&v={$versionBuster}";
+
+    // Detect context
+    $serviceId = (int) ($_GET['id'] ?? ($_GET['serviceid'] ?? 0));
+    $ticketId = (int) ($vars['ticketid'] ?? ($_GET['ticketid'] ?? ($_GET['id'] ?? 0)));
+    $isTicketPage = (isset($vars['ticketid']) || strpos($_SERVER['REQUEST_URI'] ?? '', 'supporttickets.php') !== false);
+    if (!$isTicketPage) $ticketId = 0;
+
+    return <<<HTML
+<!-- Sahdev Global Top Header Bar Server Widget -->
+<style>
+.sahdev-top-nav-widget {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+}
+.sahdev-nav-pill-btn {
+    background: rgba(255,255,255,0.12) !important;
+    color: #fff !important;
+    border: 1px solid rgba(255,255,255,0.2) !important;
+    border-radius: 20px !important;
+    padding: 4px 12px !important;
+    font-size: 12px !important;
+    font-weight: 600 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 6px !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+    text-decoration: none !important;
+    margin: 8px 6px !important;
+}
+.sahdev-nav-pill-btn:hover, .sahdev-nav-pill-btn:focus {
+    background: rgba(255,255,255,0.22) !important;
+    color: #fff !important;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15) !important;
+}
+.sahdev-popover-menu {
+    display: none;
+    position: absolute;
+    top: 100%;
+    right: 0;
+    width: 390px;
+    max-height: 520px;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.18);
+    z-index: 999999;
+    overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+.sahdev-popover-header {
+    background: #1a202c;
+    color: #fff;
+    padding: 10px 14px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+    font-weight: 700;
+}
+.sahdev-popover-body {
+    max-height: 400px;
+    overflow-y: auto;
+    padding: 8px;
+    background: #f8fafc;
+}
+.sahdev-popover-footer {
+    background: #edf2f7;
+    padding: 8px 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-top: 1px solid #e2e8f0;
+    font-size: 11px;
+}
+.sahdev-server-row {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 8px 10px;
+    margin-bottom: 6px;
+    transition: background 0.15s ease;
+}
+.sahdev-server-row:hover {
+    background: #f7fafc;
+}
+.sahdev-server-row.is-pinned {
+    border: 1px solid #bbeeeb;
+    border-left: 4px solid #20c997;
+    background: #f0fdf4;
+}
+</style>
+
+<div id="sahdev-header-widget-container" style="display:none;">
+    <div class="sahdev-top-nav-widget" id="sahdevNavWidgetWrap">
+        <a href="javascript:void(0);" class="sahdev-nav-pill-btn" id="sahdevNavPillBtn" title="Sahdev Server Telemetry & Status">
+            <span id="sahdevNavDot" style="width:8px; height:8px; border-radius:50%; background:#48bb78; display:inline-block;"></span>
+            <span id="sahdevNavLabel">Servers</span>
+            <i class="fas fa-caret-down" style="font-size: 10px;"></i>
+        </a>
+        <div class="sahdev-popover-menu" id="sahdevPopoverMenu">
+            <div class="sahdev-popover-header">
+                <span><i class="fas fa-satellite-dish" style="color:#20c997; margin-right:5px;"></i> Server Health Intel</span>
+                <span id="sahdevWidgetSummary" style="font-size:11px; font-weight:normal; color:#cbd5e0;">Loading…</span>
+            </div>
+            <div class="sahdev-popover-body" id="sahdevPopoverBody">
+                <div style="text-align:center; padding: 25px; color:#718096; font-size:12px;">
+                    <i class="fas fa-spinner fa-spin" style="font-size:20px; color:#3182ce; margin-bottom:8px; display:block;"></i>
+                    Fetching live server telemetry…
+                </div>
+            </div>
+            <div class="sahdev-popover-footer">
+                <a href="javascript:void(0);" id="sahdevPollNowBtn" style="color:#3182ce; font-weight:600; text-decoration:none;">
+                    <i class="fas fa-sync-alt"></i> Refresh Now
+                </a>
+                <a href="addonmodules.php?module=sahdev&action=incidents" target="_blank" style="color:#4a5568; font-weight:600; text-decoration:none;">
+                    Incident Center <i class="fas fa-chevron-right" style="font-size:10px;"></i>
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {
+    var AJAX_URL = '{$ajaxUrl}';
+    var SERVICE_ID = {$serviceId};
+    var TICKET_ID = {$ticketId};
+    var isMenuOpen = false;
+    var cachedData = null;
+
+    function injectIntoNavbar() {
+        var container = document.getElementById('sahdev-header-widget-container');
+        var widgetWrap = document.getElementById('sahdevNavWidgetWrap');
+        if (!container || !widgetWrap) return;
+
+        // Try standard WHMCS top nav locations
+        var navTarget = document.querySelector('#header .navbar-nav:first-child') || 
+                        document.querySelector('.navbar-header') || 
+                        document.querySelector('#header .nav.navbar-nav') || 
+                        document.querySelector('.nav.navbar-nav.navbar-right') || 
+                        document.querySelector('#header .header-actions') || 
+                        document.querySelector('.top-navbar') || 
+                        document.querySelector('#main-menu');
+
+        if (navTarget) {
+            navTarget.appendChild(widgetWrap);
+            container.remove();
+        } else {
+            // Fallback fixed bar top right
+            widgetWrap.style.position = 'fixed';
+            widgetWrap.style.top = '10px';
+            widgetWrap.style.right = '240px';
+            widgetWrap.style.zIndex = '99999';
+            document.body.appendChild(widgetWrap);
+            container.remove();
+        }
+    }
+
+    function renderWidget(data) {
+        cachedData = data;
+        var summary = data.summary || {};
+        var servers = data.servers || [];
+        var activeIncidents = data.active_incidents || [];
+
+        var dot = document.getElementById('sahdevNavDot');
+        var label = document.getElementById('sahdevNavLabel');
+        var summaryEl = document.getElementById('sahdevWidgetSummary');
+        var bodyEl = document.getElementById('sahdevPopoverBody');
+
+        if (!dot || !label || !summaryEl || !bodyEl) return;
+
+        if (summary.total_outages > 0 || activeIncidents.length > 0) {
+            dot.style.background = '#e53e3e';
+            var count = summary.total_outages + activeIncidents.length;
+            label.innerHTML = '<span style="color:#feb2b2;">' + count + ' Outage' + (count > 1 ? 's' : '') + '</span>';
+        } else if (summary.total_warnings > 0) {
+            dot.style.background = '#dd6b20';
+            label.innerHTML = 'Servers (' + summary.reachable_servers + '/' + summary.monitored_servers + ')';
+        } else {
+            dot.style.background = '#48bb78';
+            label.innerHTML = 'Servers (' + summary.reachable_servers + '/' + summary.monitored_servers + ')';
+        }
+
+        summaryEl.textContent = summary.reachable_servers + '/' + summary.monitored_servers + ' Online';
+
+        var html = '';
+
+        // Active incidents banner inside popover
+        if (activeIncidents.length > 0) {
+            activeIncidents.forEach(function(inc) {
+                html += '<div style="background:#fff5f5; border:1px solid #feb2b2; border-left:3px solid #e53e3e; border-radius:5px; padding:6px 8px; margin-bottom:6px; font-size:11px;">' +
+                    '<strong style="color:#c53030;"><i class="fas fa-fire"></i> [' + inc.incident_num + '] ' + inc.title + '</strong>' +
+                    '<div style="color:#742a2a; margin-top:2px;">' + (inc.server_name || 'Infrastructure') + '</div>' +
+                '</div>';
+            });
+        }
+
+        if (!servers.length) {
+            html += '<div style="text-align:center; padding:20px; color:#718096; font-size:12px;">No monitored servers found.</div>';
+        } else {
+            servers.forEach(function(srv) {
+                var isPinned = srv.is_context_pinned;
+                var srvStatus = srv.is_reachable && (!srv.service_outages || srv.service_outages.length === 0);
+                var statusColor = !srv.is_reachable ? '#e53e3e' : (srv.service_outages && srv.service_outages.length > 0 ? '#e53e3e' : (srv.system_warnings && srv.system_warnings.length > 0 ? '#dd6b20' : '#38a169'));
+
+                var roleBadge = '';
+                if (srv.server_role === 'root') {
+                    roleBadge = '<span class="label" style="background:#1a365d;color:#fff;font-size:9px;padding:1px 5px;border-radius:2px;">ROOT</span>';
+                } else if (srv.server_role === 'reseller') {
+                    roleBadge = '<span class="label" style="background:#553c9e;color:#fff;font-size:9px;padding:1px 5px;border-radius:2px;">RESELLER</span>';
+                } else if (srv.server_role === 'vps_node') {
+                    roleBadge = '<span class="label" style="background:#234e52;color:#fff;font-size:9px;padding:1px 5px;border-radius:2px;">VPS NODE</span>';
+                }
+
+                var rowClass = 'sahdev-server-row' + (isPinned ? ' is-pinned' : '');
+                var pinnedBanner = isPinned ? '<div style="font-size:10px; font-weight:700; color:#20c997; margin-bottom:4px;"><i class="fas fa-star"></i> CURRENT SERVICE SERVER</div>' : '';
+
+                var outagesText = '';
+                if (srv.service_outages && srv.service_outages.length > 0) {
+                    outagesText = '<div style="font-size:11px; color:#c53030; font-weight:600; margin-top:3px;"><i class="fas fa-exclamation-circle"></i> ' + srv.service_outages.join(', ') + '</div>';
+                }
+
+                html += '<div class="' + rowClass + '">' +
+                    pinnedBanner +
+                    '<div style="display:flex; justify-content:space-between; align-items:center;">' +
+                        '<div>' +
+                            '<strong style="font-size:12px; color:#2d3748;">' + srv.server_name + '</strong> ' + roleBadge +
+                            '<div style="font-size:11px; color:#718096;">' + srv.server_host + ' | Load: ' + srv.server_load + '</div>' +
+                        '</div>' +
+                        '<div style="display:flex; align-items:center; gap:6px;">' +
+                            '<a href="' + srv.access_url + '" target="_blank" class="btn btn-default btn-xs" style="font-size:10px; font-weight:600; padding:2px 6px;" title="Open WHM Control Panel"><i class="fas fa-external-link-alt"></i> Access</a>' +
+                            '<span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:' + statusColor + ';" title="' + (srv.is_reachable ? 'Online' : 'Offline') + '"></span>' +
+                        '</div>' +
+                    '</div>' +
+                    outagesText +
+                '</div>';
+            });
+        }
+
+        bodyEl.innerHTML = html;
+    }
+
+    function fetchTelemetry(pollNow) {
+        var url = AJAX_URL + '&action=get_header_server_widget&service_id=' + SERVICE_ID + '&ticket_id=' + TICKET_ID;
+        if (pollNow) url += '&poll_now=1';
+
+        fetch(url, { credentials: 'same-origin' })
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                if (d && d.status === 'success') {
+                    renderWidget(d);
+                }
+            })
+            .catch(function(e) {});
+    }
+
+    function setupEvents() {
+        var btn = document.getElementById('sahdevNavPillBtn');
+        var popover = document.getElementById('sahdevPopoverMenu');
+        var pollBtn = document.getElementById('sahdevPollNowBtn');
+
+        if (btn && popover) {
+            btn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                isMenuOpen = !isMenuOpen;
+                popover.style.display = isMenuOpen ? 'block' : 'none';
+                if (isMenuOpen && !cachedData) {
+                    fetchTelemetry(false);
+                }
+            });
+
+            document.addEventListener('click', function(e) {
+                if (!popover.contains(e.target) && e.target !== btn) {
+                    isMenuOpen = false;
+                    popover.style.display = 'none';
+                }
+            });
+        }
+
+        if (pollBtn) {
+            pollBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                var bodyEl = document.getElementById('sahdevPopoverBody');
+                if (bodyEl) {
+                    bodyEl.innerHTML = '<div style="text-align:center; padding: 25px; color:#718096; font-size:12px;"><i class="fas fa-spinner fa-spin" style="font-size:20px; color:#3182ce; margin-bottom:8px; display:block;"></i> Polling all active servers…</div>';
+                }
+                fetchTelemetry(true);
+            });
+        }
+    }
+
+    function init() {
+        injectIntoNavbar();
+        setupEvents();
+        setTimeout(function() {
+            fetchTelemetry(false);
+        }, 300);
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+})();
+</script>
+HTML;
+}
 
 add_hook('AdminAreaViewTicketPage', 1, function ($vars) {
     // Return early if not ticket page context
