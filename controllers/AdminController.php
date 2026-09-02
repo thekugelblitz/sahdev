@@ -5985,7 +5985,24 @@ class AdminController
                                     $statsPayload = !empty($srv->server_stats_json) ? json_decode($srv->server_stats_json, true) : [];
                                     $servicesList = $statsPayload['services'] ?? [];
                                     $disksList = $statsPayload['disks'] ?? [];
-                                    $flaggedItems = $statsPayload['flagged_items'] ?? [];
+                                    
+                                    // Categorized Flagged Warnings
+                                    $serviceOutages = $statsPayload['flagged_service_outages'] ?? [];
+                                    $systemWarnings = $statsPayload['flagged_system_warnings'] ?? [];
+                                    $accountNotices = $statsPayload['flagged_account_notices'] ?? [];
+
+                                    // Graceful backward compatibility
+                                    if (empty($serviceOutages) && empty($systemWarnings) && !empty($statsPayload['flagged_items'])) {
+                                        foreach ($statsPayload['flagged_items'] as $item) {
+                                            if (strpos($item, 'Account') !== false) {
+                                                $accountNotices[] = $item;
+                                            } elseif (strpos($item, 'DOWN') !== false || strpos($item, 'unreachable') !== false || strpos($item, 'Critical') !== false) {
+                                                $serviceOutages[] = $item;
+                                            } else {
+                                                $systemWarnings[] = $item;
+                                            }
+                                        }
+                                    }
                                     
                                     // Build unified items table (Services + System metrics + Disks)
                                     $tableRows = [];
@@ -6000,7 +6017,7 @@ class AdminController
                                         ];
                                     }
 
-                                    // 2. System Metrics
+                                    // 2. System Metrics (Only if reported)
                                     if ($load !== 'N/A' && $load !== '') {
                                         $tableRows[] = [
                                             'name' => 'Server Load',
@@ -6047,9 +6064,12 @@ class AdminController
                                     }
 
                                     $totalItemsCount = count($tableRows);
-                                    $hasFlags = !empty($flaggedItems);
-                                    $cardBorder = !$isReachable ? '#feb2b2' : ($hasFlags ? '#fbd38d' : '#e2e8f0');
-                                    $cardTopBorder = !$isReachable ? '#e53e3e' : ($hasFlags ? '#dd6b20' : '#38a169');
+                                    $hasOutages = !empty($serviceOutages);
+                                    $hasWarnings = !empty($systemWarnings);
+                                    $hasIssues = $hasOutages || $hasWarnings;
+
+                                    $cardBorder = !$isReachable ? '#feb2b2' : ($hasOutages ? '#feb2b2' : ($hasWarnings ? '#fbd38d' : '#e2e8f0'));
+                                    $cardTopBorder = !$isReachable ? '#e53e3e' : ($hasOutages ? '#e53e3e' : ($hasWarnings ? '#dd6b20' : '#38a169'));
                                 ?>
                                 <div style="flex: 1; min-width: 320px; max-width: 460px; background: #fff; border: 1px solid <?php echo $cardBorder; ?>; border-top: 3px solid <?php echo $cardTopBorder; ?>; border-radius: 6px; padding: 14px; display: flex; flex-direction: column; justify-content: space-between;">
                                     <div>
@@ -6059,8 +6079,10 @@ class AdminController
                                                 <div style="font-size: 12px; color: #718096;"><?php echo htmlspecialchars($srv->hostname ?: $srv->ipaddress); ?></div>
                                             </div>
                                             <div>
-                                                <?php if ($isReachable): ?>
+                                                <?php if ($isReachable && !$hasOutages): ?>
                                                     <span class="label label-success"><i class="fas fa-check"></i> Online</span>
+                                                <?php elseif ($isReachable && $hasOutages): ?>
+                                                    <span class="label label-warning"><i class="fas fa-exclamation-triangle"></i> Degraded</span>
                                                 <?php else: ?>
                                                     <span class="label label-danger"><i class="fas fa-times"></i> Offline</span>
                                                 <?php endif; ?>
@@ -6073,19 +6095,50 @@ class AdminController
                                             <div><strong>Accounts/VPS:</strong> <?php echo $acctCount; ?></div>
                                         </div>
 
-                                        <!-- Flagged Warnings on TOP -->
-                                        <?php if ($hasFlags): ?>
-                                            <div style="background: #fffaf0; border: 1px solid #feebc8; border-radius: 5px; padding: 8px 10px; margin: 8px 0;">
-                                                <strong style="font-size: 11px; color: #c05621; text-transform: uppercase; display: block; margin-bottom: 4px;">
-                                                    <i class="fas fa-exclamation-triangle"></i> Flagged Warnings (<?php echo count($flaggedItems); ?>)
+                                        <!-- Tier 1: Service Outages (Top Priority - Red) -->
+                                        <?php if (!empty($serviceOutages)): ?>
+                                            <div style="background: #fff5f5; border: 1px solid #feb2b2; border-radius: 6px; padding: 8px 10px; margin: 8px 0;">
+                                                <strong style="font-size: 11px; color: #c53030; text-transform: uppercase; display: block; margin-bottom: 4px;">
+                                                    <i class="fas fa-fire"></i> Service Outages (<?php echo count($serviceOutages); ?>)
                                                 </strong>
-                                                <?php foreach ($flaggedItems as $flag): ?>
-                                                    <div style="font-size: 12px; color: #7b341e; margin-bottom: 2px;">
-                                                        <?php echo htmlspecialchars($flag); ?>
+                                                <?php foreach ($serviceOutages as $outage): ?>
+                                                    <div style="font-size: 12px; color: #9b2c2c; font-weight: 600; margin-bottom: 2px;">
+                                                        <?php echo htmlspecialchars($outage); ?>
                                                     </div>
                                                 <?php endforeach; ?>
                                             </div>
-                                        <?php elseif ($isReachable && $totalItemsCount > 0): ?>
+                                        <?php endif; ?>
+
+                                        <!-- Tier 2: System Health Warnings (Medium Priority - Orange) -->
+                                        <?php if (!empty($systemWarnings)): ?>
+                                            <div style="background: #fffaf0; border: 1px solid #feebc8; border-radius: 6px; padding: 8px 10px; margin: 8px 0;">
+                                                <strong style="font-size: 11px; color: #c05621; text-transform: uppercase; display: block; margin-bottom: 4px;">
+                                                    <i class="fas fa-exclamation-triangle"></i> System Warnings (<?php echo count($systemWarnings); ?>)
+                                                </strong>
+                                                <?php foreach ($systemWarnings as $warn): ?>
+                                                    <div style="font-size: 12px; color: #7b341e; margin-bottom: 2px;">
+                                                        <?php echo htmlspecialchars($warn); ?>
+                                                    </div>
+                                                <?php endforeach; ?>
+                                            </div>
+                                        <?php endif; ?>
+
+                                        <!-- Tier 3: Client Account Quota Notices (Low Priority - Collapsible) -->
+                                        <?php if (!empty($accountNotices)): ?>
+                                            <div style="margin: 6px 0;">
+                                                <span class="label label-default" style="font-size: 11px; background: #edf2f7; color: #4a5568; border: 1px solid #cbd5e0; cursor: pointer; display: inline-block;" data-toggle="collapse" data-target="#acctNotice<?php echo $srv->server_id; ?>">
+                                                    <i class="fas fa-user-clock"></i> <?php echo count($accountNotices); ?> Account Quota Notices <i class="fas fa-caret-down"></i>
+                                                </span>
+                                                <div class="collapse" id="acctNotice<?php echo $srv->server_id; ?>" style="margin-top: 4px; font-size: 11px; color: #718096; background: #f7fafc; padding: 6px 8px; border-radius: 4px; max-height: 110px; overflow-y: auto; border: 1px solid #e2e8f0;">
+                                                    <?php foreach ($accountNotices as $notice): ?>
+                                                        <div style="margin-bottom: 2px;">• <?php echo htmlspecialchars($notice); ?></div>
+                                                    <?php endforeach; ?>
+                                                </div>
+                                            </div>
+                                        <?php endif; ?>
+
+                                        <!-- All Healthy Indicator -->
+                                        <?php if ($isReachable && !$hasIssues && $totalItemsCount > 0): ?>
                                             <div style="font-size: 11px; color: #276749; background: #f0fff4; border: 1px solid #c6f6d5; border-radius: 4px; padding: 4px 8px; margin: 6px 0;">
                                                 <i class="fas fa-check-circle"></i> All <?php echo $totalItemsCount; ?> monitored services & partitions operational.
                                             </div>

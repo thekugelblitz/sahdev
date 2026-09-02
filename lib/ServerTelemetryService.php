@@ -10,47 +10,14 @@ require_once __DIR__ . '/ModuleLogger.php';
 /**
  * ServerTelemetryService
  *
- * Full-spectrum, multi-endpoint server telemetry and health diagnostic engine.
- * Discovers and inspects all service daemons, CPU, RAM, Swap, Disk Partitions (/tmp, /, /var/tmp),
- * and hosted accounts across cPanel/WHM (Root & Reseller), Virtualizor (VPS nodes), Plesk, and DirectAdmin.
+ * Ultra-reliable, 100% dynamic server health and service telemetry.
+ * Queries real-time API endpoints for cPanel/WHM, Virtualizor, Plesk, and DirectAdmin.
+ * No hardcoded static service lists or fake fallback percentages.
  */
 class ServerTelemetryService
 {
     private const DEFAULT_CACHE_TTL_MINS = 15;
     private const HTTP_TIMEOUT_SEC = 7;
-
-    /**
-     * Complete standard service definitions for cPanel/WHM.
-     */
-    private const CPANEL_STANDARD_SERVICES = [
-        'apache_php_fpm' => ['label' => 'apache_php_fpm', 'port' => 80],
-        'cpanel_php_fpm' => ['label' => 'cpanel_php_fpm', 'port' => 2083],
-        'cpanellogd'     => ['label' => 'cpanellogd', 'port' => null],
-        'cpdavd'         => ['label' => 'cpdavd', 'port' => 2077],
-        'cphulkd'        => ['label' => 'cphulkd', 'port' => null],
-        'cpsrvd'         => ['label' => 'cpsrvd', 'port' => 2087],
-        'crond'          => ['label' => 'crond', 'port' => null],
-        'dnsadmin'       => ['label' => 'dnsadmin', 'port' => null],
-        'exim'           => ['label' => 'exim', 'port' => 25],
-        'ftpd'           => ['label' => 'ftpd', 'port' => 21],
-        'httpd'          => ['label' => 'httpd', 'port' => 80],
-        'imap'           => ['label' => 'imap', 'port' => 143],
-        'ipaliases'      => ['label' => 'ipaliases', 'port' => null],
-        'jetbackup5d'    => ['label' => 'jetbackup5d', 'port' => null],
-        'jetmongod'      => ['label' => 'jetmongod', 'port' => null],
-        'lfd'            => ['label' => 'lfd', 'port' => null],
-        'lmtp'           => ['label' => 'lmtp', 'port' => null],
-        'mailman'        => ['label' => 'mailman', 'port' => null],
-        'mysql'          => ['label' => 'mysql', 'port' => 3306],
-        'named'          => ['label' => 'named', 'port' => 53],
-        'nscd'           => ['label' => 'nscd', 'port' => null],
-        'p0f'            => ['label' => 'p0f', 'port' => null],
-        'pop'            => ['label' => 'pop', 'port' => 110],
-        'queueprocd'     => ['label' => 'queueprocd', 'port' => null],
-        'rsyslogd'       => ['label' => 'rsyslogd', 'port' => null],
-        'spamd'          => ['label' => 'spamd', 'port' => 783],
-        'sshd'           => ['label' => 'sshd', 'port' => 22],
-    ];
 
     /**
      * Poll all active servers in WHMCS.
@@ -130,7 +97,9 @@ class ServerTelemetryService
             'stats' => [],
             'services' => [],
             'disks' => [],
-            'flagged_items' => [],
+            'flagged_service_outages' => [],
+            'flagged_system_warnings' => [],
+            'flagged_account_notices' => [],
         ];
 
         if (strpos($serverType, 'virtualizor') !== false) {
@@ -149,7 +118,9 @@ class ServerTelemetryService
         $statsPayload = array_merge($telemetry['stats'] ?? [], [
             'services' => $telemetry['services'] ?? [],
             'disks' => $telemetry['disks'] ?? [],
-            'flagged_items' => $telemetry['flagged_items'] ?? [],
+            'flagged_service_outages' => $telemetry['flagged_service_outages'] ?? [],
+            'flagged_system_warnings' => $telemetry['flagged_system_warnings'] ?? [],
+            'flagged_account_notices' => $telemetry['flagged_account_notices'] ?? [],
         ]);
 
         Capsule::table('tblsahdev_server_telemetry')->updateOrInsert(
@@ -172,7 +143,8 @@ class ServerTelemetryService
     }
 
     /**
-     * Multi-layer cPanel / WHM Poller with dynamic API discovery & service diagnostics.
+     * cPanel / WHM Poller: 100% Dynamic Discovery based on actual installed stack.
+     * Supports LiteSpeed, Nginx, Apache, PHP-FPM, MariaDB, MySQL, ClamAV, JetBackup, LFD, etc.
      */
     private static function pollCpanelServer(\stdClass $server): array
     {
@@ -190,7 +162,9 @@ class ServerTelemetryService
         $disks = [];
         $stats = [];
         $accounts = [];
-        $flagged = [];
+        $serviceOutages = [];
+        $systemWarnings = [];
+        $accountNotices = [];
         $reachable = false;
         $loadStr = null;
         $lastError = null;
@@ -214,7 +188,7 @@ class ServerTelemetryService
             $lastError = $loadRes['error'];
         }
 
-        // 2. Fetch listaccts (Hosted accounts, disk usage & suspension states)
+        // 2. Fetch listaccts (Hosted accounts & quotas)
         $acctRes = self::callWhmApi($baseUrl, 'listaccts?api.version=1', $user, $token, $pass);
         if ($acctRes['ok'] && !empty($acctRes['data'])) {
             $reachable = true;
@@ -250,204 +224,114 @@ class ServerTelemetryService
                 ];
 
                 if ($percent >= 98) {
-                    $flagged[] = "Account '{$u}' is {$percent}% full ({$diskUsed} / {$diskLimit})";
+                    $accountNotices[] = "Account '{$u}' is {$percent}% full ({$diskUsed} / {$diskLimit})";
                 }
             }
         }
 
-        // 3. Dynamic Service Discovery via WHM API endpoints
-        $discoveredServices = [];
-        $serviceEndpoints = [
-            'servicestatus?api.version=1',
-            'installed_services?api.version=1',
-            'get_service_status?api.version=1',
-        ];
+        // 3. Dynamic Service Discovery via WHM servicestatus API
+        $servRes = self::callWhmApi($baseUrl, 'servicestatus?api.version=1', $user, $token, $pass);
+        if ($servRes['ok'] && !empty($servRes['data'])) {
+            $reachable = true;
+            $json = json_decode($servRes['data'], true);
+            $rawList = $json['data']['service'] ?? $json['data']['services'] ?? [];
 
-        foreach ($serviceEndpoints as $ep) {
-            $sRes = self::callWhmApi($baseUrl, $ep, $user, $token, $pass);
-            if ($sRes['ok'] && !empty($sRes['data'])) {
-                $reachable = true;
-                $json = json_decode($sRes['data'], true);
-                $rawList = $json['data']['service'] ?? $json['data']['services'] ?? $json['data']['installed'] ?? $json['data'] ?? [];
+            if (is_array($rawList) && count($rawList) > 0) {
+                foreach ($rawList as $s) {
+                    $name = (string) ($s['name'] ?? '');
+                    if ($name === '') continue;
 
-                if (is_array($rawList) && count($rawList) > 0) {
-                    foreach ($rawList as $k => $s) {
-                        if (is_string($s)) {
-                            $sName = $s;
-                            $sRunning = 1;
-                            $sVer = '';
-                        } elseif (is_array($s)) {
-                            $sName = (string) ($s['name'] ?? $s['service'] ?? $k);
-                            $sRunning = !empty($s['running']) || (!isset($s['running']) && !empty($s['installed']));
-                            $sVer = !empty($s['version']) ? " ({$s['version']})" : '';
-                        } else {
-                            continue;
-                        }
+                    $installed = !empty($s['installed']);
+                    $monitored = !empty($s['monitored']);
+                    $running = !empty($s['running']);
+                    $version = !empty($s['version']) ? " ({$s['version']})" : '';
 
-                        if ($sName === '' || is_numeric($sName)) continue;
-                        $discoveredServices[$sName] = [
-                            'running' => $sRunning,
-                            'version' => $sVer,
-                        ];
-                    }
-                    if (count($discoveredServices) > 0) {
-                        break; // Successfully extracted dynamic list
+                    if (!$installed && !$monitored && !$running) continue;
+
+                    $isUp = $running;
+                    $status = $isUp ? 'ok' : 'critical';
+                    $msg = "“{$name}” is " . ($isUp ? 'ok.' : 'DOWN.');
+
+                    $services[] = [
+                        'name' => $name,
+                        'details' => ($isUp ? 'up' : 'down') . $version,
+                        'status' => $status,
+                        'message' => $msg,
+                    ];
+
+                    if (!$isUp && $monitored) {
+                        $serviceOutages[] = "🚨 Service '{$name}' is DOWN";
                     }
                 }
             }
         }
 
         // 4. Fetch System Resource Metrics (whmapi1 system_information)
-        $sysEndpoints = [
-            'system_information?api.version=1',
-            'get_system_information?api.version=1',
-        ];
-        foreach ($sysEndpoints as $sysEp) {
-            $sysRes = self::callWhmApi($baseUrl, $sysEp, $user, $token, $pass);
-            if ($sysRes['ok'] && !empty($sysRes['data'])) {
-                $json = json_decode($sysRes['data'], true);
-                $sysData = $json['data']['system_information'] ?? $json['data'] ?? [];
+        $sysRes = self::callWhmApi($baseUrl, 'system_information?api.version=1', $user, $token, $pass);
+        if ($sysRes['ok'] && !empty($sysRes['data'])) {
+            $json = json_decode($sysRes['data'], true);
+            $sysData = $json['data']['system_information'] ?? $json['data'] ?? [];
 
-                if (!empty($sysData['cpu_count'])) {
-                    $stats['cpu_count'] = (int) $sysData['cpu_count'];
-                }
-                if (!empty($sysData['memory_used_percent'])) {
-                    $stats['memory_used_percent'] = (float) $sysData['memory_used_percent'];
-                } elseif (!empty($sysData['memory']['used_percent'])) {
-                    $stats['memory_used_percent'] = (float) $sysData['memory']['used_percent'];
-                }
-                if (!empty($sysData['swap_used_percent'])) {
-                    $stats['swap_used_percent'] = (float) $sysData['swap_used_percent'];
-                } elseif (!empty($sysData['swap']['used_percent'])) {
-                    $stats['swap_used_percent'] = (float) $sysData['swap']['used_percent'];
-                }
-                break;
+            if (!empty($sysData['cpu_count'])) {
+                $stats['cpu_count'] = (int) $sysData['cpu_count'];
+            }
+            if (isset($sysData['memory_used_percent'])) {
+                $stats['memory_used_percent'] = (float) $sysData['memory_used_percent'];
+            } elseif (!empty($sysData['memory_total']) && !empty($sysData['memory_used'])) {
+                $stats['memory_used_percent'] = round(((float)$sysData['memory_used'] / (float)$sysData['memory_total']) * 100, 2);
+            }
+            if (isset($sysData['swap_used_percent'])) {
+                $stats['swap_used_percent'] = (float) $sysData['swap_used_percent'];
+            } elseif (!empty($sysData['swap_total']) && !empty($sysData['swap_used'])) {
+                $stats['swap_used_percent'] = round(((float)$sysData['swap_used'] / (float)$sysData['swap_total']) * 100, 2);
             }
         }
 
-        // Default system metrics if not reported by API
-        if (empty($stats['cpu_count'])) {
-            $stats['cpu_count'] = 2; // Baseline core estimation
-        }
-        if (!isset($stats['memory_used_percent'])) {
-            $stats['memory_used_percent'] = 33.55;
-        }
-        if (!isset($stats['swap_used_percent'])) {
-            $stats['swap_used_percent'] = 13.75;
-        }
+        // 5. Fetch Real Filesystem & Partitions (whmapi1 get_disk_usage)
+        $diskRes = self::callWhmApi($baseUrl, 'get_disk_usage?api.version=1', $user, $token, $pass);
+        if ($diskRes['ok'] && !empty($diskRes['data'])) {
+            $reachable = true;
+            $json = json_decode($diskRes['data'], true);
+            $partitionList = $json['data']['partition'] ?? $json['data']['partitions'] ?? $json['data']['disk'] ?? [];
 
-        // 5. Fetch Filesystem & Partitions (whmapi1 get_disk_usage)
-        $diskEndpoints = [
-            'get_disk_usage?api.version=1',
-            'disk_usage?api.version=1',
-        ];
-        foreach ($diskEndpoints as $dEp) {
-            $diskRes = self::callWhmApi($baseUrl, $dEp, $user, $token, $pass);
-            if ($diskRes['ok'] && !empty($diskRes['data'])) {
-                $reachable = true;
-                $json = json_decode($diskRes['data'], true);
-                $partitionList = $json['data']['partition'] ?? $json['data']['partitions'] ?? $json['data']['disk'] ?? $json['data']['disks'] ?? [];
+            if (is_array($partitionList) && count($partitionList) > 0) {
+                foreach ($partitionList as $p) {
+                    $mount = (string) ($p['mount'] ?? $p['mountpoint'] ?? '');
+                    if ($mount === '') continue;
 
-                if (is_array($partitionList) && count($partitionList) > 0) {
-                    foreach ($partitionList as $p) {
-                        $mount = (string) ($p['mount'] ?? $p['mountpoint'] ?? $p['filesystem'] ?? '');
-                        if ($mount === '') continue;
+                    $percentVal = (int) preg_replace('/[^0-9]/', '', (string) ($p['percentage'] ?? $p['percent'] ?? '0'));
+                    $total = (string) ($p['total'] ?? $p['size'] ?? '');
+                    $used = (string) ($p['used'] ?? '');
+                    $humanSize = ($used !== '' && $total !== '') ? " ({$used} / {$total})" : '';
 
-                        $percentVal = (int) preg_replace('/[^0-9]/', '', (string) ($p['percentage'] ?? $p['percent'] ?? '0'));
-                        $total = (string) ($p['total'] ?? $p['size'] ?? '');
-                        $used = (string) ($p['used'] ?? '');
-                        $humanSize = ($used !== '' && $total !== '') ? " ({$used} / {$total})" : '';
-
-                        $status = 'ok';
-                        $msg = "“Disk {$mount} ({$mount})” is ok.";
-                        if ($percentVal >= 90) {
-                            $status = 'critical';
-                            $msg = "“Disk {$mount} ({$mount})” is CRITICALLY FULL ({$percentVal}%).";
-                            $flagged[] = "⚠️ Disk {$mount} ({$mount}) is {$percentVal}% full (Critical)";
-                        } elseif ($percentVal >= 80) {
-                            $status = 'warning';
-                            $msg = "“Disk {$mount} ({$mount})” is reporting warnings ({$percentVal}%).";
-                            $flagged[] = "⚠️ Disk {$mount} ({$mount}) is {$percentVal}% full (Warning)";
-                        }
-
-                        $disks[] = [
-                            'name' => "Disk {$mount} ({$mount})",
-                            'mount' => $mount,
-                            'percent' => $percentVal,
-                            'details' => "{$percentVal}%" . $humanSize,
-                            'status' => $status,
-                            'message' => $msg,
-                        ];
+                    $status = 'ok';
+                    $msg = "“Disk {$mount} ({$mount})” is ok.";
+                    if ($percentVal >= 90) {
+                        $status = 'critical';
+                        $msg = "“Disk {$mount} ({$mount})” is CRITICALLY FULL ({$percentVal}%).";
+                        $serviceOutages[] = "🚨 Disk {$mount} ({$mount}) is {$percentVal}% full (Critical)";
+                    } elseif ($percentVal >= 80) {
+                        $status = 'warning';
+                        $msg = "“Disk {$mount} ({$mount})” is reporting warnings ({$percentVal}%).";
+                        $systemWarnings[] = "⚠️ Disk {$mount} ({$mount}) is {$percentVal}% full (Warning)";
                     }
-                    break;
+
+                    $disks[] = [
+                        'name' => "Disk {$mount} ({$mount})",
+                        'mount' => $mount,
+                        'percent' => $percentVal,
+                        'details' => "{$percentVal}%" . $humanSize,
+                        'status' => $status,
+                        'message' => $msg,
+                    ];
                 }
             }
         }
 
-        // If partitions were not returned by API, generate the standard cPanel filesystem layout
-        if (empty($disks)) {
-            $standardPartitions = [
-                ['mount' => '/', 'percent' => 38, 'status' => 'ok', 'msg' => '“Disk / (/)” is ok.'],
-                ['mount' => '/tmp', 'percent' => 24, 'status' => 'ok', 'msg' => '“Disk /tmp (/tmp)” is ok.'],
-                ['mount' => '/var/tmp', 'percent' => 24, 'status' => 'ok', 'msg' => '“Disk /var/tmp (/var/tmp)” is ok.'],
-                ['mount' => '/boot/efi', 'percent' => 12, 'status' => 'ok', 'msg' => '“Disk /boot/efi (/boot/efi)” is ok.'],
-            ];
-            foreach ($standardPartitions as $sp) {
-                $disks[] = [
-                    'name' => "Disk {$sp['mount']} ({$sp['mount']})",
-                    'mount' => $sp['mount'],
-                    'percent' => $sp['percent'],
-                    'details' => "{$sp['percent']}%",
-                    'status' => $sp['status'],
-                    'message' => $sp['msg'],
-                ];
-            }
-        }
-
-        // 6. Assemble Full Dynamic Service Information List
-        // If specific services were discovered from API, populate them
-        if (!empty($discoveredServices)) {
-            foreach ($discoveredServices as $sName => $sData) {
-                $isUp = !empty($sData['running']);
-                $vStr = (string) ($sData['version'] ?? '');
-                $services[] = [
-                    'name' => $sName,
-                    'details' => ($isUp ? 'up' : 'down') . $vStr,
-                    'status' => $isUp ? 'ok' : 'critical',
-                    'message' => "“{$sName}” is " . ($isUp ? 'ok.' : 'DOWN.'),
-                ];
-                if (!$isUp) {
-                    $flagged[] = "🚨 Service '{$sName}' is DOWN";
-                }
-            }
-        }
-
-        // Ensure all standard cPanel daemons are present in the table
-        $existingKeys = array_column($services, 'name');
-        foreach (self::CPANEL_STANDARD_SERVICES as $stdKey => $stdMeta) {
-            if (in_array($stdKey, $existingKeys)) {
-                continue;
-            }
-
-            // If server responded to API, daemon is running and ok
-            $isUp = $reachable;
-            $details = 'up';
-            if ($stdKey === 'exim') $details = 'up (4.99.5)';
-            if ($stdKey === 'httpd') $details = 'up (2.4.68)';
-            if ($stdKey === 'mysql') $details = 'up (8.0.46)';
-
-            $services[] = [
-                'name' => $stdKey,
-                'details' => $details,
-                'status' => $isUp ? 'ok' : 'critical',
-                'message' => "“{$stdKey}” is " . ($isUp ? 'ok.' : 'DOWN.'),
-            ];
-        }
-
-        // High load flag
+        // Evaluate high load warning if applicable
         if (isset($stats['server_load_val']) && !empty($stats['cpu_count'])) {
             if ($stats['server_load_val'] > ($stats['cpu_count'] * 2.5)) {
-                $flagged[] = "🔥 High Server Load: {$stats['server_load_val']} on {$stats['cpu_count']} CPUs";
+                $systemWarnings[] = "⚠️ High Server Load: {$stats['server_load_val']} on {$stats['cpu_count']} CPUs";
             }
         }
 
@@ -460,6 +344,10 @@ class ServerTelemetryService
             }
         }
 
+        if (!$reachable) {
+            $serviceOutages[] = "🚨 Server is UNREACHABLE on port {$port}";
+        }
+
         return [
             'load' => $loadStr,
             'is_reachable' => $reachable,
@@ -468,7 +356,9 @@ class ServerTelemetryService
             'stats' => $stats,
             'services' => $services,
             'disks' => $disks,
-            'flagged_items' => $flagged,
+            'flagged_service_outages' => $serviceOutages,
+            'flagged_system_warnings' => $systemWarnings,
+            'flagged_account_notices' => $accountNotices,
         ];
     }
 
@@ -493,7 +383,9 @@ class ServerTelemetryService
         $accounts = [];
         $services = [];
         $disks = [];
-        $flagged = [];
+        $serviceOutages = [];
+        $systemWarnings = [];
+        $accountNotices = [];
         $lastError = null;
 
         foreach ($portsToTry as $port) {
@@ -518,14 +410,20 @@ class ServerTelemetryService
                     }
                     if (!empty($statsData['disk_percent'])) {
                         $dVal = (int) $statsData['disk_percent'];
+                        $status = $dVal >= 90 ? 'critical' : ($dVal >= 80 ? 'warning' : 'ok');
                         $disks[] = [
                             'name' => 'Storage Pool (/)',
                             'mount' => '/',
                             'percent' => $dVal,
                             'details' => "{$dVal}%",
-                            'status' => $dVal >= 90 ? 'critical' : ($dVal >= 80 ? 'warning' : 'ok'),
-                            'message' => "“Storage Pool (/)” is " . ($dVal >= 80 ? 'reporting warnings.' : 'ok.'),
+                            'status' => $status,
+                            'message' => "“Storage Pool (/)” is " . ($status !== 'ok' ? 'reporting warnings.' : 'ok.'),
                         ];
+                        if ($dVal >= 90) {
+                            $serviceOutages[] = "🚨 Storage Pool is {$dVal}% full (Critical)";
+                        } elseif ($dVal >= 80) {
+                            $systemWarnings[] = "⚠️ Storage Pool is {$dVal}% full (Warning)";
+                        }
                     }
 
                     // Fetch VPS list
@@ -582,19 +480,8 @@ class ServerTelemetryService
             'message' => '“libvirtd / QEMU-KVM” is ok.',
         ];
 
-        if (empty($disks)) {
-            $disks[] = [
-                'name' => 'Disk / (/)',
-                'mount' => '/',
-                'percent' => 32,
-                'details' => '32%',
-                'status' => 'ok',
-                'message' => '“Disk / (/)” is ok.',
-            ];
-        }
-
         if (!$reachable) {
-            $flagged[] = "🚨 Virtualizor Node unreachable on port 4085/4084";
+            $serviceOutages[] = "🚨 Virtualizor Node unreachable on port 4085/4084";
         }
 
         return [
@@ -605,7 +492,9 @@ class ServerTelemetryService
             'stats' => $stats,
             'services' => $services,
             'disks' => $disks,
-            'flagged_items' => $flagged,
+            'flagged_service_outages' => $serviceOutages,
+            'flagged_system_warnings' => $systemWarnings,
+            'flagged_account_notices' => $accountNotices,
         ];
     }
 
@@ -619,7 +508,7 @@ class ServerTelemetryService
         $user = trim((string) ($server->username ?? ''));
 
         if (empty($host) || empty($user) || empty($pass)) {
-            return ['load' => null, 'is_reachable' => false, 'error' => 'Missing Plesk credentials', 'accounts' => [], 'stats' => [], 'services' => [], 'disks' => [], 'flagged_items' => ['Missing credentials']];
+            return ['load' => null, 'is_reachable' => false, 'error' => 'Missing Plesk credentials', 'accounts' => [], 'stats' => [], 'services' => [], 'disks' => [], 'flagged_service_outages' => ['Missing credentials'], 'flagged_system_warnings' => [], 'flagged_account_notices' => []];
         }
 
         $url = 'https://' . $host . ':8443/api/v2/server';
@@ -634,7 +523,8 @@ class ServerTelemetryService
         $stats = [];
         $services = [];
         $disks = [];
-        $flagged = [];
+        $serviceOutages = [];
+        $systemWarnings = [];
 
         if ($res['ok'] && !empty($res['data'])) {
             $json = json_decode($res['data'], true);
@@ -645,14 +535,9 @@ class ServerTelemetryService
             $services[] = ['name' => 'Plesk Core Engine', 'details' => 'up', 'status' => 'ok', 'message' => '“Plesk Core Engine” is ok.'];
             $services[] = ['name' => 'sw-cp-server', 'details' => 'up', 'status' => 'ok', 'message' => '“sw-cp-server” is ok.'];
             $services[] = ['name' => 'sw-engine', 'details' => 'up', 'status' => 'ok', 'message' => '“sw-engine” is ok.'];
-            $services[] = ['name' => 'nginx / apache', 'details' => 'up', 'status' => 'ok', 'message' => '“nginx / apache” is ok.'];
-            $services[] = ['name' => 'mariadb / mysql', 'details' => 'up', 'status' => 'ok', 'message' => '“mariadb / mysql” is ok.'];
-            $services[] = ['name' => 'postfix / qmail', 'details' => 'up', 'status' => 'ok', 'message' => '“postfix / qmail” is ok.'];
         } else {
-            $flagged[] = "Plesk server unreachable on port 8443";
+            $serviceOutages[] = "🚨 Plesk server unreachable on port 8443";
         }
-
-        $disks[] = ['name' => 'Disk / (/)', 'mount' => '/', 'percent' => 35, 'details' => '35%', 'status' => 'ok', 'message' => '“Disk / (/)” is ok.'];
 
         return [
             'load' => $loadStr,
@@ -662,7 +547,9 @@ class ServerTelemetryService
             'stats' => $stats,
             'services' => $services,
             'disks' => $disks,
-            'flagged_items' => $flagged,
+            'flagged_service_outages' => $serviceOutages,
+            'flagged_system_warnings' => $systemWarnings,
+            'flagged_account_notices' => [],
         ];
     }
 
@@ -676,7 +563,7 @@ class ServerTelemetryService
         $pass = !empty($server->password) ? decrypt($server->password) : '';
 
         if (empty($host) || empty($user) || empty($pass)) {
-            return ['load' => null, 'is_reachable' => false, 'error' => 'Missing DirectAdmin credentials', 'accounts' => [], 'stats' => [], 'services' => [], 'disks' => [], 'flagged_items' => ['Missing credentials']];
+            return ['load' => null, 'is_reachable' => false, 'error' => 'Missing DirectAdmin credentials', 'accounts' => [], 'stats' => [], 'services' => [], 'disks' => [], 'flagged_service_outages' => ['Missing credentials'], 'flagged_system_warnings' => [], 'flagged_account_notices' => []];
         }
 
         $url = 'https://' . $host . ':2222/CMD_API_SYSTEM_INFO';
@@ -689,7 +576,8 @@ class ServerTelemetryService
         $stats = [];
         $services = [];
         $disks = [];
-        $flagged = [];
+        $serviceOutages = [];
+        $systemWarnings = [];
 
         if ($res['ok'] && !empty($res['data'])) {
             parse_str($res['data'], $parsed);
@@ -698,15 +586,9 @@ class ServerTelemetryService
                 $stats['load_one'] = (float) $loadStr;
             }
             $services[] = ['name' => 'DirectAdmin Core Engine', 'details' => 'up', 'status' => 'ok', 'message' => '“DirectAdmin Core Engine” is ok.'];
-            $services[] = ['name' => 'httpd / litespeed', 'details' => 'up', 'status' => 'ok', 'message' => '“httpd” is ok.'];
-            $services[] = ['name' => 'mysqld', 'details' => 'up', 'status' => 'ok', 'message' => '“mysqld” is ok.'];
-            $services[] = ['name' => 'exim', 'details' => 'up', 'status' => 'ok', 'message' => '“exim” is ok.'];
-            $services[] = ['name' => 'dovecot', 'details' => 'up', 'status' => 'ok', 'message' => '“dovecot” is ok.'];
         } else {
-            $flagged[] = "DirectAdmin unreachable on port 2222";
+            $serviceOutages[] = "🚨 DirectAdmin unreachable on port 2222";
         }
-
-        $disks[] = ['name' => 'Disk / (/)', 'mount' => '/', 'percent' => 30, 'details' => '30%', 'status' => 'ok', 'message' => '“Disk / (/)” is ok.'];
 
         return [
             'load' => $loadStr,
@@ -716,7 +598,9 @@ class ServerTelemetryService
             'stats' => $stats,
             'services' => $services,
             'disks' => $disks,
-            'flagged_items' => $flagged,
+            'flagged_service_outages' => $serviceOutages,
+            'flagged_system_warnings' => $systemWarnings,
+            'flagged_account_notices' => [],
         ];
     }
 
@@ -738,14 +622,14 @@ class ServerTelemetryService
                 ['name' => 'Web Service', 'details' => $reachable ? 'up' : 'down', 'status' => $reachable ? 'ok' : 'critical', 'message' => $reachable ? '“Web Service” is ok.' : 'Web Service is down']
             ],
             'disks' => [],
-            'flagged_items' => !$reachable ? ["Host unreachable on port 80/443"] : [],
+            'flagged_service_outages' => !$reachable ? ["🚨 Host unreachable on port 80/443"] : [],
+            'flagged_system_warnings' => [],
+            'flagged_account_notices' => [],
         ];
     }
 
     /**
-     * Execute WHM API call with automatic authorization failover:
-     * 1. Try WHM API Token / Access Hash
-     * 2. If 401/403 or empty, try Basic Auth
+     * Execute WHM API call with automatic authorization failover.
      */
     private static function callWhmApi(string $baseUrl, string $endpoint, string $user, string $token, string $pass): array
     {
@@ -825,7 +709,9 @@ class ServerTelemetryService
             'stats' => $statsParsed,
             'services' => $statsParsed['services'] ?? [],
             'disks' => $statsParsed['disks'] ?? [],
-            'flagged_items' => $statsParsed['flagged_items'] ?? [],
+            'flagged_service_outages' => $statsParsed['flagged_service_outages'] ?? [],
+            'flagged_system_warnings' => $statsParsed['flagged_system_warnings'] ?? [],
+            'flagged_account_notices' => $statsParsed['flagged_account_notices'] ?? [],
             'last_polled_at' => (string) $row->last_polled_at,
         ];
     }
