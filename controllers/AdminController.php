@@ -5809,6 +5809,7 @@ class AdminController
                 'st.is_reachable',
                 'st.reachability_error',
                 'st.accounts_data_json',
+                'st.server_stats_json',
                 'st.last_polled_at'
             )
             ->get();
