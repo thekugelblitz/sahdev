@@ -2668,20 +2668,19 @@ add_hook('AdminAreaHeaderOutput', 1, function ($vars) {
             }
         }
         
-        // Only show if at least one automation feature is enabled
+        // Only show stale cron alert if at least one automation feature is enabled
         $active = !empty($settings->cron_insights_enabled) || !empty($settings->autopilot_enabled) || !empty($settings->tools_execution_enabled);
-        if (!$active) return '';
+        if ($active) {
+            $isStale = (!$lastRun || $lastRun->diffInMinutes(\Carbon\Carbon::now()) > 60);
 
-        $isStale = (!$lastRun || $lastRun->diffInMinutes(\Carbon\Carbon::now()) > 60);
-
-        if ($isStale) {
-            $msg = $lastRun 
-                ? "Sahdev AI automation has not run since " . $lastRun->format('Y-m-d H:i:s') . ". Please verify your system cron job."
-                : "Sahdev AI automation cron job has never run successfully. Manual configuration is required.";
-            
-            $configUrl = "addonmodules.php?module=sahdev&action=autopilot"; 
-            
-            $output .= <<<HTML
+            if ($isStale) {
+                $msg = $lastRun 
+                    ? "Sahdev AI automation has not run since " . $lastRun->format('Y-m-d H:i:s') . ". Please verify your system cron job."
+                    : "Sahdev AI automation cron job has never run successfully. Manual configuration is required.";
+                
+                $configUrl = "addonmodules.php?module=sahdev&action=autopilot"; 
+                
+                $output .= <<<HTML
 <div class="alert alert-warning sahdev-cron-alert" style="margin: 15px 20px 5px 20px; padding: 10px 15px; border-left: 5px solid #f39c12; font-size: 13px;">
     <div style="display:flex; align-items:center; justify-content:space-between;">
         <span><i class="fas fa-exclamation-triangle" style="color:#e67e22; margin-right:8px;"></i> <strong>Sahdev Health Alert:</strong> {$msg}</span>
@@ -2689,6 +2688,7 @@ add_hook('AdminAreaHeaderOutput', 1, function ($vars) {
     </div>
 </div>
 HTML;
+            }
         }
         
         // Global Note Insert Button CSS injection - Using !important everywhere to override theme defaults
@@ -2744,17 +2744,35 @@ function sahdev_render_clientservices_server_card($vars)
     }
 
     $filename = strtolower((string) (($vars['filename'] ?? '') ?: basename($_SERVER['SCRIPT_NAME'] ?? '')));
-    if ($filename !== 'clientsservices' && $filename !== 'clientsservices.php') {
+    $reqUri = strtolower((string) ($_SERVER['REQUEST_URI'] ?? ''));
+    $scriptName = strtolower((string) ($_SERVER['SCRIPT_NAME'] ?? ''));
+
+    $isClientServices = (
+        strpos($filename, 'clientsservices') !== false ||
+        strpos($scriptName, 'clientsservices') !== false ||
+        strpos($reqUri, 'clientsservices') !== false
+    );
+
+    if (!$isClientServices) {
         return '';
     }
 
-    $serviceId = (int) ($_GET['id'] ?? ($_GET['serviceid'] ?? 0));
+    $serviceId = (int) ($_GET['id'] ?? ($_GET['serviceid'] ?? ($_POST['id'] ?? 0)));
+    $userId = (int) ($_GET['userid'] ?? ($_POST['userid'] ?? 0));
+
+    if ($serviceId <= 0 && $userId > 0) {
+        $firstService = \WHMCS\Database\Capsule::table('tblhosting')->where('userid', $userId)->orderBy('id', 'asc')->first();
+        if ($firstService) {
+            $serviceId = (int) $firstService->id;
+        }
+    }
+
     if ($serviceId <= 0) {
         return '';
     }
 
     try {
-        $service = Capsule::table('tblhosting')->where('id', $serviceId)->first();
+        $service = \WHMCS\Database\Capsule::table('tblhosting')->where('id', $serviceId)->first();
         if (!$service || empty($service->server)) {
             return '';
         }
@@ -2765,10 +2783,10 @@ function sahdev_render_clientservices_server_card($vars)
         require_once __DIR__ . '/lib/ServerTelemetryService.php';
         \Sahdev\Lib\ServerTelemetryService::ensureSchema();
 
-        $srvRecord = Capsule::table('tblservers')->where('id', $serverId)->first();
+        $srvRecord = \WHMCS\Database\Capsule::table('tblservers')->where('id', $serverId)->first();
         if (!$srvRecord) return '';
 
-        $telemetry = Capsule::table('tblsahdev_server_telemetry')->where('server_id', $serverId)->first();
+        $telemetry = \WHMCS\Database\Capsule::table('tblsahdev_server_telemetry')->where('server_id', $serverId)->first();
         $configuredRole = (string) ($telemetry->server_role ?? 'auto');
         $resolvedRole = \Sahdev\Lib\ServerTelemetryService::detectServerRole($srvRecord, $configuredRole);
 
@@ -2813,7 +2831,7 @@ function sahdev_render_clientservices_server_card($vars)
         $warnings = $statsPayload['flagged_system_warnings'] ?? [];
 
         // Active incident
-        $activeInc = Capsule::table('tblsahdev_incidents')
+        $activeInc = \WHMCS\Database\Capsule::table('tblsahdev_incidents')
             ->where('server_id', $serverId)
             ->whereIn('status', ['Active', 'Investigating', 'Monitoring'])
             ->first();
@@ -2958,19 +2976,38 @@ HTML;
         // Precisely target right before the product details form table inside the active tab
         var target = document.querySelector('form[name="packagefrm"] table.form') || 
                      document.querySelector('form[name="packagefrm"] .table') ||
-                     document.querySelector('#tab1 .form') ||
-                     document.querySelector('form[name="packagefrm"]');
+                     document.querySelector('form[name="packagefrm"] table') ||
+                     document.querySelector('form[name="packagefrm"]') ||
+                     document.querySelector('#tab1 table.form') ||
+                     document.querySelector('#tab1 .table') ||
+                     document.querySelector('#tabProducts_Services') ||
+                     document.querySelector('.tab-pane.active') ||
+                     document.querySelector('#tab1');
 
-        if (target && target.parentNode) {
-            target.parentNode.insertBefore(card, target);
+        if (target) {
+            if (target.tagName.toLowerCase() === 'form') {
+                target.insertBefore(card, target.firstChild);
+            } else if (target.parentNode) {
+                target.parentNode.insertBefore(card, target);
+            }
+            card.style.display = 'block';
+            return;
+        }
+
+        var contentArea = document.querySelector('.contentarea') || document.getElementById('contentarea');
+        if (contentArea) {
+            contentArea.insertBefore(card, contentArea.firstChild);
             card.style.display = 'block';
         }
     }
+
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', injectCard);
     } else {
         injectCard();
     }
+    setTimeout(injectCard, 150);
+    setTimeout(injectCard, 600);
 })();
 </script>
 HTML;
@@ -3016,34 +3053,57 @@ function sahdev_render_header_topbar_widget($vars)
     position: relative;
     display: inline-flex;
     align-items: center;
+    vertical-align: middle;
+    margin: 0 4px;
+    height: 100%;
 }
 .sahdev-nav-pill-btn {
-    background: rgba(255,255,255,0.12) !important;
-    color: #fff !important;
-    border: 1px solid rgba(255,255,255,0.2) !important;
-    border-radius: 20px !important;
-    padding: 4px 12px !important;
+    background: rgba(255, 255, 255, 0.12) !important;
+    color: #ffffff !important;
+    border: 1px solid rgba(255, 255, 255, 0.22) !important;
+    border-radius: 16px !important;
+    padding: 3px 10px !important;
     font-size: 12px !important;
     font-weight: 600 !important;
     display: inline-flex !important;
     align-items: center !important;
+    justify-content: center !important;
     gap: 6px !important;
     cursor: pointer !important;
     transition: all 0.2s ease !important;
     text-decoration: none !important;
-    margin: 8px 6px !important;
+    height: 30px !important;
+    line-height: 1 !important;
+    box-sizing: border-box !important;
+    white-space: nowrap !important;
 }
 .sahdev-nav-pill-btn:hover, .sahdev-nav-pill-btn:focus {
-    background: rgba(255,255,255,0.22) !important;
-    color: #fff !important;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.15) !important;
+    background: rgba(255, 255, 255, 0.24) !important;
+    color: #ffffff !important;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15) !important;
+}
+.sahdev-nav-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #48bb78;
+    display: inline-block;
+    flex-shrink: 0;
+}
+.sahdev-nav-dot.pulse {
+    box-shadow: 0 0 0 rgba(72, 187, 120, 0.6);
+    animation: sahdevDotPulse 2s infinite;
+}
+.sahdev-mobile-icon {
+    display: none;
+    font-size: 13px;
 }
 .sahdev-popover-menu {
     display: none;
     position: absolute;
-    top: 100%;
+    top: calc(100% + 6px);
     right: 0;
-    width: 390px;
+    width: 380px;
     max-height: 520px;
     background: #ffffff;
     border: 1px solid #e2e8f0;
@@ -3064,7 +3124,7 @@ function sahdev_render_header_topbar_widget($vars)
     font-weight: 700;
 }
 .sahdev-popover-body {
-    max-height: 400px;
+    max-height: 380px;
     overflow-y: auto;
     padding: 8px;
     background: #f8fafc;
@@ -3094,14 +3154,54 @@ function sahdev_render_header_topbar_widget($vars)
     border-left: 4px solid #20c997;
     background: #f0fdf4;
 }
+
+/* Mobile Responsiveness */
+@media (max-width: 768px) {
+    .sahdev-top-nav-widget {
+        margin: 0 3px !important;
+    }
+    .sahdev-nav-pill-btn {
+        width: 34px !important;
+        height: 34px !important;
+        padding: 0 !important;
+        border-radius: 5px !important;
+        position: relative !important;
+    }
+    .sahdev-nav-text,
+    .sahdev-nav-caret {
+        display: none !important;
+    }
+    .sahdev-mobile-icon {
+        display: inline-block !important;
+    }
+    .sahdev-nav-dot {
+        position: absolute !important;
+        top: 4px !important;
+        right: 4px !important;
+        width: 7px !important;
+        height: 7px !important;
+        border: 1.5px solid #1a202c !important;
+    }
+    .sahdev-popover-menu {
+        position: fixed !important;
+        top: 52px !important;
+        left: 10px !important;
+        right: 10px !important;
+        width: auto !important;
+        max-width: 390px !important;
+        margin: 0 auto !important;
+        box-shadow: 0 12px 35px rgba(0,0,0,0.3) !important;
+    }
+}
 </style>
 
 <div id="sahdev-header-widget-container" style="display:none;">
     <div class="sahdev-top-nav-widget" id="sahdevNavWidgetWrap">
         <a href="javascript:void(0);" class="sahdev-nav-pill-btn" id="sahdevNavPillBtn" title="Sahdev Server Telemetry & Status">
-            <span id="sahdevNavDot" style="width:8px; height:8px; border-radius:50%; background:#48bb78; display:inline-block;"></span>
-            <span id="sahdevNavLabel">Servers</span>
-            <i class="fas fa-caret-down" style="font-size: 10px;"></i>
+            <span id="sahdevNavDot" class="sahdev-nav-dot pulse"></span>
+            <i class="fas fa-server sahdev-mobile-icon"></i>
+            <span id="sahdevNavLabel" class="sahdev-nav-text">Servers</span>
+            <i class="fas fa-caret-down sahdev-nav-caret" style="font-size: 10px; opacity: 0.8;"></i>
         </a>
         <div class="sahdev-popover-menu" id="sahdevPopoverMenu">
             <div class="sahdev-popover-header">
@@ -3139,25 +3239,70 @@ function sahdev_render_header_topbar_widget($vars)
         var widgetWrap = document.getElementById('sahdevNavWidgetWrap');
         if (!container || !widgetWrap) return;
 
-        // Try standard WHMCS top nav locations
-        var navTarget = document.querySelector('#header .navbar-nav:first-child') || 
-                        document.querySelector('.navbar-header') || 
-                        document.querySelector('#header .nav.navbar-nav') || 
-                        document.querySelector('.nav.navbar-nav.navbar-right') || 
-                        document.querySelector('#header .header-actions') || 
-                        document.querySelector('.top-navbar') || 
-                        document.querySelector('#main-menu');
+        // Target Strategy 1: Find WHMCS automation button (speedometer / gauge icon)
+        var automateBtn = document.querySelector('a[href*="automationstatus.php"]') || 
+                          document.querySelector('.btn-automation-status') ||
+                          document.querySelector('a[title*="Automation"]') ||
+                          document.querySelector('.header-actions a i.fa-tachometer-alt')?.closest('a') ||
+                          document.querySelector('.header-actions a i.fa-tachometer')?.closest('a') ||
+                          document.querySelector('.header-actions a i.fa-gauge')?.closest('a') ||
+                          document.querySelector('header a i.fa-tachometer-alt')?.closest('a') ||
+                          document.querySelector('header a i.fa-tachometer')?.closest('a');
 
-        if (navTarget) {
-            navTarget.appendChild(widgetWrap);
-            container.remove();
+        // Target Strategy 2: Search form in header
+        var searchForm = document.querySelector('#header_search')?.closest('form') || 
+                         document.querySelector('.header-search') || 
+                         document.querySelector('form[name="frmsearch"]') ||
+                         document.querySelector('input[name="searchterm"]')?.closest('form') ||
+                         document.querySelector('input[name="q"]')?.closest('form');
+
+        // Target Strategy 3: Right header actions cluster
+        var headerActions = document.querySelector('.header-actions') || 
+                            document.querySelector('#header .navbar-nav.navbar-right') || 
+                            document.querySelector('.nav.navbar-nav.navbar-right') || 
+                            document.querySelector('.top-navbar-right') ||
+                            document.querySelector('.navbar-header .navbar-right');
+
+        // Target Strategy 4: Main navbar
+        var navMenu = document.querySelector('#header .navbar-nav:first-child') || 
+                      document.querySelector('#main-menu') ||
+                      document.querySelector('.navbar-main');
+
+        if (automateBtn && automateBtn.parentNode) {
+            automateBtn.parentNode.insertBefore(widgetWrap, automateBtn);
+        } else if (searchForm && searchForm.parentNode) {
+            if (searchForm.nextSibling) {
+                searchForm.parentNode.insertBefore(widgetWrap, searchForm.nextSibling);
+            } else {
+                searchForm.parentNode.appendChild(widgetWrap);
+            }
+        } else if (headerActions) {
+            if (headerActions.tagName.toLowerCase() === 'ul') {
+                var li = document.createElement('li');
+                li.className = 'sahdev-header-li';
+                li.style.display = 'inline-flex';
+                li.style.alignItems = 'center';
+                li.appendChild(widgetWrap);
+                headerActions.insertBefore(li, headerActions.firstChild);
+            } else {
+                headerActions.insertBefore(widgetWrap, headerActions.firstChild);
+            }
+        } else if (navMenu) {
+            var li = document.createElement('li');
+            li.className = 'sahdev-header-li';
+            li.style.display = 'inline-flex';
+            li.style.alignItems = 'center';
+            li.appendChild(widgetWrap);
+            navMenu.appendChild(li);
         } else {
-            // Fallback fixed bar top right
             widgetWrap.style.position = 'fixed';
             widgetWrap.style.top = '10px';
-            widgetWrap.style.right = '240px';
+            widgetWrap.style.right = '180px';
             widgetWrap.style.zIndex = '99999';
             document.body.appendChild(widgetWrap);
+        }
+
+        if (container && container.parentNode) {
             container.remove();
         }
     }

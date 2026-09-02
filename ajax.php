@@ -1,5 +1,7 @@
 <?php
 
+use WHMCS\Database\Capsule;
+
 /**
  * Sahdev AI - AJAX Endpoint
  * Secured entry point for analyzing tickets.
@@ -735,15 +737,15 @@ try {
         $contextAccountData = null;
 
         if ($contextServiceId > 0) {
-            $hRow = Capsule::table('tblhosting')->where('id', $contextServiceId)->first();
+            $hRow = \WHMCS\Database\Capsule::table('tblhosting')->where('id', $contextServiceId)->first();
             if ($hRow) {
                 $contextServerId = (int) ($hRow->server ?? 0);
                 $contextAccountUsername = (string) ($hRow->username ?? '');
             }
         } elseif ($contextTicketId > 0) {
-            $ticketRow = Capsule::table('tbltickets')->where('id', $contextTicketId)->first();
+            $ticketRow = \WHMCS\Database\Capsule::table('tbltickets')->where('id', $contextTicketId)->first();
             if ($ticketRow && !empty($ticketRow->userid)) {
-                $hRow = Capsule::table('tblhosting')
+                $hRow = \WHMCS\Database\Capsule::table('tblhosting')
                     ->where('userid', (int) $ticketRow->userid)
                     ->whereIn('domainstatus', ['Active', 'Suspended'])
                     ->orderBy('id', 'desc')
@@ -756,7 +758,7 @@ try {
         }
 
         // Fetch active incidents
-        $activeIncidents = Capsule::table('tblsahdev_incidents')
+        $activeIncidents = \WHMCS\Database\Capsule::table('tblsahdev_incidents')
             ->whereIn('status', ['Active', 'Investigating', 'Monitoring'])
             ->orderBy('id', 'desc')
             ->get()
@@ -787,7 +789,7 @@ try {
 
         // Fetch all servers with fallback protection
         try {
-            $serversDb = Capsule::table('tblservers as s')
+            $serversDb = \WHMCS\Database\Capsule::table('tblservers as s')
                 ->leftJoin('tblsahdev_server_telemetry as st', 's.id', '=', 'st.server_id')
                 ->where('s.disabled', 0)
                 ->select(
@@ -797,8 +799,8 @@ try {
                     's.ipaddress',
                     's.type as server_type',
                     's.username',
-                    Capsule::raw('COALESCE(st.server_role, "auto") as server_role'),
-                    Capsule::raw('COALESCE(st.is_monitored, 1) as is_monitored'),
+                    \WHMCS\Database\Capsule::raw('COALESCE(st.server_role, "auto") as server_role'),
+                    \WHMCS\Database\Capsule::raw('COALESCE(st.is_monitored, 1) as is_monitored'),
                     'st.server_load',
                     'st.is_reachable',
                     'st.reachability_error',
@@ -810,7 +812,7 @@ try {
                 ->get();
         } catch (\Throwable $dbEx) {
             \Sahdev\Lib\ServerTelemetryService::ensureSchema();
-            $serversDb = Capsule::table('tblservers as s')
+            $serversDb = \WHMCS\Database\Capsule::table('tblservers as s')
                 ->leftJoin('tblsahdev_server_telemetry as st', 's.id', '=', 'st.server_id')
                 ->where('s.disabled', 0)
                 ->select(
