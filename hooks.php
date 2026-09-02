@@ -3605,9 +3605,7 @@ function sahdev_render_header_topbar_widget($vars)
                 if (isMenuOpen) {
                     popover.style.display = 'block';
                     positionPopover();
-                    if (!cachedData) {
-                        fetchTelemetry(false);
-                    }
+                    fetchTelemetry(false);
                 } else {
                     popover.style.display = 'none';
                 }
@@ -3652,6 +3650,11 @@ function sahdev_render_header_topbar_widget($vars)
         setTimeout(function() {
             fetchTelemetry(false);
         }, 300);
+
+        // Continuous automatic background polling every 60 seconds
+        setInterval(function() {
+            fetchTelemetry(false);
+        }, 60000);
     }
 
     if (document.readyState === 'loading') {

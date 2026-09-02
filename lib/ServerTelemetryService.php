@@ -16,7 +16,7 @@ require_once __DIR__ . '/ModuleLogger.php';
  */
 class ServerTelemetryService
 {
-    private const DEFAULT_CACHE_TTL_MINS = 15;
+    private const DEFAULT_CACHE_TTL_MINS = 2;
     private const HTTP_TIMEOUT_SEC = 7;
 
     /**
