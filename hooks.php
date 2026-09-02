@@ -256,24 +256,32 @@ INC_HTML;
         } catch (\Throwable $e) {}
     }
 
-    // Live Server Health Badge (Only if role has telemetry_view permission)
+    // Live Server Health Badge (Single Sign-On to server control panel on click)
     $serverHealthBadge = '';
     if (\Sahdev\Lib\PermissionService::hasPermission((int) $adminId, \Sahdev\Lib\PermissionService::PERM_TELEMETRY_VIEW)) {
         try {
             require_once __DIR__ . '/lib/ServerTelemetryService.php';
-            $ticketRow = Capsule::table('tbltickets')->where('id', $ticketId)->first();
+            $ticketRow = \WHMCS\Database\Capsule::table('tbltickets')->where('id', $ticketId)->first();
             if ($ticketRow && !empty($ticketRow->userid)) {
-                $hRow = Capsule::table('tblhosting')->where('userid', (int)$ticketRow->userid)->whereIn('domainstatus', ['Active', 'Suspended'])->orderBy('id', 'desc')->first();
+                $hRow = \WHMCS\Database\Capsule::table('tblhosting')->where('userid', (int)$ticketRow->userid)->whereIn('domainstatus', ['Active', 'Suspended'])->orderBy('id', 'desc')->first();
                 if ($hRow && !empty($hRow->server)) {
-                    $srvHealth = \Sahdev\Lib\ServerTelemetryService::getServerHealth((int)$hRow->server);
+                    $serverId = (int) $hRow->server;
+                    $srvHealth = \Sahdev\Lib\ServerTelemetryService::getServerHealth($serverId);
                     if ($srvHealth) {
-                        $srvName = htmlspecialchars($srvHealth['server_name'] ?: 'Server #' . $hRow->server);
+                        $srvName = htmlspecialchars($srvHealth['server_name'] ?: 'Server #' . $serverId);
                         $srvLoad = htmlspecialchars($srvHealth['server_load'] ?: '');
                         $loadPill = $srvLoad !== '' ? " | Load: {$srvLoad}" : '';
                         $isOnline = !empty($srvHealth['is_reachable']);
                         $badgeColor = $isOnline ? '#38a169' : '#e53e3e';
                         $badgeIcon = $isOnline ? 'fa-server' : 'fa-exclamation-circle';
-                        $serverHealthBadge = '<span class="badge" style="background:' . $badgeColor . '; font-size: 11px; margin-left: 8px; vertical-align: middle; font-weight: 500;"><i class="fas ' . $badgeIcon . '"></i> ' . $srvName . $loadPill . '</span>';
+                        
+                        $canAccessServer = \Sahdev\Lib\PermissionService::hasPermission((int) $adminId, \Sahdev\Lib\PermissionService::PERM_SERVER_ACCESS);
+                        $ssoUrl = $canAccessServer ? \Sahdev\Lib\ServerTelemetryService::getServerAccessUrl($serverId) : 'javascript:void(0);';
+                        $targetAttr = $canAccessServer ? ' target="_blank"' : '';
+                        $titleAttr = $canAccessServer ? ' title="Click to Log in to WHM / Server Control Panel (Single Sign-On)"' : ' title="Server Telemetry Snapshot"';
+                        $ssoIcon = $canAccessServer ? ' <i class="fas fa-external-link-alt" style="font-size:9px; opacity:0.85; margin-left:3px;"></i>' : '';
+
+                        $serverHealthBadge = '<a href="' . $ssoUrl . '"' . $targetAttr . $titleAttr . ' class="badge" style="background:' . $badgeColor . '; color:#ffffff !important; text-decoration:none !important; font-size: 11px; margin-left: 8px; vertical-align: middle; font-weight: 600; padding: 4px 8px; border-radius: 4px; display: inline-flex; align-items: center; gap: 4px; transition: opacity 0.2s; cursor: pointer;" onclick="event.stopPropagation();" onmouseover="this.style.opacity=\'0.85\';" onmouseout="this.style.opacity=\'1\';"><i class="fas ' . $badgeIcon . '"></i> ' . $srvName . $loadPill . $ssoIcon . '</a>';
                     }
                 }
             }
@@ -3276,7 +3284,22 @@ function sahdev_render_header_topbar_widget($vars)
 
         widgetWrap.style.display = 'inline-flex';
 
-        // Target Strategy 1: Find WHMCS automation button (speedometer / gauge icon)
+        // Target Strategy 1 (Preferred): Search Box / Form in header (Places widget directly in the red box to the left of search bar)
+        var searchInput = document.querySelector('input[placeholder*="search" i]') || 
+                          document.querySelector('input[name="searchterm"]') ||
+                          document.querySelector('input[name="q"]') ||
+                          document.querySelector('#header_search');
+
+        var searchContainer = searchInput ? (searchInput.closest('form') || searchInput.closest('.navbar-form') || searchInput.closest('.header-search') || searchInput.closest('li') || searchInput.parentNode) : null;
+        if (!searchContainer) {
+            searchContainer = document.querySelector('form[action*="search"]') || 
+                              document.querySelector('form#headerSearchForm') || 
+                              document.querySelector('form[name="frmsearch"]') ||
+                              document.querySelector('.header-search') || 
+                              document.querySelector('.navbar-form');
+        }
+
+        // Target Strategy 2: Find WHMCS automation button (speedometer / gauge icon)
         var automateBtn = document.querySelector('a[href*="automationstatus.php"]') || 
                           document.querySelector('.btn-automation-status') ||
                           document.querySelector('a[title*="Automation"]') ||
@@ -3285,13 +3308,6 @@ function sahdev_render_header_topbar_widget($vars)
                           document.querySelector('.header-actions a i.fa-gauge')?.closest('a') ||
                           document.querySelector('header a i.fa-tachometer-alt')?.closest('a') ||
                           document.querySelector('header a i.fa-tachometer')?.closest('a');
-
-        // Target Strategy 2: Search form in header
-        var searchForm = document.querySelector('#header_search')?.closest('form') || 
-                         document.querySelector('.header-search') || 
-                         document.querySelector('form[name="frmsearch"]') ||
-                         document.querySelector('input[name="searchterm"]')?.closest('form') ||
-                         document.querySelector('input[name="q"]')?.closest('form');
 
         // Target Strategy 3: Right header actions cluster
         var headerActions = document.querySelector('.header-actions') || 
@@ -3306,7 +3322,16 @@ function sahdev_render_header_topbar_widget($vars)
                       document.querySelector('#main-menu') ||
                       document.querySelector('.navbar-main');
 
-        if (automateBtn) {
+        if (searchContainer && searchContainer.parentNode) {
+            if (searchContainer.tagName.toLowerCase() === 'li') {
+                var li = document.createElement('li');
+                li.className = 'sahdev-header-li nav-item';
+                li.appendChild(widgetWrap);
+                searchContainer.parentNode.insertBefore(li, searchContainer);
+            } else {
+                searchContainer.parentNode.insertBefore(widgetWrap, searchContainer);
+            }
+        } else if (automateBtn) {
             var parentLi = automateBtn.closest('li');
             if (parentLi && parentLi.parentNode) {
                 var li = document.createElement('li');
@@ -3315,12 +3340,6 @@ function sahdev_render_header_topbar_widget($vars)
                 parentLi.parentNode.insertBefore(li, parentLi);
             } else if (automateBtn.parentNode) {
                 automateBtn.parentNode.insertBefore(widgetWrap, automateBtn);
-            }
-        } else if (searchForm && searchForm.parentNode) {
-            if (searchForm.nextSibling) {
-                searchForm.parentNode.insertBefore(widgetWrap, searchForm.nextSibling);
-            } else {
-                searchForm.parentNode.appendChild(widgetWrap);
             }
         } else if (headerActions) {
             if (headerActions.tagName.toLowerCase() === 'ul') {
@@ -3339,7 +3358,7 @@ function sahdev_render_header_topbar_widget($vars)
         } else {
             widgetWrap.style.position = 'fixed';
             widgetWrap.style.top = '10px';
-            widgetWrap.style.right = '180px';
+            widgetWrap.style.right = '240px';
             widgetWrap.style.zIndex = '99999';
             document.body.appendChild(widgetWrap);
         }
