@@ -24,6 +24,8 @@ class AdminController
     private function ensureSchemaIntegrity()
     {
         \Sahdev\Lib\AdminPreferences::ensureSchema();
+        require_once dirname(__DIR__) . '/lib/SchemaManager.php';
+        \Sahdev\Lib\SchemaManager::ensureAll();
 
         // 1. Ensure Summaries Table Exists
         try {
@@ -480,8 +482,20 @@ class AdminController
         $hasCannedPerm = \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_CANNED_KB) || $hasKbPerm;
         $hasAnalyticsPerm = \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_ANALYTICS_VIEW);
         $hasAuditPerm = \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_AUDIT_MANAGE);
+        $hasCopilotPerm = \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_COPILOT_USE);
+        $hasMetricsPerm = \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_METRICS_VIEW);
+        $hasClientChatPerm = \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_CLIENT_CHAT_MANAGE);
 
         $tabs = [];
+        if ($hasCopilotPerm) {
+            $tabs['admin_copilot'] = ['label' => '<i class="fas fa-terminal"></i> Admin Ops Copilot', 'url' => $base . '&action=admin_copilot'];
+        }
+        if ($hasMetricsPerm) {
+            $tabs['organization_intelligence'] = ['label' => '<i class="fas fa-chart-pie"></i> Organization Intelligence', 'url' => $base . '&action=organization_intelligence'];
+        }
+        if ($hasClientChatPerm) {
+            $tabs['client_chat'] = ['label' => '<i class="fas fa-comments"></i> Client Live Chat', 'url' => $base . '&action=client_chat'];
+        }
         if ($hasIncidentsPerm) {
             $tabs['incidents'] = ['label' => '<i class="fas fa-satellite-dish"></i> Incident & Server Monitoring', 'url' => $base . '&action=incidents'];
         }
@@ -1647,6 +1661,10 @@ class AdminController
         $successMessage = '';
         $errorMessage = '';
 
+        require_once dirname(__DIR__) . '/lib/SchemaManager.php';
+        \Sahdev\Lib\SchemaManager::ensureProviderColumns();
+        \Sahdev\Lib\SchemaManager::ensureSettingsColumns();
+
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             check_token("WHMCS.admin.default");
 
@@ -1655,7 +1673,8 @@ class AdminController
             if ($action === 'create' || $action === 'update') {
                 $id = (int) ($_POST['provider_id'] ?? 0);
                 $name = trim($_POST['provider_name'] ?? '');
-                $type = $_POST['provider_type'] ?? 'lmstudio';
+                $type = $_POST['provider_type'] ?? 'openrouter';
+                $purpose = $_POST['provider_purpose'] ?? 'both';
                 $apiKey = $_POST['api_key'] ?? '';
                 $apiUrl = $_POST['api_url'] ?? '';
                 $modelName = $_POST['model_name'] ?? '';
@@ -1666,13 +1685,14 @@ class AdminController
                     $errorMessage = "Provider name is required.";
                 } else {
                     $data = [
-                        'name' => $name,
+                        'name'          => $name,
                         'provider_type' => $type,
-                        'api_url' => $apiUrl,
-                        'model_name' => $modelName,
+                        'purpose'       => $purpose,
+                        'api_url'       => $apiUrl,
+                        'model_name'    => $modelName,
                         'cost_input_1m' => $costInput,
-                        'cost_output_1m' => $costOutput,
-                        'updated_at' => \Carbon\Carbon::now(),
+                        'cost_output_1m'=> $costOutput,
+                        'updated_at'    => \Carbon\Carbon::now(),
                     ];
 
                     if (!empty($apiKey)) {
@@ -1691,196 +1711,429 @@ class AdminController
             } elseif ($action === 'delete') {
                 $id = (int) $_POST['provider_id'];
 
-                // Check if it's currently assigned
                 $inUse = Capsule::table('tblsahdev_settings')
                     ->where('primary_provider_id', $id)
                     ->orWhere('fallback_provider_id', $id)
+                    ->orWhere('copilot_primary_provider_id', $id)
+                    ->orWhere('copilot_fallback_provider_id', $id)
                     ->exists();
 
                 if ($inUse) {
-                    $errorMessage = "Cannot delete provider while it is assigned as Primary or Fallback in General Settings.";
+                    $errorMessage = "Cannot delete provider while it is assigned as Primary or Fallback.";
                 } else {
                     Capsule::table('tblsahdev_providers')->where('id', $id)->delete();
                     $successMessage = "Provider deleted.";
                 }
+            } elseif ($action === 'save_chat_settings') {
+                $primaryChatId = (int) ($_POST['copilot_primary_provider_id'] ?? 0);
+                $fallbackChatId = (int) ($_POST['copilot_fallback_provider_id'] ?? 0);
+                $temp = (float) ($_POST['copilot_temperature'] ?? 0.70);
+                $tokens = (int) ($_POST['copilot_max_tokens'] ?? 2048);
+                $stream = !empty($_POST['copilot_stream_enabled']) ? 1 : 0;
+                $prompt = trim($_POST['copilot_system_prompt'] ?? '');
+
+                Capsule::table('tblsahdev_settings')->where('id', 1)->update([
+                    'copilot_primary_provider_id'  => $primaryChatId,
+                    'copilot_fallback_provider_id' => $fallbackChatId,
+                    'copilot_temperature'          => $temp,
+                    'copilot_max_tokens'           => $tokens,
+                    'copilot_stream_enabled'       => $stream,
+                    'copilot_system_prompt'        => $prompt,
+                    'updated_at'                   => \Carbon\Carbon::now(),
+                ]);
+                $successMessage = "Chat AI Provider settings saved successfully.";
             }
         }
 
         $providers = Capsule::table('tblsahdev_providers')->get();
+        $settings = Capsule::table('tblsahdev_settings')->first();
+        $ticketProviders = $providers->filter(function ($p) {
+            return empty($p->purpose) || $p->purpose === 'ticket' || $p->purpose === 'both';
+        });
+        $chatProviders = $providers->filter(function ($p) {
+            return !empty($p->purpose) && ($p->purpose === 'chat' || $p->purpose === 'both');
+        });
 
         $csrfToken = generate_token("form");
         $actionUrl = htmlspecialchars($this->moduleVars['modulelink']) . '&action=providers';
-        $settingsUrl = htmlspecialchars($this->moduleVars['modulelink']);
-        $kbUrl = htmlspecialchars($this->moduleVars['modulelink']) . '&action=knowledgebase';
 
         ob_start();
         ?>
         <style>
-
             .provider-card {
-                border: 1px solid #ddd;
-                border-radius: 6px;
-                padding: 15px;
-                margin-bottom: 15px;
-                background: #fafafa;
+                border: 1px solid #e2e8f0;
+                border-radius: 8px;
+                padding: 18px;
+                margin-bottom: 18px;
+                background: #fff;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.04);
             }
-
             .provider-header {
                 margin-bottom: 15px;
-                border-bottom: 1px solid #eee;
+                border-bottom: 1px solid #edf2f7;
                 padding-bottom: 10px;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }
+            .subtab-header {
+                border-bottom: 2px solid #edf2f7;
+                display: flex;
+                gap: 15px;
+                margin-bottom: 25px;
+            }
+            .subtab-btn {
+                padding: 10px 18px;
+                font-size: 14px;
+                font-weight: 600;
+                color: #718096;
+                text-decoration: none !important;
+                border-bottom: 3px solid transparent;
+                cursor: pointer;
+            }
+            .subtab-btn.active {
+                color: #0d6efd;
+                border-bottom-color: #0d6efd;
             }
         </style>
 
         <?php echo $this->getNavigationMarkup('providers'); ?>
         <div class="sahdev-page-container">
 
-            <h2 style="margin-bottom: 10px;">AI Providers Manager</h2>
-            <p class="text-muted" style="margin-bottom: 25px;">Create and manage connections to various LLM APIs (OpenAI, Local
-                LM Studio, Ollama, Google GenAI, Replicate). You can assign these as Primary or Fallback in General Settings.
+            <h2 style="margin-bottom: 8px;"><i class="fas fa-microchip"></i> AI Providers Manager</h2>
+            <p class="text-muted" style="margin-bottom: 20px;">
+                Manage LLM connections for Support Ticket Intelligence and Admin Ops Copilot / Client Chat (OpenRouter, Google Gemini, OpenAI-compatible, Replicate).
             </p>
 
             <?php if (!empty($successMessage)): ?>
-                <div class="alert alert-success"><i class="fas fa-check-circle"></i>
-                    <?php echo htmlspecialchars($successMessage); ?></div>
+                <div class="alert alert-success"><i class="fas fa-check-circle"></i> <?php echo htmlspecialchars($successMessage); ?></div>
             <?php endif; ?>
             <?php if (!empty($errorMessage)): ?>
-                <div class="alert alert-danger"><i class="fas fa-exclamation-circle"></i>
-                    <?php echo htmlspecialchars($errorMessage); ?></div>
+                <div class="alert alert-danger"><i class="fas fa-exclamation-circle"></i> <?php echo htmlspecialchars($errorMessage); ?></div>
             <?php endif; ?>
 
-            <!-- Add New Form -->
-            <div class="provider-card" style="border-left: 4px solid #198754; background: #f8fff9;">
-                <div class="provider-header">
-                    <h4 style="margin:0;"><i class="fas fa-plus-circle"></i> Add New AI Provider</h4>
-                </div>
-                <form method="post" action="<?php echo $actionUrl; ?>">
-                    <?php echo $csrfToken; ?>
-                    <input type="hidden" name="provider_action" value="create">
-
-                    <div class="row" style="margin-bottom: 10px;">
-                        <div class="col-md-6">
-                            <label>Display Name</label>
-                            <input type="text" name="provider_name" class="form-control" placeholder="e.g. My Secure Local AI"
-                                required>
-                        </div>
-                        <div class="col-md-6">
-                            <label>API Format Type</label>
-                            <select name="provider_type" class="form-control">
-                                <option value="lmstudio">OpenAI Compatible (LM Studio / Ollama / OpenAI)</option>
-                                <option value="google">Google GenAI (Gemini)</option>
-                                <option value="replicate">Replicate</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div class="row" style="margin-bottom: 10px;">
-                        <div class="col-md-12 mb-2">
-                            <label>API Key</label>
-                            <input type="password" name="api_key" class="form-control"
-                                placeholder="Leave blank if local without auth">
-                        </div>
-                        <div class="col-md-12 mb-2">
-                            <label>API URL Endpoint</label>
-                            <input type="text" name="api_url" class="form-control"
-                                placeholder="e.g. http://localhost:1234/v1/chat/completions">
-                        </div>
-                        <div class="col-md-12 mb-2">
-                            <label>Model Name</label>
-                            <input type="text" name="model_name" class="form-control"
-                                placeholder="e.g. gpt-4, gemma-7b, models/gemini-pro">
-                        </div>
-                    </div>
-
-                    <div class="row" style="margin-bottom: 15px;">
-                        <div class="col-md-6 mb-2">
-                            <label>Input Cost / 1M Tokens ($)</label>
-                            <input type="number" step="0.0001" name="cost_input_1m" class="form-control"
-                                placeholder="e.g. 1.25" value="0.00">
-                        </div>
-                        <div class="col-md-6 mb-2">
-                            <label>Output Cost / 1M Tokens ($)</label>
-                            <input type="number" step="0.0001" name="cost_output_1m" class="form-control"
-                                placeholder="e.g. 5.00" value="0.00">
-                        </div>
-                    </div>
-
-                    <div style="text-align: right;">
-                        <button type="submit" class="btn btn-sm btn-success"><i class="fas fa-save"></i> Add Provider</button>
-                    </div>
-                </form>
+            <!-- Sub-Tabs -->
+            <div class="subtab-header">
+                <a href="#ticket-tab" class="subtab-btn active" onclick="switchProviderTab('ticket', event);"><i class="fas fa-ticket-alt"></i> Ticket Intelligence Models (<?php echo count($ticketProviders); ?>)</a>
+                <a href="#chat-tab" class="subtab-btn" onclick="switchProviderTab('chat', event);"><i class="fas fa-comments"></i> Chat & Copilot Models (OpenRouter) (<?php echo count($chatProviders); ?>)</a>
             </div>
 
-            <hr style="margin: 30px 0;">
-            <h4 style="margin-bottom: 15px;">Existing Providers</h4>
+            <!-- TICKET TAB -->
+            <div id="section-ticket" class="provider-tab-content">
+                <div class="alert alert-info" style="border-left: 4px solid #0d6efd;">
+                    <i class="fas fa-info-circle"></i> These AI providers analyze technical tickets, generate root-cause assessments, draft replies, and summarize threads.
+                </div>
 
-            <?php foreach ($providers as $p): ?>
-                <div class="provider-card">
+                <!-- Add New Provider Form -->
+                <div class="provider-card" style="border-left: 4px solid #198754; background: #f8fff9;">
+                    <div class="provider-header">
+                        <h4 style="margin:0;"><i class="fas fa-plus-circle text-success"></i> Add New AI Provider</h4>
+                    </div>
                     <form method="post" action="<?php echo $actionUrl; ?>">
                         <?php echo $csrfToken; ?>
-                        <input type="hidden" name="provider_id" value="<?php echo $p->id; ?>">
+                        <input type="hidden" name="provider_action" value="create">
 
-                        <div class="row" style="margin-bottom: 10px;">
-                            <div class="col-md-6">
+                        <div class="row" style="margin-bottom: 12px;">
+                            <div class="col-md-4">
                                 <label>Display Name</label>
-                                <input type="text" name="provider_name" class="form-control"
-                                    value="<?php echo htmlspecialchars($p->name); ?>" required>
+                                <input type="text" name="provider_name" class="form-control" placeholder="e.g. OpenRouter Claude 3.5" required>
                             </div>
-                            <div class="col-md-6">
-                                <label>API Format Type</label>
-                                <select name="provider_type" class="form-control">
-                                    <option value="lmstudio" <?php echo ($p->provider_type == 'lmstudio') ? 'selected' : ''; ?>>OpenAI
-                                        Compatible</option>
-                                    <option value="google" <?php echo ($p->provider_type == 'google') ? 'selected' : ''; ?>>Google
-                                        GenAI</option>
-                                    <option value="replicate" <?php echo ($p->provider_type == 'replicate') ? 'selected' : ''; ?>>
-                                        Replicate</option>
+                            <div class="col-md-4">
+                                <label>Provider Format</label>
+                                <select name="provider_type" class="form-control" id="new_provider_type" onchange="toggleProviderPreset(this.value)">
+                                    <option value="openrouter">OpenRouter (Claude, GPT-4o, DeepSeek, Llama)</option>
+                                    <option value="google">Google GenAI (Gemini)</option>
+                                    <option value="lmstudio">OpenAI Compatible (Local LM Studio, Ollama, OpenAI)</option>
+                                    <option value="replicate">Replicate</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label>Usage Purpose</label>
+                                <select name="provider_purpose" class="form-control">
+                                    <option value="both" selected>Both Ticket Intelligence & Chat Copilot</option>
+                                    <option value="ticket">Ticket Intelligence Only</option>
+                                    <option value="chat">Chat & Copilot Only</option>
                                 </select>
                             </div>
                         </div>
 
-                        <div class="row" style="margin-bottom: 10px;">
-                            <div class="col-md-12 mb-2">
+                        <div class="row" style="margin-bottom: 12px;">
+                            <div class="col-md-6">
                                 <label>API Key</label>
-                                <input type="password" name="api_key" class="form-control"
-                                    placeholder="Hidden. Enter a new key to update.">
+                                <input type="password" name="api_key" id="new_api_key" class="form-control" placeholder="sk-or-v1-..." autocomplete="new-password">
                             </div>
-                            <div class="col-md-12 mb-2">
+                            <div class="col-md-6">
                                 <label>API URL Endpoint</label>
-                                <input type="text" name="api_url" class="form-control"
-                                    value="<?php echo htmlspecialchars($p->api_url ?? ''); ?>">
-                            </div>
-                            <div class="col-md-12 mb-2">
-                                <label>Model Name</label>
-                                <input type="text" name="model_name" class="form-control"
-                                    value="<?php echo htmlspecialchars($p->model_name ?? ''); ?>">
+                                <input type="text" name="api_url" id="new_api_url" class="form-control" value="https://openrouter.ai/api/v1/chat/completions">
                             </div>
                         </div>
 
-                        <div class="row" style="margin-bottom: 10px;">
-                            <div class="col-md-6 mb-2">
-                                <label>Input Cost / 1M Tokens ($)</label>
-                                <input type="number" step="0.0001" name="cost_input_1m" class="form-control"
-                                    value="<?php echo htmlspecialchars($p->cost_input_1m ?? '0.0000'); ?>">
+                        <div class="row" style="margin-bottom: 12px;">
+                            <div class="col-md-8">
+                                <label>Model Identifier</label>
+                                <div class="input-group">
+                                    <input type="text" name="model_name" id="new_model_name" class="form-control" value="anthropic/claude-3.5-sonnet" placeholder="e.g. anthropic/claude-3.5-sonnet">
+                                    <span class="input-group-btn">
+                                        <button type="button" class="btn btn-default" onclick="fetchLiveModels();"><i class="fas fa-sync"></i> Fetch Live Models</button>
+                                    </span>
+                                </div>
+                                <span class="help-block" style="margin-bottom:0;">Preset models: <a href="javascript:void(0)" onclick="setPreset('anthropic/claude-3.5-sonnet', 3.0, 15.0)">Claude 3.5 Sonnet</a> | <a href="javascript:void(0)" onclick="setPreset('openai/gpt-4o', 2.5, 10.0)">GPT-4o</a> | <a href="javascript:void(0)" onclick="setPreset('openai/gpt-4o-mini', 0.15, 0.60)">GPT-4o Mini</a> | <a href="javascript:void(0)" onclick="setPreset('deepseek/deepseek-chat', 0.14, 0.28)">DeepSeek V3</a> | <a href="javascript:void(0)" onclick="setPreset('deepseek/deepseek-r1', 0.55, 2.19)">DeepSeek R1</a></span>
                             </div>
-                            <div class="col-md-6 mb-2">
-                                <label>Output Cost / 1M Tokens ($)</label>
-                                <input type="number" step="0.0001" name="cost_output_1m" class="form-control"
-                                    value="<?php echo htmlspecialchars($p->cost_output_1m ?? '0.0000'); ?>">
+                            <div class="col-md-2">
+                                <label>Input Cost / 1M ($)</label>
+                                <input type="number" step="0.0001" name="cost_input_1m" id="new_cost_in" class="form-control" value="3.0000">
+                            </div>
+                            <div class="col-md-2">
+                                <label>Output Cost / 1M ($)</label>
+                                <input type="number" step="0.0001" name="cost_output_1m" id="new_cost_out" class="form-control" value="15.0000">
                             </div>
                         </div>
 
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 15px;">
-                            <button type="submit" name="provider_action" value="delete" class="btn btn-sm btn-danger"
-                                onclick="return confirm('WARNING: Are you sure you want to delete this provider?');"><i
-                                    class="fas fa-trash"></i> Delete</button>
-                            <button type="submit" name="provider_action" value="update" class="btn btn-sm btn-primary"><i
-                                    class="fas fa-save"></i> Save Changes</button>
+                        <div style="text-align: right; margin-top: 15px;">
+                            <button type="submit" class="btn btn-success"><i class="fas fa-save"></i> Create AI Provider</button>
                         </div>
                     </form>
                 </div>
-            <?php endforeach; ?>
 
+                <h4 style="margin: 25px 0 15px;">Configured Ticket Providers</h4>
+                <?php foreach ($ticketProviders as $p): ?>
+                    <?php echo $this->renderProviderCard($p, $actionUrl, $csrfToken); ?>
+                <?php endforeach; ?>
+            </div>
+
+            <!-- CHAT TAB -->
+            <div id="section-chat" class="provider-tab-content" style="display: none;">
+                <!-- Chat AI Settings Card -->
+                <div class="provider-card" style="border-left: 4px solid #0d6efd;">
+                    <div class="provider-header">
+                        <h4 style="margin:0;"><i class="fas fa-sliders-h text-primary"></i> Chat & Copilot Model Orchestration</h4>
+                    </div>
+                    <form method="post" action="<?php echo $actionUrl; ?>">
+                        <?php echo $csrfToken; ?>
+                        <input type="hidden" name="provider_action" value="save_chat_settings">
+
+                        <div class="row" style="margin-bottom: 15px;">
+                            <div class="col-md-6">
+                                <label>Primary Chat AI Provider</label>
+                                <select name="copilot_primary_provider_id" class="form-control">
+                                    <option value="0" <?php echo empty($settings->copilot_primary_provider_id) ? 'selected' : ''; ?>>Use Ticket Primary (Inherit)</option>
+                                    <?php foreach ($chatProviders as $cp): ?>
+                                        <option value="<?php echo $cp->id; ?>" <?php echo ((int)($settings->copilot_primary_provider_id ?? 0) === (int)$cp->id) ? 'selected' : ''; ?>>
+                                            <?php echo htmlspecialchars($cp->name . ' (' . ($cp->model_name ?: $cp->provider_type) . ')'); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <span class="help-block">Used for Admin Ops Copilot, Safe Ops execution, and Client Live Chat.</span>
+                            </div>
+                            <div class="col-md-6">
+                                <label>Fallback Chat AI Provider</label>
+                                <select name="copilot_fallback_provider_id" class="form-control">
+                                    <option value="0" <?php echo empty($settings->copilot_fallback_provider_id) ? 'selected' : ''; ?>>None (Or Inherit Global Fallback)</option>
+                                    <?php foreach ($chatProviders as $cp): ?>
+                                        <option value="<?php echo $cp->id; ?>" <?php echo ((int)($settings->copilot_fallback_provider_id ?? 0) === (int)$cp->id) ? 'selected' : ''; ?>>
+                                            <?php echo htmlspecialchars($cp->name . ' (' . ($cp->model_name ?: $cp->provider_type) . ')'); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <span class="help-block">Automatically engaged if Primary hits rate limits (429) or timeouts.</span>
+                            </div>
+                        </div>
+
+                        <div class="row" style="margin-bottom: 15px;">
+                            <div class="col-md-4">
+                                <label>Chat Creativity (Temperature)</label>
+                                <input type="number" step="0.05" min="0.0" max="1.5" name="copilot_temperature" class="form-control" value="<?php echo htmlspecialchars($settings->copilot_temperature ?? '0.70'); ?>">
+                                <span class="help-block">0.2 = Strict & deterministic; 0.7 = Balanced ops reasoning.</span>
+                            </div>
+                            <div class="col-md-4">
+                                <label>Max Response Tokens</label>
+                                <input type="number" step="128" min="256" max="8192" name="copilot_max_tokens" class="form-control" value="<?php echo htmlspecialchars($settings->copilot_max_tokens ?? '2048'); ?>">
+                                <span class="help-block">Budget per individual chat turn (default: 2048).</span>
+                            </div>
+                            <div class="col-md-4">
+                                <label>Real-Time Token Streaming (SSE)</label>
+                                <div class="checkbox" style="margin-top: 8px;">
+                                    <label>
+                                        <input type="checkbox" name="copilot_stream_enabled" value="1" <?php echo !empty($settings->copilot_stream_enabled) ? 'checked' : ''; ?>>
+                                        Enable live Server-Sent Events (SSE) token streaming
+                                    </label>
+                                </div>
+                                <span class="help-block">Provides instant typewriter output in Admin Copilot.</span>
+                            </div>
+                        </div>
+
+                        <div class="form-group" style="margin-bottom: 15px;">
+                            <label>Admin Copilot System Prompt Instructions</label>
+                            <textarea name="copilot_system_prompt" class="form-control" rows="4" placeholder="Enter custom instructions or guidelines for the Copilot..."><?php echo htmlspecialchars($settings->copilot_system_prompt ?? ''); ?></textarea>
+                            <span class="help-block">Optional custom system prompt prepended to Admin Ops Copilot interactions.</span>
+                        </div>
+
+                        <div style="text-align: right;">
+                            <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Save Chat AI Settings</button>
+                        </div>
+                    </form>
+                </div>
+
+                <h4 style="margin: 25px 0 15px;">Configured Chat Providers</h4>
+                <?php if ($chatProviders->isEmpty()): ?>
+                    <div class="alert alert-warning">No providers configured specifically for Chat. The models in Ticket Intelligence marked as 'Both' will be used automatically.</div>
+                <?php else: ?>
+                    <?php foreach ($chatProviders as $p): ?>
+                        <?php echo $this->renderProviderCard($p, $actionUrl, $csrfToken); ?>
+                    <?php endforeach; ?>
+                <?php endif; ?>
+            </div>
+
+        </div>
+
+        <script>
+        function switchProviderTab(tab, e) {
+            if (e) e.preventDefault();
+            document.querySelectorAll('.subtab-btn').forEach(btn => btn.classList.remove('active'));
+            if (e && e.target) {
+                e.target.closest('.subtab-btn').classList.add('active');
+            }
+            if (tab === 'ticket') {
+                document.getElementById('section-ticket').style.display = 'block';
+                document.getElementById('section-chat').style.display = 'none';
+            } else {
+                document.getElementById('section-ticket').style.display = 'none';
+                document.getElementById('section-chat').style.display = 'block';
+            }
+        }
+
+        function setPreset(model, costIn, costOut) {
+            document.getElementById('new_model_name').value = model;
+            document.getElementById('new_cost_in').value = costIn.toFixed(4);
+            document.getElementById('new_cost_out').value = costOut.toFixed(4);
+        }
+
+        function toggleProviderPreset(type) {
+            const urlInput = document.getElementById('new_api_url');
+            if (type === 'openrouter') {
+                urlInput.value = 'https://openrouter.ai/api/v1/chat/completions';
+                setPreset('anthropic/claude-3.5-sonnet', 3.0, 15.0);
+            } else if (type === 'google') {
+                urlInput.value = '';
+                document.getElementById('new_model_name').value = 'models/gemini-1.5-pro';
+            } else if (type === 'lmstudio') {
+                urlInput.value = 'http://localhost:1234/v1/chat/completions';
+                document.getElementById('new_model_name').value = 'local-model';
+            }
+        }
+
+        function fetchLiveModels() {
+            const key = document.getElementById('new_api_key').value;
+            if (!key) {
+                alert('Please enter an OpenRouter API key first.');
+                return;
+            }
+            const btn = event.target;
+            const origText = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Fetching...';
+            btn.disabled = true;
+
+            fetch('addonmodules.php?module=sahdev&sahdev_act=ajax_handler&action=fetch_openrouter_models&api_key=' + encodeURIComponent(key))
+                .then(r => r.json())
+                .then(data => {
+                    btn.innerHTML = origText;
+                    btn.disabled = false;
+                    if (data.success && data.models) {
+                        let promptText = "Found " + Object.keys(data.models).length + " models. Popular choices:\n";
+                        let count = 0;
+                        for (let k in data.models) {
+                            promptText += k + " ($" + data.models[k].cost_in + " / $" + data.models[k].cost_out + ")\n";
+                            if (++count > 10) break;
+                        }
+                        const choice = prompt(promptText + "\nEnter model identifier to use:", document.getElementById('new_model_name').value);
+                        if (choice && data.models[choice]) {
+                            setPreset(choice, data.models[choice].cost_in, data.models[choice].cost_out);
+                        } else if (choice) {
+                            document.getElementById('new_model_name').value = choice;
+                        }
+                    } else {
+                        alert(data.error || 'Failed to fetch models from OpenRouter.');
+                    }
+                })
+                .catch(err => {
+                    btn.innerHTML = origText;
+                    btn.disabled = false;
+                    alert('Request error: ' + err.message);
+                });
+        }
+        </script>
+        <?php
+        return ob_get_clean();
+    }
+
+    private function renderProviderCard($p, string $actionUrl, string $csrfToken): string
+    {
+        ob_start();
+        ?>
+        <div class="provider-card">
+            <form method="post" action="<?php echo $actionUrl; ?>">
+                <?php echo $csrfToken; ?>
+                <input type="hidden" name="provider_id" value="<?php echo $p->id; ?>">
+
+                <div class="row" style="margin-bottom: 10px;">
+                    <div class="col-md-5">
+                        <label>Display Name</label>
+                        <input type="text" name="provider_name" class="form-control" value="<?php echo htmlspecialchars($p->name); ?>" required>
+                    </div>
+                    <div class="col-md-4">
+                        <label>API Format Type</label>
+                        <select name="provider_type" class="form-control">
+                            <option value="openrouter" <?php echo ($p->provider_type == 'openrouter') ? 'selected' : ''; ?>>OpenRouter</option>
+                            <option value="google" <?php echo ($p->provider_type == 'google') ? 'selected' : ''; ?>>Google GenAI (Gemini)</option>
+                            <option value="lmstudio" <?php echo ($p->provider_type == 'lmstudio') ? 'selected' : ''; ?>>OpenAI Compatible (LM Studio / Ollama)</option>
+                            <option value="replicate" <?php echo ($p->provider_type == 'replicate') ? 'selected' : ''; ?>>Replicate</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label>Purpose</label>
+                        <select name="provider_purpose" class="form-control">
+                            <option value="both" <?php echo (($p->purpose ?? 'both') == 'both') ? 'selected' : ''; ?>>Both Ticket & Chat</option>
+                            <option value="ticket" <?php echo (($p->purpose ?? '') == 'ticket') ? 'selected' : ''; ?>>Ticket Only</option>
+                            <option value="chat" <?php echo (($p->purpose ?? '') == 'chat') ? 'selected' : ''; ?>>Chat & Copilot Only</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="row" style="margin-bottom: 10px;">
+                    <div class="col-md-12 mb-2">
+                        <label>API Key</label>
+                        <input type="password" name="api_key" class="form-control" placeholder="Hidden. Enter a new key to update." autocomplete="new-password">
+                    </div>
+                    <div class="col-md-12 mb-2">
+                        <label>API URL Endpoint</label>
+                        <input type="text" name="api_url" class="form-control" value="<?php echo htmlspecialchars($p->api_url ?? ''); ?>">
+                    </div>
+                    <div class="col-md-12 mb-2">
+                        <label>Model Name</label>
+                        <input type="text" name="model_name" class="form-control" value="<?php echo htmlspecialchars($p->model_name ?? ''); ?>">
+                    </div>
+                </div>
+
+                <div class="row" style="margin-bottom: 10px;">
+                    <div class="col-md-6 mb-2">
+                        <label>Input Cost / 1M Tokens ($)</label>
+                        <input type="number" step="0.0001" name="cost_input_1m" class="form-control" value="<?php echo htmlspecialchars($p->cost_input_1m ?? '0.0000'); ?>">
+                    </div>
+                    <div class="col-md-6 mb-2">
+                        <label>Output Cost / 1M Tokens ($)</label>
+                        <input type="number" step="0.0001" name="cost_output_1m" class="form-control" value="<?php echo htmlspecialchars($p->cost_output_1m ?? '0.0000'); ?>">
+                    </div>
+                </div>
+
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 15px;">
+                    <button type="submit" name="provider_action" value="delete" class="btn btn-sm btn-danger" onclick="return confirm('WARNING: Are you sure you want to delete this provider?');">
+                        <i class="fas fa-trash"></i> Delete Provider
+                    </button>
+                    <button type="submit" name="provider_action" value="update" class="btn btn-sm btn-primary">
+                        <i class="fas fa-save"></i> Save Changes
+                    </button>
+                </div>
+            </form>
         </div>
         <?php
         return ob_get_clean();
@@ -6653,6 +6906,1207 @@ class AdminController
                 </div>
             </form>
         </div>
+        <?php
+        return ob_get_clean();
+    }
+
+    /**
+     * Admin Ops Copilot: Command center, live safe ops execution, rollback journal, and visitor chat takeover.
+     */
+    public function admin_copilot()
+    {
+        $adminId = (int) ($_SESSION['adminid'] ?? 0);
+        require_once dirname(__DIR__) . '/lib/PermissionService.php';
+        require_once dirname(__DIR__) . '/lib/SafeOpsService.php';
+        require_once dirname(__DIR__) . '/lib/ChatService.php';
+        require_once dirname(__DIR__) . '/lib/SchemaManager.php';
+        \Sahdev\Lib\SchemaManager::ensureAll();
+
+        if (!\Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_COPILOT_USE)) {
+            return $this->getNavigationMarkup('admin_copilot') . '<div class="sahdev-page-container"><div class="alert alert-danger">Access Denied: You do not have permission to access Admin Ops Copilot.</div></div>';
+        }
+
+        $activeSubTab = $_GET['subtab'] ?? 'console';
+        $actionUrl = htmlspecialchars($this->moduleVars['modulelink']) . '&action=admin_copilot';
+
+        // Load active session
+        $sessionUuid = $_GET['session'] ?? null;
+        $session = \Sahdev\Lib\ChatService::getOrCreateAdminSession($adminId, $sessionUuid);
+        $activeSessionUuid = $session['session_uuid'];
+        $sessionId = (int) $session['id'];
+
+        $recentSessions = Capsule::table('tblsahdev_chat_sessions')
+            ->where('session_type', 'admin_copilot')
+            ->where('admin_id', $adminId)
+            ->orderBy('id', 'desc')
+            ->limit(10)
+            ->get();
+
+        $messages = \Sahdev\Lib\ChatService::getSessionMessages($sessionId, 50);
+
+        // Journal records
+        $journal = Capsule::table('tblsahdev_ops_journal')
+            ->orderBy('id', 'desc')
+            ->limit(50)
+            ->get();
+
+        // Active visitor chats
+        $visitorChats = Capsule::table('tblsahdev_chat_sessions')
+            ->where('session_type', 'client_livechat')
+            ->whereIn('status', ['active', 'taken_over'])
+            ->orderBy('last_message_at', 'desc')
+            ->get();
+
+        $settings = Capsule::table('tblsahdev_settings')->first();
+        $providerName = "Default Routing";
+        if (!empty($settings->copilot_primary_provider_id)) {
+            $p = Capsule::table('tblsahdev_providers')->where('id', $settings->copilot_primary_provider_id)->first();
+            if ($p) $providerName = $p->name . ' (' . ($p->model_name ?: $p->provider_type) . ')';
+        }
+
+        ob_start();
+        ?>
+        <style>
+            .copilot-container {
+                display: flex;
+                gap: 20px;
+                min-height: 650px;
+                background: #fff;
+                border: 1px solid #e2e8f0;
+                border-radius: 10px;
+                overflow: hidden;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+            }
+            .copilot-sidebar {
+                width: 260px;
+                background: #f8fafc;
+                border-right: 1px solid #e2e8f0;
+                padding: 16px;
+                display: flex;
+                flex-direction: column;
+            }
+            .copilot-chat-area {
+                flex: 1;
+                display: flex;
+                flex-direction: column;
+                background: #fff;
+            }
+            .copilot-header {
+                padding: 14px 20px;
+                border-bottom: 1px solid #edf2f7;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                background: #fff;
+            }
+            .copilot-messages {
+                flex: 1;
+                padding: 20px;
+                overflow-y: auto;
+                max-height: 520px;
+                display: flex;
+                flex-direction: column;
+                gap: 15px;
+                background: #fcfdfe;
+            }
+            .copilot-bubble {
+                max-width: 80%;
+                padding: 12px 16px;
+                border-radius: 12px;
+                font-size: 13.5px;
+                line-height: 1.5;
+            }
+            .bubble-user {
+                align-self: flex-end;
+                background: #0d6efd;
+                color: #fff;
+                border-bottom-right-radius: 2px;
+            }
+            .bubble-assistant {
+                align-self: flex-start;
+                background: #f1f5f9;
+                color: #1e293b;
+                border-bottom-left-radius: 2px;
+                border: 1px solid #e2e8f0;
+            }
+            .action-card {
+                background: #fff;
+                border: 2px solid #0d6efd;
+                border-radius: 8px;
+                padding: 16px;
+                margin-top: 10px;
+                box-shadow: 0 4px 10px rgba(13, 110, 253, 0.08);
+            }
+            .action-card-header {
+                font-weight: 700;
+                font-size: 14px;
+                color: #0d6efd;
+                margin-bottom: 8px;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }
+            .diff-table {
+                width: 100%;
+                font-size: 12.5px;
+                margin: 10px 0;
+                border-collapse: collapse;
+            }
+            .diff-table th, .diff-table td {
+                padding: 6px 10px;
+                border: 1px solid #e2e8f0;
+            }
+            .diff-before { color: #dc3545; background: #fff5f5; }
+            .diff-after { color: #198754; background: #f0fdf4; font-weight: 600; }
+            .copilot-input-area {
+                padding: 14px 20px;
+                border-top: 1px solid #edf2f7;
+                background: #fff;
+            }
+            .shortcut-chip {
+                display: inline-block;
+                padding: 3px 10px;
+                font-size: 11px;
+                background: #edf2f7;
+                border-radius: 12px;
+                color: #4a5568;
+                cursor: pointer;
+                margin-right: 6px;
+                margin-bottom: 6px;
+                transition: all 0.2s;
+            }
+            .shortcut-chip:hover {
+                background: #0d6efd;
+                color: #fff;
+            }
+        </style>
+
+        <?php echo $this->getNavigationMarkup('admin_copilot'); ?>
+        <div class="sahdev-page-container">
+
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <div>
+                    <h2 style="margin: 0 0 5px;"><i class="fas fa-terminal text-primary"></i> Admin Ops Copilot</h2>
+                    <p class="text-muted" style="margin: 0;">Autonomous WHMCS Operations Assistant with 3-Tier Safe Ops and Atomic State Rollback.</p>
+                </div>
+                <div>
+                    <span class="label label-info" style="font-size: 12px; padding: 6px 12px;">
+                        <i class="fas fa-microchip"></i> Model: <?php echo htmlspecialchars($providerName); ?>
+                    </span>
+                </div>
+            </div>
+
+            <!-- Sub Navigation Tabs -->
+            <ul class="nav nav-tabs" style="margin-bottom: 20px;">
+                <li class="<?php echo ($activeSubTab === 'console') ? 'active' : ''; ?>">
+                    <a href="<?php echo $actionUrl; ?>&subtab=console&session=<?php echo $activeSessionUuid; ?>">
+                        <i class="fas fa-comments"></i> Live Ops Console
+                    </a>
+                </li>
+                <li class="<?php echo ($activeSubTab === 'journal') ? 'active' : ''; ?>">
+                    <a href="<?php echo $actionUrl; ?>&subtab=journal">
+                        <i class="fas fa-history"></i> Ops Rollback Journal (<?php echo count($journal); ?>)
+                    </a>
+                </li>
+                <li class="<?php echo ($activeSubTab === 'takeover') ? 'active' : ''; ?>">
+                    <a href="<?php echo $actionUrl; ?>&subtab=takeover">
+                        <i class="fas fa-headset"></i> Live Visitor Chats (<?php echo count($visitorChats); ?>)
+                    </a>
+                </li>
+            </ul>
+
+            <?php if ($activeSubTab === 'console'): ?>
+                <div class="copilot-container">
+                    <!-- Sidebar: Past Sessions -->
+                    <div class="copilot-sidebar">
+                        <a href="<?php echo $actionUrl; ?>&subtab=console&new_session=1" class="btn btn-primary btn-block btn-sm" style="margin-bottom: 15px;">
+                            <i class="fas fa-plus"></i> New Ops Thread
+                        </a>
+                        <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #a0aec0; margin-bottom: 8px;">
+                            Recent Threads
+                        </div>
+                        <div style="flex: 1; overflow-y: auto;">
+                            <?php foreach ($recentSessions as $s): ?>
+                                <a href="<?php echo $actionUrl; ?>&subtab=console&session=<?php echo $s->session_uuid; ?>" 
+                                   style="display: block; padding: 8px 10px; border-radius: 6px; margin-bottom: 4px; font-size: 12px; text-decoration: none; color: <?php echo ($s->session_uuid === $activeSessionUuid) ? '#0d6efd' : '#4a5568'; ?>; background: <?php echo ($s->session_uuid === $activeSessionUuid) ? '#e0edff' : 'transparent'; ?>;">
+                                    <i class="fas fa-comment-dots"></i> <?php echo htmlspecialchars(mb_substr($s->title ?: 'Session #' . $s->id, 0, 24)); ?>
+                                </a>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+
+                    <!-- Chat Area -->
+                    <div class="copilot-chat-area">
+                        <div class="copilot-header">
+                            <div>
+                                <strong><i class="fas fa-robot text-primary"></i> <?php echo htmlspecialchars($session['title'] ?? 'Ops Session'); ?></strong>
+                                <span class="text-muted" style="font-size: 11px; margin-left: 8px;">(Session UUID: <?php echo substr($activeSessionUuid, 0, 14); ?>...)</span>
+                            </div>
+                            <div>
+                                <button type="button" class="btn btn-default btn-xs" onclick="window.location.reload();"><i class="fas fa-sync"></i> Refresh</button>
+                            </div>
+                        </div>
+
+                        <!-- Messages Stream -->
+                        <div class="copilot-messages" id="copilot-messages-container">
+                            <?php if (empty($messages)): ?>
+                                <div class="copilot-bubble bubble-assistant">
+                                    👋 <strong>Hello <?php echo htmlspecialchars($_SESSION['adminname'] ?? 'Admin'); ?>!</strong> I am your Sahdev Ops Copilot. 
+                                    I can query WHMCS records, inspect server health, analyze gateway logs, and execute safe ops with 1-click rollback.
+                                    <div style="margin-top: 10px;">
+                                        <strong>Try asking:</strong>
+                                        <div style="margin-top: 6px;">
+                                            <span class="shortcut-chip" onclick="applyShortcut(this.innerText)">Check disk load on servers</span>
+                                            <span class="shortcut-chip" onclick="applyShortcut(this.innerText)">Lookup client balance and open invoices</span>
+                                            <span class="shortcut-chip" onclick="applyShortcut(this.innerText)">Show recent payment gateway failures</span>
+                                            <span class="shortcut-chip" onclick="applyShortcut(this.innerText)">Suspend service #12 for overdue balance</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            <?php else: ?>
+                                <?php foreach ($messages as $m): ?>
+                                    <div class="copilot-bubble <?php echo ($m['sender_type'] === 'user') ? 'bubble-user' : 'bubble-assistant'; ?>">
+                                        <?php echo nl2br(htmlspecialchars($m['message_text'])); ?>
+
+                                        <?php if (!empty($m['action_card'])): ?>
+                                            <?php foreach ($m['action_card'] as $card): ?>
+                                                <div class="action-card">
+                                                    <div class="action-card-header">
+                                                        <i class="fas fa-shield-alt"></i> Action Proposal: <?php echo htmlspecialchars($card['title']); ?>
+                                                        <span class="label label-warning pull-right">Tier <?php echo $card['risk_tier']; ?> Reversible</span>
+                                                    </div>
+                                                    <div style="font-size: 12px; color: #4a5568;">
+                                                        Target: <strong><?php echo htmlspecialchars($card['target'] ?? 'Record'); ?></strong>
+                                                    </div>
+                                                    <?php if (!empty($card['diff'])): ?>
+                                                        <table class="diff-table">
+                                                            <thead>
+                                                                <tr style="background: #f8fafc;">
+                                                                    <th>Property</th>
+                                                                    <th>Current Value</th>
+                                                                    <th>Proposed Value</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody>
+                                                                <?php foreach ($card['diff'] as $prop => $d): ?>
+                                                                    <tr>
+                                                                        <td><strong><?php echo htmlspecialchars($prop); ?></strong></td>
+                                                                        <td class="diff-before"><?php echo htmlspecialchars(is_array($d['before']) ? json_encode($d['before']) : ($d['before'] ?? 'None')); ?></td>
+                                                                        <td class="diff-after"><?php echo htmlspecialchars(is_array($d['after']) ? json_encode($d['after']) : ($d['after'] ?? 'None')); ?></td>
+                                                                    </tr>
+                                                                <?php endforeach; ?>
+                                                            </tbody>
+                                                        </table>
+                                                    <?php endif; ?>
+
+                                                    <div style="margin-top: 12px; display: flex; justify-content: flex-end; gap: 10px;">
+                                                        <button type="button" class="btn btn-xs btn-default" onclick="dismissActionCard(this)">Dismiss</button>
+                                                        <button type="button" class="btn btn-sm btn-success" 
+                                                                onclick="executeActionProposal('<?php echo $card['action_key']; ?>', <?php echo htmlspecialchars(json_encode($card['params'])); ?>, '<?php echo $activeSessionUuid; ?>', this)">
+                                                            <i class="fas fa-check"></i> Confirm & Execute
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            <?php endforeach; ?>
+                                        <?php endif; ?>
+                                    </div>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
+                        </div>
+
+                        <!-- Input Controls -->
+                        <div class="copilot-input-area">
+                            <div style="margin-bottom: 6px;">
+                                <span class="shortcut-chip" onclick="applyShortcut('Check server telemetry and load')">⚡ Server Telemetry</span>
+                                <span class="shortcut-chip" onclick="applyShortcut('Show today\'s MRR and revenue status')">📊 Today's MRR</span>
+                                <span class="shortcut-chip" onclick="applyShortcut('Inspect Stripe gateway error logs')">💳 Stripe Failures</span>
+                                <span class="shortcut-chip" onclick="applyShortcut('List open support tickets in progress')">🎫 Open Tickets</span>
+                            </div>
+                            <div class="input-group">
+                                <textarea id="copilot-input" class="form-control" rows="2" placeholder="Ask Copilot to query, inspect, or run WHMCS safe ops... (Press Ctrl+Enter to send)"></textarea>
+                                <span class="input-group-btn" style="vertical-align: bottom;">
+                                    <button type="button" id="copilot-send-btn" class="btn btn-primary" style="height: 54px; padding: 0 24px;" onclick="sendCopilotMessage();">
+                                        <i class="fas fa-paper-plane"></i> Send
+                                    </button>
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <script>
+                function applyShortcut(text) {
+                    const input = document.getElementById('copilot-input');
+                    input.value = text;
+                    input.focus();
+                }
+
+                document.getElementById('copilot-input').addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                        e.preventDefault();
+                        sendCopilotMessage();
+                    }
+                });
+
+                function scrollToBottom() {
+                    const c = document.getElementById('copilot-messages-container');
+                    c.scrollTop = c.scrollHeight;
+                }
+                scrollToBottom();
+
+                function sendCopilotMessage() {
+                    const input = document.getElementById('copilot-input');
+                    const msg = input.value.trim();
+                    if (!msg) return;
+
+                    const container = document.getElementById('copilot-messages-container');
+                    
+                    // Render User Bubble
+                    const userBubble = document.createElement('div');
+                    userBubble.className = 'copilot-bubble bubble-user';
+                    userBubble.innerText = msg;
+                    container.appendChild(userBubble);
+                    input.value = '';
+
+                    // Render Thinking Placeholder
+                    const thinking = document.createElement('div');
+                    thinking.className = 'copilot-bubble bubble-assistant';
+                    thinking.id = 'copilot-thinking-bubble';
+                    thinking.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing request...';
+                    container.appendChild(thinking);
+                    scrollToBottom();
+
+                    const btn = document.getElementById('copilot-send-btn');
+                    btn.disabled = true;
+
+                    fetch('addonmodules.php?module=sahdev&sahdev_act=ajax_handler&action=copilot_send_message', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body: 'session_uuid=<?php echo $activeSessionUuid; ?>&message=' + encodeURIComponent(msg)
+                    })
+                    .then(r => r.json())
+                    .then(data => {
+                        btn.disabled = false;
+                        thinking.remove();
+                        if (data.success) {
+                            const botBubble = document.createElement('div');
+                            botBubble.className = 'copilot-bubble bubble-assistant';
+                            botBubble.innerHTML = (data.reply || '').replace(/\n/g, '<br>');
+
+                            if (data.action_cards && data.action_cards.length > 0) {
+                                data.action_cards.forEach(card => {
+                                    const cardEl = renderActionCardHtml(card);
+                                    botBubble.appendChild(cardEl);
+                                });
+                            }
+
+                            container.appendChild(botBubble);
+                            scrollToBottom();
+                        } else {
+                            const errBubble = document.createElement('div');
+                            errBubble.className = 'copilot-bubble bubble-assistant';
+                            errBubble.innerHTML = '⚠️ <strong>Error:</strong> ' + (data.error || 'Failed to complete request.');
+                            container.appendChild(errBubble);
+                            scrollToBottom();
+                        }
+                    })
+                    .catch(err => {
+                        btn.disabled = false;
+                        thinking.remove();
+                        alert('Network Error: ' + err.message);
+                    });
+                }
+
+                function renderActionCardHtml(card) {
+                    const div = document.createElement('div');
+                    div.className = 'action-card';
+                    let diffRows = '';
+                    if (card.diff) {
+                        for (let k in card.diff) {
+                            diffRows += `<tr><td><strong>${k}</strong></td><td class="diff-before">${card.diff[k].before}</td><td class="diff-after">${card.diff[k].after}</td></tr>`;
+                        }
+                    }
+
+                    div.innerHTML = `
+                        <div class="action-card-header">
+                            <i class="fas fa-shield-alt"></i> Action Proposal: ${card.title}
+                            <span class="label label-warning pull-right">Tier ${card.risk_tier} Reversible</span>
+                        </div>
+                        <div style="font-size: 12px; color: #4a5568;">Target: <strong>${card.target || 'Record'}</strong></div>
+                        <table class="diff-table">
+                            <thead><tr style="background:#f8fafc;"><th>Property</th><th>Current</th><th>Proposed</th></tr></thead>
+                            <tbody>${diffRows}</tbody>
+                        </table>
+                        <div style="margin-top: 12px; display: flex; justify-content: flex-end; gap: 10px;">
+                            <button type="button" class="btn btn-xs btn-default" onclick="dismissActionCard(this)">Dismiss</button>
+                            <button type="button" class="btn btn-sm btn-success" onclick='executeActionProposal("${card.action_key}", ${JSON.stringify(card.params)}, "<?php echo $activeSessionUuid; ?>", this)'>
+                                <i class="fas fa-check"></i> Confirm & Execute
+                            </button>
+                        </div>
+                    `;
+                    return div;
+                }
+
+                function dismissActionCard(btn) {
+                    btn.closest('.action-card').remove();
+                }
+
+                function executeActionProposal(actionKey, params, sessionUuid, btn) {
+                    btn.disabled = true;
+                    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Executing...';
+
+                    fetch('addonmodules.php?module=sahdev&sahdev_act=ajax_handler&action=copilot_execute_op', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body: 'action_key=' + encodeURIComponent(actionKey) + '&params=' + encodeURIComponent(JSON.stringify(params)) + '&session_uuid=' + encodeURIComponent(sessionUuid)
+                    })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.success) {
+                            btn.className = 'btn btn-sm btn-default';
+                            btn.innerHTML = `<i class="fas fa-check-circle text-success"></i> Executed [Journal #${data.journal_id}]`;
+                            btn.onclick = null;
+                            alert("Operation executed successfully! State snapshot recorded to Journal #" + data.journal_id);
+                        } else {
+                            btn.disabled = false;
+                            btn.innerHTML = '<i class="fas fa-check"></i> Retry Execution';
+                            alert("Execution Failed: " + (data.error || 'Unknown error'));
+                        }
+                    })
+                    .catch(err => {
+                        btn.disabled = false;
+                        btn.innerHTML = '<i class="fas fa-check"></i> Retry Execution';
+                        alert("Network error: " + err.message);
+                    });
+                }
+                </script>
+            <?php elseif ($activeSubTab === 'journal'): ?>
+                <!-- OPS ROLLBACK JOURNAL -->
+                <div class="panel panel-default" style="border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
+                    <div class="panel-heading" style="background: #fff; padding: 15px 20px;">
+                        <strong style="font-size: 15px;"><i class="fas fa-history text-primary"></i> 90-Day Immutable Ops Journal</strong>
+                        <p class="text-muted" style="margin: 3px 0 0; font-size: 12px;">Complete audit trail of every mutating WHMCS operation triggered via Copilot with state diffs and 1-click compensation rollback.</p>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover" style="margin-bottom: 0;">
+                            <thead>
+                                <tr style="background: #f8fafc;">
+                                    <th>ID</th>
+                                    <th>Timestamp</th>
+                                    <th>Operator</th>
+                                    <th>Operation</th>
+                                    <th>Target Entity</th>
+                                    <th>Risk Tier</th>
+                                    <th>Status</th>
+                                    <th style="text-align: right;">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php if ($journal->isEmpty()): ?>
+                                    <tr><td colspan="8" class="text-center text-muted" style="padding: 30px;">No operations executed yet. Use the Ops Copilot to run actions.</td></tr>
+                                <?php else: ?>
+                                    <?php foreach ($journal as $j): ?>
+                                        <tr>
+                                            <td><strong>#<?php echo $j->id; ?></strong></td>
+                                            <td style="font-size: 12px;"><?php echo $j->executed_at; ?></td>
+                                            <td>Admin #<?php echo $j->admin_id; ?></td>
+                                            <td><strong><?php echo htmlspecialchars($j->description); ?></strong></td>
+                                            <td><span class="label label-default"><?php echo htmlspecialchars($j->target_entity_type . ' #' . $j->target_entity_id); ?></span></td>
+                                            <td>
+                                                <?php if ($j->risk_tier == 3): ?>
+                                                    <span class="label label-danger">Tier 3 Destructive</span>
+                                                <?php else: ?>
+                                                    <span class="label label-info">Tier 2 Reversible</span>
+                                                <?php endif; ?>
+                                            </td>
+                                            <td>
+                                                <?php if ($j->status === 'rolled_back'): ?>
+                                                    <span class="label label-warning" style="background: #805ad5;">Rolled Back</span>
+                                                <?php elseif ($j->status === 'executed'): ?>
+                                                    <span class="label label-success">Executed</span>
+                                                <?php else: ?>
+                                                    <span class="label label-danger">Failed</span>
+                                                <?php endif; ?>
+                                            </td>
+                                            <td style="text-align: right;">
+                                                <?php if ($j->status === 'executed'): ?>
+                                                    <button type="button" class="btn btn-xs btn-danger" onclick="triggerRollback(<?php echo $j->id; ?>, this)">
+                                                        <i class="fas fa-undo"></i> Rollback
+                                                    </button>
+                                                <?php else: ?>
+                                                    <span class="text-muted" style="font-size: 11px;">Restored</span>
+                                                <?php endif; ?>
+                                            </td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <script>
+                function triggerRollback(journalId, btn) {
+                    if (!confirm("Are you sure you want to revert operation #" + journalId + "? This will restore the pre-state values.")) return;
+
+                    btn.disabled = true;
+                    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Reverting...';
+
+                    fetch('addonmodules.php?module=sahdev&sahdev_act=ajax_handler&action=copilot_rollback_op', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body: 'journal_id=' + journalId
+                    })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.success) {
+                            alert(data.message || "Operation successfully rolled back!");
+                            window.location.reload();
+                        } else {
+                            btn.disabled = false;
+                            btn.innerHTML = '<i class="fas fa-undo"></i> Rollback';
+                            alert("Rollback Error: " + (data.error || 'Failed to rollback'));
+                        }
+                    })
+                    .catch(err => {
+                        btn.disabled = false;
+                        btn.innerHTML = '<i class="fas fa-undo"></i> Rollback';
+                        alert("Network error: " + err.message);
+                    });
+                }
+                </script>
+            <?php elseif ($activeSubTab === 'takeover'): ?>
+                <!-- LIVE VISITOR CHATS & TAKEOVER DESK -->
+                <div class="panel panel-default" style="border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
+                    <div class="panel-heading" style="background: #fff; padding: 15px 20px;">
+                        <strong style="font-size: 15px;"><i class="fas fa-headset text-success"></i> Live Visitor Chats & Staff Takeover Desk</strong>
+                        <p class="text-muted" style="margin: 3px 0 0; font-size: 12px;">Active customer live chats in progress. Join any conversation to assist the customer directly.</p>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover" style="margin-bottom: 0;">
+                            <thead>
+                                <tr style="background: #f8fafc;">
+                                    <th>Session</th>
+                                    <th>Visitor / Client</th>
+                                    <th>Current Page</th>
+                                    <th>Last Activity</th>
+                                    <th>Status</th>
+                                    <th>Assigned Staff</th>
+                                    <th style="text-align: right;">Takeover</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php if ($visitorChats->isEmpty()): ?>
+                                    <tr><td colspan="7" class="text-center text-muted" style="padding: 30px;">No visitors chatting right now. When a client messages the bot, they appear here instantly.</td></tr>
+                                <?php else: ?>
+                                    <?php foreach ($visitorChats as $vc): ?>
+                                        <tr>
+                                            <td><strong><?php echo htmlspecialchars($vc->title ?: 'Chat #' . $vc->id); ?></strong></td>
+                                            <td>
+                                                <?php if ($vc->client_id > 0): ?>
+                                                    <span class="label label-primary">Client #<?php echo $vc->client_id; ?></span>
+                                                <?php else: ?>
+                                                    <span class="label label-default">Guest Visitor</span>
+                                                <?php endif; ?>
+                                            </td>
+                                            <td style="font-size: 12px;"><?php echo htmlspecialchars(mb_substr($vc->metadata_json ?? '/', 0, 40)); ?></td>
+                                            <td style="font-size: 12px;"><?php echo $vc->last_message_at; ?></td>
+                                            <td>
+                                                <?php if ($vc->status === 'taken_over'): ?>
+                                                    <span class="label label-warning">In Staff Takeover</span>
+                                                <?php else: ?>
+                                                    <span class="label label-success">AI Active</span>
+                                                <?php endif; ?>
+                                            </td>
+                                            <td>
+                                                <?php echo $vc->assigned_admin_id > 0 ? ("Admin #" . $vc->assigned_admin_id) : "<span class='text-muted'>Bot</span>"; ?>
+                                            </td>
+                                            <td style="text-align: right;">
+                                                <button type="button" class="btn btn-xs btn-primary" onclick="claimChatTakeover('<?php echo $vc->session_uuid; ?>')">
+                                                    <i class="fas fa-sign-in-alt"></i> Take Over Chat
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <script>
+                function claimChatTakeover(uuid) {
+                    if (!confirm("Take over this conversation from AI? You will be connected directly to the visitor.")) return;
+
+                    fetch('addonmodules.php?module=sahdev&sahdev_act=ajax_handler&action=chat_takeover', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body: 'session_uuid=' + encodeURIComponent(uuid)
+                    })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.success) {
+                            alert("You have taken over this session! Opening console...");
+                            window.location.href = 'addonmodules.php?module=sahdev&action=admin_copilot&subtab=console&session=' + uuid;
+                        } else {
+                            alert("Takeover error: " + (data.error || 'Failed'));
+                        }
+                    })
+                    .catch(err => alert('Network error: ' + err.message));
+                }
+                </script>
+            <?php endif; ?>
+
+        </div>
+        <?php
+        return ob_get_clean();
+    }
+
+    /**
+     * Client Live Chat Configuration & Visual Mockup.
+     */
+    public function client_chat()
+    {
+        $adminId = (int) ($_SESSION['adminid'] ?? 0);
+        require_once dirname(__DIR__) . '/lib/PermissionService.php';
+        require_once dirname(__DIR__) . '/lib/SchemaManager.php';
+        \Sahdev\Lib\SchemaManager::ensureSettingsColumns();
+
+        if (!\Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_CLIENT_CHAT_MANAGE)) {
+            return $this->getNavigationMarkup('client_chat') . '<div class="sahdev-page-container"><div class="alert alert-danger">Access Denied: Missing permissions for Client Live Chat settings.</div></div>';
+        }
+
+        $successMessage = '';
+        if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_client_chat'])) {
+            check_token('WHMCS.admin.default');
+
+            Capsule::table('tblsahdev_settings')->where('id', 1)->update([
+                'client_chat_enabled'         => !empty($_POST['client_chat_enabled']) ? 1 : 0,
+                'client_chat_provider_id'     => (int) ($_POST['client_chat_provider_id'] ?? 0),
+                'client_chat_title'           => trim($_POST['client_chat_title'] ?? 'Hosting Support Assistant'),
+                'client_chat_brand_color'     => trim($_POST['client_chat_brand_color'] ?? '#0d6efd'),
+                'client_chat_position'        => trim($_POST['client_chat_position'] ?? 'bottom-right'),
+                'client_chat_welcome_message' => trim($_POST['client_chat_welcome_message'] ?? ''),
+                'client_chat_require_prechat' => !empty($_POST['client_chat_require_prechat']) ? 1 : 0,
+                'client_chat_proactive_delay' => (int) ($_POST['client_chat_proactive_delay'] ?? 15),
+                'client_chat_kb_enabled'      => !empty($_POST['client_chat_kb_enabled']) ? 1 : 0,
+                'client_chat_system_prompt'   => trim($_POST['client_chat_system_prompt'] ?? ''),
+                'updated_at'                  => \Carbon\Carbon::now(),
+            ]);
+
+            $successMessage = "Client Live Chat settings saved successfully.";
+        }
+
+        $settings = Capsule::table('tblsahdev_settings')->first();
+        $providers = Capsule::table('tblsahdev_providers')->where('is_active', 1)->get();
+        $csrfToken = generate_token('form');
+        $actionUrl = htmlspecialchars($this->moduleVars['modulelink']) . '&action=client_chat';
+
+        ob_start();
+        ?>
+        <?php echo $this->getNavigationMarkup('client_chat'); ?>
+        <div class="sahdev-page-container">
+            <h2 style="margin-bottom: 8px;"><i class="fas fa-comments text-primary"></i> Client Live Chat Management</h2>
+            <p class="text-muted" style="margin-bottom: 20px;">Configure the AI customer support widget embedded in the WHMCS Client Area with live takeover and 1-click ticket escalation.</p>
+
+            <?php if (!empty($successMessage)): ?>
+                <div class="alert alert-success"><i class="fas fa-check-circle"></i> <?php echo htmlspecialchars($successMessage); ?></div>
+            <?php endif; ?>
+
+            <div class="row">
+                <!-- Left Column: Form Settings -->
+                <div class="col-md-7">
+                    <div class="panel panel-default" style="border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
+                        <div class="panel-heading" style="background: #fff; padding: 15px 20px;">
+                            <strong>Widget Configuration & Behavior</strong>
+                        </div>
+                        <div class="panel-body" style="padding: 20px;">
+                            <form method="post" action="<?php echo $actionUrl; ?>">
+                                <?php echo $csrfToken; ?>
+                                <input type="hidden" name="save_client_chat" value="1">
+
+                                <div class="form-group" style="margin-bottom: 18px;">
+                                    <div class="checkbox">
+                                        <label style="font-weight: 700;">
+                                            <input type="checkbox" name="client_chat_enabled" value="1" <?php echo !empty($settings->client_chat_enabled) ? 'checked' : ''; ?>>
+                                            Enable Client Live Chat Widget on WHMCS Client Area
+                                        </label>
+                                    </div>
+                                    <span class="help-block">When enabled, the floating chat launcher is injected automatically via WHMCS ClientAreaFooterOutput hook.</span>
+                                </div>
+
+                                <div class="row">
+                                    <div class="col-md-6 form-group">
+                                        <label>Widget Header Title</label>
+                                        <input type="text" name="client_chat_title" class="form-control" value="<?php echo htmlspecialchars($settings->client_chat_title ?? 'Hosting Support Assistant'); ?>">
+                                    </div>
+                                    <div class="col-md-6 form-group">
+                                        <label>Brand Accent Color</label>
+                                        <input type="color" name="client_chat_brand_color" class="form-control" value="<?php echo htmlspecialchars($settings->client_chat_brand_color ?? '#0d6efd'); ?>" style="height: 34px; padding: 2px;">
+                                    </div>
+                                </div>
+
+                                <div class="row">
+                                    <div class="col-md-6 form-group">
+                                        <label>Widget Position</label>
+                                        <select name="client_chat_position" class="form-control">
+                                            <option value="bottom-right" <?php echo (($settings->client_chat_position ?? 'bottom-right') === 'bottom-right') ? 'selected' : ''; ?>>Bottom Right</option>
+                                            <option value="bottom-left" <?php echo (($settings->client_chat_position ?? '') === 'bottom-left') ? 'selected' : ''; ?>>Bottom Left</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6 form-group">
+                                        <label>Proactive Bubble Delay (Seconds)</label>
+                                        <input type="number" name="client_chat_proactive_delay" class="form-control" value="<?php echo (int)($settings->client_chat_proactive_delay ?? 15); ?>" min="0" max="300">
+                                        <span class="help-block">Set 0 to disable automated greeting popups.</span>
+                                    </div>
+                                </div>
+
+                                <div class="form-group">
+                                    <label>Welcome Greeting Message</label>
+                                    <textarea name="client_chat_welcome_message" class="form-control" rows="2"><?php echo htmlspecialchars($settings->client_chat_welcome_message ?? 'Hi there! 👋 Need help with your hosting, domains, or billing? Chat with our AI assistant or open a ticket anytime.'); ?></textarea>
+                                </div>
+
+                                <div class="row" style="margin-bottom: 15px;">
+                                    <div class="col-md-6">
+                                        <div class="checkbox">
+                                            <label>
+                                                <input type="checkbox" name="client_chat_require_prechat" value="1" <?php echo !empty($settings->client_chat_require_prechat) ? 'checked' : ''; ?>>
+                                                Require Name & Email Pre-Chat Form
+                                            </label>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="checkbox">
+                                            <label>
+                                                <input type="checkbox" name="client_chat_kb_enabled" value="1" <?php echo !empty($settings->client_chat_kb_enabled) ? 'checked' : ''; ?>>
+                                                Enable Public Knowledgebase Grounding
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="form-group" style="margin-bottom: 20px;">
+                                    <label>Client Chat Persona & System Instructions</label>
+                                    <textarea name="client_chat_system_prompt" class="form-control" rows="4" placeholder="Enter instructions for how the AI should talk to customers..."><?php echo htmlspecialchars($settings->client_chat_system_prompt ?? ''); ?></textarea>
+                                </div>
+
+                                <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Save Client Chat Settings</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Column: Live Mockup Preview -->
+                <div class="col-md-5">
+                    <div class="panel panel-default" style="border-radius: 8px;">
+                        <div class="panel-heading" style="background: #fff; padding: 15px 20px;">
+                            <strong>Widget Live Mockup</strong>
+                        </div>
+                        <div class="panel-body" style="background: #f8fafc; padding: 30px; display: flex; justify-content: center;">
+                            <!-- Mockup Widget Frame -->
+                            <div style="width: 320px; background: #fff; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); border: 1px solid #e2e8f0; overflow: hidden;">
+                                <div style="background: <?php echo htmlspecialchars($settings->client_chat_brand_color ?? '#0d6efd'); ?>; color: #fff; padding: 14px 16px; display: flex; justify-content: space-between; align-items: center;">
+                                    <div>
+                                        <strong style="font-size: 13px; display: block;"><?php echo htmlspecialchars($settings->client_chat_title ?? 'Hosting Assistant'); ?></strong>
+                                        <span style="font-size: 11px; opacity: 0.85;">● Online — Instant Answers</span>
+                                    </div>
+                                    <i class="fas fa-minus" style="cursor: pointer;"></i>
+                                </div>
+                                <div style="padding: 16px; min-height: 220px; background: #fcfdfe; display: flex; flex-direction: column; gap: 10px; font-size: 12px;">
+                                    <div style="align-self: flex-start; background: #edf2f7; padding: 8px 12px; border-radius: 10px; max-width: 85%;">
+                                        <?php echo htmlspecialchars($settings->client_chat_welcome_message ?? 'Hi there! How can I help you today?'); ?>
+                                    </div>
+                                    <div style="align-self: flex-end; background: <?php echo htmlspecialchars($settings->client_chat_brand_color ?? '#0d6efd'); ?>; color: #fff; padding: 8px 12px; border-radius: 10px; max-width: 85%;">
+                                        How do I configure nameservers for my domain?
+                                    </div>
+                                    <div style="align-self: flex-start; background: #edf2f7; padding: 8px 12px; border-radius: 10px; max-width: 85%;">
+                                        You can update your nameservers by navigating to <strong>Domains > Manage Nameservers</strong>. Point them to ns1.yourhost.com and ns2.yourhost.com!
+                                        <div style="margin-top: 8px;">
+                                            <span class="label label-primary" style="font-size: 10px; cursor: pointer;"><i class="fas fa-ticket-alt"></i> Open Ticket</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div style="padding: 10px 14px; border-top: 1px solid #edf2f7; display: flex; gap: 8px; background: #fff;">
+                                    <input type="text" class="form-control input-sm" placeholder="Type message..." disabled>
+                                    <button class="btn btn-sm btn-primary" style="background: <?php echo htmlspecialchars($settings->client_chat_brand_color ?? '#0d6efd'); ?>; border-color: <?php echo htmlspecialchars($settings->client_chat_brand_color ?? '#0d6efd'); ?>;"><i class="fas fa-paper-plane"></i></button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <?php
+        return ob_get_clean();
+    }
+
+    /**
+     * MetricsCube-Style Organization Intelligence & AI Pattern Engine.
+     */
+    public function organization_intelligence()
+    {
+        $adminId = (int) ($_SESSION['adminid'] ?? 0);
+        require_once dirname(__DIR__) . '/lib/PermissionService.php';
+        require_once dirname(__DIR__) . '/lib/MetricsIntelligenceService.php';
+        require_once dirname(__DIR__) . '/lib/SchemaManager.php';
+        \Sahdev\Lib\SchemaManager::ensureAll();
+
+        if (!\Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_METRICS_VIEW)) {
+            return $this->getNavigationMarkup('organization_intelligence') . '<div class="sahdev-page-container"><div class="alert alert-danger">Access Denied: Missing permissions for Organization Intelligence.</div></div>';
+        }
+
+        $forceRecalc = (isset($_POST['recalculate']) && $_SERVER['REQUEST_METHOD'] === 'POST');
+        if ($forceRecalc) {
+            check_token('WHMCS.admin.default');
+        }
+
+        $snapshot = \Sahdev\Lib\MetricsIntelligenceService::getMetricsSnapshot($forceRecalc);
+
+        $fin = $snapshot['financial'];
+        $cli = $snapshot['clients'];
+        $gw  = $snapshot['gateways'];
+        $sup = $snapshot['support'];
+        $anomalies = $snapshot['anomalies'];
+        $mrrTrend = $snapshot['mrr_trend'];
+        $debt = $snapshot['aging_debt'];
+        $topProducts = $snapshot['top_products'];
+
+        $csrfToken = generate_token('form');
+        $actionUrl = htmlspecialchars($this->moduleVars['modulelink']) . '&action=organization_intelligence';
+
+        ob_start();
+        ?>
+        <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+        <style>
+            .metric-stat-card {
+                background: #fff;
+                border: 1px solid #e2e8f0;
+                border-radius: 10px;
+                padding: 18px 20px;
+                box-shadow: 0 2px 5px rgba(0,0,0,0.02);
+                transition: transform 0.15s;
+                position: relative;
+                overflow: hidden;
+            }
+            .metric-stat-card:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 6px 15px rgba(0,0,0,0.05);
+            }
+            .metric-label {
+                font-size: 11.5px;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+                color: #718096;
+                font-weight: 700;
+                margin-bottom: 6px;
+            }
+            .metric-val {
+                font-size: 26px;
+                font-weight: 800;
+                color: #1a202c;
+                line-height: 1.1;
+            }
+            .metric-sub {
+                font-size: 12px;
+                color: #a0aec0;
+                margin-top: 6px;
+            }
+            .anomaly-card {
+                background: #fff;
+                border-radius: 8px;
+                padding: 16px;
+                margin-bottom: 12px;
+                display: flex;
+                align-items: flex-start;
+                gap: 14px;
+                box-shadow: 0 1px 4px rgba(0,0,0,0.03);
+            }
+            .anomaly-card.critical { border-left: 4px solid #e53e3e; }
+            .anomaly-card.warning { border-left: 4px solid #dd6b20; }
+            .anomaly-card.info { border-left: 4px solid #3182ce; }
+        </style>
+
+        <?php echo $this->getNavigationMarkup('organization_intelligence'); ?>
+        <div class="sahdev-page-container">
+
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px;">
+                <div>
+                    <h2 style="margin: 0 0 5px;"><i class="fas fa-chart-pie text-primary"></i> Organization Intelligence Hub</h2>
+                    <p class="text-muted" style="margin: 0;">MetricsCube-style native WHMCS analytics, MRR engine, churn forecasting, and AI pattern detection.</p>
+                </div>
+                <div>
+                    <form method="post" action="<?php echo $actionUrl; ?>" style="display: inline;">
+                        <?php echo $csrfToken; ?>
+                        <input type="hidden" name="recalculate" value="1">
+                        <button type="submit" class="btn btn-default"><i class="fas fa-sync"></i> Refresh Live Metrics</button>
+                    </form>
+                    <a href="addonmodules.php?module=sahdev&action=admin_copilot" class="btn btn-primary" style="margin-left: 8px;">
+                        <i class="fas fa-terminal"></i> Open Copilot Ops
+                    </a>
+                </div>
+            </div>
+
+            <!-- ROW 1: PRIMARY FINANCIAL STAT CARDS -->
+            <div class="row" style="margin-bottom: 20px;">
+                <div class="col-md-3">
+                    <div class="metric-stat-card" style="border-top: 3px solid #0d6efd;">
+                        <div class="metric-label">Monthly Recurring Revenue</div>
+                        <div class="metric-val">$<?php echo number_format($fin['mrr'], 2); ?></div>
+                        <div class="metric-sub"><i class="fas fa-calendar-alt"></i> ARR: $<?php echo number_format($fin['arr'], 2); ?></div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="metric-stat-card" style="border-top: 3px solid #198754;">
+                        <div class="metric-label">This Month Paid Income</div>
+                        <div class="metric-val">$<?php echo number_format($fin['this_month_paid'], 2); ?></div>
+                        <div class="metric-sub">
+                            <?php if ($fin['growth_percentage'] >= 0): ?>
+                                <span class="text-success"><i class="fas fa-arrow-up"></i> +<?php echo $fin['growth_percentage']; ?>%</span> vs last month
+                            <?php else: ?>
+                                <span class="text-danger"><i class="fas fa-arrow-down"></i> <?php echo $fin['growth_percentage']; ?>%</span> vs last month
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="metric-stat-card" style="border-top: 3px solid #e53e3e;">
+                        <div class="metric-label">Unpaid / Overdue Debt</div>
+                        <div class="metric-val">$<?php echo number_format($fin['unpaid_amount'], 2); ?></div>
+                        <div class="metric-sub"><i class="fas fa-file-invoice"></i> <?php echo $fin['unpaid_count']; ?> open invoices</div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="metric-stat-card" style="border-top: 3px solid #805ad5;">
+                        <div class="metric-label">Customer Lifetime Value (LTV)</div>
+                        <div class="metric-val">$<?php echo number_format($cli['ltv'], 2); ?></div>
+                        <div class="metric-sub"><i class="fas fa-user-tag"></i> ARPU: $<?php echo number_format($cli['arpu'], 2); ?>/mo</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ROW 2: CLIENTS, CHURN, GATEWAYS, SUPPORT -->
+            <div class="row" style="margin-bottom: 25px;">
+                <div class="col-md-3">
+                    <div class="metric-stat-card">
+                        <div class="metric-label">Active Clients & Services</div>
+                        <div class="metric-val"><?php echo number_format($cli['active_clients']); ?></div>
+                        <div class="metric-sub"><?php echo number_format($cli['new_clients_month']); ?> new this month</div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="metric-stat-card">
+                        <div class="metric-label">Service Churn Rate</div>
+                        <div class="metric-val"><?php echo $cli['churn_rate_pct']; ?>%</div>
+                        <div class="metric-sub"><?php echo $cli['cancellations_month']; ?> cancellations this month</div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="metric-stat-card">
+                        <div class="metric-label">Gateway Success Rate</div>
+                        <div class="metric-val"><?php echo $gw['overall_rate']; ?>%</div>
+                        <div class="metric-sub"><?php echo $gw['failed_trans']; ?> failed transactions (30d)</div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="metric-stat-card">
+                        <div class="metric-label">Average Support FRT</div>
+                        <div class="metric-val"><?php echo $sup['avg_frt_hours']; ?> hrs</div>
+                        <div class="metric-sub"><?php echo $sup['open_tickets']; ?> tickets currently open</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- AI EXECUTIVE BRIEFING & ANOMALY CARDS -->
+            <div class="panel panel-default" style="border-radius: 8px; margin-bottom: 25px; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
+                <div class="panel-heading" style="background: #fff; padding: 16px 20px; display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <strong style="font-size: 15px;"><i class="fas fa-brain text-primary"></i> AI Executive Briefing: Patterns & Bottlenecks</strong>
+                        <p class="text-muted" style="margin: 2px 0 0; font-size: 12px;">Autonomous detection of revenue leaks, gateway failures, and customer pain points.</p>
+                    </div>
+                    <span class="label label-default"><?php echo count($anomalies); ?> Active Alerts</span>
+                </div>
+                <div class="panel-body" style="padding: 20px;">
+                    <?php if (empty($anomalies)): ?>
+                        <div class="alert alert-success" style="margin: 0;">
+                            <i class="fas fa-check-circle"></i> <strong>All Systems Healthy!</strong> No significant revenue leakages, payment gateway spikes, or SLA anomalies detected.
+                        </div>
+                    <?php else: ?>
+                        <?php foreach ($anomalies as $ano): ?>
+                            <div class="anomaly-card <?php echo htmlspecialchars($ano->severity); ?>">
+                                <div>
+                                    <?php if ($ano->severity === 'critical'): ?>
+                                        <i class="fas fa-exclamation-triangle text-danger" style="font-size: 20px;"></i>
+                                    <?php elseif ($ano->severity === 'warning'): ?>
+                                        <i class="fas fa-exclamation-circle text-warning" style="font-size: 20px;"></i>
+                                    <?php else: ?>
+                                        <i class="fas fa-info-circle text-info" style="font-size: 20px;"></i>
+                                    <?php endif; ?>
+                                </div>
+                                <div style="flex: 1;">
+                                    <strong style="font-size: 14px; color: #2d3748; display: block; margin-bottom: 3px;">
+                                        <?php echo htmlspecialchars($ano->title); ?>
+                                    </strong>
+                                    <p style="font-size: 13px; color: #718096; margin-bottom: 8px;">
+                                        <?php echo htmlspecialchars($ano->description); ?>
+                                    </p>
+                                    <a href="addonmodules.php?module=sahdev&action=admin_copilot" class="btn btn-xs btn-default">
+                                        <i class="fas fa-terminal"></i> Ask Copilot to Resolve
+                                    </a>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                </div>
+            </div>
+
+            <!-- CHARTS ROW -->
+            <div class="row">
+                <!-- MRR 6-Month Trend -->
+                <div class="col-md-6">
+                    <div class="panel panel-default" style="border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
+                        <div class="panel-heading" style="background: #fff; padding: 14px 20px;">
+                            <strong><i class="fas fa-chart-line text-primary"></i> 6-Month MRR Growth Trend</strong>
+                        </div>
+                        <div class="panel-body" style="padding: 20px;">
+                            <canvas id="mrrChart" height="160"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Aging Debt Buckets -->
+                <div class="col-md-6">
+                    <div class="panel panel-default" style="border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
+                        <div class="panel-heading" style="background: #fff; padding: 14px 20px;">
+                            <strong><i class="fas fa-hourglass-half text-danger"></i> Aging Overdue Debt Breakdown ($)</strong>
+                        </div>
+                        <div class="panel-body" style="padding: 20px;">
+                            <canvas id="debtChart" height="160"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ROW 3: TOP RECURRING PRODUCTS & GATEWAYS -->
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="panel panel-default" style="border-radius: 8px;">
+                        <div class="panel-heading" style="background: #fff; padding: 14px 20px;">
+                            <strong><i class="fas fa-server text-info"></i> Top Hosting Products by Revenue</strong>
+                        </div>
+                        <table class="table table-striped" style="margin-bottom: 0;">
+                            <thead>
+                                <tr>
+                                    <th>Package Name</th>
+                                    <th>Active Subscriptions</th>
+                                    <th style="text-align: right;">Total Revenue</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php if (empty($topProducts)): ?>
+                                    <tr><td colspan="3" class="text-center text-muted">No active hosting packages found.</td></tr>
+                                <?php else: ?>
+                                    <?php foreach ($topProducts as $tp): ?>
+                                        <tr>
+                                            <td><strong><?php echo htmlspecialchars($tp->name); ?></strong></td>
+                                            <td><?php echo number_format($tp->accounts); ?></td>
+                                            <td style="text-align: right; font-weight: 700; color: #2b6cb0;">$<?php echo number_format((float)$tp->revenue, 2); ?></td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="col-md-6">
+                    <div class="panel panel-default" style="border-radius: 8px;">
+                        <div class="panel-heading" style="background: #fff; padding: 14px 20px;">
+                            <strong><i class="fas fa-credit-card text-success"></i> Payment Gateway Health (30 Days)</strong>
+                        </div>
+                        <table class="table table-striped" style="margin-bottom: 0;">
+                            <thead>
+                                <tr>
+                                    <th>Gateway</th>
+                                    <th>Total Transactions</th>
+                                    <th>Failures</th>
+                                    <th style="text-align: right;">Success Rate</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php if (empty($gw['gateways'])): ?>
+                                    <tr><td colspan="4" class="text-center text-muted">No gateway transactions recorded in the past 30 days.</td></tr>
+                                <?php else: ?>
+                                    <?php foreach ($gw['gateways'] as $gName => $gStats): ?>
+                                        <tr>
+                                            <td><strong><?php echo htmlspecialchars(ucfirst($gName)); ?></strong></td>
+                                            <td><?php echo number_format($gStats['total']); ?></td>
+                                            <td><span class="text-danger"><?php echo number_format($gStats['failures']); ?></span></td>
+                                            <td style="text-align: right;">
+                                                <span class="label <?php echo ($gStats['success_rate'] >= 85) ? 'label-success' : 'label-danger'; ?>">
+                                                    <?php echo $gStats['success_rate']; ?>%
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // MRR Line Chart
+            const mrrCtx = document.getElementById('mrrChart').getContext('2d');
+            new Chart(mrrCtx, {
+                type: 'line',
+                data: {
+                    labels: <?php echo json_encode($mrrTrend['labels']); ?>,
+                    datasets: [{
+                        label: 'MRR ($)',
+                        data: <?php echo json_encode($mrrTrend['values']); ?>,
+                        borderColor: '#0d6efd',
+                        backgroundColor: 'rgba(13, 110, 253, 0.08)',
+                        fill: true,
+                        tension: 0.35,
+                        pointRadius: 4,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: false } }
+                }
+            });
+
+            // Aging Debt Bar Chart
+            const debtCtx = document.getElementById('debtChart').getContext('2d');
+            new Chart(debtCtx, {
+                type: 'bar',
+                data: {
+                    labels: ['1-30 Days', '31-60 Days', '61-90 Days', '90+ Days'],
+                    datasets: [{
+                        label: 'Overdue ($)',
+                        data: [
+                            <?php echo $debt['1_to_30_days']; ?>,
+                            <?php echo $debt['31_to_60_days']; ?>,
+                            <?php echo $debt['61_to_90_days']; ?>,
+                            <?php echo $debt['90_plus_days']; ?>
+                        ],
+                        backgroundColor: ['#4299e1', '#ed8936', '#f56565', '#9b2c2c'],
+                        borderRadius: 6,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { display: false } }
+                }
+            });
+        });
+        </script>
         <?php
         return ob_get_clean();
     }

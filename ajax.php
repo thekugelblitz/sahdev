@@ -19,15 +19,21 @@ if (ob_get_length()) ob_clean();
 // Check if admin is logged in securely
 $adminId = $_SESSION['adminid'] ?? null;
 
-if (!$adminId) {
+$action = isset($_REQUEST['action']) ? $_REQUEST['action'] : '';
+$isClientChatAction = in_array($action, ['client_chat_init', 'client_chat_message', 'client_chat_escalate'], true);
+
+if (!$adminId && !$isClientChatAction) {
     header('HTTP/1.1 403 Forbidden');
     echo json_encode(['status' => 'error', 'message' => 'Unauthorized Access. Please login as admin.']);
     exit;
 }
 
 // Actions allowed via GET (no ticket/POST needed)
-$getAllowedActions = ['get_analytics_period', 'get_header_server_widget', 'server_sso'];
-$isGetAllowed = in_array($_REQUEST['action'] ?? '', $getAllowedActions);
+$getAllowedActions = [
+    'get_analytics_period', 'get_header_server_widget', 'server_sso',
+    'copilot_stream', 'get_metrics_data', 'client_chat_init'
+];
+$isGetAllowed = in_array($action, $getAllowedActions, true);
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST' && !$isGetAllowed) {
     header('HTTP/1.1 405 Method Not Allowed');
@@ -35,7 +41,6 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST' && !$isGetAllowed) {
     exit;
 }
 
-$action = isset($_REQUEST['action']) ? $_REQUEST['action'] : '';
 $allowedActions = [
     'get_analytics_period', 'get_open_payload', 'analyze_open_context', 'get_payload', 'save_response',
     'get_rewrite_payload', 'rewrite_reply', 'auto_analyze', 'analyze_ticket',
@@ -46,7 +51,11 @@ $allowedActions = [
     'trigger_cron_run', 'get_insights_queue', 'analyze_single_insight', 'test_whmcs_cron_http',
     'run_tools_for_ticket', 'get_tools_ticket_status', 'run_tools_queue', 'get_tools_operations',
     'run_manual_tool', 'autopilot_test_run', 'set_ui_theme', 'get_header_server_widget',
-    'server_sso'
+    'server_sso',
+    // Sahdev 3.2 Organization Assistant: Copilot, Safe Ops, Chat, Metrics
+    'copilot_send_message', 'copilot_stream', 'copilot_execute_op', 'copilot_rollback_op',
+    'chat_takeover', 'fetch_openrouter_models', 'get_metrics_data',
+    'client_chat_init', 'client_chat_message', 'client_chat_escalate'
 ];
 if (!in_array($action, $allowedActions, true)) {
     header('HTTP/1.1 400 Bad Request');
@@ -69,7 +78,7 @@ if ($action === 'server_sso') {
     exit;
 }
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isGetAllowed) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isGetAllowed && !$isClientChatAction) {
     $requestToken = (string) ($_REQUEST['token'] ?? '');
     if ($requestToken !== '' && strpos($requestToken, '<') !== false) {
         // Some callers may accidentally pass the full generate_token("form") HTML.
@@ -140,6 +149,9 @@ if ($intensity > 3) {
         'test_whmcs_cron_http', 'run_tools_queue', 'get_tools_operations',
         'get_open_payload', 'analyze_open_context',
         'autopilot_test_run', 'set_ui_theme', 'get_header_server_widget',
+        'copilot_send_message', 'copilot_stream', 'copilot_execute_op', 'copilot_rollback_op',
+        'chat_takeover', 'fetch_openrouter_models', 'get_metrics_data',
+        'client_chat_init', 'client_chat_message', 'client_chat_escalate'
     ];
     if (!$ticketId && !in_array($action, $ticketNotRequiredActions) && !$isGetAllowed) {
         header('HTTP/1.1 400 Bad Request');
@@ -186,9 +198,16 @@ if ($intensity > 3) {
         'get_analytics'               => \Sahdev\Lib\PermissionService::PERM_ANALYTICS_VIEW,
         'get_analytics_period'        => \Sahdev\Lib\PermissionService::PERM_ANALYTICS_VIEW,
         'delete_audit_entries'        => \Sahdev\Lib\PermissionService::PERM_AUDIT_MANAGE,
+        'copilot_send_message'        => \Sahdev\Lib\PermissionService::PERM_COPILOT_USE,
+        'copilot_stream'              => \Sahdev\Lib\PermissionService::PERM_COPILOT_USE,
+        'copilot_execute_op'          => \Sahdev\Lib\PermissionService::PERM_OPS_EXECUTE,
+        'copilot_rollback_op'         => \Sahdev\Lib\PermissionService::PERM_OPS_ROLLBACK,
+        'chat_takeover'               => \Sahdev\Lib\PermissionService::PERM_CLIENT_CHAT_MANAGE,
+        'fetch_openrouter_models'     => \Sahdev\Lib\PermissionService::PERM_SETTINGS_MANAGE,
+        'get_metrics_data'            => \Sahdev\Lib\PermissionService::PERM_METRICS_VIEW,
     ];
 
-    if (isset($actionPermissionMap[$action])) {
+    if (isset($actionPermissionMap[$action]) && $adminId) {
         $requiredPerm = $actionPermissionMap[$action];
         if (!\Sahdev\Lib\PermissionService::hasPermission((int) $adminId, $requiredPerm)) {
             header('HTTP/1.1 403 Forbidden');
@@ -204,9 +223,14 @@ try {
     require_once __DIR__ . '/lib/AIProviderInterface.php';
     require_once __DIR__ . '/lib/GoogleAIProvider.php';
     require_once __DIR__ . '/lib/LMStudioAIProvider.php';
+    require_once __DIR__ . '/lib/OpenRouterAIProvider.php';
     require_once __DIR__ . '/lib/TicketDataExtractor.php';
     require_once __DIR__ . '/lib/AdminPreferences.php';
     require_once __DIR__ . '/lib/AIController.php';
+    require_once __DIR__ . '/lib/SchemaManager.php';
+    require_once __DIR__ . '/lib/SafeOpsService.php';
+    require_once __DIR__ . '/lib/ChatService.php';
+    require_once __DIR__ . '/lib/MetricsIntelligenceService.php';
     require_once __DIR__ . '/modules/ToolsExecution/ToolsExecutionService.php';
 
     $forceRegenerate = !empty($_POST['force_regenerate']) && $_POST['force_regenerate'] === 'true';
@@ -246,8 +270,13 @@ try {
         $settingsArray
     );
 
+    $skipPrefGuardActions = [
+        'copilot_send_message', 'copilot_stream', 'copilot_execute_op', 'copilot_rollback_op',
+        'chat_takeover', 'fetch_openrouter_models', 'get_metrics_data',
+        'client_chat_init', 'client_chat_message', 'client_chat_escalate'
+    ];
     $actionMap = \Sahdev\Lib\AdminPreferences::actionFeatureMap();
-    if (!in_array($action, \Sahdev\Lib\AdminPreferences::unguardedActions(), true)) {
+    if (!in_array($action, \Sahdev\Lib\AdminPreferences::unguardedActions(), true) && !in_array($action, $skipPrefGuardActions, true)) {
         $featureKey = $actionMap[$action] ?? \Sahdev\Lib\AdminPreferences::FEATURE_TICKET_AI;
         try {
             \Sahdev\Lib\AdminPreferences::assertFeatureOrThrow($featureKey, (int) $adminId, $settingsRow);
@@ -992,6 +1021,170 @@ try {
             'servers' => $serverList,
             'active_incidents' => $activeIncidents,
         ];
+    } elseif ($action === 'copilot_send_message') {
+        $sessionUuid = trim((string) ($_POST['session_uuid'] ?? ''));
+        $userMessageText = trim((string) ($_POST['message'] ?? ''));
+        $pageContextRaw = $_POST['page_context'] ?? [];
+        $pageContext = is_array($pageContextRaw) ? $pageContextRaw : (json_decode((string) $pageContextRaw, true) ?: []);
+
+        if (empty($userMessageText)) {
+            header('HTTP/1.1 400 Bad Request');
+            echo json_encode(['status' => 'error', 'message' => 'Message cannot be empty.']);
+            exit;
+        }
+
+        $result = \Sahdev\Lib\ChatService::handleAdminMessage((int) $adminId, $sessionUuid, $userMessageText, $pageContext);
+        $response = array_merge(['status' => ($result['success'] ?? false) ? 'success' : 'error'], $result);
+    } elseif ($action === 'copilot_stream') {
+        // Real-time SSE streaming
+        header('Content-Type: text/event-stream; charset=utf-8');
+        header('Cache-Control: no-cache, no-transform');
+        header('X-Accel-Buffering: no');
+        header('Connection: keep-alive');
+
+        while (ob_get_level()) {
+            ob_end_clean();
+        }
+
+        $sessionUuid = trim((string) ($_REQUEST['session_uuid'] ?? ''));
+        $userMessageText = trim((string) ($_REQUEST['message'] ?? ''));
+        $pageContextRaw = $_REQUEST['page_context'] ?? [];
+        $pageContext = is_array($pageContextRaw) ? $pageContextRaw : (json_decode((string) $pageContextRaw, true) ?: []);
+
+        if (empty($userMessageText)) {
+            echo "data: " . json_encode(['error' => 'Message cannot be empty.', 'done' => true]) . "\n\n";
+            exit;
+        }
+
+        \Sahdev\Lib\ChatService::streamAdminMessage((int) $adminId, $sessionUuid, $userMessageText, $pageContext, function ($chunk, $meta = []) {
+            $payload = json_encode(['chunk' => $chunk, 'meta' => $meta]);
+            echo "data: {$payload}\n\n";
+            if (ob_get_level()) {
+                ob_flush();
+            }
+            flush();
+        });
+
+        echo "data: [DONE]\n\n";
+        if (ob_get_level()) {
+            ob_flush();
+        }
+        flush();
+        exit;
+    } elseif ($action === 'copilot_execute_op') {
+        $actionKey = trim((string) ($_POST['action_key'] ?? ''));
+        $paramsRaw = $_POST['params'] ?? [];
+        $params = is_array($paramsRaw) ? $paramsRaw : (json_decode((string) $paramsRaw, true) ?: []);
+        $sessionId = (int) ($_POST['session_id'] ?? 0);
+        $adminPassword = isset($_POST['admin_password']) ? (string) $_POST['admin_password'] : null;
+
+        if (empty($actionKey)) {
+            header('HTTP/1.1 400 Bad Request');
+            echo json_encode(['status' => 'error', 'message' => 'Missing action_key.']);
+            exit;
+        }
+
+        $res = \Sahdev\Lib\SafeOpsService::executeConfirmedOperation($actionKey, $params, (int) $adminId, $sessionId, $adminPassword);
+        $response = array_merge(['status' => ($res['success'] ?? false) ? 'success' : 'error'], $res);
+    } elseif ($action === 'copilot_rollback_op') {
+        $journalId = (int) ($_POST['journal_id'] ?? 0);
+        if ($journalId <= 0) {
+            header('HTTP/1.1 400 Bad Request');
+            echo json_encode(['status' => 'error', 'message' => 'Missing journal_id.']);
+            exit;
+        }
+
+        $res = \Sahdev\Lib\SafeOpsService::rollbackOperation($journalId, (int) $adminId);
+        $response = array_merge(['status' => ($res['success'] ?? false) ? 'success' : 'error'], $res);
+    } elseif ($action === 'chat_takeover') {
+        $sessionUuid = trim((string) ($_POST['session_uuid'] ?? ''));
+        if (empty($sessionUuid)) {
+            header('HTTP/1.1 400 Bad Request');
+            echo json_encode(['status' => 'error', 'message' => 'Missing session_uuid.']);
+            exit;
+        }
+
+        $res = \Sahdev\Lib\ChatService::takeoverSession($sessionUuid, (int) $adminId);
+        $response = array_merge(['status' => ($res['success'] ?? false) ? 'success' : 'error'], $res);
+    } elseif ($action === 'fetch_openrouter_models') {
+        $apiKey = trim((string) ($_POST['api_key'] ?? ''));
+        if (empty($apiKey)) {
+            $apiKey = (string) Capsule::table('tblsahdev_providers')
+                ->where('provider_type', 'openrouter')
+                ->value('api_key');
+        }
+
+        $models = \Sahdev\Lib\OpenRouterAIProvider::fetchModelsFromApi($apiKey);
+        $response = [
+            'status' => 'success',
+            'models' => $models,
+            'count'  => count($models),
+        ];
+    } elseif ($action === 'get_metrics_data') {
+        $forceRecalculate = !empty($_REQUEST['force_recalculate']) && ($_REQUEST['force_recalculate'] === 'true' || $_REQUEST['force_recalculate'] === '1');
+        $metrics = \Sahdev\Lib\MetricsIntelligenceService::getMetricsSnapshot($forceRecalculate);
+        $response = [
+            'status'  => 'success',
+            'metrics' => $metrics,
+        ];
+    } elseif ($action === 'client_chat_init') {
+        $visitorToken = trim((string) ($_REQUEST['visitor_token'] ?? ''));
+        if (empty($visitorToken) || strlen($visitorToken) > 64) {
+            $visitorToken = bin2hex(random_bytes(16));
+        }
+        $clientId = !empty($_SESSION['uid']) ? (int) $_SESSION['uid'] : null;
+        $metadata = [
+            'ip'         => $_SERVER['REMOTE_ADDR'] ?? '',
+            'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? '',
+            'page'       => $_REQUEST['page_url'] ?? '',
+        ];
+        if ($clientId > 0) {
+            $client = Capsule::table('tblclients')->where('id', $clientId)->first();
+            if ($client) {
+                $metadata['name'] = $client->firstname . ' ' . $client->lastname;
+                $metadata['email'] = $client->email;
+            }
+        }
+        $session = \Sahdev\Lib\ChatService::getOrCreateClientSession($visitorToken, $clientId, $metadata);
+        $messages = \Sahdev\Lib\ChatService::getSessionMessages((int) $session['id'], 50);
+        $greeting = Capsule::table('tblsahdev_settings')->value('client_chat_greeting')
+            ?: "Hello! How can our organization assistant help you today?";
+
+        $response = [
+            'status'        => 'success',
+            'visitor_token' => $visitorToken,
+            'session_uuid'  => $session['session_uuid'],
+            'greeting'      => $greeting,
+            'messages'      => $messages,
+            'is_logged_in'  => ($clientId > 0),
+            'client_name'   => $metadata['name'] ?? null,
+            'status_chat'   => $session['status'] ?? 'active',
+        ];
+    } elseif ($action === 'client_chat_message') {
+        $visitorToken = trim((string) ($_POST['visitor_token'] ?? ''));
+        $messageText = trim((string) ($_POST['message'] ?? ''));
+        $clientId = !empty($_SESSION['uid']) ? (int) $_SESSION['uid'] : null;
+
+        if (empty($visitorToken) || empty($messageText)) {
+            header('HTTP/1.1 400 Bad Request');
+            echo json_encode(['status' => 'error', 'message' => 'Missing visitor_token or message.']);
+            exit;
+        }
+
+        $res = \Sahdev\Lib\ChatService::handleClientMessage($visitorToken, $messageText, $clientId);
+        $response = array_merge(['status' => ($res['success'] ?? false) ? 'success' : 'error'], $res);
+    } elseif ($action === 'client_chat_escalate') {
+        $sessionUuid = trim((string) ($_POST['session_uuid'] ?? ''));
+        $clientId = !empty($_SESSION['uid']) ? (int) $_SESSION['uid'] : null;
+
+        if (empty($sessionUuid)) {
+            header('HTTP/1.1 400 Bad Request');
+            echo json_encode(['status' => 'error', 'message' => 'Missing session_uuid.']);
+            exit;
+        }
+
+        $res = \Sahdev\Lib\ChatService::escalateChatToTicket($sessionUuid, $clientId);
+        $response = array_merge(['status' => ($res['success'] ?? false) ? 'success' : 'error'], $res);
     } else {
         // Default analyze_ticket (server-side generation)
         $response = $controller->getAnalysis($tone, $instruction, $forceRegenerate, $forceFallback, $intent, $useSummary, $includeHistory, $technicalContext, $overrideProviderId, $includeTools, $includeAdminNotes);

@@ -3834,6 +3834,13 @@ add_hook('CronJob', 1, function () {
 
 add_hook('DailyCronJob', 1, function () {
     sahdev_execute_background_cron(false);
+    try {
+        require_once __DIR__ . '/lib/SchemaManager.php';
+        require_once __DIR__ . '/lib/MetricsIntelligenceService.php';
+        \Sahdev\Lib\MetricsIntelligenceService::runDailyAggregation();
+    } catch (\Throwable $e) {
+        // Safe failover for daily metrics cron
+    }
 });
 
 add_hook('AfterCronJob', 1, function () {
@@ -5029,4 +5036,1153 @@ tr.sdv-row-sent-high td { background-color: rgba(220, 53, 69, 0.06) !important; 
 </script>
 HTML;
 }
+
+// ---------------------------------------------------------------------------
+// Sahdev Admin Ops Copilot Drawer Injection
+// ---------------------------------------------------------------------------
+add_hook('AdminAreaFooterOutput', 20, function ($vars) {
+    return sahdev_render_admin_copilot_drawer(is_array($vars) ? $vars : []);
+});
+
+/**
+ * Render the floating Admin Ops Copilot Drawer launcher and slide-out console.
+ */
+function sahdev_render_admin_copilot_drawer(array $vars): string
+{
+    $adminId = $_SESSION['adminid'] ?? null;
+    if (!$adminId) {
+        return '';
+    }
+
+    require_once __DIR__ . '/lib/PermissionService.php';
+    if (!\Sahdev\Lib\PermissionService::hasPermission((int) $adminId, \Sahdev\Lib\PermissionService::PERM_COPILOT_USE)) {
+        return '';
+    }
+
+    try {
+        if (!\WHMCS\Database\Capsule::schema()->hasTable('tblsahdev_settings')) {
+            return '';
+        }
+        $settings = \WHMCS\Database\Capsule::table('tblsahdev_settings')->first();
+        if ($settings && isset($settings->copilot_enabled) && !(bool) $settings->copilot_enabled) {
+            return '';
+        }
+
+        $activeVisitorCount = 0;
+        if (\WHMCS\Database\Capsule::schema()->hasTable('tblsahdev_chat_sessions')) {
+            $activeVisitorCount = (int) \WHMCS\Database\Capsule::table('tblsahdev_chat_sessions')
+                ->where('session_type', 'client_livechat')
+                ->where('status', 'active')
+                ->count();
+        }
+
+        $copilotModel = $settings->copilot_model_name ?? 'anthropic/claude-3.5-sonnet';
+    } catch (\Throwable $e) {
+        return '';
+    }
+
+    $csrfToken = '';
+    if (function_exists('generate_token')) {
+        try {
+            $csrfToken = (string) generate_token('plain');
+        } catch (\Throwable $e) {}
+    }
+    if (empty($csrfToken) && !empty($_SESSION['token'])) {
+        $csrfToken = (string) $_SESSION['token'];
+    }
+
+    $ajaxUrl = 'addonmodules.php?module=sahdev&sahdev_act=ajax_handler';
+    $hubUrl = 'addonmodules.php?module=sahdev&action=admin_copilot';
+    $modelBadge = htmlspecialchars(basename(str_replace('/', ' / ', $copilotModel)), ENT_QUOTES, 'UTF-8');
+    $visitorBadgeHtml = $activeVisitorCount > 0
+        ? '<span class="sdv-copilot-badge" id="sdv-copilot-visitor-badge">' . $activeVisitorCount . ' visitor' . ($activeVisitorCount > 1 ? 's' : '') . '</span>'
+        : '<span class="sdv-copilot-badge" id="sdv-copilot-visitor-badge" style="display:none;">0</span>';
+
+    $ajaxUrlJs = json_encode($ajaxUrl);
+    $csrfTokenJs = json_encode($csrfToken);
+
+    return <<<HTML
+<style>
+/* ── Sahdev Admin Ops Copilot Drawer ───────────────────────────────── */
+#sdv-copilot-launcher {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    z-index: 99990;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 18px;
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+    color: #ffffff;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 50px;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(99, 102, 241, 0.2);
+    cursor: pointer;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    user-select: none;
+}
+#sdv-copilot-launcher:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 15px 30px -5px rgba(0, 0, 0, 0.6), 0 0 15px rgba(99, 102, 241, 0.4);
+    border-color: rgba(129, 140, 248, 0.4);
+}
+#sdv-copilot-launcher .sdv-copilot-sparkle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    color: #818cf8;
+}
+#sdv-copilot-launcher kbd {
+    background: rgba(255, 255, 255, 0.12);
+    color: #cbd5e1;
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-size: 10px;
+    font-family: monospace;
+    margin-left: 2px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+}
+.sdv-copilot-badge {
+    background: #ef4444;
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 20px;
+    animation: sdv-pulse 2s infinite;
+}
+@keyframes sdv-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.85; transform: scale(1.08); }
+}
+#sdv-copilot-drawer {
+    position: fixed;
+    bottom: 80px;
+    right: 24px;
+    width: 440px;
+    height: 620px;
+    max-height: calc(100vh - 110px);
+    max-width: calc(100vw - 36px);
+    z-index: 99995;
+    background: #090d16;
+    color: #f1f5f9;
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.06);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    opacity: 0;
+    transform: translateY(20px) scale(0.96);
+    pointer-events: none;
+    transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1), transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+#sdv-copilot-drawer.sdv-open {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    pointer-events: auto;
+}
+.sdv-drawer-header {
+    padding: 14px 18px;
+    background: #0f172a;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.sdv-drawer-header-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.sdv-copilot-status-dot {
+    width: 9px;
+    height: 9px;
+    background: #10b981;
+    border-radius: 50%;
+    box-shadow: 0 0 8px #10b981;
+}
+.sdv-drawer-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: #f8fafc;
+    letter-spacing: -0.01em;
+}
+.sdv-drawer-subtitle {
+    font-size: 10px;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+.sdv-drawer-header-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.sdv-drawer-btn {
+    background: rgba(255, 255, 255, 0.08);
+    border: none;
+    color: #cbd5e1;
+    padding: 5px 9px;
+    border-radius: 6px;
+    font-size: 11px;
+    cursor: pointer;
+    text-decoration: none;
+    transition: background 0.15s, color 0.15s;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+.sdv-drawer-btn:hover {
+    background: rgba(255, 255, 255, 0.15);
+    color: #ffffff;
+    text-decoration: none;
+}
+.sdv-drawer-close {
+    font-size: 16px;
+    line-height: 1;
+    padding: 4px 8px;
+}
+.sdv-drawer-chips {
+    padding: 8px 14px;
+    background: rgba(15, 23, 42, 0.7);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    white-space: nowrap;
+}
+.sdv-chip {
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: #94a3b8;
+    padding: 4px 10px;
+    border-radius: 14px;
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+.sdv-chip:hover {
+    background: rgba(99, 102, 241, 0.2);
+    border-color: rgba(99, 102, 241, 0.4);
+    color: #c7d2fe;
+}
+.sdv-drawer-messages {
+    flex: 1;
+    padding: 16px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+.sdv-msg {
+    display: flex;
+    flex-direction: column;
+    max-width: 90%;
+}
+.sdv-msg-user {
+    align-self: flex-end;
+    background: linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%);
+    color: #ffffff;
+    padding: 9px 14px;
+    border-radius: 14px 14px 2px 14px;
+    font-size: 13px;
+    line-height: 1.4;
+    word-break: break-word;
+    box-shadow: 0 4px 12px rgba(79, 70, 229, 0.25);
+}
+.sdv-msg-bot {
+    align-self: flex-start;
+    background: #131b2e;
+    color: #e2e8f0;
+    padding: 12px 15px;
+    border-radius: 14px 14px 14px 2px;
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    font-size: 13px;
+    line-height: 1.45;
+    word-break: break-word;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+.sdv-action-proposal {
+    background: #1e1b2e;
+    border: 1px solid #6366f1;
+    border-radius: 10px;
+    padding: 12px;
+    margin-top: 10px;
+    font-size: 12px;
+}
+.sdv-action-proposal.tier-destructive {
+    border-color: #ef4444;
+    background: #2a1215;
+}
+.sdv-action-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+.sdv-tier-pill {
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: #4f46e5;
+    color: #fff;
+}
+.sdv-tier-pill.tier-destructive { background: #dc2626; }
+.sdv-action-diff-tbl {
+    width: 100%;
+    margin: 8px 0;
+    border-collapse: collapse;
+    font-size: 11px;
+}
+.sdv-action-diff-tbl td {
+    padding: 4px 6px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.sdv-diff-before { color: #f87171; text-decoration: line-through; }
+.sdv-diff-after { color: #34d399; font-weight: 600; }
+.sdv-action-footer {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+    align-items: center;
+}
+.sdv-btn-confirm {
+    background: #10b981;
+    color: #fff;
+    border: none;
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+.sdv-btn-confirm:hover { background: #059669; }
+.sdv-btn-dismiss {
+    background: rgba(255,255,255,0.1);
+    color: #94a3b8;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 11px;
+    cursor: pointer;
+}
+.sdv-btn-rollback {
+    background: #f59e0b;
+    color: #111;
+    border: none;
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 700;
+    cursor: pointer;
+}
+.sdv-drawer-footer {
+    padding: 12px;
+    background: #0f172a;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.sdv-input-row {
+    display: flex;
+    gap: 8px;
+    align-items: flex-end;
+}
+#sdv-copilot-input {
+    flex: 1;
+    background: #1e293b;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 8px;
+    color: #f8fafc;
+    padding: 8px 12px;
+    font-size: 13px;
+    resize: none;
+    max-height: 100px;
+    min-height: 38px;
+    font-family: inherit;
+    line-height: 1.4;
+}
+#sdv-copilot-input:focus {
+    outline: none;
+    border-color: #6366f1;
+    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.25);
+}
+#sdv-copilot-send {
+    background: #6366f1;
+    border: none;
+    color: #fff;
+    width: 38px;
+    height: 38px;
+    border-radius: 8px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s;
+    flex-shrink: 0;
+}
+#sdv-copilot-send:hover { background: #4f46e5; }
+.sdv-copilot-status {
+    font-size: 11px;
+    color: #94a3b8;
+    display: none;
+    align-items: center;
+    gap: 6px;
+}
+.sdv-spinner {
+    width: 12px;
+    height: 12px;
+    border: 2px solid rgba(255,255,255,0.2);
+    border-top-color: #818cf8;
+    border-radius: 50%;
+    animation: sdv-spin 0.6s linear infinite;
+}
+@keyframes sdv-spin { to { transform: rotate(360deg); } }
+</style>
+
+<!-- Floating Launcher -->
+<div id="sdv-copilot-launcher" title="Open Sahdev Ops Copilot (Ctrl + Space)">
+    <span class="sdv-copilot-sparkle">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 2L14.4 7.6L20 10L14.4 12.4L12 18L9.6 12.4L4 10L9.6 7.6L12 2Z"/>
+        </svg>
+    </span>
+    <span>Copilot</span>
+    <kbd>Ctrl+Space</kbd>
+    {$visitorBadgeHtml}
+</div>
+
+<!-- Slide-out Console -->
+<div id="sdv-copilot-drawer">
+    <div class="sdv-drawer-header">
+        <div class="sdv-drawer-header-left">
+            <div class="sdv-copilot-status-dot"></div>
+            <div>
+                <div class="sdv-drawer-title">Sahdev Ops Copilot</div>
+                <div class="sdv-drawer-subtitle">Model: {$modelBadge}</div>
+            </div>
+        </div>
+        <div class="sdv-drawer-header-right">
+            <a href="{$hubUrl}" class="sdv-drawer-btn" title="Open Full Screen Ops Console" target="_blank">
+                <span>Ops Hub</span>
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/></svg>
+            </a>
+            <button type="button" class="sdv-drawer-btn sdv-drawer-close" id="sdv-copilot-close" title="Close Drawer">&times;</button>
+        </div>
+    </div>
+
+    <div class="sdv-drawer-chips">
+        <button type="button" class="sdv-chip" data-prompt="Show 360 overview of server telemetry and system health">⚡ Server Health</button>
+        <button type="button" class="sdv-chip" data-prompt="Generate financial and operational KPI summary">📊 BI Metrics</button>
+        <button type="button" class="sdv-chip" data-prompt="List overdue invoices older than 30 days with client balances">💰 Overdue Invoices</button>
+        <button type="button" class="sdv-chip" data-prompt="Analyze recent payment gateway failures or timeout logs">⚠️ Gateway Errors</button>
+    </div>
+
+    <div class="sdv-drawer-messages" id="sdv-copilot-msgs">
+        <div class="sdv-msg sdv-msg-bot">
+            <strong>Welcome, Administrator.</strong><br>
+            I am your Organization Ops Copilot. Ask me to look up tickets, inspect client accounts, analyze payment gateways, or execute safe WHMCS operations with full 2-phase confirmation and 1-click atomic rollback.
+        </div>
+    </div>
+
+    <div class="sdv-drawer-footer">
+        <div class="sdv-copilot-status" id="sdv-copilot-status">
+            <div class="sdv-spinner"></div>
+            <span id="sdv-copilot-status-text">Thinking...</span>
+        </div>
+        <div class="sdv-input-row">
+            <textarea id="sdv-copilot-input" placeholder="Type instruction or safe ops command..." rows="1"></textarea>
+            <button type="button" id="sdv-copilot-send" title="Send (Enter)">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+                </svg>
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {
+    var ajaxUrl = {$ajaxUrlJs};
+    var csrfToken = {$csrfTokenJs};
+    var launcher = document.getElementById('sdv-copilot-launcher');
+    var drawer = document.getElementById('sdv-copilot-drawer');
+    var closeBtn = document.getElementById('sdv-copilot-close');
+    var inputEl = document.getElementById('sdv-copilot-input');
+    var sendBtn = document.getElementById('sdv-copilot-send');
+    var msgsEl = document.getElementById('sdv-copilot-msgs');
+    var statusEl = document.getElementById('sdv-copilot-status');
+    var statusText = document.getElementById('sdv-copilot-status-text');
+
+    var sessionUuid = sessionStorage.getItem('sdv_copilot_uuid');
+    if (!sessionUuid) {
+        sessionUuid = 'cop_' + Math.random().toString(36).substring(2, 12) + Date.now().toString(36);
+        sessionStorage.setItem('sdv_copilot_uuid', sessionUuid);
+    }
+
+    function toggleDrawer(open) {
+        var shouldOpen = typeof open === 'boolean' ? open : !drawer.classList.contains('sdv-open');
+        if (shouldOpen) {
+            drawer.classList.add('sdv-open');
+            setTimeout(function() { inputEl.focus(); }, 100);
+        } else {
+            drawer.classList.remove('sdv-open');
+        }
+    }
+
+    if (launcher) launcher.addEventListener('click', function() { toggleDrawer(); });
+    if (closeBtn) closeBtn.addEventListener('click', function() { toggleDrawer(false); });
+
+    // Keyboard shortcut: Ctrl + Space / Cmd + Space
+    window.addEventListener('keydown', function(e) {
+        if ((e.ctrlKey || e.metaKey) && e.code === 'Space') {
+            e.preventDefault();
+            toggleDrawer();
+        } else if (e.key === 'Escape' && drawer.classList.contains('sdv-open')) {
+            toggleDrawer(false);
+        }
+    });
+
+    // Quick chips
+    document.querySelectorAll('.sdv-chip').forEach(function(chip) {
+        chip.addEventListener('click', function() {
+            var prompt = this.getAttribute('data-prompt');
+            if (prompt) {
+                inputEl.value = prompt;
+                sendMessage();
+            }
+        });
+    });
+
+    // Auto-expand textarea
+    inputEl.addEventListener('input', function() {
+        this.style.height = 'auto';
+        this.style.height = Math.min(this.scrollHeight, 100) + 'px';
+    });
+
+    inputEl.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
+        }
+    });
+
+    sendBtn.addEventListener('click', sendMessage);
+
+    function appendMsg(role, text) {
+        var d = document.createElement('div');
+        d.className = 'sdv-msg ' + (role === 'user' ? 'sdv-msg-user' : 'sdv-msg-bot');
+        d.innerHTML = text.replace(/\\n/g, '<br>');
+        msgsEl.appendChild(d);
+        msgsEl.scrollTop = msgsEl.scrollHeight;
+        return d;
+    }
+
+    function getPageContext() {
+        var params = new URLSearchParams(window.location.search);
+        return {
+            url: window.location.href,
+            pathname: window.location.pathname,
+            ticket_id: params.get('id') || params.get('ticketid') || '',
+            user_id: params.get('userid') || '',
+            service_id: params.get('serviceid') || params.get('hostingid') || '',
+            invoice_id: params.get('invoiceid') || '',
+            action: params.get('action') || ''
+        };
+    }
+
+    function sendMessage() {
+        var text = (inputEl.value || '').trim();
+        if (!text) return;
+
+        appendMsg('user', text);
+        inputEl.value = '';
+        inputEl.style.height = '38px';
+        inputEl.disabled = true;
+        sendBtn.disabled = true;
+
+        statusEl.style.display = 'flex';
+        statusText.textContent = 'Processing request...';
+
+        var body = new FormData();
+        body.append('action', 'copilot_send_message');
+        body.append('session_uuid', sessionUuid);
+        body.append('message', text);
+        body.append('page_context', JSON.stringify(getPageContext()));
+        body.append('token', csrfToken);
+
+        fetch(ajaxUrl, {
+            method: 'POST',
+            body: body
+        })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+            statusEl.style.display = 'none';
+            inputEl.disabled = false;
+            sendBtn.disabled = false;
+            inputEl.focus();
+
+            if (data.status === 'success' || data.success) {
+                var botMsg = appendMsg('bot', data.reply || 'Operation completed.');
+
+                // Render Action Cards if proposed
+                if (data.action_cards && data.action_cards.length > 0) {
+                    data.action_cards.forEach(function(card) {
+                        renderActionCard(botMsg, card);
+                    });
+                }
+            } else {
+                appendMsg('bot', '⚠️ ' + (data.message || data.error || 'Request failed.'));
+            }
+        })
+        .catch(function(err) {
+            statusEl.style.display = 'none';
+            inputEl.disabled = false;
+            sendBtn.disabled = false;
+            appendMsg('bot', '⚠️ Communication error: ' + err.message);
+        });
+    }
+
+    function renderActionCard(parentEl, card) {
+        var cardDiv = document.createElement('div');
+        var isDestructive = card.risk_tier === 3 || card.requires_password;
+        cardDiv.className = 'sdv-action-proposal' + (isDestructive ? ' tier-destructive' : '');
+
+        var diffRows = '';
+        if (card.diff) {
+            for (var prop in card.diff) {
+                if (card.diff.hasOwnProperty(prop)) {
+                    var beforeVal = card.diff[prop].before != null ? String(card.diff[prop].before) : '(none)';
+                    var afterVal = card.diff[prop].after != null ? String(card.diff[prop].after) : '(none)';
+                    diffRows += '<tr><td><strong>' + prop + '</strong></td><td class="sdv-diff-before">' + beforeVal + '</td><td>&rarr;</td><td class="sdv-diff-after">' + afterVal + '</td></tr>';
+                }
+            }
+        }
+
+        var pwdPrompt = isDestructive
+            ? '<div style="margin:8px 0;"><input type="password" class="sdv-tier3-pwd" placeholder="Enter admin password to authorize" style="width:100%;padding:6px;border-radius:4px;border:1px solid rgba(255,255,255,0.2);background:#1e1b2e;color:#fff;font-size:11px;"></div>'
+            : '';
+
+        cardDiv.innerHTML =
+            '<div class="sdv-action-header">' +
+                '<strong>' + (card.title || card.action_key) + '</strong>' +
+                '<span class="sdv-tier-pill' + (isDestructive ? ' tier-destructive' : '') + '">' +
+                    (card.risk_tier === 3 ? 'Tier 3 (Destructive)' : 'Tier 2 (Reversible)') +
+                '</span>' +
+            '</div>' +
+            '<div style="font-size:11px;color:#cbd5e1;">' + (card.description || '') + '</div>' +
+            (diffRows ? '<table class="sdv-action-diff-tbl"><tbody>' + diffRows + '</tbody></table>' : '') +
+            pwdPrompt +
+            '<div class="sdv-action-footer">' +
+                '<button type="button" class="sdv-btn-confirm">Confirm & Execute</button>' +
+                '<button type="button" class="sdv-btn-dismiss">Dismiss</button>' +
+            '</div>';
+
+        parentEl.appendChild(cardDiv);
+        msgsEl.scrollTop = msgsEl.scrollHeight;
+
+        var confirmBtn = cardDiv.querySelector('.sdv-btn-confirm');
+        var dismissBtn = cardDiv.querySelector('.sdv-btn-dismiss');
+
+        dismissBtn.addEventListener('click', function() {
+            cardDiv.remove();
+        });
+
+        confirmBtn.addEventListener('click', function() {
+            var pwd = isDestructive ? (cardDiv.querySelector('.sdv-tier3-pwd') ? cardDiv.querySelector('.sdv-tier3-pwd').value : '') : '';
+            if (isDestructive && !pwd) {
+                alert('Administrator password is required for Tier-3 operations.');
+                return;
+            }
+
+            confirmBtn.disabled = true;
+            confirmBtn.textContent = 'Executing...';
+
+            var form = new FormData();
+            form.append('action', 'copilot_execute_op');
+            form.append('action_key', card.action_key);
+            form.append('params', JSON.stringify(card.params || {}));
+            form.append('session_id', card.session_id || 0);
+            if (pwd) form.append('admin_password', pwd);
+            form.append('token', csrfToken);
+
+            fetch(ajaxUrl, {
+                method: 'POST',
+                body: form
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(execRes) {
+                if (execRes.status === 'success' || execRes.success) {
+                    var jId = execRes.journal_id || '';
+                    cardDiv.innerHTML =
+                        '<div style="color:#34d399;font-weight:700;font-size:12px;display:flex;justify-content:space-between;align-items:center;">' +
+                            '<span>✓ Executed ' + (jId ? '[Journal #' + jId + ']' : '') + '</span>' +
+                            (jId ? '<button type="button" class="sdv-btn-rollback" data-journal="' + jId + '">↩ Rollback</button>' : '') +
+                        '</div>' +
+                        '<div style="font-size:11px;color:#94a3b8;margin-top:4px;">' + (execRes.message || 'Operation executed successfully.') + '</div>';
+
+                    var rbBtn = cardDiv.querySelector('.sdv-btn-rollback');
+                    if (rbBtn) {
+                        rbBtn.addEventListener('click', function() {
+                            rollbackJournal(jId, cardDiv);
+                        });
+                    }
+                } else {
+                    confirmBtn.disabled = false;
+                    confirmBtn.textContent = 'Retry';
+                    alert('Execution failed: ' + (execRes.message || execRes.error || 'Unknown error'));
+                }
+            })
+            .catch(function(err) {
+                confirmBtn.disabled = false;
+                confirmBtn.textContent = 'Retry';
+                alert('Execution error: ' + err.message);
+            });
+        });
+    }
+
+    function rollbackJournal(journalId, containerEl) {
+        if (!confirm('Are you sure you want to rollback this operation?')) return;
+
+        var form = new FormData();
+        form.append('action', 'copilot_rollback_op');
+        form.append('journal_id', journalId);
+        form.append('token', csrfToken);
+
+        fetch(ajaxUrl, {
+            method: 'POST',
+            body: form
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.status === 'success' || data.success) {
+                containerEl.innerHTML = '<div style="color:#f59e0b;font-weight:700;font-size:12px;">↩ Rolled Back Successfully</div><div style="font-size:11px;color:#94a3b8;">' + (data.message || '') + '</div>';
+            } else {
+                alert('Rollback failed: ' + (data.message || data.error || 'Unknown error'));
+            }
+        })
+        .catch(function(err) {
+            alert('Rollback error: ' + err.message);
+        });
+    }
+})();
+</script>
+HTML;
+}
+
+// ---------------------------------------------------------------------------
+// Sahdev Client Live Chat Widget Injection
+// ---------------------------------------------------------------------------
+add_hook('ClientAreaFooterOutput', 1, function ($vars) {
+    return sahdev_render_client_livechat_widget(is_array($vars) ? $vars : []);
+});
+
+/**
+ * Render the Client Live Chat Widget in the customer portal.
+ */
+function sahdev_render_client_livechat_widget(array $vars): string
+{
+    try {
+        if (!\WHMCS\Database\Capsule::schema()->hasTable('tblsahdev_settings')) {
+            return '';
+        }
+        $settings = \WHMCS\Database\Capsule::table('tblsahdev_settings')->first();
+        if (!$settings || empty($settings->client_chat_enabled)) {
+            return '';
+        }
+
+        $clientId = !empty($_SESSION['uid']) ? (int) $_SESSION['uid'] : 0;
+        if (!empty($settings->client_chat_require_auth) && $clientId <= 0) {
+            return '';
+        }
+
+        $greeting = htmlspecialchars($settings->client_chat_greeting ?: "Hello! How can our organization assistant help you today?", ENT_QUOTES, 'UTF-8');
+    } catch (\Throwable $e) {
+        return '';
+    }
+
+    $ajaxEndpoint = 'modules/addons/sahdev/ajax.php';
+    $ajaxUrlJs = json_encode($ajaxEndpoint);
+    $greetingJs = json_encode($greeting);
+
+    return <<<HTML
+<style>
+/* ── Sahdev Client Live Chat Widget ────────────────────────────────── */
+#sdv-client-chat-launcher {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 10px 25px -5px rgba(37, 99, 235, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.2);
+    cursor: pointer;
+    z-index: 99980;
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+#sdv-client-chat-launcher:hover {
+    transform: scale(1.08) translateY(-2px);
+    box-shadow: 0 15px 30px -5px rgba(37, 99, 235, 0.7);
+}
+#sdv-client-chat-window {
+    position: fixed;
+    bottom: 96px;
+    right: 24px;
+    width: 380px;
+    height: 540px;
+    max-height: calc(100vh - 120px);
+    max-width: calc(100vw - 36px);
+    z-index: 99985;
+    background: #ffffff;
+    color: #1e293b;
+    border-radius: 16px;
+    box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(0, 0, 0, 0.08);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    opacity: 0;
+    transform: translateY(16px) scale(0.96);
+    pointer-events: none;
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+#sdv-client-chat-window.sdv-open {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    pointer-events: auto;
+}
+.sdv-cl-header {
+    background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+    color: #ffffff;
+    padding: 14px 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.sdv-cl-header-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.sdv-cl-avatar {
+    width: 36px;
+    height: 36px;
+    background: #3b82f6;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #ffffff;
+    font-weight: 700;
+}
+.sdv-cl-title { font-size: 14px; font-weight: 700; line-height: 1.2; }
+.sdv-cl-status { font-size: 11px; color: #34d399; display: flex; align-items: center; gap: 4px; }
+.sdv-cl-status-dot { width: 6px; height: 6px; background: #34d399; border-radius: 50%; }
+.sdv-cl-close {
+    background: transparent;
+    border: none;
+    color: #94a3b8;
+    font-size: 20px;
+    cursor: pointer;
+    line-height: 1;
+}
+.sdv-cl-close:hover { color: #ffffff; }
+.sdv-cl-escalate-bar {
+    background: #f8fafc;
+    border-bottom: 1px solid #e2e8f0;
+    padding: 8px 14px;
+    font-size: 11px;
+    color: #64748b;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.sdv-cl-escalate-btn {
+    color: #2563eb;
+    font-weight: 600;
+    text-decoration: none;
+    cursor: pointer;
+}
+.sdv-cl-escalate-btn:hover { text-decoration: underline; }
+.sdv-cl-messages {
+    flex: 1;
+    padding: 16px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    background: #f8fafc;
+}
+.sdv-cl-msg {
+    max-width: 85%;
+    padding: 10px 14px;
+    font-size: 13px;
+    line-height: 1.45;
+    word-break: break-word;
+}
+.sdv-cl-msg-user {
+    align-self: flex-end;
+    background: #2563eb;
+    color: #ffffff;
+    border-radius: 14px 14px 2px 14px;
+}
+.sdv-cl-msg-bot {
+    align-self: flex-start;
+    background: #ffffff;
+    color: #1e293b;
+    border-radius: 14px 14px 14px 2px;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.03);
+}
+.sdv-cl-footer {
+    padding: 12px;
+    background: #ffffff;
+    border-top: 1px solid #e2e8f0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.sdv-cl-input-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+#sdv-cl-input {
+    flex: 1;
+    border: 1px solid #cbd5e1;
+    border-radius: 20px;
+    padding: 8px 14px;
+    font-size: 13px;
+    font-family: inherit;
+    outline: none;
+}
+#sdv-cl-input:focus { border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15); }
+#sdv-cl-send {
+    background: #2563eb;
+    border: none;
+    color: #fff;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s;
+}
+#sdv-cl-send:hover { background: #1d4ed8; }
+.sdv-cl-branding {
+    font-size: 10px;
+    color: #94a3b8;
+    text-align: center;
+}
+</style>
+
+<!-- Client Launcher Button -->
+<div id="sdv-client-chat-launcher" title="Support Chat">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z"/>
+    </svg>
+</div>
+
+<!-- Client Chat Window -->
+<div id="sdv-client-chat-window">
+    <div class="sdv-cl-header">
+        <div class="sdv-cl-header-info">
+            <div class="sdv-cl-avatar">AI</div>
+            <div>
+                <div class="sdv-cl-title">Support Assistant</div>
+                <div class="sdv-cl-status"><span class="sdv-cl-status-dot"></span> Online &bull; 24/7 Knowledge Base</div>
+            </div>
+        </div>
+        <button type="button" class="sdv-cl-close" id="sdv-cl-close">&times;</button>
+    </div>
+
+    <div class="sdv-cl-escalate-bar">
+        <span>Need a support ticket?</span>
+        <a href="javascript:void(0);" class="sdv-cl-escalate-btn" id="sdv-cl-escalate">Convert to Ticket &rarr;</a>
+    </div>
+
+    <div class="sdv-cl-messages" id="sdv-cl-msgs">
+        <div class="sdv-cl-msg sdv-cl-msg-bot">{$greeting}</div>
+    </div>
+
+    <div class="sdv-cl-footer">
+        <div class="sdv-cl-input-row">
+            <input type="text" id="sdv-cl-input" placeholder="Ask a question..." autocomplete="off" />
+            <button type="button" id="sdv-cl-send" title="Send message">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+            </button>
+        </div>
+        <div class="sdv-cl-branding">Powered by Sahdev AI</div>
+    </div>
+</div>
+
+<script>
+(function() {
+    var ajaxUrl = {$ajaxUrlJs};
+    var launcher = document.getElementById('sdv-client-chat-launcher');
+    var chatWin = document.getElementById('sdv-client-chat-window');
+    var closeBtn = document.getElementById('sdv-cl-close');
+    var inputEl = document.getElementById('sdv-cl-input');
+    var sendBtn = document.getElementById('sdv-cl-send');
+    var msgsEl = document.getElementById('sdv-cl-msgs');
+    var escalateBtn = document.getElementById('sdv-cl-escalate');
+
+    var visitorToken = localStorage.getItem('sdv_visitor_token');
+    if (!visitorToken) {
+        visitorToken = 'vt_' + Math.random().toString(36).substring(2, 12) + Date.now().toString(36);
+        localStorage.setItem('sdv_visitor_token', visitorToken);
+    }
+
+    var sessionUuid = null;
+    var isInitialized = false;
+
+    function toggleChat(open) {
+        var shouldOpen = typeof open === 'boolean' ? open : !chatWin.classList.contains('sdv-open');
+        if (shouldOpen) {
+            chatWin.classList.add('sdv-open');
+            if (!isInitialized) initChat();
+            setTimeout(function() { inputEl.focus(); }, 150);
+        } else {
+            chatWin.classList.remove('sdv-open');
+        }
+    }
+
+    if (launcher) launcher.addEventListener('click', function() { toggleChat(); });
+    if (closeBtn) closeBtn.addEventListener('click', function() { toggleChat(false); });
+
+    function appendClMsg(role, text) {
+        var d = document.createElement('div');
+        d.className = 'sdv-cl-msg ' + (role === 'user' ? 'sdv-cl-msg-user' : 'sdv-cl-msg-bot');
+        d.innerHTML = text.replace(/\\n/g, '<br>');
+        msgsEl.appendChild(d);
+        msgsEl.scrollTop = msgsEl.scrollHeight;
+        return d;
+    }
+
+    function initChat() {
+        isInitialized = true;
+        var form = new FormData();
+        form.append('action', 'client_chat_init');
+        form.append('visitor_token', visitorToken);
+        form.append('page_url', window.location.href);
+
+        fetch(ajaxUrl, { method: 'POST', body: form })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.status === 'success') {
+                sessionUuid = data.session_uuid;
+                if (data.messages && data.messages.length > 0) {
+                    msgsEl.innerHTML = '';
+                    data.messages.forEach(function(m) {
+                        appendClMsg(m.sender_type === 'user' ? 'user' : 'bot', m.message_text);
+                    });
+                }
+            }
+        })
+        .catch(function(e) { /* ignore */ });
+    }
+
+    function sendClientMessage() {
+        var text = (inputEl.value || '').trim();
+        if (!text) return;
+
+        appendClMsg('user', text);
+        inputEl.value = '';
+        inputEl.disabled = true;
+        sendBtn.disabled = true;
+
+        var tempBot = appendClMsg('bot', 'Typing...');
+
+        var form = new FormData();
+        form.append('action', 'client_chat_message');
+        form.append('visitor_token', visitorToken);
+        form.append('message', text);
+
+        fetch(ajaxUrl, { method: 'POST', body: form })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            inputEl.disabled = false;
+            sendBtn.disabled = false;
+            inputEl.focus();
+
+            if (data.status === 'success' || data.success) {
+                tempBot.innerHTML = (data.reply || 'Message received.').replace(/\\n/g, '<br>');
+            } else {
+                tempBot.innerHTML = '⚠️ ' + (data.message || 'Could not send message.');
+            }
+        })
+        .catch(function(err) {
+            inputEl.disabled = false;
+            sendBtn.disabled = false;
+            tempBot.innerHTML = '⚠️ Connection error. Please try again.';
+        });
+    }
+
+    if (sendBtn) sendBtn.addEventListener('click', sendClientMessage);
+    if (inputEl) {
+        inputEl.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                sendClientMessage();
+            }
+        });
+    }
+
+    if (escalateBtn) {
+        escalateBtn.addEventListener('click', function() {
+            if (!sessionUuid) {
+                alert('Please start a conversation before converting to a ticket.');
+                return;
+            }
+            if (!confirm('Would you like to open a support ticket with your chat transcript?')) return;
+
+            escalateBtn.textContent = 'Creating ticket...';
+            var form = new FormData();
+            form.append('action', 'client_chat_escalate');
+            form.append('session_uuid', sessionUuid);
+
+            fetch(ajaxUrl, { method: 'POST', body: form })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.status === 'success' || data.success) {
+                    var ticketId = data.ticket_id || '';
+                    var tid = data.tid || ticketId;
+                    var ticketUrl = 'viewticket.php?tid=' + encodeURIComponent(tid);
+                    appendClMsg('bot', '✅ <strong>Support Ticket #' + tid + ' created!</strong><br><a href="' + ticketUrl + '" style="color:#2563eb;font-weight:600;text-decoration:underline;">Click here to view your ticket &rarr;</a>');
+                    escalateBtn.style.display = 'none';
+                } else {
+                    escalateBtn.textContent = 'Convert to Ticket →';
+                    alert('Escalation failed: ' + (data.message || data.error || 'Unknown error'));
+                }
+            })
+            .catch(function(err) {
+                escalateBtn.textContent = 'Convert to Ticket →';
+                alert('Error escalating ticket: ' + err.message);
+            });
+        });
+    }
+})();
+</script>
+HTML;
+}
+
 

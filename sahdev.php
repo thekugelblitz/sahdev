@@ -1207,6 +1207,12 @@ function sahdev_activate()
             }
         }
 
+        // 3.x Schema migrations (Chat, Ops, Metrics)
+        try {
+            require_once __DIR__ . '/lib/SchemaManager.php';
+            \Sahdev\Lib\SchemaManager::ensureAll();
+        } catch (\Throwable $ex) {}
+
         return [
             // Supported values here include: success, error or info
             'status' => 'success',
@@ -1257,8 +1263,10 @@ function sahdev_upgrade($vars)
     try {
         require_once __DIR__ . '/lib/AdminPreferences.php';
         require_once __DIR__ . '/lib/PermissionService.php';
+        require_once __DIR__ . '/lib/SchemaManager.php';
         \Sahdev\Lib\AdminPreferences::ensureSchema();
         \Sahdev\Lib\PermissionService::ensureSchema();
+        \Sahdev\Lib\SchemaManager::ensureAll();
     } catch (\Throwable $e) {
         // Non-fatal; ticket/ajax/admin paths also run ensureSchema
     }

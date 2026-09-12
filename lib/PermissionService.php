@@ -27,6 +27,11 @@ class PermissionService
     public const PERM_ANALYTICS_VIEW    = 'analytics_view';
     public const PERM_AUDIT_MANAGE      = 'audit_manage';
     public const PERM_SETTINGS_MANAGE   = 'settings_manage';
+    public const PERM_COPILOT_USE       = 'copilot_use';
+    public const PERM_OPS_EXECUTE       = 'ops_execute';
+    public const PERM_OPS_ROLLBACK      = 'ops_rollback';
+    public const PERM_METRICS_VIEW      = 'metrics_view';
+    public const PERM_CLIENT_CHAT_MANAGE = 'client_chat_manage';
 
     /**
      * Cache for resolved permissions within the same request lifecycle.
@@ -122,10 +127,41 @@ class PermissionService
                     ],
                 ],
             ],
+            'chat_copilot' => [
+                'category_label' => 'Admin Ops Copilot & Client Chat',
+                'category_icon'  => 'fa-comments',
+                'permissions'    => [
+                    self::PERM_COPILOT_USE => [
+                        'label'       => 'Access Admin Ops Copilot',
+                        'description' => 'Open and interact with the floating AI Copilot drawer and full-page Ops Hub.',
+                        'risk'        => 'low',
+                    ],
+                    self::PERM_OPS_EXECUTE => [
+                        'label'       => 'Confirm & Execute WHMCS Safe Ops',
+                        'description' => 'Approve and trigger action cards (ticket changes, client updates, service suspensions/credits).',
+                        'risk'        => 'high',
+                    ],
+                    self::PERM_OPS_ROLLBACK => [
+                        'label'       => 'Execute 1-Click Rollback on Ops',
+                        'description' => 'Revert executed operations via chat action cards or the Ops Rollback Journal.',
+                        'risk'        => 'high',
+                    ],
+                    self::PERM_CLIENT_CHAT_MANAGE => [
+                        'label'       => 'Client Live Chat Management & Takeover',
+                        'description' => 'Configure client chat settings, view active visitor chats, and take over client conversations.',
+                        'risk'        => 'medium',
+                    ],
+                ],
+            ],
             'administration' => [
-                'category_label' => 'Knowledge & Module Administration',
+                'category_label' => 'Knowledge, Metrics & Module Administration',
                 'category_icon'  => 'fa-shield-alt',
                 'permissions'    => [
+                    self::PERM_METRICS_VIEW => [
+                        'label'       => 'View Organization Intelligence & Metrics Hub',
+                        'description' => 'Access MetricsCube-style business analytics (MRR, Churn, LTV, Gateway health, AI anomalies).',
+                        'risk'        => 'medium',
+                    ],
                     self::PERM_KNOWLEDGE_MANAGE => [
                         'label'       => 'Manage RAG Knowledge Base & Canned Content',
                         'description' => 'Upload documents, sync WHMCS KB, and create/edit organizational canned response templates.',
