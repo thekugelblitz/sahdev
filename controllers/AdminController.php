@@ -471,20 +471,21 @@ class AdminController
     private function getNavigationMarkup(string $activeTab = 'settings'): string
     {
         $base = htmlspecialchars($this->moduleVars['modulelink']);
-        $adminId = (int) ($_SESSION['adminid'] ?? 0);
         require_once dirname(__DIR__) . '/lib/PermissionService.php';
         \Sahdev\Lib\PermissionService::ensureSchema();
+        $adminId = \Sahdev\Lib\PermissionService::resolveCurrentAdminId();
+        $isSuper = ($adminId === 1) || \Sahdev\Lib\PermissionService::isSuperAdmin($adminId);
 
-        $hasSettingsPerm = \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_SETTINGS_MANAGE);
-        $hasIncidentsPerm = \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_INCIDENTS_MANAGE) || \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_TELEMETRY_VIEW);
-        $hasToolsPerm = \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_TOOLS_EXECUTE);
-        $hasKbPerm = \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_KNOWLEDGE_MANAGE);
-        $hasCannedPerm = \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_CANNED_KB) || $hasKbPerm;
-        $hasAnalyticsPerm = \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_ANALYTICS_VIEW);
-        $hasAuditPerm = \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_AUDIT_MANAGE);
-        $hasCopilotPerm = \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_COPILOT_USE);
-        $hasMetricsPerm = \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_METRICS_VIEW);
-        $hasClientChatPerm = \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_CLIENT_CHAT_MANAGE);
+        $hasSettingsPerm = $isSuper || \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_SETTINGS_MANAGE);
+        $hasIncidentsPerm = $isSuper || \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_INCIDENTS_MANAGE) || \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_TELEMETRY_VIEW);
+        $hasToolsPerm = $isSuper || \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_TOOLS_EXECUTE);
+        $hasKbPerm = $isSuper || \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_KNOWLEDGE_MANAGE);
+        $hasCannedPerm = $isSuper || \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_CANNED_KB) || $hasKbPerm;
+        $hasAnalyticsPerm = $isSuper || \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_ANALYTICS_VIEW);
+        $hasAuditPerm = $isSuper || \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_AUDIT_MANAGE);
+        $hasCopilotPerm = $isSuper || \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_COPILOT_USE);
+        $hasMetricsPerm = $isSuper || \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_METRICS_VIEW);
+        $hasClientChatPerm = $isSuper || \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_CLIENT_CHAT_MANAGE);
 
         $tabs = [];
         if ($hasCopilotPerm) {
@@ -588,6 +589,19 @@ class AdminController
             $html .= sprintf('<a href="%s" class="sahdev-nav-btn%s">%s</a>', $tab['url'], $activeClass, $tab['label']);
         }
         $html .= '</div>';
+
+        // Auto-render copilot drawer on all Sahdev module pages if not yet rendered
+        if (function_exists('sahdev_render_admin_copilot_drawer')) {
+            $html .= sahdev_render_admin_copilot_drawer();
+        } else {
+            $hooksFile = dirname(__DIR__) . '/hooks.php';
+            if (file_exists($hooksFile) && function_exists('add_hook')) {
+                require_once $hooksFile;
+                if (function_exists('sahdev_render_admin_copilot_drawer')) {
+                    $html .= sahdev_render_admin_copilot_drawer();
+                }
+            }
+        }
 
         return $html;
     }
@@ -1108,6 +1122,34 @@ class AdminController
             }
             $taskProviderMapJson = $taskProviderMap === [] ? null : json_encode($taskProviderMap);
 
+            // Admin Ops Copilot Settings
+            $copilotEnabled = isset($_POST['copilot_enabled_submitted']) ? (!empty($_POST['copilot_enabled']) ? 1 : 0) : (!empty($_POST['copilot_enabled']) ? 1 : 1);
+            $copilotPrimaryProviderId = (int) ($_POST['copilot_primary_provider_id'] ?? 0);
+            $copilotFallbackProviderId = (int) ($_POST['copilot_fallback_provider_id'] ?? 0);
+            $copilotTemperature = (float) ($_POST['copilot_temperature'] ?? 0.70);
+            $copilotMaxTokens = max(256, (int) ($_POST['copilot_max_tokens'] ?? 2048));
+            $copilotStreamEnabled = !empty($_POST['copilot_stream_enabled']) ? 1 : 0;
+            $copilotShortcutKey = trim($_POST['copilot_shortcut_key'] ?? 'Ctrl+Space');
+            $copilotSystemPrompt = trim($_POST['copilot_system_prompt'] ?? '');
+            $opsRequirePasswordTier3 = !empty($_POST['ops_require_password_tier3']) ? 1 : 0;
+            $opsJournalRetentionDays = max(7, min(365, (int) ($_POST['ops_journal_retention_days'] ?? 90)));
+
+            // Client Live Chat Settings
+            $clientChatEnabled = !empty($_POST['client_chat_enabled']) ? 1 : 0;
+            $clientChatProviderId = (int) ($_POST['client_chat_provider_id'] ?? 0);
+            $clientChatTitle = trim($_POST['client_chat_title'] ?? 'Hosting Support Assistant');
+            $clientChatBrandColor = trim($_POST['client_chat_brand_color'] ?? '#0d6efd');
+            $clientChatPosition = in_array($_POST['client_chat_position'] ?? '', ['bottom-left', 'bottom-right']) ? $_POST['client_chat_position'] : 'bottom-right';
+            $clientChatWelcomeMessage = trim($_POST['client_chat_welcome_message'] ?? 'Hello! How can we assist you today?');
+            $clientChatKbEnabled = !empty($_POST['client_chat_kb_enabled']) ? 1 : 0;
+            $clientChatRequirePrechat = !empty($_POST['client_chat_require_prechat']) ? 1 : 0;
+            $clientChatProactiveDelay = max(0, (int) ($_POST['client_chat_proactive_delay'] ?? 15));
+            $clientChatSystemPrompt = trim($_POST['client_chat_system_prompt'] ?? '');
+
+            // Organization Intelligence Settings
+            $metricsCronEnabled = !empty($_POST['metrics_cron_enabled']) ? 1 : 0;
+            $metricsRetentionDays = max(30, min(730, (int) ($_POST['metrics_retention_days'] ?? 365)));
+
             // Ensure valid bounds
             if ($temperature < 0 || $temperature > 1) {
                 $temperature = 0.70;
@@ -1165,6 +1207,28 @@ class AdminController
                     'incident_window_hours' => $incidentWindowHours,
                     'rag_knowledge_enabled' => $ragKnowledgeEnabled,
                     'rag_max_snippets' => $ragMaxSnippets,
+                    'copilot_enabled' => $copilotEnabled,
+                    'copilot_primary_provider_id' => $copilotPrimaryProviderId ?: null,
+                    'copilot_fallback_provider_id' => $copilotFallbackProviderId ?: null,
+                    'copilot_temperature' => $copilotTemperature,
+                    'copilot_max_tokens' => $copilotMaxTokens,
+                    'copilot_stream_enabled' => $copilotStreamEnabled,
+                    'copilot_shortcut_key' => $copilotShortcutKey,
+                    'copilot_system_prompt' => $copilotSystemPrompt,
+                    'ops_require_password_tier3' => $opsRequirePasswordTier3,
+                    'ops_journal_retention_days' => $opsJournalRetentionDays,
+                    'client_chat_enabled' => $clientChatEnabled,
+                    'client_chat_provider_id' => $clientChatProviderId ?: null,
+                    'client_chat_title' => $clientChatTitle,
+                    'client_chat_brand_color' => $clientChatBrandColor,
+                    'client_chat_position' => $clientChatPosition,
+                    'client_chat_welcome_message' => $clientChatWelcomeMessage,
+                    'client_chat_kb_enabled' => $clientChatKbEnabled,
+                    'client_chat_require_prechat' => $clientChatRequirePrechat,
+                    'client_chat_proactive_delay' => $clientChatProactiveDelay,
+                    'client_chat_system_prompt' => $clientChatSystemPrompt,
+                    'metrics_cron_enabled' => $metricsCronEnabled,
+                    'metrics_retention_days' => $metricsRetentionDays,
                     'updated_at' => \Carbon\Carbon::now(),
                 ]
             );
@@ -1224,6 +1288,28 @@ class AdminController
                 'incident_window_hours' => 3,
                 'rag_knowledge_enabled' => 1,
                 'rag_max_snippets' => 3,
+                'copilot_enabled' => 1,
+                'copilot_primary_provider_id' => null,
+                'copilot_fallback_provider_id' => null,
+                'copilot_temperature' => 0.70,
+                'copilot_max_tokens' => 2048,
+                'copilot_stream_enabled' => 1,
+                'copilot_shortcut_key' => 'Ctrl+Space',
+                'copilot_system_prompt' => '',
+                'ops_require_password_tier3' => 1,
+                'ops_journal_retention_days' => 90,
+                'client_chat_enabled' => 0,
+                'client_chat_provider_id' => null,
+                'client_chat_title' => 'Hosting Support Assistant',
+                'client_chat_brand_color' => '#0d6efd',
+                'client_chat_position' => 'bottom-right',
+                'client_chat_welcome_message' => 'Hello! How can we assist you today? Ask me about your services, billing, or hosting setup.',
+                'client_chat_kb_enabled' => 1,
+                'client_chat_require_prechat' => 0,
+                'client_chat_proactive_delay' => 15,
+                'client_chat_system_prompt' => '',
+                'metrics_cron_enabled' => 1,
+                'metrics_retention_days' => 365,
             ];
         }
 
@@ -1255,12 +1341,23 @@ class AdminController
                 <?php echo $csrfToken; ?>
                 <input type="hidden" name="save_settings" value="1">
 
+                <!-- Settings Navigation Sub-Tabs -->
+                <div class="sahdev-subtabs" style="display: flex; gap: 8px; margin-bottom: 25px; border-bottom: 2px solid #e2e8f0; padding-bottom: 12px; flex-wrap: wrap;">
+                    <button type="button" class="btn btn-primary sdv-settings-tab-btn active" data-tab="tab-ticket" onclick="switchSettingsSection('tab-ticket', this);"><i class="fas fa-ticket-alt"></i> Ticket AI & Automation</button>
+                    <button type="button" class="btn btn-default sdv-settings-tab-btn" data-tab="tab-copilot" onclick="switchSettingsSection('tab-copilot', this);"><i class="fas fa-terminal"></i> Admin Ops Copilot & Safe Ops</button>
+                    <button type="button" class="btn btn-default sdv-settings-tab-btn" data-tab="tab-clientchat" onclick="switchSettingsSection('tab-clientchat', this);"><i class="fas fa-comments"></i> Client Live Chat Widget</button>
+                    <button type="button" class="btn btn-default sdv-settings-tab-btn" data-tab="tab-intelligence" onclick="switchSettingsSection('tab-intelligence', this);"><i class="fas fa-chart-pie"></i> Organization Intelligence</button>
+                </div>
+
+                <!-- TAB 1: Ticket AI & Automation -->
+                <div id="tab-ticket" class="sdv-settings-pane">
+
                 <div class="row" style="display: flex; gap: 20px; margin-bottom: 15px;">
                     <div class="form-group" style="flex: 1;">
                         <label style="font-weight: 600; display: block; margin-bottom: 5px;">Primary AI Provider 🌟</label>
                         <select name="primary_provider_id" class="form-control">
                             <?php foreach ($providers as $provider): ?>
-                                <option value="<?php echo $provider->id; ?>" <?php echo ($settings->primary_provider_id == $provider->id) ? 'selected' : ''; ?>>
+                                <option value="<?php echo $provider->id; ?>" <?php echo (($settings->primary_provider_id ?? 0) == $provider->id) ? 'selected' : ''; ?>>
                                     <?php echo htmlspecialchars($provider->name . ' (' . ucfirst($provider->provider_type) . ')'); ?>
                                 </option>
                             <?php endforeach; ?>
@@ -1274,7 +1371,7 @@ class AdminController
                         <select name="fallback_provider_id" class="form-control">
                             <option value="0">-- None (Don't use fallback) --</option>
                             <?php foreach ($providers as $provider): ?>
-                                <option value="<?php echo $provider->id; ?>" <?php echo ($settings->fallback_provider_id == $provider->id) ? 'selected' : ''; ?>>
+                                <option value="<?php echo $provider->id; ?>" <?php echo (($settings->fallback_provider_id ?? 0) == $provider->id) ? 'selected' : ''; ?>>
                                     <?php echo htmlspecialchars($provider->name . ' (' . ucfirst($provider->provider_type) . ')'); ?>
                                 </option>
                             <?php endforeach; ?>
@@ -1642,11 +1739,253 @@ class AdminController
                     </div>
                 </div>
 
-                <button type="submit" class="btn btn-primary" style="padding: 10px 20px; font-weight: 600;">
-                    <i class="fas fa-save" style="margin-right: 5px;"></i> Save General Settings
-                </button>
+                </div><!-- end #tab-ticket -->
+
+                <!-- TAB 2: Admin Ops Copilot & Safe Ops -->
+                <div id="tab-copilot" class="sdv-settings-pane" style="display:none;">
+                    <div class="panel panel-default" style="margin-bottom: 25px; border-left: 4px solid #6366f1;">
+                        <div class="panel-heading" style="background: #faf5ff;">
+                            <h4 style="margin: 0; font-size: 15px; color: #4338ca;"><i class="fas fa-terminal"></i> Admin Ops Copilot Configuration</h4>
+                        </div>
+                        <div class="panel-body">
+                            <input type="hidden" name="copilot_enabled_submitted" value="1">
+                            <div class="form-group" style="margin-bottom: 20px;">
+                                <label style="font-weight: 600; display: block; margin-bottom: 8px;">
+                                    <input type="checkbox" name="copilot_enabled" value="1" <?php echo !empty($settings->copilot_enabled) ? 'checked' : ''; ?>>
+                                    Enable Admin Ops Copilot Floating Drawer & Global Shortcut
+                                </label>
+                                <small class="text-muted">Displays the interactive Copilot launcher in the bottom right of the WHMCS admin interface with keyboard toggle shortcut.</small>
+                            </div>
+
+                            <div class="row" style="display: flex; gap: 20px; margin-bottom: 15px; flex-wrap: wrap;">
+                                <div class="form-group" style="flex: 1; min-width: 250px;">
+                                    <label style="font-weight: 600; display: block; margin-bottom: 5px;">Copilot Primary Provider / Model 🚀</label>
+                                    <select name="copilot_primary_provider_id" class="form-control">
+                                        <option value="0" <?php echo empty($settings->copilot_primary_provider_id) ? 'selected' : ''; ?>>Use Primary AI Provider (Default)</option>
+                                        <?php foreach ($providers as $provider): ?>
+                                            <option value="<?php echo $provider->id; ?>" <?php echo ((int)($settings->copilot_primary_provider_id ?? 0) === (int)$provider->id) ? 'selected' : ''; ?>>
+                                                <?php echo htmlspecialchars($provider->name . ' — ' . $provider->model_name . ' (' . ucfirst($provider->provider_type) . ')'); ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                    <small class="text-muted">High-intelligence reasoning model for safe ops planning and WHMCS tool calling.</small>
+                                </div>
+                                <div class="form-group" style="flex: 1; min-width: 250px;">
+                                    <label style="font-weight: 600; display: block; margin-bottom: 5px;">Copilot Fallback Provider 🛡️</label>
+                                    <select name="copilot_fallback_provider_id" class="form-control">
+                                        <option value="0" <?php echo empty($settings->copilot_fallback_provider_id) ? 'selected' : ''; ?>>-- None (Or Inherit Global Fallback) --</option>
+                                        <?php foreach ($providers as $provider): ?>
+                                            <option value="<?php echo $provider->id; ?>" <?php echo ((int)($settings->copilot_fallback_provider_id ?? 0) === (int)$provider->id) ? 'selected' : ''; ?>>
+                                                <?php echo htmlspecialchars($provider->name . ' — ' . $provider->model_name); ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                    <small class="text-muted">Backup provider if the primary Copilot model encounters rate limits or downtime.</small>
+                                </div>
+                            </div>
+
+                            <div class="row" style="display: flex; gap: 20px; margin-bottom: 15px; flex-wrap: wrap;">
+                                <div class="form-group" style="flex: 1; min-width: 180px;">
+                                    <label style="font-weight: 600; display: block; margin-bottom: 5px;">Temperature</label>
+                                    <input type="number" step="0.05" min="0.0" max="1.0" name="copilot_temperature" class="form-control" value="<?php echo htmlspecialchars($settings->copilot_temperature ?? '0.70'); ?>">
+                                    <small class="text-muted">Recommended: 0.20 - 0.70 for precise operations.</small>
+                                </div>
+                                <div class="form-group" style="flex: 1; min-width: 180px;">
+                                    <label style="font-weight: 600; display: block; margin-bottom: 5px;">Max Tokens</label>
+                                    <input type="number" step="128" min="256" max="8192" name="copilot_max_tokens" class="form-control" value="<?php echo htmlspecialchars($settings->copilot_max_tokens ?? '2048'); ?>">
+                                    <small class="text-muted">Maximum token length per response.</small>
+                                </div>
+                                <div class="form-group" style="flex: 1; min-width: 180px;">
+                                    <label style="font-weight: 600; display: block; margin-bottom: 5px;">Keyboard Shortcut</label>
+                                    <input type="text" name="copilot_shortcut_key" class="form-control" value="<?php echo htmlspecialchars($settings->copilot_shortcut_key ?? 'Ctrl+Space'); ?>">
+                                    <small class="text-muted">Default: Ctrl+Space</small>
+                                </div>
+                            </div>
+
+                            <div class="form-group" style="margin-bottom: 15px;">
+                                <label style="font-weight: 600;">
+                                    <input type="checkbox" name="copilot_stream_enabled" value="1" <?php echo !empty($settings->copilot_stream_enabled) ? 'checked' : ''; ?>>
+                                    Enable Real-Time Streaming (SSE tokens display as they are generated)
+                                </label>
+                            </div>
+
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label style="font-weight: 600; display: block; margin-bottom: 5px;">Copilot System Prompt & Operational Guidelines</label>
+                                <textarea name="copilot_system_prompt" class="form-control" rows="4" placeholder="Enter custom guidelines for the Admin Ops Copilot (e.g., standard billing escalation policies, verification rules)..."><?php echo htmlspecialchars($settings->copilot_system_prompt ?? ''); ?></textarea>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="panel panel-default" style="margin-bottom: 25px; border-left: 4px solid #ef4444;">
+                        <div class="panel-heading" style="background: #fef2f2;">
+                            <h4 style="margin: 0; font-size: 15px; color: #b91c1c;"><i class="fas fa-shield-alt"></i> Safe Ops & Rollback Governance</h4>
+                        </div>
+                        <div class="panel-body">
+                            <p class="text-muted" style="margin-top: 0; font-size: 13px;">
+                                All WHMCS actions initiated through Copilot pass through a 3-tier risk classification. Safe operations capture a pre-change snapshot and can be reverted with 1-click atomic rollback.
+                            </p>
+                            <div class="form-group" style="margin-bottom: 15px;">
+                                <label style="font-weight: 600;">
+                                    <input type="checkbox" name="ops_require_password_tier3" value="1" <?php echo !empty($settings->ops_require_password_tier3) ? 'checked' : ''; ?>>
+                                    Require WHMCS Admin Password Verification for Tier 3 Destructive Operations
+                                </label>
+                                <small class="text-muted" style="display: block;">Mandates entering your current WHMCS admin password before executing irreversible actions (account termination, invoice deletion, balance refunds &gt; $100).</small>
+                            </div>
+                            <div class="form-group" style="max-width: 300px; margin-bottom: 0;">
+                                <label style="font-weight: 600; display: block; margin-bottom: 5px;">Ops Journal Retention (Days)</label>
+                                <input type="number" min="7" max="365" name="ops_journal_retention_days" class="form-control" value="<?php echo htmlspecialchars($settings->ops_journal_retention_days ?? 90); ?>">
+                                <small class="text-muted">How long atomic rollback snapshots and operation journals are preserved.</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB 3: Client Live Chat Widget -->
+                <div id="tab-clientchat" class="sdv-settings-pane" style="display:none;">
+                    <div class="panel panel-default" style="margin-bottom: 25px; border-left: 4px solid #0d6efd;">
+                        <div class="panel-heading" style="background: #eff6ff;">
+                            <h4 style="margin: 0; font-size: 15px; color: #1d4ed8;"><i class="fas fa-comments"></i> Client Area Live Chat Widget</h4>
+                        </div>
+                        <div class="panel-body">
+                            <div class="form-group" style="margin-bottom: 20px;">
+                                <label style="font-weight: 600; display: block; margin-bottom: 8px;">
+                                    <input type="checkbox" name="client_chat_enabled" value="1" <?php echo !empty($settings->client_chat_enabled) ? 'checked' : ''; ?>>
+                                    Enable Client Live Chat Widget on WHMCS Client Portal
+                                </label>
+                                <small class="text-muted">Injects the AI chat widget into the client area for instant customer support, knowledge grounding, and 1-click ticket escalation.</small>
+                            </div>
+
+                            <div class="row" style="display: flex; gap: 20px; margin-bottom: 15px; flex-wrap: wrap;">
+                                <div class="form-group" style="flex: 1; min-width: 250px;">
+                                    <label style="font-weight: 600; display: block; margin-bottom: 5px;">Live Chat AI Provider / Model</label>
+                                    <select name="client_chat_provider_id" class="form-control">
+                                        <option value="0" <?php echo empty($settings->client_chat_provider_id) ? 'selected' : ''; ?>>Use Primary AI Provider</option>
+                                        <?php foreach ($providers as $provider): ?>
+                                            <option value="<?php echo $provider->id; ?>" <?php echo ((int)($settings->client_chat_provider_id ?? 0) === (int)$provider->id) ? 'selected' : ''; ?>>
+                                                <?php echo htmlspecialchars($provider->name . ' — ' . $provider->model_name); ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                    <small class="text-muted">Fast model recommended for real-time customer chats.</small>
+                                </div>
+                                <div class="form-group" style="flex: 1; min-width: 250px;">
+                                    <label style="font-weight: 600; display: block; margin-bottom: 5px;">Widget Header Title</label>
+                                    <input type="text" name="client_chat_title" class="form-control" value="<?php echo htmlspecialchars($settings->client_chat_title ?? 'Hosting Support Assistant'); ?>">
+                                    <small class="text-muted">Displayed in the header bar of the client chat window.</small>
+                                </div>
+                            </div>
+
+                            <div class="row" style="display: flex; gap: 20px; margin-bottom: 15px; flex-wrap: wrap;">
+                                <div class="form-group" style="flex: 1; min-width: 180px;">
+                                    <label style="font-weight: 600; display: block; margin-bottom: 5px;">Brand Accent Color</label>
+                                    <input type="color" name="client_chat_brand_color" class="form-control" style="height: 38px; padding: 2px;" value="<?php echo htmlspecialchars($settings->client_chat_brand_color ?? '#0d6efd'); ?>">
+                                    <small class="text-muted">Matches your WHMCS client theme accent.</small>
+                                </div>
+                                <div class="form-group" style="flex: 1; min-width: 180px;">
+                                    <label style="font-weight: 600; display: block; margin-bottom: 5px;">Widget Position</label>
+                                    <select name="client_chat_position" class="form-control">
+                                        <option value="bottom-right" <?php echo (($settings->client_chat_position ?? 'bottom-right') === 'bottom-right') ? 'selected' : ''; ?>>Bottom Right</option>
+                                        <option value="bottom-left" <?php echo (($settings->client_chat_position ?? '') === 'bottom-left') ? 'selected' : ''; ?>>Bottom Left</option>
+                                    </select>
+                                </div>
+                                <div class="form-group" style="flex: 1; min-width: 180px;">
+                                    <label style="font-weight: 600; display: block; margin-bottom: 5px;">Proactive Popup Delay (Seconds)</label>
+                                    <input type="number" min="0" max="120" name="client_chat_proactive_delay" class="form-control" value="<?php echo htmlspecialchars($settings->client_chat_proactive_delay ?? 15); ?>">
+                                    <small class="text-muted">0 to disable automatic popup.</small>
+                                </div>
+                            </div>
+
+                            <div class="form-group" style="margin-bottom: 15px;">
+                                <label style="font-weight: 600; display: block; margin-bottom: 5px;">Welcome Greeting Message</label>
+                                <textarea name="client_chat_welcome_message" class="form-control" rows="2"><?php echo htmlspecialchars($settings->client_chat_welcome_message ?? 'Hello! How can we assist you today? Ask me about your services, billing, or hosting setup.'); ?></textarea>
+                            </div>
+
+                            <div class="form-group" style="margin-bottom: 15px;">
+                                <label style="font-weight: 600;">
+                                    <input type="checkbox" name="client_chat_kb_enabled" value="1" <?php echo !empty($settings->client_chat_kb_enabled) ? 'checked' : ''; ?>>
+                                    Ground Live Chat Replies with WHMCS Knowledge Base Articles (RAG)
+                                </label>
+                                <small class="text-muted" style="display: block;">Automatically searches published KB articles to provide verified, accurate hosting answers.</small>
+                            </div>
+
+                            <div class="form-group" style="margin-bottom: 15px;">
+                                <label style="font-weight: 600;">
+                                    <input type="checkbox" name="client_chat_require_prechat" value="1" <?php echo !empty($settings->client_chat_require_prechat) ? 'checked' : ''; ?>>
+                                    Require Client Login (Suppress widget for unregistered visitors)
+                                </label>
+                            </div>
+
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label style="font-weight: 600; display: block; margin-bottom: 5px;">Customer-Facing AI System Prompt</label>
+                                <textarea name="client_chat_system_prompt" class="form-control" rows="4" placeholder="Instructions for customer conversations (e.g. tone, refund limitations, when to escalate to ticket)..."><?php echo htmlspecialchars($settings->client_chat_system_prompt ?? ''); ?></textarea>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB 4: Organization Intelligence -->
+                <div id="tab-intelligence" class="sdv-settings-pane" style="display:none;">
+                    <div class="panel panel-default" style="margin-bottom: 25px; border-left: 4px solid #10b981;">
+                        <div class="panel-heading" style="background: #f0fdf4;">
+                            <h4 style="margin: 0; font-size: 15px; color: #047857;"><i class="fas fa-chart-pie"></i> Organization Intelligence & MetricsCube Engine</h4>
+                        </div>
+                        <div class="panel-body">
+                            <p class="text-muted" style="margin-top: 0; font-size: 13px;">
+                                Natively aggregates WHMCS billing, service, gateway, and ticket logs into real-time business intelligence: MRR, ARR, LTV, Churn, aging accounts receivable, and automated gateway diagnostics.
+                            </p>
+
+                            <div class="form-group" style="margin-bottom: 15px;">
+                                <label style="font-weight: 600;">
+                                    <input type="checkbox" name="metrics_cron_enabled" value="1" <?php echo !empty($settings->metrics_cron_enabled) ? 'checked' : ''; ?>>
+                                    Enable Daily Business Metrics Aggregation (Executes with WHMCS Daily Cron)
+                                </label>
+                                <small class="text-muted" style="display: block;">Computes daily snapshots of MRR, customer counts, aging debt, and gateway health automatically.</small>
+                            </div>
+
+                            <div class="form-group" style="max-width: 300px; margin-bottom: 20px;">
+                                <label style="font-weight: 600; display: block; margin-bottom: 5px;">Historical Snapshot Retention (Days)</label>
+                                <input type="number" min="30" max="730" name="metrics_retention_days" class="form-control" value="<?php echo htmlspecialchars($settings->metrics_retention_days ?? 365); ?>">
+                                <small class="text-muted">Default: 365 days (1 year of historical trends).</small>
+                            </div>
+
+                            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 18px; margin-top: 15px;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
+                                    <div>
+                                        <strong style="font-size: 14px; color: #1e293b; display: block; margin-bottom: 4px;">Explore Live Intelligence Dashboard</strong>
+                                        <span style="font-size: 12px; color: #64748b;">View real-time revenue analytics, customer churn charts, gateway diagnostics, and AI anomaly alerts.</span>
+                                    </div>
+                                    <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=organization_intelligence" class="btn btn-success" style="font-weight: 600;">
+                                        <i class="fas fa-chart-line"></i> Open Organization Intelligence
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="margin-top: 25px; padding-top: 15px; border-top: 1px solid #e2e8f0;">
+                    <button type="submit" class="btn btn-primary btn-lg" style="padding: 10px 28px; font-weight: 600;">
+                        <i class="fas fa-save" style="margin-right: 6px;"></i> Save All Settings
+                    </button>
+                </div>
             </form>
         </div>
+
+        <script>
+        function switchSettingsSection(tabId, btn) {
+            document.querySelectorAll('.sdv-settings-pane').forEach(function(pane) {
+                pane.style.display = 'none';
+            });
+            document.querySelectorAll('.sdv-settings-tab-btn').forEach(function(b) {
+                b.classList.remove('active', 'btn-primary');
+                b.classList.add('btn-default');
+            });
+            var target = document.getElementById(tabId);
+            if (target) target.style.display = 'block';
+            btn.classList.remove('btn-default');
+            btn.classList.add('active', 'btn-primary');
+        }
+        </script>
         <?php
         return ob_get_clean();
     }

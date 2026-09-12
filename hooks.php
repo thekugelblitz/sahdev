@@ -2654,8 +2654,12 @@ if (!function_exists('sahdev_inject_ticket_panel_sel')) {
 // ---------------------------------------------------------------------------
 add_hook('AdminAreaHeaderOutput', 1, function ($vars) {
     try {
+        $output = '';
         if (!Capsule::schema()->hasTable('tblsahdev_settings')) return '';
         $settings = Capsule::table('tblsahdev_settings')->where('id', 1)->first();
+        if (!$settings) {
+            $settings = Capsule::table('tblsahdev_settings')->first();
+        }
         if (!$settings) return '';
 
         // Find the most recent run date among all Sahdev automation columns for a more accurate health picture
@@ -5039,47 +5043,71 @@ HTML;
 
 // ---------------------------------------------------------------------------
 // Sahdev Admin Ops Copilot Drawer Injection
+// Hooked on both Header and Footer with $drawerRendered singleton guard
 // ---------------------------------------------------------------------------
-add_hook('AdminAreaFooterOutput', 20, function ($vars) {
+add_hook('AdminAreaHeaderOutput', 1000, function ($vars) {
+    return sahdev_render_admin_copilot_drawer(is_array($vars) ? $vars : []);
+});
+
+add_hook('AdminAreaFooterOutput', 1000, function ($vars) {
     return sahdev_render_admin_copilot_drawer(is_array($vars) ? $vars : []);
 });
 
 /**
  * Render the floating Admin Ops Copilot Drawer launcher and slide-out console.
  */
-function sahdev_render_admin_copilot_drawer(array $vars): string
+function sahdev_render_admin_copilot_drawer(array $vars = []): string
 {
-    $adminId = $_SESSION['adminid'] ?? null;
-    if (!$adminId) {
+    static $drawerRendered = false;
+    if ($drawerRendered) {
         return '';
     }
 
     require_once __DIR__ . '/lib/PermissionService.php';
-    if (!\Sahdev\Lib\PermissionService::hasPermission((int) $adminId, \Sahdev\Lib\PermissionService::PERM_COPILOT_USE)) {
+    $adminId = \Sahdev\Lib\PermissionService::resolveCurrentAdminId();
+    if ($adminId <= 0) {
         return '';
     }
 
+    require_once __DIR__ . '/lib/SchemaManager.php';
     try {
-        if (!\WHMCS\Database\Capsule::schema()->hasTable('tblsahdev_settings')) {
-            return '';
-        }
-        $settings = \WHMCS\Database\Capsule::table('tblsahdev_settings')->first();
-        if ($settings && isset($settings->copilot_enabled) && !(bool) $settings->copilot_enabled) {
-            return '';
-        }
+        \Sahdev\Lib\SchemaManager::ensureAll();
+    } catch (\Throwable $e) {}
 
-        $activeVisitorCount = 0;
+    $canUseCopilot = ($adminId === 1)
+        || \Sahdev\Lib\PermissionService::isSuperAdmin($adminId)
+        || \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_COPILOT_USE)
+        || \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_SETTINGS_MANAGE);
+
+    if (!$canUseCopilot) {
+        return '';
+    }
+
+    $copilotModel = 'anthropic/claude-3.5-sonnet';
+    $activeVisitorCount = 0;
+    try {
+        if (\WHMCS\Database\Capsule::schema()->hasTable('tblsahdev_settings')) {
+            $settings = \WHMCS\Database\Capsule::table('tblsahdev_settings')->first();
+            if ($settings && isset($settings->copilot_enabled)) {
+                $val = $settings->copilot_enabled;
+                if ($val === 0 || $val === '0' || $val === false) {
+                    // Only suppress if explicitly set to 0
+                    return '';
+                }
+            }
+            if (!empty($settings->copilot_model_name)) {
+                $copilotModel = $settings->copilot_model_name;
+            }
+        }
         if (\WHMCS\Database\Capsule::schema()->hasTable('tblsahdev_chat_sessions')) {
             $activeVisitorCount = (int) \WHMCS\Database\Capsule::table('tblsahdev_chat_sessions')
                 ->where('session_type', 'client_livechat')
                 ->where('status', 'active')
                 ->count();
         }
+    } catch (\Throwable $e) {}
 
-        $copilotModel = $settings->copilot_model_name ?? 'anthropic/claude-3.5-sonnet';
-    } catch (\Throwable $e) {
-        return '';
-    }
+    $drawerRendered = true;
 
     $csrfToken = '';
     if (function_exists('generate_token')) {
@@ -5105,16 +5133,16 @@ function sahdev_render_admin_copilot_drawer(array $vars): string
 <style>
 /* ── Sahdev Admin Ops Copilot Drawer ───────────────────────────────── */
 #sdv-copilot-launcher {
-    position: fixed;
-    bottom: 24px;
-    right: 24px;
-    z-index: 99990;
-    display: flex;
+    position: fixed !important;
+    bottom: 24px !important;
+    right: 24px !important;
+    z-index: 999999 !important;
+    display: flex !important;
     align-items: center;
     gap: 8px;
     padding: 10px 18px;
     background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
-    color: #ffffff;
+    color: #ffffff !important;
     border: 1px solid rgba(255, 255, 255, 0.15);
     border-radius: 50px;
     box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(99, 102, 241, 0.2);
@@ -5162,14 +5190,14 @@ function sahdev_render_admin_copilot_drawer(array $vars): string
     50% { opacity: 0.85; transform: scale(1.08); }
 }
 #sdv-copilot-drawer {
-    position: fixed;
-    bottom: 80px;
-    right: 24px;
-    width: 440px;
-    height: 620px;
-    max-height: calc(100vh - 110px);
-    max-width: calc(100vw - 36px);
-    z-index: 99995;
+    position: fixed !important;
+    bottom: 80px !important;
+    right: 24px !important;
+    width: 440px !important;
+    height: 620px !important;
+    max-height: calc(100vh - 110px) !important;
+    max-width: calc(100vw - 36px) !important;
+    z-index: 999999 !important;
     background: #090d16;
     color: #f1f5f9;
     border-radius: 16px;
@@ -5185,9 +5213,9 @@ function sahdev_render_admin_copilot_drawer(array $vars): string
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 #sdv-copilot-drawer.sdv-open {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-    pointer-events: auto;
+    opacity: 1 !important;
+    transform: translateY(0) scale(1) !important;
+    pointer-events: auto !important;
 }
 .sdv-drawer-header {
     padding: 14px 18px;

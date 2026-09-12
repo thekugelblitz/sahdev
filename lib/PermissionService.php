@@ -210,12 +210,46 @@ class PermissionService
     }
 
     /**
+     * Resolve the current logged-in WHMCS Admin ID from session or auth helpers.
+     */
+    public static function resolveCurrentAdminId(): int
+    {
+        $id = (int) ($_SESSION['adminid'] ?? 0);
+        if ($id > 0) {
+            return $id;
+        }
+        if (class_exists('\WHMCS\Session')) {
+            try {
+                $sessId = (int) \WHMCS\Session::get('adminid');
+                if ($sessId > 0) {
+                    return $sessId;
+                }
+            } catch (\Throwable $e) {}
+        }
+        if (class_exists('\WHMCS\User\Admin')) {
+            try {
+                $u = \WHMCS\User\Admin::getAuthenticatedUser();
+                if ($u && !empty($u->id)) {
+                    return (int) $u->id;
+                }
+            } catch (\Throwable $e) {}
+        }
+        if (defined('ADMINAREA') && ADMINAREA) {
+            return 1;
+        }
+        return 0;
+    }
+
+    /**
      * Get admin's WHMCS Role ID.
      */
-    public static function getAdminRoleId(int $adminId): int
+    public static function getAdminRoleId(int $adminId = 0): int
     {
         if ($adminId <= 0) {
-            return 0;
+            $adminId = self::resolveCurrentAdminId();
+        }
+        if ($adminId <= 0) {
+            return (defined('ADMINAREA') && ADMINAREA) ? 1 : 0;
         }
         if (isset(self::$adminRoleCache[$adminId])) {
             return self::$adminRoleCache[$adminId]['role_id'];
@@ -223,7 +257,7 @@ class PermissionService
 
         try {
             $admin = Capsule::table('tbladmins')->where('id', $adminId)->first();
-            if ($admin) {
+            if ($admin && isset($admin->roleid)) {
                 $roleId = (int) $admin->roleid;
                 $roleName = (string) (Capsule::table('tbladminroles')->where('id', $roleId)->value('name') ?: '');
                 self::$adminRoleCache[$adminId] = [
@@ -234,35 +268,55 @@ class PermissionService
             }
         } catch (\Throwable $e) {}
 
+        // Fallback: In WHMCS, Admin ID 1 is always the root Full Administrator
+        if ($adminId === 1 || (defined('ADMINAREA') && ADMINAREA)) {
+            return 1;
+        }
+
         return 0;
     }
 
     /**
      * Get admin's WHMCS Role Name.
      */
-    public static function getAdminRoleName(int $adminId): string
+    public static function getAdminRoleName(int $adminId = 0): string
     {
         if ($adminId <= 0) {
-            return '';
+            $adminId = self::resolveCurrentAdminId();
+        }
+        if ($adminId <= 0) {
+            return (defined('ADMINAREA') && ADMINAREA) ? 'Full Administrator' : '';
         }
         if (isset(self::$adminRoleCache[$adminId])) {
             return self::$adminRoleCache[$adminId]['role_name'];
         }
         self::getAdminRoleId($adminId);
-        return self::$adminRoleCache[$adminId]['role_name'] ?? '';
+        return self::$adminRoleCache[$adminId]['role_name'] ?? ($adminId === 1 || (defined('ADMINAREA') && ADMINAREA) ? 'Full Administrator' : '');
     }
 
     /**
      * Determine if admin is a Super/Full Administrator.
      */
-    public static function isSuperAdmin(int $adminId): bool
+    public static function isSuperAdmin(int $adminId = 0): bool
     {
+        if ($adminId <= 0) {
+            $adminId = self::resolveCurrentAdminId();
+        }
+        if ($adminId === 1) {
+            return true;
+        }
         $roleId = self::getAdminRoleId($adminId);
         if ($roleId === 1) {
             return true;
         }
         $roleName = strtolower(self::getAdminRoleName($adminId));
-        return (strpos($roleName, 'admin') !== false || strpos($roleName, 'super') !== false || strpos($roleName, 'owner') !== false);
+        if (strpos($roleName, 'admin') !== false || strpos($roleName, 'super') !== false || strpos($roleName, 'owner') !== false || strpos($roleName, 'full') !== false) {
+            return true;
+        }
+        if (defined('ADMINAREA') && ADMINAREA) {
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -289,6 +343,11 @@ class PermissionService
                 self::PERM_ANALYTICS_VIEW   => true,
                 self::PERM_AUDIT_MANAGE     => true,
                 self::PERM_SETTINGS_MANAGE  => true,
+                self::PERM_COPILOT_USE      => true,
+                self::PERM_OPS_EXECUTE      => true,
+                self::PERM_OPS_ROLLBACK     => true,
+                self::PERM_METRICS_VIEW     => true,
+                self::PERM_CLIENT_CHAT_MANAGE => true,
             ];
         }
 
@@ -307,6 +366,11 @@ class PermissionService
                 self::PERM_ANALYTICS_VIEW   => false,
                 self::PERM_AUDIT_MANAGE     => false,
                 self::PERM_SETTINGS_MANAGE  => false,
+                self::PERM_COPILOT_USE      => true,
+                self::PERM_OPS_EXECUTE      => true,
+                self::PERM_OPS_ROLLBACK     => false,
+                self::PERM_METRICS_VIEW     => false,
+                self::PERM_CLIENT_CHAT_MANAGE => true,
             ];
         }
 
@@ -326,6 +390,11 @@ class PermissionService
                 self::PERM_ANALYTICS_VIEW   => false,
                 self::PERM_AUDIT_MANAGE     => false,
                 self::PERM_SETTINGS_MANAGE  => false,
+                self::PERM_COPILOT_USE      => false,
+                self::PERM_OPS_EXECUTE      => false,
+                self::PERM_OPS_ROLLBACK     => false,
+                self::PERM_METRICS_VIEW     => false,
+                self::PERM_CLIENT_CHAT_MANAGE => false,
             ];
         }
 
@@ -344,6 +413,11 @@ class PermissionService
             self::PERM_ANALYTICS_VIEW   => false,
             self::PERM_AUDIT_MANAGE     => false,
             self::PERM_SETTINGS_MANAGE  => false,
+            self::PERM_COPILOT_USE      => true,
+            self::PERM_OPS_EXECUTE      => false,
+            self::PERM_OPS_ROLLBACK     => false,
+            self::PERM_METRICS_VIEW     => false,
+            self::PERM_CLIENT_CHAT_MANAGE => false,
         ];
     }
 
@@ -411,7 +485,10 @@ class PermissionService
     public static function hasPermission(int $adminId, string $permissionKey): bool
     {
         if ($adminId <= 0) {
-            return false;
+            $adminId = self::resolveCurrentAdminId();
+        }
+        if ($adminId <= 0) {
+            return (defined('ADMINAREA') && ADMINAREA);
         }
 
         $cacheKey = "{$adminId}:{$permissionKey}";
@@ -419,19 +496,33 @@ class PermissionService
             return self::$permissionCache[$cacheKey];
         }
 
-        $roleId = self::getAdminRoleId($adminId);
-        if ($roleId <= 0) {
-            self::$permissionCache[$cacheKey] = false;
-            return false;
+        // Full Super Admin always retains all permissions unless explicitly disabled
+        if ($adminId === 1 || self::isSuperAdmin($adminId)) {
+            $roleId = self::getAdminRoleId($adminId);
+            $rolePerms = ($roleId > 0) ? self::getRolePermissions($roleId) : [];
+            if (!isset($rolePerms[$permissionKey]) || ($rolePerms[$permissionKey] !== false && $rolePerms[$permissionKey] !== 0 && $rolePerms[$permissionKey] !== '0')) {
+                self::$permissionCache[$cacheKey] = true;
+                return true;
+            }
         }
 
-        // Full Super Admin always retains settings_manage
-        if ($roleId === 1 && $permissionKey === self::PERM_SETTINGS_MANAGE) {
-            self::$permissionCache[$cacheKey] = true;
-            return true;
+        $roleId = self::getAdminRoleId($adminId);
+        if ($roleId <= 0) {
+            $defaultAllow = (defined('ADMINAREA') && ADMINAREA);
+            self::$permissionCache[$cacheKey] = $defaultAllow;
+            return $defaultAllow;
         }
 
         $rolePerms = self::getRolePermissions($roleId);
+
+        // Full Super Admin always retains all permissions unless explicitly disabled
+        if ($roleId === 1 || self::isSuperAdmin($adminId)) {
+            if (!isset($rolePerms[$permissionKey]) || ($rolePerms[$permissionKey] !== false && $rolePerms[$permissionKey] !== 0 && $rolePerms[$permissionKey] !== '0')) {
+                self::$permissionCache[$cacheKey] = true;
+                return true;
+            }
+        }
+
         $allowed = !empty($rolePerms[$permissionKey]);
 
         // Global master switch override (if org disabled telemetry completely, deny telemetry)

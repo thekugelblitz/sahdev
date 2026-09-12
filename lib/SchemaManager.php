@@ -124,6 +124,21 @@ class SchemaManager
                     });
                 }
             }
+
+            try {
+                if (Capsule::table('tblsahdev_settings')->count() === 0) {
+                    Capsule::table('tblsahdev_settings')->insert([
+                        'copilot_enabled' => 1,
+                        'created_at'      => \Carbon\Carbon::now(),
+                        'updated_at'      => \Carbon\Carbon::now(),
+                    ]);
+                } else {
+                    Capsule::table('tblsahdev_settings')
+                        ->whereNull('copilot_enabled')
+                        ->orWhere('copilot_enabled', 0)
+                        ->update(['copilot_enabled' => 1]);
+                }
+            } catch (\Throwable $ex) {}
         } catch (\Throwable $e) {
             // Benign column migration
         }
