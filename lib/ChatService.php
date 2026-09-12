@@ -100,15 +100,25 @@ class ChatService
             'updated_at'      => Carbon::now(),
         ]);
 
-        // 2. Resolve AI Provider
-        $provider = self::resolveChatProvider();
+        // 2. Resolve AI Provider & Model
+        $pRecord = null;
+        $provider = self::resolveChatProvider('copilot', $pRecord);
         if (!$provider) {
-            $botReply = "No active Chat AI Provider is configured. Please configure OpenRouter or Google Gemini in AI Providers > Chat Models.";
+            $botReply = "No active Chat AI Provider is configured. Please assign an AI Provider for Copilot in AI Providers.";
             self::recordAssistantMessage($sessionId, $botReply);
             return [
                 'success' => true,
                 'reply'   => $botReply,
             ];
+        }
+
+        // Determine actual model name from assigned provider record
+        $modelName = '';
+        if ($pRecord && !empty($pRecord->model_name)) {
+            $modelName = trim($pRecord->model_name);
+        }
+        if (empty($modelName)) {
+            $modelName = self::getChatSetting('copilot_model_name', 'anthropic/claude-3.5-sonnet');
         }
 
         // 3. Assemble Prompt & Tools
@@ -117,7 +127,7 @@ class ChatService
         $tools = SafeOpsService::getOpenAIToolsDefinition();
 
         $settings = [
-            'model_name'  => self::getChatSetting('copilot_model_name', 'anthropic/claude-3.5-sonnet'),
+            'model_name'  => $modelName,
             'temperature' => (float) self::getChatSetting('copilot_temperature', 0.70),
             'max_tokens'  => (int) self::getChatSetting('copilot_max_tokens', 2048),
         ];
@@ -230,7 +240,8 @@ class ChatService
             'created_at'   => Carbon::now(),
         ]);
 
-        $provider = self::resolveChatProvider();
+        $pRecord = null;
+        $provider = self::resolveChatProvider('copilot', $pRecord);
         if (!$provider || !method_exists($provider, 'generateChatStream')) {
             // Fallback non-streaming
             $result = self::handleAdminMessage($adminId, $sessionUuid, $userMessageText, $pageContext);
@@ -238,12 +249,21 @@ class ChatService
             return;
         }
 
+        // Determine actual model name from assigned provider record
+        $modelName = '';
+        if ($pRecord && !empty($pRecord->model_name)) {
+            $modelName = trim($pRecord->model_name);
+        }
+        if (empty($modelName)) {
+            $modelName = self::getChatSetting('copilot_model_name', 'anthropic/claude-3.5-sonnet');
+        }
+
         $systemPrompt = self::buildAdminSystemPrompt($adminId, $pageContext);
         $chatHistory = self::formatOpenAIMessages($sessionId, $systemPrompt);
         $tools = SafeOpsService::getOpenAIToolsDefinition();
 
         $settings = [
-            'model_name'  => self::getChatSetting('copilot_model_name', 'anthropic/claude-3.5-sonnet'),
+            'model_name'  => $modelName,
             'temperature' => (float) self::getChatSetting('copilot_temperature', 0.70),
             'max_tokens'  => (int) self::getChatSetting('copilot_max_tokens', 2048),
         ];
@@ -389,17 +409,26 @@ class ChatService
             . "CLIENT ACCOUNT CONTEXT:\n" . $clientContext . "\n\n"
             . "KNOWLEDGE BASE RESOURCES:\n" . $kbContext;
 
-        $provider = self::resolveChatProvider();
+        $pRecord = null;
+        $provider = self::resolveChatProvider('client_livechat', $pRecord);
         if (!$provider) {
             $fallback = "Thank you for reaching out! Our team is currently reviewing your message. You can also open a support ticket for immediate assistance.";
             self::recordAssistantMessage($sessionId, $fallback);
             return ['success' => true, 'reply' => $fallback];
         }
 
+        $modelName = '';
+        if ($pRecord && !empty($pRecord->model_name)) {
+            $modelName = trim($pRecord->model_name);
+        }
+        if (empty($modelName)) {
+            $modelName = self::getChatSetting('client_chat_model_name', 'openai/gpt-4o-mini');
+        }
+
         $chatHistory = self::formatOpenAIMessages($sessionId, $systemPrompt);
 
         $settings = [
-            'model_name'  => self::getChatSetting('copilot_model_name', 'openai/gpt-4o-mini'),
+            'model_name'  => $modelName,
             'temperature' => 0.5,
             'max_tokens'  => 1024,
         ];
@@ -656,47 +685,75 @@ class ChatService
 
     /**
      * Resolve designated AI Provider for chat operations.
+     *
+     * @param string $channel 'copilot' or 'client_livechat'
+     * @param object|null &$recordOut Populated with the matched tblsahdev_providers database row
+     * @return AIProviderInterface|null
      */
-    public static function resolveChatProvider(): ?AIProviderInterface
+    public static function resolveChatProvider(string $channel = 'copilot', ?object &$recordOut = null): ?AIProviderInterface
     {
-        $settings = Capsule::table('tblsahdev_settings')->first();
-        $providerId = (int) ($settings->copilot_primary_provider_id ?? 0);
+        $recordOut = null;
+        try {
+            $settings = Capsule::table('tblsahdev_settings')->first();
+            $providerId = 0;
 
-        // If no explicit chat provider assigned, check primary provider
-        if ($providerId <= 0) {
-            $providerId = (int) ($settings->primary_provider_id ?? 0);
-        }
-
-        if ($providerId > 0) {
-            $pData = Capsule::table('tblsahdev_providers')->where('id', $providerId)->where('is_active', 1)->first();
-            if ($pData) {
-                return self::instantiateProviderFromRecord($pData);
+            if ($channel === 'client_livechat') {
+                $providerId = (int) ($settings->client_chat_provider_id ?? 0);
             }
-        }
 
-        // Fallback: search for first active OpenRouter, Google, or LMStudio provider
-        $any = Capsule::table('tblsahdev_providers')
-            ->where('is_active', 1)
-            ->orderByRaw("FIELD(provider_type, 'openrouter', 'google', 'lmstudio')")
-            ->first();
+            if ($providerId <= 0) {
+                $providerId = (int) ($settings->copilot_primary_provider_id ?? 0);
+            }
 
-        return $any ? self::instantiateProviderFromRecord($any) : null;
+            // If no explicit chat provider assigned, check primary provider
+            if ($providerId <= 0) {
+                $providerId = (int) ($settings->primary_provider_id ?? 0);
+            }
+
+            if ($providerId > 0) {
+                $pData = Capsule::table('tblsahdev_providers')->where('id', $providerId)->where('is_active', 1)->first();
+                if ($pData) {
+                    $recordOut = $pData;
+                    return self::instantiateProviderFromRecord($pData);
+                }
+            }
+
+            // Fallback: search for first active provider
+            $any = Capsule::table('tblsahdev_providers')
+                ->where('is_active', 1)
+                ->orderByRaw("FIELD(provider_type, 'openrouter', 'google', 'lmstudio')")
+                ->first();
+
+            if ($any) {
+                $recordOut = $any;
+                return self::instantiateProviderFromRecord($any);
+            }
+        } catch (\Throwable $e) {}
+
+        return null;
     }
 
     private static function instantiateProviderFromRecord($pData): ?AIProviderInterface
     {
         try {
             $apiKey = !empty($pData->api_key) ? decrypt($pData->api_key) : '';
+            $apiUrl = trim((string) ($pData->api_url ?? ''));
+            $ptype = strtolower(trim((string) ($pData->provider_type ?? '')));
 
-            if ($pData->provider_type === 'openrouter') {
+            // OpenRouter: either explicitly marked 'openrouter' OR endpoint points to openrouter.ai
+            if ($ptype === 'openrouter' || stripos($apiUrl, 'openrouter.ai') !== false) {
                 require_once __DIR__ . '/OpenRouterAIProvider.php';
-                return new OpenRouterAIProvider($apiKey, $pData->api_url ?? '');
-            } elseif ($pData->provider_type === 'google') {
+                return new OpenRouterAIProvider($apiKey, !empty($apiUrl) ? $apiUrl : OpenRouterAIProvider::DEFAULT_API_URL);
+            } elseif ($ptype === 'google') {
                 require_once __DIR__ . '/GoogleAIProvider.php';
                 return new GoogleAIProvider($apiKey);
-            } elseif ($pData->provider_type === 'lmstudio') {
+            } elseif ($ptype === 'lmstudio') {
                 require_once __DIR__ . '/LMStudioAIProvider.php';
-                return new LMStudioAIProvider($pData->api_url ?? '', $apiKey);
+                return new LMStudioAIProvider($apiUrl, $apiKey);
+            } else {
+                // OpenAI-compatible generic fallback (LM Studio / Ollama / LocalAI)
+                require_once __DIR__ . '/LMStudioAIProvider.php';
+                return new LMStudioAIProvider($apiUrl, $apiKey);
             }
         } catch (\Throwable $e) {}
 

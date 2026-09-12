@@ -5083,7 +5083,7 @@ function sahdev_render_admin_copilot_drawer(array $vars = []): string
         return '';
     }
 
-    $copilotModel = 'anthropic/claude-3.5-sonnet';
+    $copilotModel = 'AI Copilot';
     $activeVisitorCount = 0;
     try {
         if (\WHMCS\Database\Capsule::schema()->hasTable('tblsahdev_settings')) {
@@ -5095,7 +5095,30 @@ function sahdev_render_admin_copilot_drawer(array $vars = []): string
                     return '';
                 }
             }
-            if (!empty($settings->copilot_model_name)) {
+
+            // Resolve target Copilot provider from settings
+            $copilotProvId = (int) ($settings->copilot_primary_provider_id ?? 0);
+            if ($copilotProvId <= 0) {
+                $copilotProvId = (int) ($settings->primary_provider_id ?? 0);
+            }
+
+            if ($copilotProvId > 0 && \WHMCS\Database\Capsule::schema()->hasTable('tblsahdev_providers')) {
+                $provRow = \WHMCS\Database\Capsule::table('tblsahdev_providers')->where('id', $copilotProvId)->first();
+                if ($provRow) {
+                    if (!empty($provRow->model_name)) {
+                        $copilotModel = $provRow->model_name;
+                    } elseif (!empty($provRow->name)) {
+                        $copilotModel = $provRow->name;
+                    }
+                }
+            } elseif (\WHMCS\Database\Capsule::schema()->hasTable('tblsahdev_providers')) {
+                $anyProv = \WHMCS\Database\Capsule::table('tblsahdev_providers')->where('is_active', 1)->first();
+                if ($anyProv && !empty($anyProv->model_name)) {
+                    $copilotModel = $anyProv->model_name;
+                }
+            }
+
+            if (!empty($settings->copilot_model_name) && empty($provRow->model_name)) {
                 $copilotModel = $settings->copilot_model_name;
             }
         }
@@ -5121,7 +5144,9 @@ function sahdev_render_admin_copilot_drawer(array $vars = []): string
 
     $ajaxUrl = 'addonmodules.php?module=sahdev&sahdev_act=ajax_handler';
     $hubUrl = 'addonmodules.php?module=sahdev&action=admin_copilot';
-    $modelBadge = htmlspecialchars(basename(str_replace('/', ' / ', $copilotModel)), ENT_QUOTES, 'UTF-8');
+    $cleanModel = trim(str_replace(['models/', 'openai/'], '', $copilotModel));
+    $displayModel = strlen($cleanModel) > 28 ? (substr($cleanModel, 0, 26) . '...') : $cleanModel;
+    $modelBadge = htmlspecialchars(strtoupper($displayModel), ENT_QUOTES, 'UTF-8');
     $visitorBadgeHtml = $activeVisitorCount > 0
         ? '<span class="sdv-copilot-badge" id="sdv-copilot-visitor-badge">' . $activeVisitorCount . ' visitor' . ($activeVisitorCount > 1 ? 's' : '') . '</span>'
         : '<span class="sdv-copilot-badge" id="sdv-copilot-visitor-badge" style="display:none;">0</span>';

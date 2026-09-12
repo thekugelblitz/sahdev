@@ -35,18 +35,27 @@ class AIController
         if (!$providerData)
             return null;
 
-        if ($providerData->provider_type === 'google') {
+        $apiUrl = trim((string) ($providerData->api_url ?? ''));
+        $ptype = strtolower(trim((string) ($providerData->provider_type ?? '')));
+
+        if ($ptype === 'openrouter' || stripos($apiUrl, 'openrouter.ai') !== false) {
+            $apiKey = !empty($providerData->api_key) ? decrypt($providerData->api_key) : '';
+            if (empty($apiKey))
+                throw new \Exception("OpenRouter Provider '{$providerData->name}' lacks an API Key.");
+            require_once __DIR__ . '/OpenRouterAIProvider.php';
+            return new OpenRouterAIProvider($apiKey, $apiUrl);
+        } elseif ($ptype === 'google') {
             $apiKey = !empty($providerData->api_key) ? decrypt($providerData->api_key) : '';
             if (empty($apiKey))
                 throw new \Exception("Google AI Provider '{$providerData->name}' lacks an API Key.");
             return new GoogleAIProvider($apiKey);
-        } elseif ($providerData->provider_type === 'lmstudio') {
+        } elseif ($ptype === 'lmstudio') {
             if (empty($providerData->api_url))
                 throw new \Exception("Local AI Provider '{$providerData->name}' lacks an API URL.");
             require_once __DIR__ . '/LMStudioAIProvider.php';
             $apiKey = !empty($providerData->api_key) ? decrypt($providerData->api_key) : '';
             return new LMStudioAIProvider($providerData->api_url, $apiKey);
-        } elseif ($providerData->provider_type === 'replicate') {
+        } elseif ($ptype === 'replicate') {
             if (empty($providerData->api_url))
                 throw new \Exception("Replicate Provider '{$providerData->name}' lacks an API URL.");
             $apiKey = !empty($providerData->api_key) ? decrypt($providerData->api_key) : '';
@@ -54,12 +63,6 @@ class AIController
                 throw new \Exception("Replicate Provider '{$providerData->name}' lacks an API Key.");
             require_once __DIR__ . '/ReplicateAIProvider.php';
             return new ReplicateAIProvider($providerData->api_url, $apiKey);
-        } elseif ($providerData->provider_type === 'openrouter') {
-            $apiKey = !empty($providerData->api_key) ? decrypt($providerData->api_key) : '';
-            if (empty($apiKey))
-                throw new \Exception("OpenRouter Provider '{$providerData->name}' lacks an API Key.");
-            require_once __DIR__ . '/OpenRouterAIProvider.php';
-            return new OpenRouterAIProvider($apiKey, $providerData->api_url ?? '');
         }
         throw new \Exception("Unsupported AI Provider Type: " . $providerData->provider_type);
     }

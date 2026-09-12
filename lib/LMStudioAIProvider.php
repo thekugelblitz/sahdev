@@ -169,6 +169,77 @@ class LMStudioAIProvider implements AIProviderInterface
     }
 
     /**
+     * Multi-turn chat completion with optional tools / functions for OpenAI-compatible endpoints.
+     *
+     * @param array $messages Array of ['role' => 'system'|'user'|'assistant'|'tool', 'content' => '...']
+     * @param array $tools OpenAI standard function tools definition
+     * @param array $settings Model settings (model_name, temperature, max_tokens)
+     * @return array ['content' => string, 'tool_calls' => array, 'usage' => array, 'model' => string]
+     */
+    public function generateChat(array $messages, array $tools = [], array $settings = []): array
+    {
+        $model = !empty($settings['model_name']) ? $settings['model_name'] : 'local-model';
+
+        $payload = [
+            'model'       => $model,
+            'messages'    => $messages,
+            'temperature' => (float) ($settings['temperature'] ?? 0.7),
+            'max_tokens'  => (int) ($settings['max_tokens'] ?? 2048),
+            'stream'      => false,
+        ];
+
+        if (!empty($tools)) {
+            $payload['tools'] = $tools;
+            $payload['tool_choice'] = 'auto';
+        }
+
+        try {
+            $res = $this->makeRequest($this->apiUrl, json_encode($payload));
+        } catch (\Exception $e) {
+            // Some local model engines (e.g. older LM Studio, Ollama, small models) reject the 'tools' parameter.
+            // If tools were provided and the request failed, retry gracefully without tools.
+            if (!empty($tools)) {
+                unset($payload['tools'], $payload['tool_choice']);
+                $res = $this->makeRequest($this->apiUrl, json_encode($payload));
+            } else {
+                throw $e;
+            }
+        }
+
+        $message = $res['choices'][0]['message'] ?? [];
+        $content = $message['content'] ?? '';
+
+        if (isset($res['usage'])) {
+            $this->lastTokenUsage = $res['usage']['total_tokens'] ?? 0;
+            $this->lastTokenDetails['input'] = $res['usage']['prompt_tokens'] ?? 0;
+            $this->lastTokenDetails['output'] = $res['usage']['completion_tokens'] ?? 0;
+        }
+
+        // Clean up thinking tags if deepseek/local reasoning model is used
+        $content = preg_replace('/<think>.*?<\/think>/s', '', $content);
+        $content = trim($content);
+
+        return [
+            'content'    => $content,
+            'tool_calls' => $message['tool_calls'] ?? [],
+            'usage'      => $this->lastTokenDetails,
+            'model'      => $res['model'] ?? $model,
+        ];
+    }
+
+    /**
+     * Real-time streaming chat completion. Fallback to generateChat if stream isn't requested.
+     */
+    public function generateChatStream(array $messages, array $tools = [], array $settings = [], callable $onChunk = null): array
+    {
+        $result = $this->generateChat($messages, $tools, $settings);
+        if ($onChunk) {
+            $onChunk($result['content'] ?? '', ['done' => true, 'tool_calls' => $result['tool_calls'] ?? []]);
+        }
+        return $result;
+    }
+
+    /**
      * @inheritDoc
      */
     public function getAvailableModels(string $apiKey): array

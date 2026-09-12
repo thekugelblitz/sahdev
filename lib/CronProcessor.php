@@ -399,7 +399,17 @@ class CronProcessor
     {
         if (!$providerData) return null;
 
-        switch ($providerData->provider_type) {
+        $apiUrl = trim((string) ($providerData->api_url ?? ''));
+        $ptype = strtolower(trim((string) ($providerData->provider_type ?? '')));
+
+        if ($ptype === 'openrouter' || stripos($apiUrl, 'openrouter.ai') !== false) {
+            $key = !empty($providerData->api_key) ? decrypt($providerData->api_key) : '';
+            if (empty($key)) return null;
+            require_once __DIR__ . '/OpenRouterAIProvider.php';
+            return new OpenRouterAIProvider($key, $apiUrl);
+        }
+
+        switch ($ptype) {
             case 'google':
                 $key = !empty($providerData->api_key) ? decrypt($providerData->api_key) : '';
                 if (empty($key)) return null;

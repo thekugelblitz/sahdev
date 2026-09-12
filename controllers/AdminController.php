@@ -2063,35 +2063,50 @@ class AdminController
                     Capsule::table('tblsahdev_providers')->where('id', $id)->delete();
                     $successMessage = "Provider deleted.";
                 }
-            } elseif ($action === 'save_chat_settings') {
-                $primaryChatId = (int) ($_POST['copilot_primary_provider_id'] ?? 0);
-                $fallbackChatId = (int) ($_POST['copilot_fallback_provider_id'] ?? 0);
-                $temp = (float) ($_POST['copilot_temperature'] ?? 0.70);
-                $tokens = (int) ($_POST['copilot_max_tokens'] ?? 2048);
-                $stream = !empty($_POST['copilot_stream_enabled']) ? 1 : 0;
-                $prompt = trim($_POST['copilot_system_prompt'] ?? '');
+            } elseif ($action === 'save_assignments' || $action === 'save_chat_settings') {
+                $primaryId = (int) ($_POST['primary_provider_id'] ?? 0);
+                $fallbackId = (int) ($_POST['fallback_provider_id'] ?? 0);
+                $copilotId = (int) ($_POST['copilot_primary_provider_id'] ?? 0);
+                $copilotFallbackId = (int) ($_POST['copilot_fallback_provider_id'] ?? 0);
+                $clientChatId = (int) ($_POST['client_chat_provider_id'] ?? 0);
 
-                Capsule::table('tblsahdev_settings')->where('id', 1)->update([
-                    'copilot_primary_provider_id'  => $primaryChatId,
-                    'copilot_fallback_provider_id' => $fallbackChatId,
-                    'copilot_temperature'          => $temp,
-                    'copilot_max_tokens'           => $tokens,
-                    'copilot_stream_enabled'       => $stream,
-                    'copilot_system_prompt'        => $prompt,
-                    'updated_at'                   => \Carbon\Carbon::now(),
-                ]);
-                $successMessage = "Chat AI Provider settings saved successfully.";
+                $updateData = [];
+                if (isset($_POST['primary_provider_id'])) {
+                    $updateData['primary_provider_id'] = $primaryId > 0 ? $primaryId : 1;
+                }
+                if (isset($_POST['fallback_provider_id'])) {
+                    $updateData['fallback_provider_id'] = $fallbackId;
+                }
+                if (isset($_POST['copilot_primary_provider_id'])) {
+                    $updateData['copilot_primary_provider_id'] = $copilotId;
+                }
+                if (isset($_POST['copilot_fallback_provider_id'])) {
+                    $updateData['copilot_fallback_provider_id'] = $copilotFallbackId;
+                }
+                if (isset($_POST['client_chat_provider_id'])) {
+                    $updateData['client_chat_provider_id'] = $clientChatId;
+                }
+                if (isset($_POST['copilot_temperature'])) {
+                    $updateData['copilot_temperature'] = (float) $_POST['copilot_temperature'];
+                }
+                if (isset($_POST['copilot_max_tokens'])) {
+                    $updateData['copilot_max_tokens'] = (int) $_POST['copilot_max_tokens'];
+                }
+                if (isset($_POST['copilot_stream_submitted'])) {
+                    $updateData['copilot_stream_enabled'] = !empty($_POST['copilot_stream_enabled']) ? 1 : 0;
+                }
+                if (isset($_POST['copilot_system_prompt'])) {
+                    $updateData['copilot_system_prompt'] = trim($_POST['copilot_system_prompt']);
+                }
+
+                $updateData['updated_at'] = \Carbon\Carbon::now();
+                Capsule::table('tblsahdev_settings')->where('id', 1)->update($updateData);
+                $successMessage = "AI Provider role assignments and orchestration saved successfully.";
             }
         }
 
         $providers = Capsule::table('tblsahdev_providers')->get();
         $settings = Capsule::table('tblsahdev_settings')->first();
-        $ticketProviders = $providers->filter(function ($p) {
-            return empty($p->purpose) || $p->purpose === 'ticket' || $p->purpose === 'both';
-        });
-        $chatProviders = $providers->filter(function ($p) {
-            return !empty($p->purpose) && ($p->purpose === 'chat' || $p->purpose === 'both');
-        });
 
         $csrfToken = generate_token("form");
         $actionUrl = htmlspecialchars($this->moduleVars['modulelink']) . '&action=providers';
@@ -2114,25 +2129,8 @@ class AdminController
                 display: flex;
                 justify-content: space-between;
                 align-items: center;
-            }
-            .subtab-header {
-                border-bottom: 2px solid #edf2f7;
-                display: flex;
-                gap: 15px;
-                margin-bottom: 25px;
-            }
-            .subtab-btn {
-                padding: 10px 18px;
-                font-size: 14px;
-                font-weight: 600;
-                color: #718096;
-                text-decoration: none !important;
-                border-bottom: 3px solid transparent;
-                cursor: pointer;
-            }
-            .subtab-btn.active {
-                color: #0d6efd;
-                border-bottom-color: #0d6efd;
+                flex-wrap: wrap;
+                gap: 8px;
             }
         </style>
 
@@ -2141,7 +2139,7 @@ class AdminController
 
             <h2 style="margin-bottom: 8px;"><i class="fas fa-microchip"></i> AI Providers Manager</h2>
             <p class="text-muted" style="margin-bottom: 20px;">
-                Manage LLM connections for Support Ticket Intelligence and Admin Ops Copilot / Client Chat (OpenRouter, Google Gemini, OpenAI-compatible, Replicate).
+                Manage your LLM connections (OpenRouter, Google Gemini, OpenAI-Compatible, Local LM Studio / Ollama) and select which model powers each organization role.
             </p>
 
             <?php if (!empty($successMessage)): ?>
@@ -2151,196 +2149,168 @@ class AdminController
                 <div class="alert alert-danger"><i class="fas fa-exclamation-circle"></i> <?php echo htmlspecialchars($errorMessage); ?></div>
             <?php endif; ?>
 
-            <!-- Sub-Tabs -->
-            <div class="subtab-header">
-                <a href="#ticket-tab" class="subtab-btn active" onclick="switchProviderTab('ticket', event);"><i class="fas fa-ticket-alt"></i> Ticket Intelligence Models (<?php echo count($ticketProviders); ?>)</a>
-                <a href="#chat-tab" class="subtab-btn" onclick="switchProviderTab('chat', event);"><i class="fas fa-comments"></i> Chat & Copilot Models (OpenRouter) (<?php echo count($chatProviders); ?>)</a>
+            <!-- Active Provider Role Assignments Card -->
+            <div class="provider-card" style="border-left: 4px solid #0d6efd; background: #f8fafc; margin-bottom: 25px;">
+                <div class="provider-header">
+                    <div>
+                        <h4 style="margin:0; color: #0d6efd; font-weight: 700;"><i class="fas fa-sliders-h"></i> Active AI Provider Roles & Assignments</h4>
+                        <span class="text-muted" style="font-size: 12px;">Choose which AI provider powers each feature without needing duplicate entries</span>
+                    </div>
+                </div>
+                <form method="post" action="<?php echo $actionUrl; ?>">
+                    <?php echo $csrfToken; ?>
+                    <input type="hidden" name="provider_action" value="save_assignments">
+                    <input type="hidden" name="copilot_stream_submitted" value="1">
+
+                    <div class="row" style="margin-bottom: 15px;">
+                        <div class="col-md-4">
+                            <label style="font-weight: 600;"><i class="fas fa-ticket-alt text-primary"></i> Support Ticket AI Provider</label>
+                            <select name="primary_provider_id" class="form-control" style="font-weight: 500;">
+                                <?php foreach ($providers as $prov): ?>
+                                    <option value="<?php echo $prov->id; ?>" <?php echo ((int)($settings->primary_provider_id ?? 0) === (int)$prov->id) ? 'selected' : ''; ?>>
+                                        <?php echo htmlspecialchars($prov->name . ' (' . ($prov->model_name ?: $prov->provider_type) . ')'); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                            <span class="help-block" style="font-size: 11px;">Root-cause analysis, internal action plans, draft replies.</span>
+                        </div>
+                        <div class="col-md-4">
+                            <label style="font-weight: 600;"><i class="fas fa-terminal text-success"></i> Admin Ops Copilot Provider</label>
+                            <select name="copilot_primary_provider_id" class="form-control" style="font-weight: 500;">
+                                <option value="0" <?php echo empty($settings->copilot_primary_provider_id) ? 'selected' : ''; ?>>-- Same as Ticket AI (Inherit) --</option>
+                                <?php foreach ($providers as $prov): ?>
+                                    <option value="<?php echo $prov->id; ?>" <?php echo ((int)($settings->copilot_primary_provider_id ?? 0) === (int)$prov->id) ? 'selected' : ''; ?>>
+                                        <?php echo htmlspecialchars($prov->name . ' (' . ($prov->model_name ?: $prov->provider_type) . ')'); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                            <span class="help-block" style="font-size: 11px;">Powers Admin Copilot drawer, Ops Hub & WHMCS Safe Ops.</span>
+                        </div>
+                        <div class="col-md-4">
+                            <label style="font-weight: 600;"><i class="fas fa-comments text-info"></i> Client Live Chat Provider</label>
+                            <select name="client_chat_provider_id" class="form-control" style="font-weight: 500;">
+                                <option value="0" <?php echo empty($settings->client_chat_provider_id) ? 'selected' : ''; ?>>-- Same as Ticket AI (Inherit) --</option>
+                                <?php foreach ($providers as $prov): ?>
+                                    <option value="<?php echo $prov->id; ?>" <?php echo ((int)($settings->client_chat_provider_id ?? 0) === (int)$prov->id) ? 'selected' : ''; ?>>
+                                        <?php echo htmlspecialchars($prov->name . ' (' . ($prov->model_name ?: $prov->provider_type) . ')'); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                            <span class="help-block" style="font-size: 11px;">Client area customer assistant with KB grounding.</span>
+                        </div>
+                    </div>
+
+                    <div class="row" style="margin-bottom: 15px;">
+                        <div class="col-md-4">
+                            <label style="font-weight: 600;"><i class="fas fa-shield-alt text-warning"></i> Ticket Fallback Provider</label>
+                            <select name="fallback_provider_id" class="form-control">
+                                <option value="0">-- None (Don't use fallback) --</option>
+                                <?php foreach ($providers as $prov): ?>
+                                    <option value="<?php echo $prov->id; ?>" <?php echo ((int)($settings->fallback_provider_id ?? 0) === (int)$prov->id) ? 'selected' : ''; ?>>
+                                        <?php echo htmlspecialchars($prov->name . ' (' . ($prov->model_name ?: $prov->provider_type) . ')'); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                            <span class="help-block" style="font-size: 11px;">Engaged if Primary Ticket AI encounters rate limits or errors.</span>
+                        </div>
+                        <div class="col-md-4">
+                            <label style="font-weight: 600;"><i class="fas fa-shield-alt text-warning"></i> Copilot Fallback Provider</label>
+                            <select name="copilot_fallback_provider_id" class="form-control">
+                                <option value="0">-- None (Or Inherit Ticket Fallback) --</option>
+                                <?php foreach ($providers as $prov): ?>
+                                    <option value="<?php echo $prov->id; ?>" <?php echo ((int)($settings->copilot_fallback_provider_id ?? 0) === (int)$prov->id) ? 'selected' : ''; ?>>
+                                        <?php echo htmlspecialchars($prov->name . ' (' . ($prov->model_name ?: $prov->provider_type) . ')'); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                            <span class="help-block" style="font-size: 11px;">Backup model for Admin Ops Copilot.</span>
+                        </div>
+                        <div class="col-md-4" style="text-align: right; padding-top: 25px;">
+                            <button type="submit" class="btn btn-primary btn-lg" style="width: 100%;">
+                                <i class="fas fa-save"></i> Save Provider Assignments
+                            </button>
+                        </div>
+                    </div>
+                </form>
             </div>
 
-            <!-- TICKET TAB -->
-            <div id="section-ticket" class="provider-tab-content">
-                <div class="alert alert-info" style="border-left: 4px solid #0d6efd;">
-                    <i class="fas fa-info-circle"></i> These AI providers analyze technical tickets, generate root-cause assessments, draft replies, and summarize threads.
+            <!-- Add New Provider Form -->
+            <div class="provider-card" style="border-left: 4px solid #198754; background: #f8fff9; margin-bottom: 25px;">
+                <div class="provider-header">
+                    <h4 style="margin:0;"><i class="fas fa-plus-circle text-success"></i> Add New AI Provider</h4>
                 </div>
+                <form method="post" action="<?php echo $actionUrl; ?>">
+                    <?php echo $csrfToken; ?>
+                    <input type="hidden" name="provider_action" value="create">
+                    <input type="hidden" name="provider_purpose" value="both">
 
-                <!-- Add New Provider Form -->
-                <div class="provider-card" style="border-left: 4px solid #198754; background: #f8fff9;">
-                    <div class="provider-header">
-                        <h4 style="margin:0;"><i class="fas fa-plus-circle text-success"></i> Add New AI Provider</h4>
+                    <div class="row" style="margin-bottom: 12px;">
+                        <div class="col-md-6">
+                            <label>Display Name</label>
+                            <input type="text" name="provider_name" class="form-control" placeholder="e.g. OpenRouter Claude 3.5 or Office LM Studio" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label>Provider Format Type</label>
+                            <select name="provider_type" class="form-control" id="new_provider_type" onchange="toggleProviderPreset(this.value)">
+                                <option value="openrouter">OpenRouter (Claude, GPT-4o, DeepSeek, Llama, Gemini)</option>
+                                <option value="google">Google GenAI (Gemini)</option>
+                                <option value="lmstudio">OpenAI Compatible (Local LM Studio, Ollama, OpenAI)</option>
+                                <option value="replicate">Replicate</option>
+                            </select>
+                        </div>
                     </div>
-                    <form method="post" action="<?php echo $actionUrl; ?>">
-                        <?php echo $csrfToken; ?>
-                        <input type="hidden" name="provider_action" value="create">
 
-                        <div class="row" style="margin-bottom: 12px;">
-                            <div class="col-md-4">
-                                <label>Display Name</label>
-                                <input type="text" name="provider_name" class="form-control" placeholder="e.g. OpenRouter Claude 3.5" required>
-                            </div>
-                            <div class="col-md-4">
-                                <label>Provider Format</label>
-                                <select name="provider_type" class="form-control" id="new_provider_type" onchange="toggleProviderPreset(this.value)">
-                                    <option value="openrouter">OpenRouter (Claude, GPT-4o, DeepSeek, Llama)</option>
-                                    <option value="google">Google GenAI (Gemini)</option>
-                                    <option value="lmstudio">OpenAI Compatible (Local LM Studio, Ollama, OpenAI)</option>
-                                    <option value="replicate">Replicate</option>
-                                </select>
-                            </div>
-                            <div class="col-md-4">
-                                <label>Usage Purpose</label>
-                                <select name="provider_purpose" class="form-control">
-                                    <option value="both" selected>Both Ticket Intelligence & Chat Copilot</option>
-                                    <option value="ticket">Ticket Intelligence Only</option>
-                                    <option value="chat">Chat & Copilot Only</option>
-                                </select>
-                            </div>
+                    <div class="row" style="margin-bottom: 12px;">
+                        <div class="col-md-6">
+                            <label>API Key</label>
+                            <input type="password" name="api_key" id="new_api_key" class="form-control" placeholder="sk-or-v1-... (optional for local LM Studio)" autocomplete="new-password">
                         </div>
-
-                        <div class="row" style="margin-bottom: 12px;">
-                            <div class="col-md-6">
-                                <label>API Key</label>
-                                <input type="password" name="api_key" id="new_api_key" class="form-control" placeholder="sk-or-v1-..." autocomplete="new-password">
-                            </div>
-                            <div class="col-md-6">
-                                <label>API URL Endpoint</label>
-                                <input type="text" name="api_url" id="new_api_url" class="form-control" value="https://openrouter.ai/api/v1/chat/completions">
-                            </div>
+                        <div class="col-md-6">
+                            <label>API URL Endpoint</label>
+                            <input type="text" name="api_url" id="new_api_url" class="form-control" value="https://openrouter.ai/api/v1/chat/completions">
                         </div>
+                    </div>
 
-                        <div class="row" style="margin-bottom: 12px;">
-                            <div class="col-md-8">
-                                <label>Model Identifier</label>
-                                <div class="input-group">
-                                    <input type="text" name="model_name" id="new_model_name" class="form-control" value="anthropic/claude-3.5-sonnet" placeholder="e.g. anthropic/claude-3.5-sonnet">
-                                    <span class="input-group-btn">
-                                        <button type="button" class="btn btn-default" onclick="fetchLiveModels();"><i class="fas fa-sync"></i> Fetch Live Models</button>
-                                    </span>
-                                </div>
-                                <span class="help-block" style="margin-bottom:0;">Preset models: <a href="javascript:void(0)" onclick="setPreset('anthropic/claude-3.5-sonnet', 3.0, 15.0)">Claude 3.5 Sonnet</a> | <a href="javascript:void(0)" onclick="setPreset('openai/gpt-4o', 2.5, 10.0)">GPT-4o</a> | <a href="javascript:void(0)" onclick="setPreset('openai/gpt-4o-mini', 0.15, 0.60)">GPT-4o Mini</a> | <a href="javascript:void(0)" onclick="setPreset('deepseek/deepseek-chat', 0.14, 0.28)">DeepSeek V3</a> | <a href="javascript:void(0)" onclick="setPreset('deepseek/deepseek-r1', 0.55, 2.19)">DeepSeek R1</a></span>
+                    <div class="row" style="margin-bottom: 12px;">
+                        <div class="col-md-8">
+                            <label>Model Identifier</label>
+                            <div class="input-group">
+                                <input type="text" name="model_name" id="new_model_name" class="form-control" value="anthropic/claude-3.5-sonnet" placeholder="e.g. anthropic/claude-3.5-sonnet, nex-agi/nex-n2.5-pro:free">
+                                <span class="input-group-btn">
+                                    <button type="button" class="btn btn-default" onclick="fetchLiveModels();"><i class="fas fa-sync"></i> Fetch Live Models</button>
+                                </span>
                             </div>
-                            <div class="col-md-2">
-                                <label>Input Cost / 1M ($)</label>
-                                <input type="number" step="0.0001" name="cost_input_1m" id="new_cost_in" class="form-control" value="3.0000">
-                            </div>
-                            <div class="col-md-2">
-                                <label>Output Cost / 1M ($)</label>
-                                <input type="number" step="0.0001" name="cost_output_1m" id="new_cost_out" class="form-control" value="15.0000">
-                            </div>
+                            <span class="help-block" style="margin-bottom:0;">Preset models: <a href="javascript:void(0)" onclick="setPreset('anthropic/claude-3.5-sonnet', 3.0, 15.0)">Claude 3.5 Sonnet</a> | <a href="javascript:void(0)" onclick="setPreset('openai/gpt-4o', 2.5, 10.0)">GPT-4o</a> | <a href="javascript:void(0)" onclick="setPreset('openai/gpt-4o-mini', 0.15, 0.60)">GPT-4o Mini</a> | <a href="javascript:void(0)" onclick="setPreset('deepseek/deepseek-chat', 0.14, 0.28)">DeepSeek V3</a> | <a href="javascript:void(0)" onclick="setPreset('deepseek/deepseek-r1', 0.55, 2.19)">DeepSeek R1</a></span>
                         </div>
-
-                        <div style="text-align: right; margin-top: 15px;">
-                            <button type="submit" class="btn btn-success"><i class="fas fa-save"></i> Create AI Provider</button>
+                        <div class="col-md-2">
+                            <label>Input Cost / 1M ($)</label>
+                            <input type="number" step="0.0001" name="cost_input_1m" id="new_cost_in" class="form-control" value="3.0000">
                         </div>
-                    </form>
-                </div>
+                        <div class="col-md-2">
+                            <label>Output Cost / 1M ($)</label>
+                            <input type="number" step="0.0001" name="cost_output_1m" id="new_cost_out" class="form-control" value="15.0000">
+                        </div>
+                    </div>
 
-                <h4 style="margin: 25px 0 15px;">Configured Ticket Providers</h4>
-                <?php foreach ($ticketProviders as $p): ?>
-                    <?php echo $this->renderProviderCard($p, $actionUrl, $csrfToken); ?>
+                    <div style="text-align: right; margin-top: 15px;">
+                        <button type="submit" class="btn btn-success"><i class="fas fa-plus-circle"></i> Create AI Provider</button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Single Unified Configured Providers List -->
+            <h4 style="margin: 25px 0 15px;"><i class="fas fa-list"></i> Configured AI Providers (<?php echo count($providers); ?>)</h4>
+            <?php if (empty($providers) || count($providers) === 0): ?>
+                <div class="alert alert-info">No AI providers configured yet. Use the form above to add your first provider.</div>
+            <?php else: ?>
+                <?php foreach ($providers as $p): ?>
+                    <?php echo $this->renderProviderCard($p, $actionUrl, $csrfToken, $settings); ?>
                 <?php endforeach; ?>
-            </div>
-
-            <!-- CHAT TAB -->
-            <div id="section-chat" class="provider-tab-content" style="display: none;">
-                <!-- Chat AI Settings Card -->
-                <div class="provider-card" style="border-left: 4px solid #0d6efd;">
-                    <div class="provider-header">
-                        <h4 style="margin:0;"><i class="fas fa-sliders-h text-primary"></i> Chat & Copilot Model Orchestration</h4>
-                    </div>
-                    <form method="post" action="<?php echo $actionUrl; ?>">
-                        <?php echo $csrfToken; ?>
-                        <input type="hidden" name="provider_action" value="save_chat_settings">
-
-                        <div class="row" style="margin-bottom: 15px;">
-                            <div class="col-md-6">
-                                <label>Primary Chat AI Provider</label>
-                                <select name="copilot_primary_provider_id" class="form-control">
-                                    <option value="0" <?php echo empty($settings->copilot_primary_provider_id) ? 'selected' : ''; ?>>Use Ticket Primary (Inherit)</option>
-                                    <?php foreach ($chatProviders as $cp): ?>
-                                        <option value="<?php echo $cp->id; ?>" <?php echo ((int)($settings->copilot_primary_provider_id ?? 0) === (int)$cp->id) ? 'selected' : ''; ?>>
-                                            <?php echo htmlspecialchars($cp->name . ' (' . ($cp->model_name ?: $cp->provider_type) . ')'); ?>
-                                        </option>
-                                    <?php endforeach; ?>
-                                </select>
-                                <span class="help-block">Used for Admin Ops Copilot, Safe Ops execution, and Client Live Chat.</span>
-                            </div>
-                            <div class="col-md-6">
-                                <label>Fallback Chat AI Provider</label>
-                                <select name="copilot_fallback_provider_id" class="form-control">
-                                    <option value="0" <?php echo empty($settings->copilot_fallback_provider_id) ? 'selected' : ''; ?>>None (Or Inherit Global Fallback)</option>
-                                    <?php foreach ($chatProviders as $cp): ?>
-                                        <option value="<?php echo $cp->id; ?>" <?php echo ((int)($settings->copilot_fallback_provider_id ?? 0) === (int)$cp->id) ? 'selected' : ''; ?>>
-                                            <?php echo htmlspecialchars($cp->name . ' (' . ($cp->model_name ?: $cp->provider_type) . ')'); ?>
-                                        </option>
-                                    <?php endforeach; ?>
-                                </select>
-                                <span class="help-block">Automatically engaged if Primary hits rate limits (429) or timeouts.</span>
-                            </div>
-                        </div>
-
-                        <div class="row" style="margin-bottom: 15px;">
-                            <div class="col-md-4">
-                                <label>Chat Creativity (Temperature)</label>
-                                <input type="number" step="0.05" min="0.0" max="1.5" name="copilot_temperature" class="form-control" value="<?php echo htmlspecialchars($settings->copilot_temperature ?? '0.70'); ?>">
-                                <span class="help-block">0.2 = Strict & deterministic; 0.7 = Balanced ops reasoning.</span>
-                            </div>
-                            <div class="col-md-4">
-                                <label>Max Response Tokens</label>
-                                <input type="number" step="128" min="256" max="8192" name="copilot_max_tokens" class="form-control" value="<?php echo htmlspecialchars($settings->copilot_max_tokens ?? '2048'); ?>">
-                                <span class="help-block">Budget per individual chat turn (default: 2048).</span>
-                            </div>
-                            <div class="col-md-4">
-                                <label>Real-Time Token Streaming (SSE)</label>
-                                <div class="checkbox" style="margin-top: 8px;">
-                                    <label>
-                                        <input type="checkbox" name="copilot_stream_enabled" value="1" <?php echo !empty($settings->copilot_stream_enabled) ? 'checked' : ''; ?>>
-                                        Enable live Server-Sent Events (SSE) token streaming
-                                    </label>
-                                </div>
-                                <span class="help-block">Provides instant typewriter output in Admin Copilot.</span>
-                            </div>
-                        </div>
-
-                        <div class="form-group" style="margin-bottom: 15px;">
-                            <label>Admin Copilot System Prompt Instructions</label>
-                            <textarea name="copilot_system_prompt" class="form-control" rows="4" placeholder="Enter custom instructions or guidelines for the Copilot..."><?php echo htmlspecialchars($settings->copilot_system_prompt ?? ''); ?></textarea>
-                            <span class="help-block">Optional custom system prompt prepended to Admin Ops Copilot interactions.</span>
-                        </div>
-
-                        <div style="text-align: right;">
-                            <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Save Chat AI Settings</button>
-                        </div>
-                    </form>
-                </div>
-
-                <h4 style="margin: 25px 0 15px;">Configured Chat Providers</h4>
-                <?php if ($chatProviders->isEmpty()): ?>
-                    <div class="alert alert-warning">No providers configured specifically for Chat. The models in Ticket Intelligence marked as 'Both' will be used automatically.</div>
-                <?php else: ?>
-                    <?php foreach ($chatProviders as $p): ?>
-                        <?php echo $this->renderProviderCard($p, $actionUrl, $csrfToken); ?>
-                    <?php endforeach; ?>
-                <?php endif; ?>
-            </div>
+            <?php endif; ?>
 
         </div>
 
         <script>
-        function switchProviderTab(tab, e) {
-            if (e) e.preventDefault();
-            document.querySelectorAll('.subtab-btn').forEach(btn => btn.classList.remove('active'));
-            if (e && e.target) {
-                e.target.closest('.subtab-btn').classList.add('active');
-            }
-            if (tab === 'ticket') {
-                document.getElementById('section-ticket').style.display = 'block';
-                document.getElementById('section-chat').style.display = 'none';
-            } else {
-                document.getElementById('section-ticket').style.display = 'none';
-                document.getElementById('section-chat').style.display = 'block';
-            }
-        }
-
         function setPreset(model, costIn, costOut) {
             document.getElementById('new_model_name').value = model;
             document.getElementById('new_cost_in').value = costIn.toFixed(4);
@@ -2405,35 +2375,60 @@ class AdminController
         return ob_get_clean();
     }
 
-    private function renderProviderCard($p, string $actionUrl, string $csrfToken): string
+    private function renderProviderCard($p, string $actionUrl, string $csrfToken, $settings = null): string
     {
+        $isTicketPrimary = ($settings && (int)($settings->primary_provider_id ?? 0) === (int)$p->id);
+        $isTicketFallback = ($settings && (int)($settings->fallback_provider_id ?? 0) === (int)$p->id);
+        $isCopilotPrimary = ($settings && (int)($settings->copilot_primary_provider_id ?? 0) === (int)$p->id);
+        $isCopilotFallback = ($settings && (int)($settings->copilot_fallback_provider_id ?? 0) === (int)$p->id);
+        $isClientChat = ($settings && (int)($settings->client_chat_provider_id ?? 0) === (int)$p->id);
+
         ob_start();
         ?>
         <div class="provider-card">
+            <div class="provider-header">
+                <div>
+                    <strong style="font-size: 15px;"><?php echo htmlspecialchars($p->name); ?></strong>
+                    <span class="text-muted" style="font-size: 12px; margin-left: 8px;">(<?php echo htmlspecialchars(strtoupper($p->provider_type)); ?>)</span>
+                    <?php if (!empty($p->model_name)): ?>
+                        <code style="margin-left: 8px; font-size: 11px;"><?php echo htmlspecialchars($p->model_name); ?></code>
+                    <?php endif; ?>
+                </div>
+                <div style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center;">
+                    <?php if ($isTicketPrimary): ?>
+                        <span class="label label-primary" style="font-size: 11px; padding: 4px 8px;"><i class="fas fa-ticket-alt"></i> Ticket Primary</span>
+                    <?php endif; ?>
+                    <?php if ($isCopilotPrimary): ?>
+                        <span class="label label-success" style="font-size: 11px; padding: 4px 8px;"><i class="fas fa-terminal"></i> Ops Copilot</span>
+                    <?php endif; ?>
+                    <?php if ($isClientChat): ?>
+                        <span class="label label-info" style="font-size: 11px; padding: 4px 8px;"><i class="fas fa-comments"></i> Client Live Chat</span>
+                    <?php endif; ?>
+                    <?php if ($isTicketFallback || $isCopilotFallback): ?>
+                        <span class="label label-warning" style="font-size: 11px; padding: 4px 8px;"><i class="fas fa-shield-alt"></i> Fallback</span>
+                    <?php endif; ?>
+                    <?php if (!$isTicketPrimary && !$isCopilotPrimary && !$isClientChat && !$isTicketFallback && !$isCopilotFallback): ?>
+                        <span class="label label-default" style="font-size: 11px; padding: 4px 8px;">Unassigned</span>
+                    <?php endif; ?>
+                </div>
+            </div>
             <form method="post" action="<?php echo $actionUrl; ?>">
                 <?php echo $csrfToken; ?>
                 <input type="hidden" name="provider_id" value="<?php echo $p->id; ?>">
+                <input type="hidden" name="provider_purpose" value="<?php echo htmlspecialchars($p->purpose ?? 'both'); ?>">
 
                 <div class="row" style="margin-bottom: 10px;">
-                    <div class="col-md-5">
+                    <div class="col-md-6">
                         <label>Display Name</label>
                         <input type="text" name="provider_name" class="form-control" value="<?php echo htmlspecialchars($p->name); ?>" required>
                     </div>
-                    <div class="col-md-4">
+                    <div class="col-md-6">
                         <label>API Format Type</label>
                         <select name="provider_type" class="form-control">
                             <option value="openrouter" <?php echo ($p->provider_type == 'openrouter') ? 'selected' : ''; ?>>OpenRouter</option>
                             <option value="google" <?php echo ($p->provider_type == 'google') ? 'selected' : ''; ?>>Google GenAI (Gemini)</option>
                             <option value="lmstudio" <?php echo ($p->provider_type == 'lmstudio') ? 'selected' : ''; ?>>OpenAI Compatible (LM Studio / Ollama)</option>
                             <option value="replicate" <?php echo ($p->provider_type == 'replicate') ? 'selected' : ''; ?>>Replicate</option>
-                        </select>
-                    </div>
-                    <div class="col-md-3">
-                        <label>Purpose</label>
-                        <select name="provider_purpose" class="form-control">
-                            <option value="both" <?php echo (($p->purpose ?? 'both') == 'both') ? 'selected' : ''; ?>>Both Ticket & Chat</option>
-                            <option value="ticket" <?php echo (($p->purpose ?? '') == 'ticket') ? 'selected' : ''; ?>>Ticket Only</option>
-                            <option value="chat" <?php echo (($p->purpose ?? '') == 'chat') ? 'selected' : ''; ?>>Chat & Copilot Only</option>
                         </select>
                     </div>
                 </div>
@@ -7298,8 +7293,12 @@ class AdminController
 
         $settings = Capsule::table('tblsahdev_settings')->first();
         $providerName = "Default Routing";
-        if (!empty($settings->copilot_primary_provider_id)) {
-            $p = Capsule::table('tblsahdev_providers')->where('id', $settings->copilot_primary_provider_id)->first();
+        $targetCopilotId = (int) ($settings->copilot_primary_provider_id ?? 0);
+        if ($targetCopilotId <= 0) {
+            $targetCopilotId = (int) ($settings->primary_provider_id ?? 0);
+        }
+        if ($targetCopilotId > 0) {
+            $p = Capsule::table('tblsahdev_providers')->where('id', $targetCopilotId)->first();
             if ($p) $providerName = $p->name . ' (' . ($p->model_name ?: $p->provider_type) . ')';
         }
 
