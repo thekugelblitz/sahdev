@@ -28,6 +28,120 @@ if (!$adminId && !$isClientChatAction) {
     exit;
 }
 
+// ── Dedicated Client-Side Live Chat Handler ──────────────────────────────────
+// Full tenant isolation: Zero admin privilege, zero mutating WHMCS tools or SafeOps,
+// strictly scoped to the authenticated client's read-only profile.
+if ($isClientChatAction) {
+    try {
+        require_once __DIR__ . '/lib/SchemaManager.php';
+        require_once __DIR__ . '/lib/AIProviderInterface.php';
+        require_once __DIR__ . '/lib/GoogleAIProvider.php';
+        require_once __DIR__ . '/lib/LMStudioAIProvider.php';
+        require_once __DIR__ . '/lib/OpenRouterAIProvider.php';
+        require_once __DIR__ . '/lib/ChatService.php';
+
+        \Sahdev\Lib\SchemaManager::ensureChatSessionsTable();
+        \Sahdev\Lib\SchemaManager::ensureChatMessagesTable();
+
+        $settings = Capsule::table('tblsahdev_settings')->first();
+        if (!$settings || empty($settings->client_chat_enabled)) {
+            echo json_encode(['status' => 'error', 'message' => 'Live chat is currently unavailable.']);
+            exit;
+        }
+
+        $clientId = !empty($_SESSION['uid']) ? (int) $_SESSION['uid'] : null;
+        if (!empty($settings->client_chat_require_auth) && (!$clientId || $clientId <= 0)) {
+            echo json_encode(['status' => 'error', 'message' => 'Please log in to your account to use live chat.']);
+            exit;
+        }
+
+        if ($action === 'client_chat_init') {
+            $visitorToken = trim((string) ($_REQUEST['visitor_token'] ?? ''));
+            if (empty($visitorToken) || strlen($visitorToken) > 64) {
+                $visitorToken = bin2hex(random_bytes(16));
+            }
+
+            $metadata = [
+                'ip'         => $_SERVER['REMOTE_ADDR'] ?? '',
+                'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? '',
+                'page'       => $_REQUEST['page_url'] ?? '',
+            ];
+
+            if ($clientId > 0) {
+                $client = Capsule::table('tblclients')->where('id', $clientId)->first();
+                if ($client) {
+                    $metadata['name']  = trim(($client->firstname ?? '') . ' ' . ($client->lastname ?? ''));
+                    $metadata['email'] = $client->email ?? '';
+                }
+            }
+
+            $session = \Sahdev\Lib\ChatService::getOrCreateClientSession($visitorToken, $clientId, $metadata);
+            $messages = \Sahdev\Lib\ChatService::getSessionMessages((int) $session['id'], 50);
+            $greeting = !empty($settings->client_chat_greeting)
+                ? $settings->client_chat_greeting
+                : "Hello! How can our organization assistant help you today?";
+
+            echo json_encode([
+                'status'        => 'success',
+                'visitor_token' => $visitorToken,
+                'session_uuid'  => $session['session_uuid'],
+                'greeting'      => $greeting,
+                'messages'      => $messages,
+                'is_logged_in'  => ($clientId > 0),
+                'client_name'   => $metadata['name'] ?? null,
+                'status_chat'   => $session['status'] ?? 'active',
+            ]);
+            exit;
+        }
+
+        if ($action === 'client_chat_message') {
+            if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+                header('HTTP/1.1 405 Method Not Allowed');
+                echo json_encode(['status' => 'error', 'message' => 'Invalid Request Method. POST required.']);
+                exit;
+            }
+
+            $visitorToken = trim((string) ($_POST['visitor_token'] ?? ''));
+            $messageText = trim((string) ($_POST['message'] ?? ''));
+
+            if (empty($visitorToken) || empty($messageText)) {
+                header('HTTP/1.1 400 Bad Request');
+                echo json_encode(['status' => 'error', 'message' => 'Missing visitor_token or message.']);
+                exit;
+            }
+
+            $res = \Sahdev\Lib\ChatService::handleClientMessage($visitorToken, $messageText, $clientId);
+            echo json_encode(array_merge(['status' => ($res['success'] ?? false) ? 'success' : 'error'], $res));
+            exit;
+        }
+
+        if ($action === 'client_chat_escalate') {
+            if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+                header('HTTP/1.1 405 Method Not Allowed');
+                echo json_encode(['status' => 'error', 'message' => 'Invalid Request Method. POST required.']);
+                exit;
+            }
+
+            $sessionUuid = trim((string) ($_POST['session_uuid'] ?? ''));
+            if (empty($sessionUuid)) {
+                header('HTTP/1.1 400 Bad Request');
+                echo json_encode(['status' => 'error', 'message' => 'Missing session_uuid.']);
+                exit;
+            }
+
+            $res = \Sahdev\Lib\ChatService::escalateChatToTicket($sessionUuid, $clientId);
+            echo json_encode(array_merge(['status' => ($res['success'] ?? false) ? 'success' : 'error'], $res));
+            exit;
+        }
+    } catch (\Throwable $e) {
+        echo json_encode([
+            'status'  => 'error',
+            'message' => 'Live chat service error: ' . $e->getMessage()
+        ]);
+        exit;
+    }
+}
+
 // Actions allowed via GET (no ticket/POST needed)
 $getAllowedActions = [
     'get_analytics_period', 'get_header_server_widget', 'server_sso',
@@ -1127,64 +1241,6 @@ try {
             'status'  => 'success',
             'metrics' => $metrics,
         ];
-    } elseif ($action === 'client_chat_init') {
-        $visitorToken = trim((string) ($_REQUEST['visitor_token'] ?? ''));
-        if (empty($visitorToken) || strlen($visitorToken) > 64) {
-            $visitorToken = bin2hex(random_bytes(16));
-        }
-        $clientId = !empty($_SESSION['uid']) ? (int) $_SESSION['uid'] : null;
-        $metadata = [
-            'ip'         => $_SERVER['REMOTE_ADDR'] ?? '',
-            'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? '',
-            'page'       => $_REQUEST['page_url'] ?? '',
-        ];
-        if ($clientId > 0) {
-            $client = Capsule::table('tblclients')->where('id', $clientId)->first();
-            if ($client) {
-                $metadata['name'] = $client->firstname . ' ' . $client->lastname;
-                $metadata['email'] = $client->email;
-            }
-        }
-        $session = \Sahdev\Lib\ChatService::getOrCreateClientSession($visitorToken, $clientId, $metadata);
-        $messages = \Sahdev\Lib\ChatService::getSessionMessages((int) $session['id'], 50);
-        $greeting = Capsule::table('tblsahdev_settings')->value('client_chat_greeting')
-            ?: "Hello! How can our organization assistant help you today?";
-
-        $response = [
-            'status'        => 'success',
-            'visitor_token' => $visitorToken,
-            'session_uuid'  => $session['session_uuid'],
-            'greeting'      => $greeting,
-            'messages'      => $messages,
-            'is_logged_in'  => ($clientId > 0),
-            'client_name'   => $metadata['name'] ?? null,
-            'status_chat'   => $session['status'] ?? 'active',
-        ];
-    } elseif ($action === 'client_chat_message') {
-        $visitorToken = trim((string) ($_POST['visitor_token'] ?? ''));
-        $messageText = trim((string) ($_POST['message'] ?? ''));
-        $clientId = !empty($_SESSION['uid']) ? (int) $_SESSION['uid'] : null;
-
-        if (empty($visitorToken) || empty($messageText)) {
-            header('HTTP/1.1 400 Bad Request');
-            echo json_encode(['status' => 'error', 'message' => 'Missing visitor_token or message.']);
-            exit;
-        }
-
-        $res = \Sahdev\Lib\ChatService::handleClientMessage($visitorToken, $messageText, $clientId);
-        $response = array_merge(['status' => ($res['success'] ?? false) ? 'success' : 'error'], $res);
-    } elseif ($action === 'client_chat_escalate') {
-        $sessionUuid = trim((string) ($_POST['session_uuid'] ?? ''));
-        $clientId = !empty($_SESSION['uid']) ? (int) $_SESSION['uid'] : null;
-
-        if (empty($sessionUuid)) {
-            header('HTTP/1.1 400 Bad Request');
-            echo json_encode(['status' => 'error', 'message' => 'Missing session_uuid.']);
-            exit;
-        }
-
-        $res = \Sahdev\Lib\ChatService::escalateChatToTicket($sessionUuid, $clientId);
-        $response = array_merge(['status' => ($res['success'] ?? false) ? 'success' : 'error'], $res);
     } else {
         // Default analyze_ticket (server-side generation)
         $response = $controller->getAnalysis($tone, $instruction, $forceRegenerate, $forceFallback, $intent, $useSummary, $includeHistory, $technicalContext, $overrideProviderId, $includeTools, $includeAdminNotes);

@@ -5866,7 +5866,22 @@ function sahdev_render_client_livechat_widget(array $vars): string
         return '';
     }
 
-    $ajaxEndpoint = 'modules/addons/sahdev/ajax.php';
+    $systemUrl = '';
+    if (class_exists('\WHMCS\Config\Setting')) {
+        try {
+            $systemUrl = \WHMCS\Config\Setting::getValue('SystemSSLURL') ?: \WHMCS\Config\Setting::getValue('SystemURL');
+        } catch (\Throwable $e) {}
+    }
+    if (empty($systemUrl) && !empty($GLOBALS['CONFIG']['SystemURL'])) {
+        $systemUrl = $GLOBALS['CONFIG']['SystemURL'];
+    }
+    if (empty($systemUrl) && !empty($vars['systemurl'])) {
+        $systemUrl = $vars['systemurl'];
+    }
+    $ajaxEndpoint = !empty($systemUrl)
+        ? rtrim($systemUrl, '/') . '/modules/addons/sahdev/ajax.php'
+        : '/modules/addons/sahdev/ajax.php';
+
     $ajaxUrlJs = json_encode($ajaxEndpoint);
     $greetingJs = json_encode($greeting);
 
@@ -6171,7 +6186,11 @@ function sahdev_render_client_livechat_widget(array $vars): string
         form.append('message', text);
 
         fetch(ajaxUrl, { method: 'POST', body: form })
-        .then(function(r) { return r.json(); })
+        .then(function(r) {
+            return r.json().catch(function() {
+                throw new Error('Server returned an unexpected response (HTTP ' + r.status + ')');
+            });
+        })
         .then(function(data) {
             inputEl.disabled = false;
             sendBtn.disabled = false;
@@ -6180,13 +6199,13 @@ function sahdev_render_client_livechat_widget(array $vars): string
             if (data.status === 'success' || data.success) {
                 tempBot.innerHTML = (data.reply || 'Message received.').replace(/\\n/g, '<br>');
             } else {
-                tempBot.innerHTML = '⚠️ ' + (data.message || 'Could not send message.');
+                tempBot.innerHTML = '⚠️ ' + (data.message || data.error || 'Could not send message.');
             }
         })
         .catch(function(err) {
             inputEl.disabled = false;
             sendBtn.disabled = false;
-            tempBot.innerHTML = '⚠️ Connection error. Please try again.';
+            tempBot.innerHTML = '⚠️ ' + (err && err.message ? err.message : 'Connection error. Please try again.');
         });
     }
 
