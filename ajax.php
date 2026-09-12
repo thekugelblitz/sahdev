@@ -77,9 +77,11 @@ if ($isClientChatAction) {
 
             $session = \Sahdev\Lib\ChatService::getOrCreateClientSession($visitorToken, $clientId, $metadata);
             $messages = \Sahdev\Lib\ChatService::getSessionMessages((int) $session['id'], 50);
-            $greeting = !empty($settings->client_chat_greeting)
-                ? $settings->client_chat_greeting
-                : "Hello! How can our organization assistant help you today?";
+            $greeting = !empty($settings->client_chat_welcome_message)
+                ? $settings->client_chat_welcome_message
+                : (!empty($settings->client_chat_greeting)
+                    ? $settings->client_chat_greeting
+                    : "Hi there! 👋 Need help with your hosting, domains, or billing? Chat with our AI assistant or open a ticket anytime.");
 
             echo json_encode([
                 'status'        => 'success',

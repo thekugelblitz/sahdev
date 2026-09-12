@@ -5861,29 +5861,59 @@ function sahdev_render_client_livechat_widget(array $vars): string
             return '';
         }
 
-        $greeting = htmlspecialchars($settings->client_chat_greeting ?: "Hello! How can our organization assistant help you today?", ENT_QUOTES, 'UTF-8');
+        $chatTitle = !empty($settings->client_chat_title)
+            ? htmlspecialchars($settings->client_chat_title, ENT_QUOTES, 'UTF-8')
+            : 'Hosting Support Assistant';
+
+        $brandColor = !empty($settings->client_chat_brand_color)
+            ? htmlspecialchars($settings->client_chat_brand_color, ENT_QUOTES, 'UTF-8')
+            : '#0d6efd';
+
+        $chatPosition = ($settings->client_chat_position ?? 'bottom-right') === 'bottom-left' ? 'bottom-left' : 'bottom-right';
+
+        $welcomeMsgRaw = !empty($settings->client_chat_welcome_message)
+            ? $settings->client_chat_welcome_message
+            : (!empty($settings->client_chat_greeting)
+                ? $settings->client_chat_greeting
+                : 'Hi there! 👋 How can our organization assistant help you today?');
+        $welcomeMsg = htmlspecialchars($welcomeMsgRaw, ENT_QUOTES, 'UTF-8');
     } catch (\Throwable $e) {
         return '';
     }
 
-    $systemUrl = '';
-    if (class_exists('\WHMCS\Config\Setting')) {
+    // Determine WHMCS base path for client area
+    $whmcsBase = '';
+    if (!empty($vars['systemurl'])) {
+        $parsed = parse_url($vars['systemurl'], PHP_URL_PATH);
+        if (!empty($parsed)) {
+            $whmcsBase = rtrim($parsed, '/');
+        }
+    } elseif (class_exists('\WHMCS\Config\Setting')) {
         try {
-            $systemUrl = \WHMCS\Config\Setting::getValue('SystemSSLURL') ?: \WHMCS\Config\Setting::getValue('SystemURL');
+            $su = \WHMCS\Config\Setting::getValue('SystemSSLURL') ?: \WHMCS\Config\Setting::getValue('SystemURL');
+            if (!empty($su)) {
+                $parsed = parse_url($su, PHP_URL_PATH);
+                if (!empty($parsed)) {
+                    $whmcsBase = rtrim($parsed, '/');
+                }
+            }
         } catch (\Throwable $e) {}
     }
-    if (empty($systemUrl) && !empty($GLOBALS['CONFIG']['SystemURL'])) {
-        $systemUrl = $GLOBALS['CONFIG']['SystemURL'];
+    if ($whmcsBase === '' && isset($_SERVER['SCRIPT_NAME'])) {
+        $scriptDir = str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME']));
+        if ($scriptDir !== '/' && $scriptDir !== '.') {
+            $whmcsBase = rtrim($scriptDir, '/');
+        }
     }
-    if (empty($systemUrl) && !empty($vars['systemurl'])) {
-        $systemUrl = $vars['systemurl'];
-    }
-    $ajaxEndpoint = !empty($systemUrl)
-        ? rtrim($systemUrl, '/') . '/modules/addons/sahdev/ajax.php'
-        : '/modules/addons/sahdev/ajax.php';
+    $primaryAjaxUrl = ($whmcsBase !== '' ? $whmcsBase : '') . '/modules/addons/sahdev/ajax.php';
 
-    $ajaxUrlJs = json_encode($ajaxEndpoint);
-    $greetingJs = json_encode($greeting);
+    $isLeft = ($chatPosition === 'bottom-left');
+    $launcherPosCss = $isLeft ? 'left: 24px; right: auto;' : 'right: 24px; left: auto;';
+    $windowPosCss = $isLeft ? 'left: 24px; right: auto;' : 'right: 24px; left: auto;';
+
+    $primaryAjaxUrlJs = json_encode($primaryAjaxUrl);
+    $welcomeMsgJs = json_encode($welcomeMsgRaw);
+    $brandColorJs = json_encode($brandColor);
 
     return <<<HTML
 <style>
@@ -5891,36 +5921,36 @@ function sahdev_render_client_livechat_widget(array $vars): string
 #sdv-client-chat-launcher {
     position: fixed;
     bottom: 24px;
-    right: 24px;
+    {$launcherPosCss}
     width: 60px;
     height: 60px;
     border-radius: 50%;
-    background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+    background: {$brandColor};
     color: #ffffff;
     display: flex;
     align-items: center;
     justify-content: center;
-    box-shadow: 0 10px 25px -5px rgba(37, 99, 235, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.2);
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.2);
     cursor: pointer;
     z-index: 99980;
     transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 #sdv-client-chat-launcher:hover {
     transform: scale(1.08) translateY(-2px);
-    box-shadow: 0 15px 30px -5px rgba(37, 99, 235, 0.7);
+    box-shadow: 0 15px 30px -5px rgba(0, 0, 0, 0.4);
 }
 #sdv-client-chat-window {
     position: fixed;
     bottom: 96px;
-    right: 24px;
-    width: 380px;
-    height: 540px;
+    {$windowPosCss}
+    width: 360px;
+    height: 520px;
     max-height: calc(100vh - 120px);
     max-width: calc(100vw - 36px);
     z-index: 99985;
     background: #ffffff;
     color: #1e293b;
-    border-radius: 16px;
+    border-radius: 14px;
     box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(0, 0, 0, 0.08);
     display: flex;
     flex-direction: column;
@@ -5937,7 +5967,7 @@ function sahdev_render_client_livechat_widget(array $vars): string
     pointer-events: auto;
 }
 .sdv-cl-header {
-    background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+    background: {$brandColor};
     color: #ffffff;
     padding: 14px 18px;
     display: flex;
@@ -5950,40 +5980,44 @@ function sahdev_render_client_livechat_widget(array $vars): string
     gap: 10px;
 }
 .sdv-cl-avatar {
-    width: 36px;
-    height: 36px;
-    background: #3b82f6;
+    width: 34px;
+    height: 34px;
+    background: rgba(255, 255, 255, 0.25);
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
     color: #ffffff;
     font-weight: 700;
+    font-size: 13px;
+    border: 1px solid rgba(255, 255, 255, 0.3);
 }
-.sdv-cl-title { font-size: 14px; font-weight: 700; line-height: 1.2; }
-.sdv-cl-status { font-size: 11px; color: #34d399; display: flex; align-items: center; gap: 4px; }
-.sdv-cl-status-dot { width: 6px; height: 6px; background: #34d399; border-radius: 50%; }
+.sdv-cl-title { font-size: 14px; font-weight: 700; line-height: 1.2; color: #ffffff; }
+.sdv-cl-status { font-size: 11px; color: rgba(255, 255, 255, 0.9); display: flex; align-items: center; gap: 5px; margin-top: 2px; }
+.sdv-cl-status-dot { width: 7px; height: 7px; background: #34d399; border-radius: 50%; box-shadow: 0 0 0 2px rgba(255,255,255,0.4); }
 .sdv-cl-close {
     background: transparent;
     border: none;
-    color: #94a3b8;
-    font-size: 20px;
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 22px;
     cursor: pointer;
     line-height: 1;
+    padding: 2px 6px;
+    border-radius: 4px;
 }
-.sdv-cl-close:hover { color: #ffffff; }
+.sdv-cl-close:hover { color: #ffffff; background: rgba(255, 255, 255, 0.15); }
 .sdv-cl-escalate-bar {
     background: #f8fafc;
     border-bottom: 1px solid #e2e8f0;
     padding: 8px 14px;
-    font-size: 11px;
+    font-size: 11.5px;
     color: #64748b;
     display: flex;
     justify-content: space-between;
     align-items: center;
 }
 .sdv-cl-escalate-btn {
-    color: #2563eb;
+    color: {$brandColor};
     font-weight: 600;
     text-decoration: none;
     cursor: pointer;
@@ -6007,17 +6041,17 @@ function sahdev_render_client_livechat_widget(array $vars): string
 }
 .sdv-cl-msg-user {
     align-self: flex-end;
-    background: #2563eb;
+    background: {$brandColor};
     color: #ffffff;
-    border-radius: 14px 14px 2px 14px;
+    border-radius: 12px 12px 2px 12px;
 }
 .sdv-cl-msg-bot {
     align-self: flex-start;
-    background: #ffffff;
+    background: #edf2f7;
     color: #1e293b;
-    border-radius: 14px 14px 14px 2px;
+    border-radius: 12px 12px 12px 2px;
     border: 1px solid #e2e8f0;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.03);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.02);
 }
 .sdv-cl-footer {
     padding: 12px;
@@ -6041,9 +6075,9 @@ function sahdev_render_client_livechat_widget(array $vars): string
     font-family: inherit;
     outline: none;
 }
-#sdv-cl-input:focus { border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15); }
+#sdv-cl-input:focus { border-color: {$brandColor}; box-shadow: 0 0 0 2px rgba(13, 110, 253, 0.2); }
 #sdv-cl-send {
-    background: #2563eb;
+    background: {$brandColor};
     border: none;
     color: #fff;
     width: 36px;
@@ -6053,9 +6087,9 @@ function sahdev_render_client_livechat_widget(array $vars): string
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: background 0.15s;
+    transition: opacity 0.15s, transform 0.15s;
 }
-#sdv-cl-send:hover { background: #1d4ed8; }
+#sdv-cl-send:hover { opacity: 0.9; transform: scale(1.05); }
 .sdv-cl-branding {
     font-size: 10px;
     color: #94a3b8;
@@ -6076,11 +6110,11 @@ function sahdev_render_client_livechat_widget(array $vars): string
         <div class="sdv-cl-header-info">
             <div class="sdv-cl-avatar">AI</div>
             <div>
-                <div class="sdv-cl-title">Support Assistant</div>
-                <div class="sdv-cl-status"><span class="sdv-cl-status-dot"></span> Online &bull; 24/7 Knowledge Base</div>
+                <div class="sdv-cl-title">{$chatTitle}</div>
+                <div class="sdv-cl-status"><span class="sdv-cl-status-dot"></span> Online &bull; Instant Answers</div>
             </div>
         </div>
-        <button type="button" class="sdv-cl-close" id="sdv-cl-close">&times;</button>
+        <button type="button" class="sdv-cl-close" id="sdv-cl-close" title="Minimize">&minus;</button>
     </div>
 
     <div class="sdv-cl-escalate-bar">
@@ -6089,12 +6123,12 @@ function sahdev_render_client_livechat_widget(array $vars): string
     </div>
 
     <div class="sdv-cl-messages" id="sdv-cl-msgs">
-        <div class="sdv-cl-msg sdv-cl-msg-bot">{$greeting}</div>
+        <div class="sdv-cl-msg sdv-cl-msg-bot">{$welcomeMsg}</div>
     </div>
 
     <div class="sdv-cl-footer">
         <div class="sdv-cl-input-row">
-            <input type="text" id="sdv-cl-input" placeholder="Ask a question..." autocomplete="off" />
+            <input type="text" id="sdv-cl-input" placeholder="Type message..." autocomplete="off" />
             <button type="button" id="sdv-cl-send" title="Send message">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
             </button>
@@ -6105,7 +6139,7 @@ function sahdev_render_client_livechat_widget(array $vars): string
 
 <script>
 (function() {
-    var ajaxUrl = {$ajaxUrlJs};
+    var brandColor = {$brandColorJs};
     var launcher = document.getElementById('sdv-client-chat-launcher');
     var chatWin = document.getElementById('sdv-client-chat-window');
     var closeBtn = document.getElementById('sdv-cl-close');
@@ -6113,6 +6147,65 @@ function sahdev_render_client_livechat_widget(array $vars): string
     var sendBtn = document.getElementById('sdv-cl-send');
     var msgsEl = document.getElementById('sdv-cl-msgs');
     var escalateBtn = document.getElementById('sdv-cl-escalate');
+
+    // Build resilient endpoint list with multi-candidate automatic fallback
+    var candidates = [];
+    var baseEl = document.querySelector('base');
+    if (baseEl && baseEl.href) {
+        var cleanBase = baseEl.href.replace(/\/+$/, '');
+        candidates.push(cleanBase + '/modules/addons/sahdev/ajax.php');
+    }
+
+    var serverUrl = {$primaryAjaxUrlJs};
+    if (serverUrl) {
+        candidates.push(serverUrl);
+    }
+
+    var pathname = window.location.pathname;
+    var lastSlash = pathname.lastIndexOf('/');
+    if (lastSlash >= 0) {
+        var dir = pathname.substring(0, lastSlash);
+        if (dir && dir !== '/') {
+            candidates.push(window.location.origin + dir.replace(/\/+$/, '') + '/modules/addons/sahdev/ajax.php');
+        }
+    }
+
+    candidates.push('modules/addons/sahdev/ajax.php');
+    candidates.push('/modules/addons/sahdev/ajax.php');
+
+    var uniqueEndpoints = [];
+    candidates.forEach(function(u) {
+        if (u && uniqueEndpoints.indexOf(u) === -1) {
+            uniqueEndpoints.push(u);
+        }
+    });
+
+    var activeEndpoint = uniqueEndpoints[0] || 'modules/addons/sahdev/ajax.php';
+
+    function postAjaxWithFallback(form, callback, candidateIdx) {
+        candidateIdx = candidateIdx || 0;
+        var targetUrl = uniqueEndpoints[candidateIdx] || activeEndpoint;
+
+        fetch(targetUrl, { method: 'POST', body: form })
+        .then(function(r) {
+            if (r.status === 404 && candidateIdx + 1 < uniqueEndpoints.length) {
+                console.warn('[Sahdev LiveChat] 404 at ' + targetUrl + ', retrying with: ' + uniqueEndpoints[candidateIdx + 1]);
+                return postAjaxWithFallback(form, callback, candidateIdx + 1);
+            }
+            activeEndpoint = targetUrl; // Cache successful endpoint
+            return r.json().catch(function() {
+                throw new Error('Server returned an unexpected response (HTTP ' + r.status + ')');
+            }).then(function(data) {
+                callback(null, data);
+            });
+        })
+        .catch(function(err) {
+            if (candidateIdx + 1 < uniqueEndpoints.length) {
+                return postAjaxWithFallback(form, callback, candidateIdx + 1);
+            }
+            callback(err);
+        });
+    }
 
     var visitorToken = localStorage.getItem('sdv_visitor_token');
     if (!visitorToken) {
@@ -6153,10 +6246,9 @@ function sahdev_render_client_livechat_widget(array $vars): string
         form.append('visitor_token', visitorToken);
         form.append('page_url', window.location.href);
 
-        fetch(ajaxUrl, { method: 'POST', body: form })
-        .then(function(r) { return r.json(); })
-        .then(function(data) {
-            if (data.status === 'success') {
+        postAjaxWithFallback(form, function(err, data) {
+            if (err) return;
+            if (data && data.status === 'success') {
                 sessionUuid = data.session_uuid;
                 if (data.messages && data.messages.length > 0) {
                     msgsEl.innerHTML = '';
@@ -6165,8 +6257,7 @@ function sahdev_render_client_livechat_widget(array $vars): string
                     });
                 }
             }
-        })
-        .catch(function(e) { /* ignore */ });
+        });
     }
 
     function sendClientMessage() {
@@ -6185,27 +6276,21 @@ function sahdev_render_client_livechat_widget(array $vars): string
         form.append('visitor_token', visitorToken);
         form.append('message', text);
 
-        fetch(ajaxUrl, { method: 'POST', body: form })
-        .then(function(r) {
-            return r.json().catch(function() {
-                throw new Error('Server returned an unexpected response (HTTP ' + r.status + ')');
-            });
-        })
-        .then(function(data) {
+        postAjaxWithFallback(form, function(err, data) {
             inputEl.disabled = false;
             sendBtn.disabled = false;
             inputEl.focus();
+
+            if (err) {
+                tempBot.innerHTML = '⚠️ ' + (err.message || 'Connection error. Please try again.');
+                return;
+            }
 
             if (data.status === 'success' || data.success) {
                 tempBot.innerHTML = (data.reply || 'Message received.').replace(/\\n/g, '<br>');
             } else {
                 tempBot.innerHTML = '⚠️ ' + (data.message || data.error || 'Could not send message.');
             }
-        })
-        .catch(function(err) {
-            inputEl.disabled = false;
-            sendBtn.disabled = false;
-            tempBot.innerHTML = '⚠️ ' + (err && err.message ? err.message : 'Connection error. Please try again.');
         });
     }
 
@@ -6232,23 +6317,16 @@ function sahdev_render_client_livechat_widget(array $vars): string
             form.append('action', 'client_chat_escalate');
             form.append('session_uuid', sessionUuid);
 
-            fetch(ajaxUrl, { method: 'POST', body: form })
-            .then(function(r) { return r.json(); })
-            .then(function(data) {
-                if (data.status === 'success' || data.success) {
-                    var ticketId = data.ticket_id || '';
-                    var tid = data.tid || ticketId;
-                    var ticketUrl = 'viewticket.php?tid=' + encodeURIComponent(tid);
-                    appendClMsg('bot', '✅ <strong>Support Ticket #' + tid + ' created!</strong><br><a href="' + ticketUrl + '" style="color:#2563eb;font-weight:600;text-decoration:underline;">Click here to view your ticket &rarr;</a>');
-                    escalateBtn.style.display = 'none';
-                } else {
+            postAjaxWithFallback(form, function(err, data) {
+                if (err || !(data.status === 'success' || data.success)) {
                     escalateBtn.textContent = 'Convert to Ticket →';
-                    alert('Escalation failed: ' + (data.message || data.error || 'Unknown error'));
+                    alert('Escalation failed: ' + (err ? err.message : (data.message || data.error || 'Unknown error')));
+                    return;
                 }
-            })
-            .catch(function(err) {
-                escalateBtn.textContent = 'Convert to Ticket →';
-                alert('Error escalating ticket: ' + err.message);
+                var tid = data.tid || data.ticket_id || '';
+                var ticketUrl = 'viewticket.php?tid=' + encodeURIComponent(tid);
+                appendClMsg('bot', '✅ <strong>Support Ticket #' + tid + ' created!</strong><br><a href="' + ticketUrl + '" style="color:' + encodeURIComponent(brandColor) + ';font-weight:600;text-decoration:underline;">Click here to view your ticket &rarr;</a>');
+                escalateBtn.style.display = 'none';
             });
         });
     }

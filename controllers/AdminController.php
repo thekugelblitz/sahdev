@@ -8039,34 +8039,47 @@ class AdminController
                     <div class="panel panel-default" style="border-radius: 8px;">
                         <div class="panel-heading" style="background: #fff; padding: 15px 20px;">
                             <strong>Widget Live Mockup</strong>
+                            <span class="pull-right text-muted" style="font-size: 11px;">Real-time Preview</span>
                         </div>
-                        <div class="panel-body" style="background: #f8fafc; padding: 30px; display: flex; justify-content: center;">
+                        <div class="panel-body" style="background: #f8fafc; padding: 25px; display: flex; flex-direction: column; align-items: center; gap: 15px;">
                             <!-- Mockup Widget Frame -->
-                            <div style="width: 320px; background: #fff; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); border: 1px solid #e2e8f0; overflow: hidden;">
-                                <div style="background: <?php echo htmlspecialchars($settings->client_chat_brand_color ?? '#0d6efd'); ?>; color: #fff; padding: 14px 16px; display: flex; justify-content: space-between; align-items: center;">
-                                    <div>
-                                        <strong style="font-size: 13px; display: block;"><?php echo htmlspecialchars($settings->client_chat_title ?? 'Hosting Assistant'); ?></strong>
-                                        <span style="font-size: 11px; opacity: 0.85;">● Online — Instant Answers</span>
+                            <div style="width: 320px; background: #fff; border-radius: 14px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); border: 1px solid #e2e8f0; overflow: hidden;" id="sdv-mockup-frame">
+                                <div style="background: <?php echo htmlspecialchars($settings->client_chat_brand_color ?? '#0d6efd'); ?>; color: #fff; padding: 14px 16px; display: flex; justify-content: space-between; align-items: center;" id="sdv-mockup-header">
+                                    <div style="display: flex; align-items: center; gap: 10px;">
+                                        <div style="width: 32px; height: 32px; background: rgba(255,255,255,0.25); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 12px; color: #fff; border: 1px solid rgba(255,255,255,0.3);">AI</div>
+                                        <div>
+                                            <strong style="font-size: 13px; display: block;" id="sdv-mockup-title"><?php echo htmlspecialchars($settings->client_chat_title ?? 'Hosting Support Assistant'); ?></strong>
+                                            <span style="font-size: 11px; opacity: 0.9;">● Online — Instant Answers</span>
+                                        </div>
                                     </div>
-                                    <i class="fas fa-minus" style="cursor: pointer;"></i>
+                                    <span style="font-size: 20px; line-height: 1; opacity: 0.85; cursor: pointer;">&minus;</span>
+                                </div>
+                                <div style="padding: 8px 14px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; font-size: 11px; color: #64748b; display: flex; justify-content: space-between; align-items: center;">
+                                    <span>Need a support ticket?</span>
+                                    <span style="color: <?php echo htmlspecialchars($settings->client_chat_brand_color ?? '#0d6efd'); ?>; font-weight: 600; cursor: pointer;" id="sdv-mockup-escalate">Convert to Ticket &rarr;</span>
                                 </div>
                                 <div style="padding: 16px; min-height: 220px; background: #fcfdfe; display: flex; flex-direction: column; gap: 10px; font-size: 12px;">
-                                    <div style="align-self: flex-start; background: #edf2f7; padding: 8px 12px; border-radius: 10px; max-width: 85%;">
-                                        <?php echo htmlspecialchars($settings->client_chat_welcome_message ?? 'Hi there! How can I help you today?'); ?>
+                                    <div style="align-self: flex-start; background: #edf2f7; color: #1e293b; padding: 8px 12px; border-radius: 12px 12px 12px 2px; max-width: 85%;" id="sdv-mockup-welcome">
+                                        <?php echo htmlspecialchars($settings->client_chat_welcome_message ?? ($settings->client_chat_greeting ?? 'Hi there! How can I help you today?')); ?>
                                     </div>
-                                    <div style="align-self: flex-end; background: <?php echo htmlspecialchars($settings->client_chat_brand_color ?? '#0d6efd'); ?>; color: #fff; padding: 8px 12px; border-radius: 10px; max-width: 85%;">
+                                    <div style="align-self: flex-end; background: <?php echo htmlspecialchars($settings->client_chat_brand_color ?? '#0d6efd'); ?>; color: #fff; padding: 8px 12px; border-radius: 12px 12px 2px 12px; max-width: 85%;" id="sdv-mockup-user-msg">
                                         How do I configure nameservers for my domain?
                                     </div>
-                                    <div style="align-self: flex-start; background: #edf2f7; padding: 8px 12px; border-radius: 10px; max-width: 85%;">
+                                    <div style="align-self: flex-start; background: #edf2f7; color: #1e293b; padding: 8px 12px; border-radius: 12px 12px 12px 2px; max-width: 85%;">
                                         You can update your nameservers by navigating to <strong>Domains > Manage Nameservers</strong>. Point them to ns1.yourhost.com and ns2.yourhost.com!
-                                        <div style="margin-top: 8px;">
-                                            <span class="label label-primary" style="font-size: 10px; cursor: pointer;"><i class="fas fa-ticket-alt"></i> Open Ticket</span>
-                                        </div>
                                     </div>
                                 </div>
                                 <div style="padding: 10px 14px; border-top: 1px solid #edf2f7; display: flex; gap: 8px; background: #fff;">
                                     <input type="text" class="form-control input-sm" placeholder="Type message..." disabled>
-                                    <button class="btn btn-sm btn-primary" style="background: <?php echo htmlspecialchars($settings->client_chat_brand_color ?? '#0d6efd'); ?>; border-color: <?php echo htmlspecialchars($settings->client_chat_brand_color ?? '#0d6efd'); ?>;"><i class="fas fa-paper-plane"></i></button>
+                                    <button class="btn btn-sm btn-primary" style="background: <?php echo htmlspecialchars($settings->client_chat_brand_color ?? '#0d6efd'); ?>; border-color: <?php echo htmlspecialchars($settings->client_chat_brand_color ?? '#0d6efd'); ?>;" id="sdv-mockup-send"><i class="fas fa-paper-plane"></i></button>
+                                </div>
+                            </div>
+
+                            <!-- Launcher Button Mockup -->
+                            <div style="display: flex; align-items: center; gap: 10px; font-size: 12px; color: #64748b;">
+                                <span>Launcher Preview:</span>
+                                <div style="width: 46px; height: 46px; border-radius: 50%; background: <?php echo htmlspecialchars($settings->client_chat_brand_color ?? '#0d6efd'); ?>; color: #fff; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(0,0,0,0.15);" id="sdv-mockup-launcher">
+                                    <i class="fas fa-comment-dots" style="font-size: 20px;"></i>
                                 </div>
                             </div>
                         </div>
@@ -8074,6 +8087,41 @@ class AdminController
                 </div>
             </div>
         </div>
+        <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            var titleInput = document.querySelector('input[name="client_chat_title"]');
+            var colorInput = document.querySelector('input[name="client_chat_brand_color"]');
+            var welcomeInput = document.querySelector('textarea[name="client_chat_welcome_message"]');
+
+            if (titleInput) {
+                titleInput.addEventListener('input', function() {
+                    var el = document.getElementById('sdv-mockup-title');
+                    if (el) el.textContent = this.value || 'Hosting Support Assistant';
+                });
+            }
+            if (colorInput) {
+                colorInput.addEventListener('input', function() {
+                    var c = this.value || '#0d6efd';
+                    var header = document.getElementById('sdv-mockup-header');
+                    var userMsg = document.getElementById('sdv-mockup-user-msg');
+                    var send = document.getElementById('sdv-mockup-send');
+                    var escalate = document.getElementById('sdv-mockup-escalate');
+                    var launcher = document.getElementById('sdv-mockup-launcher');
+                    if (header) header.style.background = c;
+                    if (userMsg) userMsg.style.background = c;
+                    if (send) { send.style.background = c; send.style.borderColor = c; }
+                    if (escalate) escalate.style.color = c;
+                    if (launcher) launcher.style.background = c;
+                });
+            }
+            if (welcomeInput) {
+                welcomeInput.addEventListener('input', function() {
+                    var el = document.getElementById('sdv-mockup-welcome');
+                    if (el) el.textContent = this.value || 'Hi there! How can I help you today?';
+                });
+            }
+        });
+        </script>
         <?php
         return ob_get_clean();
     }
