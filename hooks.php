@@ -5979,6 +5979,7 @@ function sahdev_render_client_livechat_widget(array $vars): string
         } catch (\Throwable $e) {}
     }
     $isLoggedInJs = json_encode($clientId > 0);
+    $currentClientIdJs = json_encode((int)$clientId);
     $clientNameJs = json_encode($clientName);
     $clientEmailJs = json_encode($clientEmail);
 
@@ -7440,6 +7441,7 @@ HTML;
     var defaultExpandWidth = {$expandWidthJs};
     var defaultExpandHeight = {$expandHeightJs};
     var isLoggedIn = {$isLoggedInJs};
+    var currentClientId = {$currentClientIdJs};
     var clientNamePrefill = {$clientNameJs};
     var clientEmailPrefill = {$clientEmailJs};
 
@@ -7506,7 +7508,7 @@ HTML;
     });
 
     function broadcastLiveSync(action, payload) {
-        var data = Object.assign({ action: action, ts: Date.now() }, payload);
+        var data = Object.assign({ action: action, client_id: currentClientId, ts: Date.now() }, payload);
         if (syncChannel) {
             try { syncChannel.postMessage(data); } catch(e) {}
         }
@@ -7515,6 +7517,10 @@ HTML;
 
     function handleLiveSync(data) {
         if (!data || !data.action) return;
+        // Strict Tenant Boundary: Ignore events belonging to a different client account
+        if (typeof data.client_id !== 'undefined' && data.client_id !== currentClientId) {
+            return;
+        }
         if (data.action === 'new_message' && data.session_uuid === sessionUuid) {
             if (data.msg_id && document.getElementById('sdv-msg-' + data.msg_id)) {
                 return;
@@ -7528,7 +7534,7 @@ HTML;
         } else if (data.action === 'session_switched' && data.session_uuid) {
             if (sessionUuid !== data.session_uuid) {
                 sessionUuid = data.session_uuid;
-                sdvSafeSet('sdv_active_session_uuid', sessionUuid);
+                sdvSafeSet(activeSessionKey, sessionUuid);
                 loadSessionTranscript(sessionUuid, false);
             }
         }
@@ -7795,13 +7801,29 @@ HTML;
         return 'vt_' + Math.random().toString(36).substring(2, 12) + Date.now().toString(36);
     }
 
-    var visitorToken = sdvSafeGet('sdv_visitor_token', '');
+    // Strict Multi-Tenant LocalStorage Partitioning (Prevents cross-account session leaks)
+    var tenantStoragePrefix = currentClientId > 0 ? ('sdv_client_' + currentClientId + '_') : 'sdv_guest_';
+    var visitorTokenKey = tenantStoragePrefix + 'visitor_token';
+    var activeSessionKey = tenantStoragePrefix + 'active_session_uuid';
+
+    // Account switch detection: If user switched between different client accounts on same machine
+    var lastRecordedClientId = sdvSafeGet('sdv_active_client_id', null);
+    if (lastRecordedClientId !== null && lastRecordedClientId !== String(currentClientId)) {
+        try {
+            if (typeof window !== 'undefined' && window.localStorage) {
+                window.localStorage.removeItem('sdv_livechat_event');
+            }
+        } catch(e) {}
+    }
+    sdvSafeSet('sdv_active_client_id', String(currentClientId));
+
+    var visitorToken = sdvSafeGet(visitorTokenKey, '');
     if (!visitorToken || !/^[a-zA-Z0-9_\-]{16,64}$/.test(visitorToken)) {
         visitorToken = sdvGenerateSecureToken();
-        sdvSafeSet('sdv_visitor_token', visitorToken);
+        sdvSafeSet(visitorTokenKey, visitorToken);
     }
 
-    var sessionUuid = sdvSafeGet('sdv_active_session_uuid', null);
+    var sessionUuid = sdvSafeGet(activeSessionKey, null);
     var isInitialized = false;
 
     function sdvDecodeEntities(str) {
@@ -8113,7 +8135,7 @@ HTML;
         if (isInitialized) return;
         isInitialized = true;
 
-        var savedUuid = sdvSafeGet('sdv_active_session_uuid', '');
+        var savedUuid = sdvSafeGet(activeSessionKey, '');
         var form = new FormData();
         form.append('action', 'client_chat_init');
         form.append('visitor_token', visitorToken);
@@ -8126,7 +8148,7 @@ HTML;
             if (err) return;
             if (data && data.status === 'success') {
                 sessionUuid = data.session_uuid;
-                sdvSafeSet('sdv_active_session_uuid', sessionUuid);
+                sdvSafeSet(activeSessionKey, sessionUuid);
 
                 if (data.status_chat === 'escalated_ticket' || data.status === 'escalated_ticket') {
                     var escalateBar = document.querySelector('.sdv-cl-escalate-bar');
@@ -8188,7 +8210,7 @@ HTML;
                 if (tempBot) tempBot.innerHTML = parseSimpleMarkdown(replyText);
                 if (data.session_uuid && data.session_uuid !== sessionUuid) {
                     sessionUuid = data.session_uuid;
-                    sdvSafeSet('sdv_active_session_uuid', sessionUuid);
+                    sdvSafeSet(activeSessionKey, sessionUuid);
                 }
                 broadcastLiveSync('new_message', {
                     session_uuid: sessionUuid,
@@ -8462,7 +8484,7 @@ HTML;
                 return;
             }
             sessionUuid = data.session_uuid;
-            sdvSafeSet('sdv_active_session_uuid', sessionUuid);
+            sdvSafeSet(activeSessionKey, sessionUuid);
 
             var msgsEl = document.getElementById('sdv-cl-msgs');
             if (msgsEl) {
@@ -8501,7 +8523,7 @@ HTML;
                 return;
             }
             sessionUuid = data.session_uuid;
-            sdvSafeSet('sdv_active_session_uuid', sessionUuid);
+            sdvSafeSet(activeSessionKey, sessionUuid);
 
             var msgsEl = document.getElementById('sdv-cl-msgs');
             if (msgsEl) {

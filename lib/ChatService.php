@@ -385,18 +385,14 @@ class ChatService
                 $isOwner = false;
                 $sessionClientId = (int) ($session->client_id ?? 0);
 
-                if ($sessionClientId > 0) {
+                if ($clientId && $clientId > 0) {
                     // Authenticated session: Strictly require matching logged-in client ID
-                    if ($clientId > 0 && $clientId === $sessionClientId) {
+                    if ($sessionClientId === (int)$clientId) {
                         $isOwner = true;
                     }
                 } else {
-                    // Guest session: Can be resumed by matching visitor token, or safely promoted to authenticated user
-                    if ($clientId > 0 && !empty($visitorToken) && $session->visitor_token === $visitorToken) {
-                        Capsule::table('tblsahdev_chat_sessions')->where('id', $session->id)->update(['client_id' => $clientId]);
-                        $session->client_id = $clientId;
-                        $isOwner = true;
-                    } elseif (!empty($visitorToken) && $session->visitor_token === $visitorToken) {
+                    // Guest caller: Strictly require guest session (client_id == 0) and matching visitor token
+                    if ($sessionClientId === 0 && !empty($visitorToken) && $session->visitor_token === $visitorToken) {
                         $isOwner = true;
                     }
                 }
@@ -407,19 +403,19 @@ class ChatService
             }
         }
 
-        // 2. If authenticated client, find active session by client_id
+        // 2. If authenticated client, find active session strictly by client_id
         $session = null;
-        if ($clientId > 0) {
+        if ($clientId && $clientId > 0) {
             $session = Capsule::table('tblsahdev_chat_sessions')
-                ->where('client_id', $clientId)
+                ->where('client_id', (int) $clientId)
                 ->where('session_type', 'client_livechat')
                 ->whereIn('status', ['active', 'taken_over'])
                 ->orderBy('id', 'desc')
                 ->first();
         }
 
-        // 3. Otherwise find active session by visitor_token (guest only)
-        if (!$session && !empty($visitorToken)) {
+        // 3. Otherwise find active session by visitor_token (strictly guest only)
+        if (!$session && empty($clientId) && !empty($visitorToken)) {
             $session = Capsule::table('tblsahdev_chat_sessions')
                 ->where('visitor_token', $visitorToken)
                 ->where('session_type', 'client_livechat')
@@ -472,9 +468,16 @@ class ChatService
 
         // Strict Tenant Verification: Verify caller owns this active session
         $sessionClientId = (int) ($session['client_id'] ?? 0);
-        if ($sessionClientId > 0 && (!$clientId || $clientId !== $sessionClientId)) {
-            ModuleLogger::warning('client_chat_security', "Cross-tenant message rejection: user {$clientId} attempted to write to client {$sessionClientId} session {$session['session_uuid']}");
-            return ['success' => false, 'error' => 'Unauthorized session access.'];
+        if ($clientId && $clientId > 0) {
+            if ($sessionClientId !== (int) $clientId) {
+                ModuleLogger::warning('client_chat_security', "Cross-tenant message rejection: user {$clientId} attempted to write to session {$session['session_uuid']} (session client: {$sessionClientId})");
+                return ['success' => false, 'error' => 'Unauthorized session access.'];
+            }
+        } else {
+            if ($sessionClientId !== 0 || empty($visitorToken) || ($session['visitor_token'] ?? '') !== $visitorToken) {
+                ModuleLogger::warning('client_chat_security', "Guest cross-session message rejection: visitor attempted to write to session {$session['session_uuid']}");
+                return ['success' => false, 'error' => 'Unauthorized session access.'];
+            }
         }
 
         // Active Prompt Injection Defense
@@ -694,17 +697,17 @@ class ChatService
 
         // 2. Strict Tenant Authorization Verification (BOLA / IDOR Prevention)
         $sessionClientId = (int) ($session->client_id ?? 0);
-        if ($sessionClientId > 0) {
-            // Client-owned session: Strictly require authenticated client ID match
-            if (!$clientId || $clientId <= 0 || (int)$clientId !== $sessionClientId) {
-                ModuleLogger::warning('client_chat_security', "BOLA escalation attempt blocked: user " . ($clientId ?: 'guest') . " attempted to escalate ticket for client {$sessionClientId} (session: {$sessionUuid})");
-                return ['success' => false, 'error' => "Unauthorized: You must be logged into the account associated with this chat session."];
+        if ($clientId && $clientId > 0) {
+            // Authenticated caller: Strictly require session belongs to this client ID
+            if ($sessionClientId !== (int) $clientId) {
+                ModuleLogger::warning('client_chat_security', "BOLA escalation attempt blocked: user {$clientId} attempted to escalate ticket for session {$sessionUuid} (session client: {$sessionClientId})");
+                return ['success' => false, 'error' => "Unauthorized: You do not own this chat session."];
             }
-            $userId = $clientId;
+            $userId = (int) $clientId;
         } else {
-            // Guest session: Strictly require matching visitor token
-            if (empty($visitorToken) || $session->visitor_token !== $visitorToken) {
-                ModuleLogger::warning('client_chat_security', "Unauthorized guest escalation attempt for session {$sessionUuid} with mismatched visitor token");
+            // Guest caller: Strictly require guest session (client_id == 0) and matching visitor token
+            if ($sessionClientId !== 0 || empty($visitorToken) || $session->visitor_token !== $visitorToken) {
+                ModuleLogger::warning('client_chat_security', "Unauthorized guest escalation attempt for session {$sessionUuid} with mismatched visitor credentials");
                 return ['success' => false, 'error' => "Unauthorized: Invalid session credentials."];
             }
             $userId = 0;
@@ -1643,14 +1646,13 @@ class ChatService
                 ->where('session_type', 'client_livechat');
 
             if ($clientId && $clientId > 0) {
-                $q->where(function ($sub) use ($clientId, $visitorToken) {
-                    $sub->where('client_id', $clientId);
-                    if (!empty($visitorToken)) {
-                        $sub->orWhere('visitor_token', $visitorToken);
-                    }
-                });
+                // Authenticated clients strictly and exclusively see chats belonging to their client ID
+                $q->where('client_id', (int) $clientId);
             } else {
                 // Guests strictly cannot see or enumerate any authenticated customer sessions
+                if (empty($visitorToken)) {
+                    return [];
+                }
                 $q->where('visitor_token', $visitorToken)
                   ->where(function ($sub) {
                       $sub->where('client_id', 0)->orWhereNull('client_id');
@@ -1729,14 +1731,14 @@ class ChatService
         $sessionClientId = (int) ($session->client_id ?? 0);
         $authorized = false;
 
-        if ($sessionClientId > 0) {
-            // Client-owned session: Strictly require matching authenticated customer ID
-            if ($clientId > 0 && (int)$clientId === $sessionClientId) {
+        if ($clientId && $clientId > 0) {
+            // Authenticated caller: Strictly authorized ONLY if session belongs to this client ID
+            if ($sessionClientId === (int) $clientId) {
                 $authorized = true;
             }
         } else {
-            // Guest session: Strictly require matching visitor token
-            if (!empty($visitorToken) && $session->visitor_token === $visitorToken) {
+            // Guest caller: Strictly authorized ONLY if session is a guest session (client_id == 0) and visitor token matches
+            if ($sessionClientId === 0 && !empty($visitorToken) && $session->visitor_token === $visitorToken) {
                 $authorized = true;
             }
         }
@@ -1769,12 +1771,14 @@ class ChatService
         $sessionClientId = (int) ($session->client_id ?? 0);
         $authorized = false;
 
-        if ($sessionClientId > 0) {
-            if ($clientId > 0 && (int)$clientId === $sessionClientId) {
+        if ($clientId && $clientId > 0) {
+            // Authenticated caller: Strictly authorized ONLY if session belongs to this client ID
+            if ($sessionClientId === (int) $clientId) {
                 $authorized = true;
             }
         } else {
-            if (!empty($visitorToken) && $session->visitor_token === $visitorToken) {
+            // Guest caller: Strictly authorized ONLY if session is a guest session (client_id == 0) and visitor token matches
+            if ($sessionClientId === 0 && !empty($visitorToken) && $session->visitor_token === $visitorToken) {
                 $authorized = true;
             }
         }
