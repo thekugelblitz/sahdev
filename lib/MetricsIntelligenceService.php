@@ -51,6 +51,18 @@ class MetricsIntelligenceService
     public static function runDailyAggregation(?string $date = null): void
     {
         SchemaManager::ensureMetricsTables();
+        SchemaManager::ensureSettingsColumns();
+
+        $settings = null;
+        try {
+            $settings = Capsule::table('tblsahdev_settings')->first();
+        } catch (\Throwable $e) {}
+
+        // If invoked by automated daily cron without explicit date, honor metrics_cron_enabled
+        if ($date === null && $settings && isset($settings->metrics_cron_enabled) && !$settings->metrics_cron_enabled) {
+            return;
+        }
+
         $targetDate = $date ?: Carbon::today()->toDateString();
 
         // 1. Calculate MRR
@@ -88,6 +100,13 @@ class MetricsIntelligenceService
 
         // 7. Run AI Anomaly & Pattern Detector
         self::detectAnomaliesAndPatterns();
+
+        // 8. Enforce historical snapshot retention
+        try {
+            $retentionDays = max(30, (int) ($settings->metrics_retention_days ?? 365));
+            $cutoff = Carbon::today()->subDays($retentionDays)->toDateString();
+            Capsule::table('tblsahdev_metrics_daily')->where('metric_date', '<', $cutoff)->delete();
+        } catch (\Throwable $e) {}
     }
 
     /**

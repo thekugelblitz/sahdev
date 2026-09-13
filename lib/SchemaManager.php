@@ -95,6 +95,10 @@ class SchemaManager
                 // Safe Ops & Rollback Governance
                 'ops_journal_retention_days'   => ['type' => 'integer', 'default' => 90],
                 'ops_require_password_tier3'   => ['type' => 'boolean', 'default' => 1],
+
+                // Organization Intelligence & Metrics
+                'metrics_cron_enabled'         => ['type' => 'boolean', 'default' => 1],
+                'metrics_retention_days'       => ['type' => 'integer', 'default' => 365],
             ];
 
             foreach ($columns as $name => $spec) {

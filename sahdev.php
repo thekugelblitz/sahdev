@@ -300,6 +300,8 @@ function sahdev_activate()
                     $table->boolean('context_enrichment_contacts')->default(1);
                     $table->boolean('context_enrichment_client_profile')->default(1);
                     $table->boolean('scrub_phones')->default(1);
+                    $table->boolean('metrics_cron_enabled')->default(1);
+                    $table->integer('metrics_retention_days')->default(365);
                     $table->timestamps(); // creates created_at, updated_at
                 }
             );
@@ -1190,6 +1192,8 @@ function sahdev_activate()
             'rag_max_snippets'             => ['integer', 3],
             'header_widget_enabled'        => ['boolean', 1],
             'service_page_widget_enabled'  => ['boolean', 1],
+            'metrics_cron_enabled'         => ['boolean', 1],
+            'metrics_retention_days'       => ['integer', 365],
         ];
         foreach ($intelColMap as $col => [$type, $default]) {
             try {

@@ -1155,82 +1155,97 @@ class AdminController
                 $temperature = 0.70;
             }
 
+            $updatePayload = [
+                'temperature' => $temperature,
+                'max_tokens' => $maxTokens,
+                'max_tokens_fallback' => $maxTokensFallback,
+                'tone_default' => $toneDefault,
+                'max_messages' => $maxMessages,
+                'max_attachment_chars' => $maxAttachmentChars,
+                'max_images' => $maxImages,
+                'auto_analyze_on_load' => $autoAnalyzeOnLoad,
+                'summarizer_enabled' => $summarizerEnabled,
+                'summarizer_threshold' => $summarizerThreshold,
+                'compliance_mode' => $complianceMode,
+                'scrub_emails' => $scrubEmails,
+                'scrub_cc' => $scrubCc,
+                'scrub_ips' => $scrubIps,
+                'scrub_passwords' => $scrubPasswords,
+                'scrub_phones' => $scrubPhones,
+                'quality_scorer_enabled' => $qualityScorerEnabled,
+                'auto_tagging' => $autoTagging,
+                'custom_attachments_dir' => $customAttachmentsDir,
+                'context_enrichment_enabled' => $contextEnrichmentEnabled,
+                'context_enrichment_max_chars' => $contextEnrichmentMaxChars,
+                'context_enrichment_invoices' => $contextEnrichmentInvoices,
+                'context_enrichment_domains' => $contextEnrichmentDomains,
+                'context_enrichment_hosting' => $contextEnrichmentHosting,
+                'context_enrichment_addons' => $contextEnrichmentAddons,
+                'context_enrichment_custom_fields' => $contextEnrichmentCustomFields,
+                'context_enrichment_client_notes' => $contextEnrichmentClientNotes,
+                'context_enrichment_custom_field_allowlist' => $contextEnrichmentCustomFieldAllowlist === '' ? null : $contextEnrichmentCustomFieldAllowlist,
+                'context_enrichment_orders' => $contextEnrichmentOrders,
+                'context_enrichment_cancellations' => $contextEnrichmentCancellations,
+                'context_enrichment_transactions' => $contextEnrichmentTransactions,
+                'context_enrichment_invoice_items' => $contextEnrichmentInvoiceItems,
+                'context_enrichment_emails' => $contextEnrichmentEmails,
+                'context_enrichment_ticket_log' => $contextEnrichmentTicketLog,
+                'context_enrichment_ssl' => $contextEnrichmentSsl,
+                'context_enrichment_quotes' => $contextEnrichmentQuotes,
+                'context_enrichment_activity_log' => $contextEnrichmentActivityLog,
+                'context_enrichment_contacts' => $contextEnrichmentContacts,
+                'context_enrichment_client_profile' => $contextEnrichmentClientProfile,
+                'telemetry_enabled' => $telemetryEnabled,
+                'telemetry_poll_interval_mins' => $telemetryPollIntervalMins,
+                'incident_detection_enabled' => $incidentDetectionEnabled,
+                'incident_threshold_tickets' => $incidentThresholdTickets,
+                'incident_window_hours' => $incidentWindowHours,
+                'rag_knowledge_enabled' => $ragKnowledgeEnabled,
+                'rag_max_snippets' => $ragMaxSnippets,
+                'copilot_enabled' => $copilotEnabled,
+                'copilot_temperature' => $copilotTemperature,
+                'copilot_max_tokens' => $copilotMaxTokens,
+                'copilot_stream_enabled' => $copilotStreamEnabled,
+                'copilot_shortcut_key' => $copilotShortcutKey,
+                'copilot_system_prompt' => $copilotSystemPrompt,
+                'ops_require_password_tier3' => $opsRequirePasswordTier3,
+                'ops_journal_retention_days' => $opsJournalRetentionDays,
+                'client_chat_enabled' => $clientChatEnabled,
+                'client_chat_title' => $clientChatTitle,
+                'client_chat_brand_color' => $clientChatBrandColor,
+                'client_chat_position' => $clientChatPosition,
+                'client_chat_welcome_message' => $clientChatWelcomeMessage,
+                'client_chat_kb_enabled' => $clientChatKbEnabled,
+                'client_chat_require_prechat' => $clientChatRequirePrechat,
+                'client_chat_proactive_delay' => $clientChatProactiveDelay,
+                'client_chat_system_prompt' => $clientChatSystemPrompt,
+                'metrics_cron_enabled' => $metricsCronEnabled,
+                'metrics_retention_days' => $metricsRetentionDays,
+                'updated_at' => \Carbon\Carbon::now(),
+            ];
+
+            if (isset($_POST['primary_provider_id'])) {
+                $updatePayload['primary_provider_id'] = $primaryProviderId ?: null;
+            }
+            if (isset($_POST['fallback_provider_id'])) {
+                $updatePayload['fallback_provider_id'] = $fallbackProviderId ?: null;
+            }
+            if (isset($_POST['copilot_primary_provider_id'])) {
+                $updatePayload['copilot_primary_provider_id'] = $copilotPrimaryProviderId ?: null;
+            }
+            if (isset($_POST['copilot_fallback_provider_id'])) {
+                $updatePayload['copilot_fallback_provider_id'] = $copilotFallbackProviderId ?: null;
+            }
+            if (isset($_POST['client_chat_provider_id'])) {
+                $updatePayload['client_chat_provider_id'] = $clientChatProviderId ?: null;
+            }
+            if (isset($_POST['task_provider_map'])) {
+                $updatePayload['task_provider_map'] = $taskProviderMapJson;
+            }
+
             Capsule::table('tblsahdev_settings')->updateOrInsert(
                 ['id' => 1],
-                [
-                    'primary_provider_id' => $primaryProviderId ?: null,
-                    'fallback_provider_id' => $fallbackProviderId ?: null,
-                    'temperature' => $temperature,
-                    'max_tokens' => $maxTokens,
-                    'max_tokens_fallback' => $maxTokensFallback,
-                    'tone_default' => $toneDefault,
-                    'max_messages' => $maxMessages,
-                    'max_attachment_chars' => $maxAttachmentChars,
-                    'max_images' => $maxImages,
-                    'auto_analyze_on_load' => $autoAnalyzeOnLoad,
-                    'summarizer_enabled' => $summarizerEnabled,
-                    'summarizer_threshold' => $summarizerThreshold,
-                    'compliance_mode' => $complianceMode,
-                    'scrub_emails' => $scrubEmails,
-                    'scrub_cc' => $scrubCc,
-                    'scrub_ips' => $scrubIps,
-                    'scrub_passwords' => $scrubPasswords,
-                    'scrub_phones' => $scrubPhones,
-                    'quality_scorer_enabled' => $qualityScorerEnabled,
-                    'auto_tagging' => $autoTagging,
-                    'custom_attachments_dir' => $customAttachmentsDir,
-                    'task_provider_map' => $taskProviderMapJson,
-                    'context_enrichment_enabled' => $contextEnrichmentEnabled,
-                    'context_enrichment_max_chars' => $contextEnrichmentMaxChars,
-                    'context_enrichment_invoices' => $contextEnrichmentInvoices,
-                    'context_enrichment_domains' => $contextEnrichmentDomains,
-                    'context_enrichment_hosting' => $contextEnrichmentHosting,
-                    'context_enrichment_addons' => $contextEnrichmentAddons,
-                    'context_enrichment_custom_fields' => $contextEnrichmentCustomFields,
-                    'context_enrichment_client_notes' => $contextEnrichmentClientNotes,
-                    'context_enrichment_custom_field_allowlist' => $contextEnrichmentCustomFieldAllowlist === '' ? null : $contextEnrichmentCustomFieldAllowlist,
-                    'context_enrichment_orders' => $contextEnrichmentOrders,
-                    'context_enrichment_cancellations' => $contextEnrichmentCancellations,
-                    'context_enrichment_transactions' => $contextEnrichmentTransactions,
-                    'context_enrichment_invoice_items' => $contextEnrichmentInvoiceItems,
-                    'context_enrichment_emails' => $contextEnrichmentEmails,
-                    'context_enrichment_ticket_log' => $contextEnrichmentTicketLog,
-                    'context_enrichment_ssl' => $contextEnrichmentSsl,
-                    'context_enrichment_quotes' => $contextEnrichmentQuotes,
-                    'context_enrichment_activity_log' => $contextEnrichmentActivityLog,
-                    'context_enrichment_contacts' => $contextEnrichmentContacts,
-                    'context_enrichment_client_profile' => $contextEnrichmentClientProfile,
-                    'telemetry_enabled' => $telemetryEnabled,
-                    'telemetry_poll_interval_mins' => $telemetryPollIntervalMins,
-                    'incident_detection_enabled' => $incidentDetectionEnabled,
-                    'incident_threshold_tickets' => $incidentThresholdTickets,
-                    'incident_window_hours' => $incidentWindowHours,
-                    'rag_knowledge_enabled' => $ragKnowledgeEnabled,
-                    'rag_max_snippets' => $ragMaxSnippets,
-                    'copilot_enabled' => $copilotEnabled,
-                    'copilot_primary_provider_id' => $copilotPrimaryProviderId ?: null,
-                    'copilot_fallback_provider_id' => $copilotFallbackProviderId ?: null,
-                    'copilot_temperature' => $copilotTemperature,
-                    'copilot_max_tokens' => $copilotMaxTokens,
-                    'copilot_stream_enabled' => $copilotStreamEnabled,
-                    'copilot_shortcut_key' => $copilotShortcutKey,
-                    'copilot_system_prompt' => $copilotSystemPrompt,
-                    'ops_require_password_tier3' => $opsRequirePasswordTier3,
-                    'ops_journal_retention_days' => $opsJournalRetentionDays,
-                    'client_chat_enabled' => $clientChatEnabled,
-                    'client_chat_provider_id' => $clientChatProviderId ?: null,
-                    'client_chat_title' => $clientChatTitle,
-                    'client_chat_brand_color' => $clientChatBrandColor,
-                    'client_chat_position' => $clientChatPosition,
-                    'client_chat_welcome_message' => $clientChatWelcomeMessage,
-                    'client_chat_kb_enabled' => $clientChatKbEnabled,
-                    'client_chat_require_prechat' => $clientChatRequirePrechat,
-                    'client_chat_proactive_delay' => $clientChatProactiveDelay,
-                    'client_chat_system_prompt' => $clientChatSystemPrompt,
-                    'metrics_cron_enabled' => $metricsCronEnabled,
-                    'metrics_retention_days' => $metricsRetentionDays,
-                    'updated_at' => \Carbon\Carbon::now(),
-                ]
+                $updatePayload
             );
 
             $successMessage = "Settings saved successfully.";
@@ -1315,8 +1330,22 @@ class AdminController
 
         $taskMapStored = TaskProviderResolver::parseTaskProviderMap($settings->task_provider_map ?? null);
 
-        // Fetch all active providers
+        // Fetch all active providers & map names
         $providers = Capsule::table('tblsahdev_providers')->where('is_active', 1)->get();
+        $providerMap = [];
+        foreach ($providers as $prov) {
+            $providerMap[(int)$prov->id] = $prov->name . ' (' . ($prov->model_name ?: ucfirst($prov->provider_type)) . ')';
+        }
+        $ticketPrimaryName = $providerMap[(int)($settings->primary_provider_id ?? 0)] ?? 'Not Assigned';
+        $ticketFallbackName = $providerMap[(int)($settings->fallback_provider_id ?? 0)] ?? null;
+
+        $copilotPrimaryId = (int)($settings->copilot_primary_provider_id ?? 0);
+        $copilotAssignedName = ($copilotPrimaryId > 0 && isset($providerMap[$copilotPrimaryId])) ? $providerMap[$copilotPrimaryId] : ($ticketPrimaryName . ' (Inherited from Ticket AI)');
+        $copilotFallbackId = (int)($settings->copilot_fallback_provider_id ?? 0);
+        $copilotFallbackName = ($copilotFallbackId > 0 && isset($providerMap[$copilotFallbackId])) ? $providerMap[$copilotFallbackId] : null;
+
+        $clientChatPrimaryId = (int)($settings->client_chat_provider_id ?? 0);
+        $clientChatAssignedName = ($clientChatPrimaryId > 0 && isset($providerMap[$clientChatPrimaryId])) ? $providerMap[$clientChatPrimaryId] : ($ticketPrimaryName . ' (Inherited from Ticket AI)');
 
         $csrfToken = generate_token("form");
         $actionUrl = htmlspecialchars($this->moduleVars['modulelink']);
@@ -1352,72 +1381,23 @@ class AdminController
                 <!-- TAB 1: Ticket AI & Automation -->
                 <div id="tab-ticket" class="sdv-settings-pane">
 
-                <div class="row" style="display: flex; gap: 20px; margin-bottom: 15px;">
-                    <div class="form-group" style="flex: 1;">
-                        <label style="font-weight: 600; display: block; margin-bottom: 5px;">Primary AI Provider 🌟</label>
-                        <select name="primary_provider_id" class="form-control">
-                            <?php foreach ($providers as $provider): ?>
-                                <option value="<?php echo $provider->id; ?>" <?php echo (($settings->primary_provider_id ?? 0) == $provider->id) ? 'selected' : ''; ?>>
-                                    <?php echo htmlspecialchars($provider->name . ' (' . ucfirst($provider->provider_type) . ')'); ?>
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
-                        <small class="text-muted">The main AI model used for ticket analysis.</small>
-                    </div>
-
-                    <div class="form-group" style="flex: 1;">
-                        <label style="font-weight: 600; display: block; margin-bottom: 5px;">Fallback AI Provider 🛡️
-                            (Optional)</label>
-                        <select name="fallback_provider_id" class="form-control">
-                            <option value="0">-- None (Don't use fallback) --</option>
-                            <?php foreach ($providers as $provider): ?>
-                                <option value="<?php echo $provider->id; ?>" <?php echo (($settings->fallback_provider_id ?? 0) == $provider->id) ? 'selected' : ''; ?>>
-                                    <?php echo htmlspecialchars($provider->name . ' (' . ucfirst($provider->provider_type) . ')'); ?>
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
-                        <small class="text-muted">Used automatically if the Primary AI fails to respond or is offline.</small>
-                    </div>
-                </div>
-
-                <div class="panel panel-default" style="margin-bottom: 25px; border-left: 4px solid #6f42c1;">
-                    <div class="panel-heading" style="background: #faf8ff;">
-                        <h4 style="margin: 0; font-size: 15px; color:#5a32a3;"><i class="fas fa-route"></i> Model routing (per task)</h4>
-                    </div>
-                    <div class="panel-body">
-                        <p class="text-muted" style="margin-top: 0; font-size: 13px;">
-                            Choose which saved AI provider runs each feature. Leave a row as <strong>Use primary</strong> to use the Primary AI Provider above.
-                            On ticket replies you can optionally override the model for one generation from the ticket panel.
-                        </p>
-                        <div class="table-responsive">
-                            <table class="table table-condensed" style="margin-bottom: 0;">
-                                <thead>
-                                    <tr><th style="width: 40%;">Feature</th><th>Provider</th></tr>
-                                </thead>
-                                <tbody>
-                                    <?php
-                                    $labels = TaskProviderResolver::taskKeyLabels();
-                                    foreach (TaskProviderResolver::canonicalTaskKeys() as $taskKey):
-                                        $sel = $taskMapStored[$taskKey] ?? 0;
-                                    ?>
-                                    <tr>
-                                        <td><?php echo htmlspecialchars($labels[$taskKey] ?? $taskKey); ?></td>
-                                        <td>
-                                            <select name="task_provider_map[<?php echo htmlspecialchars($taskKey); ?>]" class="form-control input-sm">
-                                                <option value="0" <?php echo $sel ? '' : 'selected'; ?>>Use primary (default)</option>
-                                                <?php foreach ($providers as $p): ?>
-                                                    <option value="<?php echo (int) $p->id; ?>" <?php echo ((int) $sel === (int) $p->id) ? 'selected' : ''; ?>>
-                                                        <?php echo htmlspecialchars($p->name . ' — ' . $p->model_name); ?>
-                                                    </option>
-                                                <?php endforeach; ?>
-                                            </select>
-                                        </td>
-                                    </tr>
-                                    <?php endforeach; ?>
-                                </tbody>
-                            </table>
+                <!-- Active Model Status Banner (Managed in AI Providers) -->
+                <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-left: 4px solid #0d6efd; border-radius: 6px; padding: 14px 18px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+                    <div>
+                        <div style="font-weight: 600; font-size: 14px; color: #1e293b; margin-bottom: 4px;">
+                            <i class="fas fa-ticket-alt text-primary"></i> Assigned Ticket AI Provider:
+                            <span class="label label-primary" style="font-size: 12.5px; font-weight: 600; margin-left: 6px;">
+                                <?php echo htmlspecialchars($ticketPrimaryName); ?>
+                            </span>
+                            <?php if ($ticketFallbackName): ?>
+                                <span class="text-muted" style="margin-left: 8px; font-size: 12px;">(Fallback: <strong><?php echo htmlspecialchars($ticketFallbackName); ?></strong>)</span>
+                            <?php endif; ?>
                         </div>
+                        <small class="text-muted">Primary model, fallback, and per-task routing are managed centrally in the AI Providers hub.</small>
                     </div>
+                    <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=providers" class="btn btn-sm btn-primary" style="font-weight: 600;">
+                        <i class="fas fa-sliders-h"></i> Configure in AI Providers & Routing &rarr;
+                    </a>
                 </div>
 
                 <div class="row" style="display: flex; gap: 20px; margin-bottom: 15px;">
@@ -1757,31 +1737,23 @@ class AdminController
                                 <small class="text-muted">Displays the interactive Copilot launcher in the bottom right of the WHMCS admin interface with keyboard toggle shortcut.</small>
                             </div>
 
-                            <div class="row" style="display: flex; gap: 20px; margin-bottom: 15px; flex-wrap: wrap;">
-                                <div class="form-group" style="flex: 1; min-width: 250px;">
-                                    <label style="font-weight: 600; display: block; margin-bottom: 5px;">Copilot Primary Provider / Model 🚀</label>
-                                    <select name="copilot_primary_provider_id" class="form-control">
-                                        <option value="0" <?php echo empty($settings->copilot_primary_provider_id) ? 'selected' : ''; ?>>Use Primary AI Provider (Default)</option>
-                                        <?php foreach ($providers as $provider): ?>
-                                            <option value="<?php echo $provider->id; ?>" <?php echo ((int)($settings->copilot_primary_provider_id ?? 0) === (int)$provider->id) ? 'selected' : ''; ?>>
-                                                <?php echo htmlspecialchars($provider->name . ' — ' . $provider->model_name . ' (' . ucfirst($provider->provider_type) . ')'); ?>
-                                            </option>
-                                        <?php endforeach; ?>
-                                    </select>
-                                    <small class="text-muted">High-intelligence reasoning model for safe ops planning and WHMCS tool calling.</small>
+                            <!-- Active Copilot Model Banner (Managed in AI Providers) -->
+                            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-left: 4px solid #6366f1; border-radius: 6px; padding: 14px 18px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+                                <div>
+                                    <div style="font-weight: 600; font-size: 14px; color: #1e293b; margin-bottom: 4px;">
+                                        <i class="fas fa-terminal text-success"></i> Assigned Copilot Model:
+                                        <span class="label label-success" style="font-size: 12.5px; font-weight: 600; margin-left: 6px;">
+                                            <?php echo htmlspecialchars($copilotAssignedName); ?>
+                                        </span>
+                                        <?php if ($copilotFallbackName): ?>
+                                            <span class="text-muted" style="margin-left: 8px; font-size: 12px;">(Fallback: <strong><?php echo htmlspecialchars($copilotFallbackName); ?></strong>)</span>
+                                        <?php endif; ?>
+                                    </div>
+                                    <small class="text-muted">Admin Ops Copilot primary and fallback models are managed in the AI Providers hub.</small>
                                 </div>
-                                <div class="form-group" style="flex: 1; min-width: 250px;">
-                                    <label style="font-weight: 600; display: block; margin-bottom: 5px;">Copilot Fallback Provider 🛡️</label>
-                                    <select name="copilot_fallback_provider_id" class="form-control">
-                                        <option value="0" <?php echo empty($settings->copilot_fallback_provider_id) ? 'selected' : ''; ?>>-- None (Or Inherit Global Fallback) --</option>
-                                        <?php foreach ($providers as $provider): ?>
-                                            <option value="<?php echo $provider->id; ?>" <?php echo ((int)($settings->copilot_fallback_provider_id ?? 0) === (int)$provider->id) ? 'selected' : ''; ?>>
-                                                <?php echo htmlspecialchars($provider->name . ' — ' . $provider->model_name); ?>
-                                            </option>
-                                        <?php endforeach; ?>
-                                    </select>
-                                    <small class="text-muted">Backup provider if the primary Copilot model encounters rate limits or downtime.</small>
-                                </div>
+                                <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=providers" class="btn btn-sm btn-default" style="font-weight: 600;">
+                                    <i class="fas fa-sliders-h"></i> Manage Model in AI Providers &rarr;
+                                </a>
                             </div>
 
                             <div class="row" style="display: flex; gap: 20px; margin-bottom: 15px; flex-wrap: wrap;">
@@ -1855,32 +1827,36 @@ class AdminController
                                 <small class="text-muted">Injects the AI chat widget into the client area for instant customer support, knowledge grounding, and 1-click ticket escalation.</small>
                             </div>
 
-                            <div class="row" style="display: flex; gap: 20px; margin-bottom: 15px; flex-wrap: wrap;">
-                                <div class="form-group" style="flex: 1; min-width: 250px;">
-                                    <label style="font-weight: 600; display: block; margin-bottom: 5px;">Live Chat AI Provider / Model</label>
-                                    <select name="client_chat_provider_id" class="form-control">
-                                        <option value="0" <?php echo empty($settings->client_chat_provider_id) ? 'selected' : ''; ?>>Use Primary AI Provider</option>
-                                        <?php foreach ($providers as $provider): ?>
-                                            <option value="<?php echo $provider->id; ?>" <?php echo ((int)($settings->client_chat_provider_id ?? 0) === (int)$provider->id) ? 'selected' : ''; ?>>
-                                                <?php echo htmlspecialchars($provider->name . ' — ' . $provider->model_name); ?>
-                                            </option>
-                                        <?php endforeach; ?>
-                                    </select>
-                                    <small class="text-muted">Fast model recommended for real-time customer chats.</small>
+                            <!-- Active Client Chat Model Banner (Managed in AI Providers) -->
+                            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-left: 4px solid #0d6efd; border-radius: 6px; padding: 14px 18px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+                                <div>
+                                    <div style="font-weight: 600; font-size: 14px; color: #1e293b; margin-bottom: 4px;">
+                                        <i class="fas fa-comments text-info"></i> Assigned Live Chat Model:
+                                        <span class="label label-info" style="font-size: 12.5px; font-weight: 600; margin-left: 6px;">
+                                            <?php echo htmlspecialchars($clientChatAssignedName); ?>
+                                        </span>
+                                    </div>
+                                    <small class="text-muted">Client Live Chat model assignments are managed in the AI Providers hub.</small>
                                 </div>
+                                <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=providers" class="btn btn-sm btn-default" style="font-weight: 600;">
+                                    <i class="fas fa-sliders-h"></i> Manage Model in AI Providers &rarr;
+                                </a>
+                            </div>
+
+                            <div class="row" style="display: flex; gap: 20px; margin-bottom: 15px; flex-wrap: wrap;">
                                 <div class="form-group" style="flex: 1; min-width: 250px;">
                                     <label style="font-weight: 600; display: block; margin-bottom: 5px;">Widget Header Title</label>
                                     <input type="text" name="client_chat_title" class="form-control" value="<?php echo htmlspecialchars($settings->client_chat_title ?? 'Hosting Support Assistant'); ?>">
                                     <small class="text-muted">Displayed in the header bar of the client chat window.</small>
                                 </div>
-                            </div>
-
-                            <div class="row" style="display: flex; gap: 20px; margin-bottom: 15px; flex-wrap: wrap;">
                                 <div class="form-group" style="flex: 1; min-width: 180px;">
                                     <label style="font-weight: 600; display: block; margin-bottom: 5px;">Brand Accent Color</label>
                                     <input type="color" name="client_chat_brand_color" class="form-control" style="height: 38px; padding: 2px;" value="<?php echo htmlspecialchars($settings->client_chat_brand_color ?? '#0d6efd'); ?>">
                                     <small class="text-muted">Matches your WHMCS client theme accent.</small>
                                 </div>
+                            </div>
+
+                            <div class="row" style="display: flex; gap: 20px; margin-bottom: 15px; flex-wrap: wrap;">
                                 <div class="form-group" style="flex: 1; min-width: 180px;">
                                     <label style="font-weight: 600; display: block; margin-bottom: 5px;">Widget Position</label>
                                     <select name="client_chat_position" class="form-control">
@@ -2098,6 +2074,19 @@ class AdminController
                 if (isset($_POST['copilot_system_prompt'])) {
                     $updateData['copilot_system_prompt'] = trim($_POST['copilot_system_prompt']);
                 }
+                if (isset($_POST['task_provider_map']) && is_array($_POST['task_provider_map'])) {
+                    $taskProviderMap = [];
+                    foreach (TaskProviderResolver::canonicalTaskKeys() as $key) {
+                        if (!isset($_POST['task_provider_map'][$key])) {
+                            continue;
+                        }
+                        $vid = (int) $_POST['task_provider_map'][$key];
+                        if ($vid > 0 && TaskProviderResolver::isValidActiveProviderId($vid)) {
+                            $taskProviderMap[$key] = $vid;
+                        }
+                    }
+                    $updateData['task_provider_map'] = $taskProviderMap === [] ? null : json_encode($taskProviderMap);
+                }
 
                 $updateData['updated_at'] = \Carbon\Carbon::now();
                 Capsule::table('tblsahdev_settings')->where('id', 1)->update($updateData);
@@ -2107,6 +2096,7 @@ class AdminController
 
         $providers = Capsule::table('tblsahdev_providers')->get();
         $settings = Capsule::table('tblsahdev_settings')->first();
+        $taskMapStored = TaskProviderResolver::parseTaskProviderMap($settings->task_provider_map ?? null);
 
         $csrfToken = generate_token("form");
         $actionUrl = htmlspecialchars($this->moduleVars['modulelink']) . '&action=providers';
@@ -2200,8 +2190,8 @@ class AdminController
                         </div>
                     </div>
 
-                    <div class="row" style="margin-bottom: 15px;">
-                        <div class="col-md-4">
+                    <div class="row" style="margin-bottom: 20px;">
+                        <div class="col-md-6">
                             <label style="font-weight: 600;"><i class="fas fa-shield-alt text-warning"></i> Ticket Fallback Provider</label>
                             <select name="fallback_provider_id" class="form-control">
                                 <option value="0">-- None (Don't use fallback) --</option>
@@ -2213,7 +2203,7 @@ class AdminController
                             </select>
                             <span class="help-block" style="font-size: 11px;">Engaged if Primary Ticket AI encounters rate limits or errors.</span>
                         </div>
-                        <div class="col-md-4">
+                        <div class="col-md-6">
                             <label style="font-weight: 600;"><i class="fas fa-shield-alt text-warning"></i> Copilot Fallback Provider</label>
                             <select name="copilot_fallback_provider_id" class="form-control">
                                 <option value="0">-- None (Or Inherit Ticket Fallback) --</option>
@@ -2225,11 +2215,59 @@ class AdminController
                             </select>
                             <span class="help-block" style="font-size: 11px;">Backup model for Admin Ops Copilot.</span>
                         </div>
-                        <div class="col-md-4" style="text-align: right; padding-top: 25px;">
-                            <button type="submit" class="btn btn-primary btn-lg" style="width: 100%;">
-                                <i class="fas fa-save"></i> Save Provider Assignments
-                            </button>
+                    </div>
+
+                    <!-- Model Routing (Per Task) Table -->
+                    <div class="panel panel-default" style="margin-bottom: 20px; border-left: 4px solid #6f42c1;">
+                        <div class="panel-heading" style="background: #faf8ff;">
+                            <h4 style="margin: 0; font-size: 14px; color:#5a32a3; font-weight: 700;">
+                                <i class="fas fa-route"></i> Granular Model Routing (Per Feature / Task)
+                            </h4>
                         </div>
+                        <div class="panel-body" style="padding: 15px;">
+                            <p class="text-muted" style="margin-top: 0; font-size: 12px;">
+                                Choose which configured AI model handles each intelligence task. Leave a row as <strong>Use primary (default)</strong> to inherit the Support Ticket AI Provider selected above.
+                            </p>
+                            <div class="table-responsive">
+                                <table class="table table-condensed table-hover" style="margin-bottom: 0;">
+                                    <thead>
+                                        <tr>
+                                            <th style="width: 45%;">Feature / Task</th>
+                                            <th>Assigned Provider & Model</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <?php
+                                        $labels = TaskProviderResolver::taskKeyLabels();
+                                        foreach (TaskProviderResolver::canonicalTaskKeys() as $taskKey):
+                                            $sel = $taskMapStored[$taskKey] ?? 0;
+                                        ?>
+                                        <tr>
+                                            <td style="vertical-align: middle; font-weight: 500;">
+                                                <?php echo htmlspecialchars($labels[$taskKey] ?? $taskKey); ?>
+                                            </td>
+                                            <td>
+                                                <select name="task_provider_map[<?php echo htmlspecialchars($taskKey); ?>]" class="form-control input-sm">
+                                                    <option value="0" <?php echo $sel ? '' : 'selected'; ?>>Use primary (default)</option>
+                                                    <?php foreach ($providers as $p): ?>
+                                                        <option value="<?php echo (int) $p->id; ?>" <?php echo ((int) $sel === (int) $p->id) ? 'selected' : ''; ?>>
+                                                            <?php echo htmlspecialchars($p->name . ' — ' . ($p->model_name ?: $p->provider_type)); ?>
+                                                        </option>
+                                                    <?php endforeach; ?>
+                                                </select>
+                                            </td>
+                                        </tr>
+                                        <?php endforeach; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="text-align: right; margin-top: 15px;">
+                        <button type="submit" class="btn btn-primary btn-lg" style="min-width: 250px;">
+                            <i class="fas fa-save"></i> Save Provider Roles & Task Routing
+                        </button>
                     </div>
                 </form>
             </div>
