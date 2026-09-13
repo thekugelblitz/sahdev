@@ -91,6 +91,7 @@ class SchemaManager
                 'client_chat_proactive_delay'  => ['type' => 'integer', 'default' => 15],
                 'client_chat_kb_enabled'       => ['type' => 'boolean', 'default' => 1],
                 'client_chat_system_prompt'    => ['type' => 'longtext'],
+                'client_chat_debug'            => ['type' => 'boolean', 'default' => 0],
 
                 // Safe Ops & Rollback Governance
                 'ops_journal_retention_days'   => ['type' => 'integer', 'default' => 90],

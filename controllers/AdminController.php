@@ -1145,6 +1145,7 @@ class AdminController
             $clientChatRequirePrechat = !empty($_POST['client_chat_require_prechat']) ? 1 : 0;
             $clientChatProactiveDelay = max(0, (int) ($_POST['client_chat_proactive_delay'] ?? 15));
             $clientChatSystemPrompt = trim($_POST['client_chat_system_prompt'] ?? '');
+            $clientChatDebug = !empty($_POST['client_chat_debug']) ? 1 : 0;
 
             // Organization Intelligence Settings
             $metricsCronEnabled = !empty($_POST['metrics_cron_enabled']) ? 1 : 0;
@@ -1219,6 +1220,7 @@ class AdminController
                 'client_chat_require_prechat' => $clientChatRequirePrechat,
                 'client_chat_proactive_delay' => $clientChatProactiveDelay,
                 'client_chat_system_prompt' => $clientChatSystemPrompt,
+                'client_chat_debug' => $clientChatDebug,
                 'metrics_cron_enabled' => $metricsCronEnabled,
                 'metrics_retention_days' => $metricsRetentionDays,
                 'updated_at' => \Carbon\Carbon::now(),
@@ -1889,6 +1891,16 @@ class AdminController
                                     <input type="checkbox" name="client_chat_require_prechat" value="1" <?php echo !empty($settings->client_chat_require_prechat) ? 'checked' : ''; ?>>
                                     Require Client Login (Suppress widget for unregistered visitors)
                                 </label>
+                            </div>
+
+                            <div class="form-group" style="margin-bottom: 15px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px 14px;">
+                                <label style="font-weight: 600; margin-bottom: 3px;">
+                                    <input type="checkbox" name="client_chat_debug" value="1" <?php echo !empty($settings->client_chat_debug) ? 'checked' : ''; ?>>
+                                    Enable Live Chat Diagnostics & Console Logging
+                                </label>
+                                <small class="text-muted" style="display: block;">
+                                    Logs detailed chat interaction steps to <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=module_logs" target="_blank">Module diagnostic log</a> and browser DevTools console.
+                                </small>
                             </div>
 
                             <div class="form-group" style="margin-bottom: 0;">
@@ -7967,6 +7979,7 @@ class AdminController
                 'client_chat_proactive_delay' => (int) ($_POST['client_chat_proactive_delay'] ?? 15),
                 'client_chat_kb_enabled'      => !empty($_POST['client_chat_kb_enabled']) ? 1 : 0,
                 'client_chat_system_prompt'   => trim($_POST['client_chat_system_prompt'] ?? ''),
+                'client_chat_debug'           => !empty($_POST['client_chat_debug']) ? 1 : 0,
                 'updated_at'                  => \Carbon\Carbon::now(),
             ]);
 
@@ -8061,9 +8074,35 @@ class AdminController
                                     </div>
                                 </div>
 
+                                <div class="form-group" style="margin-bottom: 18px;">
+                                    <label>Assigned AI Provider for Client Live Chat</label>
+                                    <select name="client_chat_provider_id" class="form-control">
+                                        <option value="0">-- Inherit Global Primary Provider --</option>
+                                        <?php foreach ($providers as $p): ?>
+                                            <option value="<?php echo (int)$p->id; ?>" <?php echo ((int)($settings->client_chat_provider_id ?? 0) === (int)$p->id) ? 'selected' : ''; ?>>
+                                                <?php echo htmlspecialchars($p->name); ?> (<?php echo htmlspecialchars($p->provider_type); ?> &bull; <?php echo htmlspecialchars($p->model_name ?: 'default'); ?>)
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                    <span class="help-block">Select which AI model powers live customer answers. Configure keys and endpoints in <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=providers">AI Providers</a>.</span>
+                                </div>
+
                                 <div class="form-group" style="margin-bottom: 20px;">
                                     <label>Client Chat Persona & System Instructions</label>
                                     <textarea name="client_chat_system_prompt" class="form-control" rows="4" placeholder="Enter instructions for how the AI should talk to customers..."><?php echo htmlspecialchars($settings->client_chat_system_prompt ?? ''); ?></textarea>
+                                </div>
+
+                                <div class="form-group" style="margin-bottom: 20px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px;">
+                                    <div class="checkbox" style="margin: 0 0 6px 0;">
+                                        <label style="font-weight: 600;">
+                                            <input type="checkbox" name="client_chat_debug" value="1" <?php echo !empty($settings->client_chat_debug) ? 'checked' : ''; ?>>
+                                            Enable Live Chat Diagnostics & Console Logging
+                                        </label>
+                                    </div>
+                                    <span class="help-block" style="margin-bottom: 8px;">Logs each chat interaction, endpoint attempt, and LLM API response to Module Logs. Also prints verbose [Sahdev LiveChat] logs into browser console.</span>
+                                    <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=module_logs" class="btn btn-default btn-xs" target="_blank">
+                                        <i class="fas fa-list-alt"></i> View Module Diagnostic Log &rarr;
+                                    </a>
                                 </div>
 
                                 <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Save Client Chat Settings</button>

@@ -5881,10 +5881,18 @@ function sahdev_render_client_livechat_widget(array $vars): string
         return '';
     }
 
-    // Determine WHMCS base path for client area
+    // Determine WHMCS system URL and base path for client area
+    $fullSystemUrl = '';
     $whmcsBase = '';
     if (!empty($vars['systemurl'])) {
+        $fullSystemUrl = rtrim($vars['systemurl'], '/');
         $parsed = parse_url($vars['systemurl'], PHP_URL_PATH);
+        if (!empty($parsed)) {
+            $whmcsBase = rtrim($parsed, '/');
+        }
+    } elseif (!empty($vars['systemsslurl'])) {
+        $fullSystemUrl = rtrim($vars['systemsslurl'], '/');
+        $parsed = parse_url($vars['systemsslurl'], PHP_URL_PATH);
         if (!empty($parsed)) {
             $whmcsBase = rtrim($parsed, '/');
         }
@@ -5892,6 +5900,7 @@ function sahdev_render_client_livechat_widget(array $vars): string
         try {
             $su = \WHMCS\Config\Setting::getValue('SystemSSLURL') ?: \WHMCS\Config\Setting::getValue('SystemURL');
             if (!empty($su)) {
+                $fullSystemUrl = rtrim($su, '/');
                 $parsed = parse_url($su, PHP_URL_PATH);
                 if (!empty($parsed)) {
                     $whmcsBase = rtrim($parsed, '/');
@@ -5905,15 +5914,25 @@ function sahdev_render_client_livechat_widget(array $vars): string
             $whmcsBase = rtrim($scriptDir, '/');
         }
     }
+
+    // Endpoints:
+    // 1. Native WHMCS routing via index.php?m=sahdev (works across all web server docroot setups)
+    $nativeAjaxUrl = ($fullSystemUrl !== '' ? $fullSystemUrl : '') . '/index.php?m=sahdev&sahdev_act=ajax_handler';
+    // 2. Direct script execution fallback
     $primaryAjaxUrl = ($whmcsBase !== '' ? $whmcsBase : '') . '/modules/addons/sahdev/ajax.php';
 
     $isLeft = ($chatPosition === 'bottom-left');
     $launcherPosCss = $isLeft ? 'left: 24px; right: auto;' : 'right: 24px; left: auto;';
     $windowPosCss = $isLeft ? 'left: 24px; right: auto;' : 'right: 24px; left: auto;';
 
+    $debugMode = !empty($settings->client_chat_debug);
+
+    $systemUrlJs = json_encode($fullSystemUrl);
+    $nativeAjaxUrlJs = json_encode($nativeAjaxUrl);
     $primaryAjaxUrlJs = json_encode($primaryAjaxUrl);
     $welcomeMsgJs = json_encode($welcomeMsgRaw);
     $brandColorJs = json_encode($brandColor);
+    $debugModeJs = json_encode($debugMode);
 
     return <<<HTML
 <style>
@@ -6148,28 +6167,41 @@ function sahdev_render_client_livechat_widget(array $vars): string
     var msgsEl = document.getElementById('sdv-cl-msgs');
     var escalateBtn = document.getElementById('sdv-cl-escalate');
 
-    // Build resilient endpoint list with multi-candidate automatic fallback
+    // Build resilient endpoint list prioritizing native WHMCS module routing
     var candidates = [];
+    var systemUrl = {$systemUrlJs};
+    var nativeUrl = {$nativeAjaxUrlJs};
+    var directUrl = {$primaryAjaxUrlJs};
+    var debugMode = {$debugModeJs};
+
+    // 1. Native WHMCS routing (always works regardless of web server /modules protection)
+    if (nativeUrl) candidates.push(nativeUrl);
+    if (systemUrl) candidates.push(systemUrl + '/index.php?m=sahdev&sahdev_act=ajax_handler');
+
+    // 2. Base element candidate check
     var baseEl = document.querySelector('base');
     if (baseEl && baseEl.href) {
         var cleanBase = baseEl.href.replace(/\/+$/, '');
+        candidates.push(cleanBase + '/index.php?m=sahdev&sahdev_act=ajax_handler');
         candidates.push(cleanBase + '/modules/addons/sahdev/ajax.php');
     }
 
-    var serverUrl = {$primaryAjaxUrlJs};
-    if (serverUrl) {
-        candidates.push(serverUrl);
-    }
+    // 3. Direct script candidates
+    if (directUrl) candidates.push(directUrl);
+    if (systemUrl) candidates.push(systemUrl + '/modules/addons/sahdev/ajax.php');
 
     var pathname = window.location.pathname;
     var lastSlash = pathname.lastIndexOf('/');
     if (lastSlash >= 0) {
         var dir = pathname.substring(0, lastSlash);
         if (dir && dir !== '/') {
+            candidates.push(window.location.origin + dir.replace(/\/+$/, '') + '/index.php?m=sahdev&sahdev_act=ajax_handler');
             candidates.push(window.location.origin + dir.replace(/\/+$/, '') + '/modules/addons/sahdev/ajax.php');
         }
     }
 
+    candidates.push('index.php?m=sahdev&sahdev_act=ajax_handler');
+    candidates.push('/index.php?m=sahdev&sahdev_act=ajax_handler');
     candidates.push('modules/addons/sahdev/ajax.php');
     candidates.push('/modules/addons/sahdev/ajax.php');
 
@@ -6180,27 +6212,59 @@ function sahdev_render_client_livechat_widget(array $vars): string
         }
     });
 
-    var activeEndpoint = uniqueEndpoints[0] || 'modules/addons/sahdev/ajax.php';
+    // If an endpoint previously worked in this browser session, prioritize it
+    var cachedEndpoint = null;
+    try { cachedEndpoint = localStorage.getItem('sdv_active_endpoint'); } catch(e) {}
+    if (cachedEndpoint && uniqueEndpoints.indexOf(cachedEndpoint) > -1) {
+        uniqueEndpoints = [cachedEndpoint].concat(uniqueEndpoints.filter(function(u) { return u !== cachedEndpoint; }));
+    }
 
     function postAjaxWithFallback(form, callback, candidateIdx) {
         candidateIdx = candidateIdx || 0;
-        var targetUrl = uniqueEndpoints[candidateIdx] || activeEndpoint;
+        var targetUrl = uniqueEndpoints[candidateIdx];
+
+        if (!targetUrl) {
+            callback(new Error('No reachable chat endpoint found. Please check server URL settings.'));
+            return;
+        }
+
+        if (debugMode) {
+            console.log('[Sahdev LiveChat] Attempting endpoint (' + (candidateIdx + 1) + '/' + uniqueEndpoints.length + '): ' + targetUrl);
+        }
 
         fetch(targetUrl, { method: 'POST', body: form })
         .then(function(r) {
-            if (r.status === 404 && candidateIdx + 1 < uniqueEndpoints.length) {
-                console.warn('[Sahdev LiveChat] 404 at ' + targetUrl + ', retrying with: ' + uniqueEndpoints[candidateIdx + 1]);
-                return postAjaxWithFallback(form, callback, candidateIdx + 1);
-            }
-            activeEndpoint = targetUrl; // Cache successful endpoint
-            return r.json().catch(function() {
+            if (!r.ok) {
+                if (candidateIdx + 1 < uniqueEndpoints.length) {
+                    console.warn('[Sahdev LiveChat] Endpoint returned HTTP ' + r.status + ' (' + targetUrl + '). Trying fallback: ' + uniqueEndpoints[candidateIdx + 1]);
+                    return postAjaxWithFallback(form, callback, candidateIdx + 1);
+                }
                 throw new Error('Server returned an unexpected response (HTTP ' + r.status + ')');
-            }).then(function(data) {
+            }
+
+            return r.text().then(function(rawText) {
+                var data;
+                try {
+                    data = JSON.parse(rawText);
+                } catch (jsonErr) {
+                    if (candidateIdx + 1 < uniqueEndpoints.length) {
+                        console.warn('[Sahdev LiveChat] Endpoint returned non-JSON response (' + targetUrl + '). Trying fallback: ' + uniqueEndpoints[candidateIdx + 1]);
+                        return postAjaxWithFallback(form, callback, candidateIdx + 1);
+                    }
+                    throw new Error('Server returned an invalid JSON response.');
+                }
+
+                // Cache the verified working endpoint
+                try { localStorage.setItem('sdv_active_endpoint', targetUrl); } catch(e) {}
+                if (debugMode) {
+                    console.log('[Sahdev LiveChat] Successful response from: ' + targetUrl, data);
+                }
                 callback(null, data);
             });
         })
         .catch(function(err) {
             if (candidateIdx + 1 < uniqueEndpoints.length) {
+                console.warn('[Sahdev LiveChat] Network error at ' + targetUrl + ' (' + err.message + '). Trying fallback: ' + uniqueEndpoints[candidateIdx + 1]);
                 return postAjaxWithFallback(form, callback, candidateIdx + 1);
             }
             callback(err);

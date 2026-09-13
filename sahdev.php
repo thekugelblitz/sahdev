@@ -1322,3 +1322,39 @@ function sahdev_output($vars)
         echo "<div class=\"alert alert-danger\">An error occurred: " . htmlspecialchars($e->getMessage()) . "</div>";
     }
 }
+
+/**
+ * Client Area Output.
+ *
+ * Called when the WHMCS client or visitor accesses index.php?m=sahdev
+ * or sends AJAX requests to index.php?m=sahdev (client-side chat, visitor heartbeat, etc.).
+ *
+ * @param array $vars Module configuration parameters.
+ * @return array
+ */
+function sahdev_clientarea($vars)
+{
+    $action = $_REQUEST['action'] ?? '';
+    $sahdevAct = $_REQUEST['sahdev_act'] ?? '';
+
+    $clientActions = ['client_chat_init', 'client_chat_message', 'client_chat_escalate', 'client_chat_feedback', 'visitor_heartbeat'];
+    if ($sahdevAct === 'ajax_handler' || in_array($action, $clientActions, true) || !empty($action)) {
+        while (ob_get_level() > 0) {
+            @ob_end_clean();
+        }
+        header('Content-Type: application/json; charset=utf-8');
+        require_once __DIR__ . '/ajax.php';
+        exit;
+    }
+
+    return [
+        'pagetitle'    => 'Support Assistant',
+        'breadcrumb'   => ['index.php?m=sahdev' => 'Support Assistant'],
+        'templatefile' => 'templates/clientarea',
+        'requirelogin' => false,
+        'vars'         => [
+            'modulelink' => $vars['modulelink'] ?? 'index.php?m=sahdev',
+        ],
+    ];
+}
+

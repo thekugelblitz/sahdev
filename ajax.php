@@ -33,6 +33,7 @@ if (!$adminId && !$isClientChatAction) {
 // strictly scoped to the authenticated client's read-only profile.
 if ($isClientChatAction) {
     try {
+        require_once __DIR__ . '/lib/ModuleLogger.php';
         require_once __DIR__ . '/lib/SchemaManager.php';
         require_once __DIR__ . '/lib/AIProviderInterface.php';
         require_once __DIR__ . '/lib/GoogleAIProvider.php';
@@ -45,12 +46,14 @@ if ($isClientChatAction) {
 
         $settings = Capsule::table('tblsahdev_settings')->first();
         if (!$settings || empty($settings->client_chat_enabled)) {
+            \Sahdev\Lib\ModuleLogger::warning('client_chat', 'Live chat request rejected: client_chat_enabled is disabled.');
             echo json_encode(['status' => 'error', 'message' => 'Live chat is currently unavailable.']);
             exit;
         }
 
         $clientId = !empty($_SESSION['uid']) ? (int) $_SESSION['uid'] : null;
         if (!empty($settings->client_chat_require_auth) && (!$clientId || $clientId <= 0)) {
+            \Sahdev\Lib\ModuleLogger::info('client_chat', 'Live chat request rejected: user authentication required.');
             echo json_encode(['status' => 'error', 'message' => 'Please log in to your account to use live chat.']);
             exit;
         }
@@ -83,6 +86,8 @@ if ($isClientChatAction) {
                     ? $settings->client_chat_greeting
                     : "Hi there! 👋 Need help with your hosting, domains, or billing? Chat with our AI assistant or open a ticket anytime.");
 
+            \Sahdev\Lib\ModuleLogger::info('client_chat', "Live chat initialized for session {$session['session_uuid']} (visitor: " . substr($visitorToken, 0, 8) . "..., client: " . ($clientId ?: 'guest') . ")");
+
             echo json_encode([
                 'status'        => 'success',
                 'visitor_token' => $visitorToken,
@@ -112,6 +117,9 @@ if ($isClientChatAction) {
                 exit;
             }
 
+            $preview = strlen($messageText) > 60 ? substr($messageText, 0, 60) . '...' : $messageText;
+            \Sahdev\Lib\ModuleLogger::info('client_chat', "Received user message: \"{$preview}\" (visitor: " . substr($visitorToken, 0, 8) . "...)");
+
             $res = \Sahdev\Lib\ChatService::handleClientMessage($visitorToken, $messageText, $clientId);
             echo json_encode(array_merge(['status' => ($res['success'] ?? false) ? 'success' : 'error'], $res));
             exit;
@@ -131,11 +139,14 @@ if ($isClientChatAction) {
                 exit;
             }
 
+            \Sahdev\Lib\ModuleLogger::info('client_chat', "Escalating session {$sessionUuid} to support ticket (client: " . ($clientId ?: 'guest') . ")");
+
             $res = \Sahdev\Lib\ChatService::escalateChatToTicket($sessionUuid, $clientId);
             echo json_encode(array_merge(['status' => ($res['success'] ?? false) ? 'success' : 'error'], $res));
             exit;
         }
     } catch (\Throwable $e) {
+        \Sahdev\Lib\ModuleLogger::error('client_chat', "Fatal live chat endpoint error: " . $e->getMessage() . " in " . $e->getFile() . ":" . $e->getLine());
         echo json_encode([
             'status'  => 'error',
             'message' => 'Live chat service error: ' . $e->getMessage()

@@ -5,6 +5,8 @@ namespace Sahdev\Lib;
 use WHMCS\Database\Capsule;
 use Carbon\Carbon;
 
+require_once __DIR__ . '/ModuleLogger.php';
+
 /**
  * Class ChatService
  *
@@ -432,9 +434,14 @@ class ChatService
         $pRecord = null;
         $provider = self::resolveChatProvider('client_livechat', $pRecord);
         if (!$provider) {
+            ModuleLogger::warning('client_chat', 'No active AI Provider could be resolved for Client Live Chat. Please assign an AI Provider in Addons > Sahdev > AI Providers.');
             $fallback = "Thank you for reaching out! Our team is currently reviewing your message. You can also open a support ticket for immediate assistance.";
             self::recordAssistantMessage($sessionId, $fallback);
-            return ['success' => true, 'reply' => $fallback];
+            return [
+                'success'    => true,
+                'reply'      => $fallback,
+                'debug_hint' => 'No active AI Provider configured for client live chat.',
+            ];
         }
 
         $modelName = '';
@@ -454,6 +461,10 @@ class ChatService
         ];
 
         try {
+            $pName = $pRecord->name ?? 'AI Provider';
+            $pType = $pRecord->provider_type ?? 'generic';
+            ModuleLogger::debug('client_chat', "Requesting chat reply for session {$sessionId} using [{$pName} ({$pType})] model [{$modelName}]");
+
             if (method_exists($provider, 'generateChat')) {
                 // Strictly pass empty tools array [] — NO mutating tools or safe ops are exposed to client chat
                 $res = $provider->generateChat($chatHistory, [], $settings);
@@ -476,19 +487,29 @@ class ChatService
             }
 
             self::recordAssistantMessage($sessionId, $reply);
+            ModuleLogger::info('client_chat', "Live chat response generated successfully for session {$sessionId} (length: " . strlen($reply) . " chars)");
 
             return [
-                'success' => true,
-                'reply'   => $reply,
+                'success'      => true,
+                'reply'        => $reply,
                 'can_escalate' => true,
             ];
         } catch (\Throwable $e) {
+            $pName = $pRecord->name ?? 'AI Provider';
+            ModuleLogger::error('client_chat', "Live chat generation failed: " . $e->getMessage() . " [Provider: {$pName}, Model: {$modelName}]");
+
+            $debugMode = !empty(self::getChatSetting('client_chat_debug', 0));
             $errReply = "We apologize, our assistant encountered a momentary issue. Would you like to create a support ticket with your inquiry?";
+            if ($debugMode) {
+                $errReply .= "\n\n⚠️ [Debug Notice] Error from {$pName}: " . $e->getMessage();
+            }
+
             self::recordAssistantMessage($sessionId, $errReply);
             return [
                 'success'      => true,
                 'reply'        => $errReply,
                 'can_escalate' => true,
+                'error'        => $e->getMessage(),
             ];
         }
     }
@@ -757,6 +778,8 @@ class ChatService
                 if ($pData) {
                     $recordOut = $pData;
                     return self::instantiateProviderFromRecord($pData);
+                } else {
+                    ModuleLogger::warning('client_chat', "Configured provider ID #{$providerId} is inactive or not found for channel '{$channel}'. Attempting fallback.");
                 }
             }
 
@@ -769,8 +792,12 @@ class ChatService
             if ($any) {
                 $recordOut = $any;
                 return self::instantiateProviderFromRecord($any);
+            } else {
+                ModuleLogger::warning('client_chat', "No active providers found in tblsahdev_providers for channel '{$channel}'.");
             }
-        } catch (\Throwable $e) {}
+        } catch (\Throwable $e) {
+            ModuleLogger::error('client_chat', "Exception while resolving chat provider for channel '{$channel}': " . $e->getMessage());
+        }
 
         return null;
     }
@@ -797,7 +824,11 @@ class ChatService
                 require_once __DIR__ . '/LMStudioAIProvider.php';
                 return new LMStudioAIProvider($apiUrl, $apiKey);
             }
-        } catch (\Throwable $e) {}
+        } catch (\Throwable $e) {
+            $name = $pData->name ?? 'Unknown';
+            $id = $pData->id ?? 0;
+            ModuleLogger::error('client_chat', "Failed instantiating provider '{$name}' (#{$id}): " . $e->getMessage());
+        }
 
         return null;
     }
