@@ -5923,6 +5923,27 @@ function sahdev_render_client_livechat_widget(array $vars): string
             }
         } catch (\Throwable $e) {}
     }
+    if (empty($fullSystemUrl)) {
+        if (!empty($GLOBALS['CONFIG']['SystemSSLURL'])) {
+            $fullSystemUrl = rtrim($GLOBALS['CONFIG']['SystemSSLURL'], '/');
+        } elseif (!empty($GLOBALS['CONFIG']['SystemURL'])) {
+            $fullSystemUrl = rtrim($GLOBALS['CONFIG']['SystemURL'], '/');
+        } else {
+            try {
+                $dbUrl = \WHMCS\Database\Capsule::table('tblconfiguration')->where('setting', 'SystemSSLURL')->value('value')
+                    ?: \WHMCS\Database\Capsule::table('tblconfiguration')->where('setting', 'SystemURL')->value('value');
+                if (!empty($dbUrl)) {
+                    $fullSystemUrl = rtrim($dbUrl, '/');
+                }
+            } catch (\Throwable $e) {}
+        }
+    }
+    if ($whmcsBase === '' && !empty($fullSystemUrl)) {
+        $parsed = parse_url($fullSystemUrl, PHP_URL_PATH);
+        if (!empty($parsed)) {
+            $whmcsBase = rtrim($parsed, '/');
+        }
+    }
     if ($whmcsBase === '' && isset($_SERVER['SCRIPT_NAME'])) {
         $scriptDir = str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME']));
         if ($scriptDir !== '/' && $scriptDir !== '.') {
@@ -5943,6 +5964,7 @@ function sahdev_render_client_livechat_widget(array $vars): string
     $debugMode = !empty($settings->client_chat_debug);
 
     $systemUrlJs = json_encode($fullSystemUrl);
+    $whmcsBaseJs = json_encode($whmcsBase);
     $nativeAjaxUrlJs = json_encode($nativeAjaxUrl);
     $primaryAjaxUrlJs = json_encode($primaryAjaxUrl);
     $welcomeMsgJs = json_encode($welcomeMsgRaw);
@@ -6313,25 +6335,227 @@ HTML;
 .sdv-code-block {
     background: #1e293b;
     color: #e2e8f0;
-    padding: 10px;
-    border-radius: 6px;
+    padding: 10px 12px;
+    border-radius: 8px;
     font-size: 12px;
     overflow-x: auto;
-    margin: 6px 0;
+    margin: 8px 0;
+    border: 1px solid #334155;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 .sdv-inline-code {
-    background: rgba(0,0,0,0.07);
-    padding: 2px 5px;
+    background: rgba(0,0,0,0.06);
+    color: #0f172a;
+    padding: 2px 6px;
     border-radius: 4px;
     font-size: 12px;
-    font-family: monospace;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    border: 1px solid rgba(0,0,0,0.08);
 }
-.sdv-msg-list {
-    margin: 6px 0;
-    padding-left: 20px;
+.sdv-chat-link {
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 4px !important;
+    color: var(--sdv-brand, {$brandColor}) !important;
+    background: rgba(13, 110, 253, 0.08) !important;
+    border: 1px solid rgba(13, 110, 253, 0.24) !important;
+    padding: 2px 8px !important;
+    border-radius: 6px !important;
+    font-weight: 600 !important;
+    font-size: 12.5px !important;
+    text-decoration: none !important;
+    vertical-align: middle !important;
+    line-height: 1.4 !important;
+    transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1) !important;
+    margin: 1px 2px !important;
 }
-.sdv-msg-list li {
-    margin-bottom: 3px;
+.sdv-chat-link:hover {
+    background: var(--sdv-brand, {$brandColor}) !important;
+    color: #ffffff !important;
+    border-color: var(--sdv-brand, {$brandColor}) !important;
+    transform: translateY(-1px) !important;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.12) !important;
+}
+.sdv-chat-link .sdv-chat-link-icon {
+    flex-shrink: 0 !important;
+    opacity: 0.75 !important;
+    transition: transform 0.15s ease !important;
+}
+.sdv-chat-link:hover .sdv-chat-link-icon {
+    opacity: 1 !important;
+    transform: translate(1px, -1px) !important;
+}
+.sdv-cl-msg-user .sdv-chat-link {
+    background: rgba(255, 255, 255, 0.22) !important;
+    color: #ffffff !important;
+    border-color: rgba(255, 255, 255, 0.35) !important;
+}
+.sdv-cl-msg-user .sdv-chat-link:hover {
+    background: #ffffff !important;
+    color: var(--sdv-brand, {$brandColor}) !important;
+}
+.sdv-msg-ol, .sdv-msg-ul {
+    margin: 8px 0 !important;
+    padding-left: 20px !important;
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 4px !important;
+}
+.sdv-msg-ol {
+    list-style-type: decimal !important;
+}
+.sdv-msg-ul {
+    list-style-type: disc !important;
+}
+.sdv-msg-ol li, .sdv-msg-ul li {
+    line-height: 1.55 !important;
+    padding-left: 2px !important;
+}
+.sdv-msg-quote {
+    margin: 8px 0 !important;
+    padding: 8px 12px !important;
+    border-left: 3px solid var(--sdv-brand, {$brandColor}) !important;
+    background: rgba(0, 0, 0, 0.03) !important;
+    border-radius: 0 8px 8px 0 !important;
+    color: #475569 !important;
+    font-style: italic !important;
+    font-size: 13px !important;
+    line-height: 1.5 !important;
+}
+.sdv-msg-h1 {
+    font-size: 15.5px !important;
+    font-weight: 700 !important;
+    margin: 10px 0 6px !important;
+    color: #0f172a !important;
+    line-height: 1.3 !important;
+}
+.sdv-msg-h2 {
+    font-size: 14px !important;
+    font-weight: 700 !important;
+    margin: 8px 0 4px !important;
+    color: #0f172a !important;
+    line-height: 1.3 !important;
+}
+.sdv-msg-h3 {
+    font-size: 13px !important;
+    font-weight: 700 !important;
+    margin: 6px 0 3px !important;
+    color: #1e293b !important;
+    line-height: 1.3 !important;
+}
+.sdv-badge-pill {
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 5px !important;
+    font-size: 11px !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.3px !important;
+    padding: 2px 7px !important;
+    border-radius: 10px !important;
+    vertical-align: middle !important;
+    line-height: 1.3 !important;
+}
+.sdv-badge-pill .sdv-badge-dot {
+    width: 6px !important;
+    height: 6px !important;
+    border-radius: 50% !important;
+    display: inline-block !important;
+}
+.sdv-badge-warning {
+    background: #fef3c7 !important;
+    color: #92400e !important;
+    border: 1px solid #fde68a !important;
+}
+.sdv-badge-warning .sdv-badge-dot {
+    background: #d97706 !important;
+}
+.sdv-badge-success {
+    background: #d1fae5 !important;
+    color: #065f46 !important;
+    border: 1px solid #a7f3d0 !important;
+}
+.sdv-badge-success .sdv-badge-dot {
+    background: #059669 !important;
+}
+.sdv-badge-danger {
+    background: #fee2e2 !important;
+    color: #991b1b !important;
+    border: 1px solid #fecaca !important;
+}
+.sdv-badge-danger .sdv-badge-dot {
+    background: #dc2626 !important;
+}
+.sdv-table-wrap {
+    width: 100% !important;
+    overflow-x: auto !important;
+    margin: 8px 0 !important;
+    border-radius: 8px !important;
+    border: 1px solid #e2e8f0 !important;
+}
+.sdv-msg-table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    font-size: 12px !important;
+    text-align: left !important;
+}
+.sdv-msg-table th {
+    background: #f1f5f9 !important;
+    color: #334155 !important;
+    font-weight: 700 !important;
+    padding: 7px 10px !important;
+    border-bottom: 1px solid #cbd5e1 !important;
+    white-space: nowrap !important;
+}
+.sdv-msg-table td {
+    padding: 6px 10px !important;
+    border-bottom: 1px solid #f1f5f9 !important;
+    color: #1e293b !important;
+}
+.sdv-msg-table tr:last-child td {
+    border-bottom: none !important;
+}
+.sdv-escalate-success-card {
+    background: #f0fdf4 !important;
+    border: 1px solid #bbf7d0 !important;
+    border-radius: 12px !important;
+    padding: 13px !important;
+    color: #166534 !important;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04) !important;
+}
+.sdv-escalate-header {
+    display: flex !important;
+    align-items: center !important;
+    gap: 9px !important;
+    margin-bottom: 8px !important;
+}
+.sdv-escalate-icon {
+    font-size: 22px !important;
+    line-height: 1 !important;
+}
+.sdv-escalate-title {
+    font-size: 14px !important;
+    font-weight: 700 !important;
+    color: #14532d !important;
+}
+.sdv-escalate-sub {
+    font-size: 11.5px !important;
+    color: #15803d !important;
+}
+.sdv-escalate-desc {
+    font-size: 12.5px !important;
+    line-height: 1.5 !important;
+    margin: 6px 0 10px !important;
+    color: #166534 !important;
+}
+.sdv-escalate-link {
+    background: #16a34a !important;
+    color: #ffffff !important;
+    border-color: #15803d !important;
+    font-weight: 700 !important;
+}
+.sdv-escalate-link:hover {
+    background: #15803d !important;
+    color: #ffffff !important;
 }
 
 /* Footer & Input */
@@ -6742,6 +6966,55 @@ HTML;
     color: #f8fafc !important;
     border: 1px solid #334155;
 }
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-chat-link {
+    background: rgba(59, 130, 246, 0.16) !important;
+    color: #93c5fd !important;
+    border-color: rgba(59, 130, 246, 0.32) !important;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-chat-link:hover {
+    background: #2563eb !important;
+    color: #ffffff !important;
+    border-color: #3b82f6 !important;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-inline-code {
+    background: rgba(255, 255, 255, 0.08) !important;
+    color: #cbd5e1 !important;
+    border-color: rgba(255, 255, 255, 0.12) !important;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-msg-quote {
+    background: rgba(255, 255, 255, 0.05) !important;
+    border-left-color: #3b82f6 !important;
+    color: #94a3b8 !important;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-msg-h1,
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-msg-h2,
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-msg-h3 {
+    color: #f8fafc !important;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-table-wrap {
+    border-color: #334155 !important;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-msg-table th {
+    background: #1e293b !important;
+    color: #cbd5e1 !important;
+    border-bottom-color: #334155 !important;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-msg-table td {
+    color: #e2e8f0 !important;
+    border-bottom-color: #1e293b !important;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-escalate-success-card {
+    background: rgba(22, 101, 52, 0.22) !important;
+    border-color: rgba(74, 222, 128, 0.35) !important;
+    color: #86efac !important;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-escalate-title {
+    color: #bbf7d0 !important;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-escalate-sub,
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-escalate-desc {
+    color: #86efac !important;
+}
 #sdv-client-chat-window.sdv-theme-cyber_dark .sdv-cl-footer {
     background: #0f172a !important;
     border-top: 1px solid #334155;
@@ -6930,6 +7203,7 @@ HTML;
 
     var brandColor = {$brandColorJs};
     var systemUrl = {$systemUrlJs};
+    var whmcsBase = {$whmcsBaseJs};
     var nativeUrl = {$nativeAjaxUrlJs};
     var directUrl = {$primaryAjaxUrlJs};
     var debugMode = {$debugModeJs};
@@ -6939,6 +7213,20 @@ HTML;
     var defaultChatHeight = {$chatHeightJs};
     var defaultExpandWidth = {$expandWidthJs};
     var defaultExpandHeight = {$expandHeightJs};
+
+    function resolveChatUrl(href) {
+        if (!href) return '#';
+        href = href.trim();
+        if (/^(https?:\/\/|mailto:|tel:|#|javascript:)/i.test(href)) {
+            return href;
+        }
+        if (systemUrl && typeof systemUrl === 'string' && systemUrl.length > 0) {
+            return systemUrl.replace(/\/+$/, '') + '/' + href.replace(/^\/+/, '');
+        }
+        var origin = window.location.origin || (window.location.protocol + '//' + window.location.host);
+        var base = (whmcsBase && typeof whmcsBase === 'string') ? whmcsBase.replace(/\/+$/, '') : '';
+        return origin + base + '/' + href.replace(/^\/+/, '');
+    }
 
     var _lastToggleTime = 0;
     var _lastExpandTime = 0;
@@ -7254,32 +7542,177 @@ HTML;
             .replace(/>/g, '&gt;');
 
         // Code blocks ```code```
+        var codeBlocks = [];
         s = s.replace(/```([\s\S]*?)```/g, function(_, c) {
-            return '<pre class="sdv-code-block"><code>' + c.trim() + '</code></pre>';
+            var idx = codeBlocks.length;
+            codeBlocks.push('<pre class="sdv-code-block"><code>' + c.trim() + '</code></pre>');
+            return '@@@CB' + idx + '@@@';
         });
-        // Inline code `code`
-        s = s.replace(/`([^`]+)`/g, '<code class="sdv-inline-code">$1</code>');
-        // Bold **text**
+
+        // Inline code `code` (with smart status badge detection)
+        var inlineCodes = [];
+        s = s.replace(/`([^`]+)`/g, function(_, c) {
+            var trimmedC = c.trim();
+            if (/^(Unpaid|Pending|Processing)$/i.test(trimmedC)) {
+                return '<span class="sdv-badge-pill sdv-badge-warning"><span class="sdv-badge-dot"></span>' + trimmedC + '</span>';
+            } else if (/^(Paid|Active|Completed)$/i.test(trimmedC)) {
+                return '<span class="sdv-badge-pill sdv-badge-success"><span class="sdv-badge-dot"></span>' + trimmedC + '</span>';
+            } else if (/^(Overdue|Cancelled|Suspended|Terminated|Fraud)$/i.test(trimmedC)) {
+                return '<span class="sdv-badge-pill sdv-badge-danger"><span class="sdv-badge-dot"></span>' + trimmedC + '</span>';
+            }
+            var idx = inlineCodes.length;
+            inlineCodes.push('<code class="sdv-inline-code">' + c + '</code>');
+            return '@@@IC' + idx + '@@@';
+        });
+
+        // Bold and Italics
         s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-        // Markdown Links [text](url)
-        s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" style="color:var(--sdv-brand);text-decoration:underline;font-weight:600;">$1</a>');
-        // Simple bullet lines split safely without literal newline in heredoc
+        s = s.replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
+
+        // Markdown Links [text](url) - smartly resolve WHMCS base URL
+        s = s.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, function(_, anchor, href) {
+            var resolved = resolveChatUrl(href);
+            return '<a href="' + resolved + '" target="_blank" rel="noopener noreferrer" class="sdv-chat-link">' +
+                   anchor +
+                   '<svg class="sdv-chat-link-icon" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>' +
+                   '</a>';
+        });
+
+        // Auto-linkify standalone URLs
+        s = s.replace(/(^|[\s(])(https?:\/\/[^\s<)]+)([\s)]|$)/g, function(_, pre, url, post) {
+            return pre + '<a href="' + url + '" target="_blank" rel="noopener noreferrer" class="sdv-chat-link">' + url + '</a>' + post;
+        });
+
+        // Contextual status badges (e.g. "is currently Unpaid", "Status: Paid")
+        s = s.replace(/\b(is currently|Status:\s*)\s*(Unpaid|Paid|Overdue|Cancelled|Active|Suspended|Pending)\b/gi, function(match, prefix, status) {
+            var st = status.toLowerCase();
+            var cls = 'sdv-badge-warning';
+            if (st === 'paid' || st === 'active' || st === 'completed') cls = 'sdv-badge-success';
+            else if (st === 'overdue' || st === 'cancelled' || st === 'suspended') cls = 'sdv-badge-danger';
+            return prefix + ' <span class="sdv-badge-pill ' + cls + '"><span class="sdv-badge-dot"></span>' + status + '</span>';
+        });
+
         var lines = s.split(String.fromCharCode(10));
         var out = [];
-        var inUl = false;
+        var curListType = null;
+        var curListItems = [];
+        var inQuote = false;
+        var quoteLines = [];
+        var inTable = false;
+        var tableLines = [];
+
+        function flushList() {
+            if (curListType && curListItems.length > 0) {
+                out.push('<' + curListType + ' class="sdv-msg-' + curListType + '">' + curListItems.join('') + '</' + curListType + '>');
+                curListType = null;
+                curListItems = [];
+            }
+        }
+
+        function flushQuote() {
+            if (inQuote && quoteLines.length > 0) {
+                out.push('<blockquote class="sdv-msg-quote">' + quoteLines.join('<br>') + '</blockquote>');
+                inQuote = false;
+                quoteLines = [];
+            }
+        }
+
+        function flushTable() {
+            if (inTable && tableLines.length > 0) {
+                if (tableLines.length >= 2 && /^\s*\|(?:\s*[:-]+[-:]*\s*\|)+\s*$/.test(tableLines[1])) {
+                    var ths = tableLines[0].split('|').map(function(c){return c.trim();}).filter(function(c, idx, arr){ return idx > 0 && idx < arr.length - 1; });
+                    var html = '<div class="sdv-table-wrap"><table class="sdv-msg-table"><thead><tr>';
+                    ths.forEach(function(th) { html += '<th>' + th + '</th>'; });
+                    html += '</tr></thead><tbody>';
+                    for (var r = 2; r < tableLines.length; r++) {
+                        var tds = tableLines[r].split('|').map(function(c){return c.trim();}).filter(function(c, idx, arr){ return idx > 0 && idx < arr.length - 1; });
+                        html += '<tr>';
+                        tds.forEach(function(td) {
+                            var trimmedTd = td.trim();
+                            if (/^(Unpaid|Pending|Processing)$/i.test(trimmedTd)) {
+                                td = '<span class="sdv-badge-pill sdv-badge-warning"><span class="sdv-badge-dot"></span>' + trimmedTd + '</span>';
+                            } else if (/^(Paid|Active|Completed)$/i.test(trimmedTd)) {
+                                td = '<span class="sdv-badge-pill sdv-badge-success"><span class="sdv-badge-dot"></span>' + trimmedTd + '</span>';
+                            } else if (/^(Overdue|Cancelled|Suspended|Terminated|Fraud)$/i.test(trimmedTd)) {
+                                td = '<span class="sdv-badge-pill sdv-badge-danger"><span class="sdv-badge-dot"></span>' + trimmedTd + '</span>';
+                            }
+                            html += '<td>' + td + '</td>';
+                        });
+                        html += '</tr>';
+                    }
+                    html += '</tbody></table></div>';
+                    out.push(html);
+                } else {
+                    tableLines.forEach(function(tl) { out.push(tl); });
+                }
+                inTable = false;
+                tableLines = [];
+            }
+        }
+
+        function flushAll() {
+            flushList();
+            flushQuote();
+            flushTable();
+        }
+
         for (var i = 0; i < lines.length; i++) {
             var ln = lines[i];
-            if (/^\s*[-*]\s+(.*)/.test(ln)) {
-                if (!inUl) { out.push('<ul class="sdv-msg-list">'); inUl = true; }
-                out.push('<li>' + ln.replace(/^\s*[-*]\s+/, '') + '</li>');
+            var trimmed = ln.trim();
+
+            if (/^\s*\|.+\|\s*$/.test(trimmed)) {
+                flushList(); flushQuote();
+                inTable = true;
+                tableLines.push(trimmed);
+            } else if (/^###\s+(.*)/.test(trimmed)) {
+                flushAll();
+                out.push('<h4 class="sdv-msg-h3">' + trimmed.replace(/^###\s+/, '') + '</h4>');
+            } else if (/^##\s+(.*)/.test(trimmed)) {
+                flushAll();
+                out.push('<h3 class="sdv-msg-h2">' + trimmed.replace(/^##\s+/, '') + '</h3>');
+            } else if (/^#\s+(.*)/.test(trimmed)) {
+                flushAll();
+                out.push('<h2 class="sdv-msg-h1">' + trimmed.replace(/^#\s+/, '') + '</h2>');
+            } else if (/^\s*&gt;\s*(.*)/.test(ln)) {
+                flushList(); flushTable();
+                inQuote = true;
+                quoteLines.push(ln.replace(/^\s*&gt;\s*/, ''));
+            } else if (/^\s*\d+\.\s+(.*)/.test(ln)) {
+                flushQuote(); flushTable();
+                if (curListType !== 'ol') {
+                    flushList();
+                    curListType = 'ol';
+                }
+                curListItems.push('<li>' + ln.replace(/^\s*\d+\.\s+/, '') + '</li>');
+            } else if (/^\s*[-*]\s+(.*)/.test(ln)) {
+                flushQuote(); flushTable();
+                if (curListType !== 'ul') {
+                    flushList();
+                    curListType = 'ul';
+                }
+                curListItems.push('<li>' + ln.replace(/^\s*[-*]\s+/, '') + '</li>');
+            } else if (trimmed === '') {
+                flushAll();
+                out.push('');
             } else {
-                if (inUl) { out.push('</ul>'); inUl = false; }
+                flushAll();
                 out.push(ln);
             }
         }
-        if (inUl) out.push('</ul>');
+        flushAll();
 
-        return out.join('<br>').replace(/(<\/ul>|<pre[\s\S]*?<\/pre>)<br>/g, '$1');
+        var res = out.join('<br>');
+        res = res.replace(/(?:<br>\s*)+(<(?:ul|ol|blockquote|h[1-4]|div|pre)[\s\S]*?>)/g, '$1');
+        res = res.replace(/(<\/(?:ul|ol|blockquote|h[1-4]|div|pre)>)(?:\s*<br>)+/g, '$1');
+
+        res = res.replace(/@@@CB(\d+)@@@/g, function(_, idx) {
+            return codeBlocks[Number(idx)] || '';
+        });
+        res = res.replace(/@@@IC(\d+)@@@/g, function(_, idx) {
+            return inlineCodes[Number(idx)] || '';
+        });
+
+        return res;
     }
 
     function appendClMsg(role, text, isHtml, msgId) {
@@ -7461,14 +7894,24 @@ HTML;
             }
 
             var tid = data.tid || data.ticket_id || '';
-            var ticketUrl = 'supporttickets.php';
+            var ticketUrl = data.ticket_url ? resolveChatUrl(data.ticket_url) : resolveChatUrl('supporttickets.php');
 
-            appendClMsg('bot',
-                '✅ <strong>Support Ticket #' + tid + ' created successfully!</strong><br><br>' +
-                'Our support team has received your inquiry transcript and will follow up shortly.<br><br>' +
-                '<a href="' + ticketUrl + '" target="_blank" rel="noopener noreferrer" style="color:' + encodeURIComponent(brandColor) + ';font-weight:700;text-decoration:underline;">View All Support Tickets &rarr;</a>',
-                true
-            );
+            var cardHtml = '<div class="sdv-escalate-success-card">' +
+                '<div class="sdv-escalate-header">' +
+                    '<span class="sdv-escalate-icon">🎫</span>' +
+                    '<div>' +
+                        '<div class="sdv-escalate-title">Support Ticket #' + tid + ' Created</div>' +
+                        '<div class="sdv-escalate-sub">Live chat conversation escalated to staff</div>' +
+                    '</div>' +
+                '</div>' +
+                '<div class="sdv-escalate-desc">Our technical staff has received your complete conversation transcript and account details. You can track updates or reply directly from your client area.</div>' +
+                '<a href="' + ticketUrl + '" target="_blank" rel="noopener noreferrer" class="sdv-chat-link sdv-escalate-link">' +
+                    '<span>Open Support Ticket #' + tid + '</span>' +
+                    '<svg class="sdv-chat-link-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>' +
+                '</a>' +
+            '</div>';
+
+            appendClMsg('bot', cardHtml, true);
             if (escalateBtn) escalateBtn.style.display = 'none';
         });
     };

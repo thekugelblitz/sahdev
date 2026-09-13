@@ -451,10 +451,26 @@ class ChatService
         $kbGroundingPrompt = self::getClientChatPrompt('chat_kb_grounding', "=== KNOWLEDGE BASE GROUNDING & PORTAL LINKS ===\n- Use Knowledge Base articles to deliver accurate, step-by-step instructions.\n- Link clients to self-service portal actions.");
         $escalationPrompt = self::getClientChatPrompt('chat_escalation_summary', "=== TICKET ESCALATION DIRECTIVE ===\nIf an issue requires server-side debugging or manual staff intervention, advise converting to a support ticket.");
 
+        $systemUrl = self::getWhmcsSystemUrl();
+        $urlGuidelines = "=== WHMCS CLIENT AREA DIRECT LINKS & URL ENFORCEMENT ===\n"
+            . "System Base URL: " . (!empty($systemUrl) ? $systemUrl : "(Client Portal)") . "\n"
+            . "CRITICAL INSTRUCTION: When directing clients to self-service portal actions, invoices, services, or domains, ALWAYS format Markdown links using the full Base URL:\n"
+            . "- View Invoices: " . ($systemUrl ? "{$systemUrl}/clientarea.php?action=invoices" : "clientarea.php?action=invoices") . "\n"
+            . "- Pay Specific Invoice: " . ($systemUrl ? "{$systemUrl}/viewinvoice.php?id=[INVOICE_ID]" : "viewinvoice.php?id=[INVOICE_ID]") . "\n"
+            . "- Hosting Products & Services: " . ($systemUrl ? "{$systemUrl}/clientarea.php?action=services" : "clientarea.php?action=services") . "\n"
+            . "- Product Details: " . ($systemUrl ? "{$systemUrl}/clientarea.php?action=productdetails&id=[SERVICE_ID]" : "clientarea.php?action=productdetails&id=[SERVICE_ID]") . "\n"
+            . "- Domains: " . ($systemUrl ? "{$systemUrl}/clientarea.php?action=domains" : "clientarea.php?action=domains") . "\n"
+            . "- Support Tickets: " . ($systemUrl ? "{$systemUrl}/supporttickets.php" : "supporttickets.php") . "\n"
+            . "- Open New Ticket: " . ($systemUrl ? "{$systemUrl}/submitticket.php" : "submitticket.php") . "\n"
+            . "- Order / Addons / Cart: " . ($systemUrl ? "{$systemUrl}/cart.php" : "cart.php") . "\n"
+            . "Example: 'To pay your invoice securely, open [Invoices & Payments]({$systemUrl}/clientarea.php?action=invoices) and choose your preferred payment gateway.'\n"
+            . "NEVER use bare relative links like [Invoices](clientarea.php?action=invoices) — always prefix with the full Base URL.";
+
         $systemPrompt = $personaPrompt . "\n\n"
             . $guardrailsPrompt . "\n\n"
             . $contextIngestionPrompt . "\n\n"
             . $kbGroundingPrompt . "\n\n"
+            . $urlGuidelines . "\n\n"
             . $escalationPrompt . "\n\n"
             . "CLIENT ACCOUNT CONTEXT (Read-Only):\n" . $clientContext . "\n\n"
             . "KNOWLEDGE BASE RESOURCES:\n" . $kbContext;
@@ -468,6 +484,7 @@ class ChatService
         if (!$provider) {
             ModuleLogger::warning('client_chat', 'No active AI Provider could be resolved for Client Live Chat. Please assign an AI Provider in Addons > Sahdev > AI Providers.');
             $fallback = "Thank you for reaching out! Our team is currently reviewing your message. You can also open a support ticket for immediate assistance.";
+            $fallback = self::normalizeMarkdownLinks($fallback);
             self::recordAssistantMessage($sessionId, $fallback);
             return [
                 'success'    => true,
@@ -518,6 +535,8 @@ class ChatService
                 $reply = "Thank you for reaching out. How else may I assist you with your hosting services today?";
             }
 
+            // Smart link normalizer ensures all clientarea URLs are fully qualified
+            $reply = self::normalizeMarkdownLinks($reply);
             self::recordAssistantMessage($sessionId, $reply);
             ModuleLogger::info('client_chat', "Live chat response generated successfully for session {$sessionId} (length: " . strlen($reply) . " chars)");
 
@@ -536,6 +555,7 @@ class ChatService
                 $errReply .= "\n\n⚠️ [Debug Notice] Error from {$pName}: " . $e->getMessage();
             }
 
+            $errReply = self::normalizeMarkdownLinks($errReply);
             self::recordAssistantMessage($sessionId, $errReply);
             return [
                 'success'      => true,
@@ -562,11 +582,54 @@ class ChatService
             return ['success' => false, 'error' => "Unauthorized session access."];
         }
 
-        $messages = self::getSessionMessages((int) $session->id, 100);
-        $transcript = "=== CHAT TRANSCRIPT ESCALATED FROM SAHDEV LIVE CHAT ===\n\n";
-        foreach ($messages as $m) {
-            $transcript .= "[{$m['created_at']}] {$m['sender_name']} ({$m['sender_type']}):\n{$m['message_text']}\n\n";
+        $systemUrl = self::getWhmcsSystemUrl();
+        $clientName = 'Live Chat Visitor';
+        $clientEmail = 'visitor@chat.local';
+        if ($userId > 0) {
+            $cl = Capsule::table('tblclients')->where('id', $userId)->first(['firstname', 'lastname', 'email']);
+            if ($cl) {
+                $clientName = trim(($cl->firstname ?? '') . ' ' . ($cl->lastname ?? ''));
+                $clientEmail = $cl->email ?: 'visitor@chat.local';
+            }
         }
+
+        $messages = self::getSessionMessages((int) $session->id, 100);
+
+        // Build elegant, executive Markdown ticket transcript
+        $nowFormatted = Carbon::now()->toDayDateTimeString();
+        $transcript = "### 💬 Live Chat Escalation Transcript\n\n";
+        $transcript .= "| Field | Details |\n";
+        $transcript .= "|:---|:---|\n";
+        $transcript .= "| **Customer** | {$clientName} (`{$clientEmail}`) |\n";
+        $transcript .= "| **Escalated Date** | {$nowFormatted} |\n";
+        $transcript .= "| **Live Chat Session** | `{$session->session_uuid}` |\n";
+        if (!empty($systemUrl)) {
+            $transcript .= "| **Client Area** | [Open Portal]({$systemUrl}/clientarea.php) |\n";
+        }
+        $transcript .= "\n---\n\n";
+        $transcript .= "#### 📋 Conversation Thread\n\n";
+
+        foreach ($messages as $m) {
+            $time = Carbon::parse($m['created_at'])->format('g:i A');
+            $sender = $m['sender_name'] ?: 'User';
+            $msgContent = self::normalizeMarkdownLinks(trim((string)$m['message_text']));
+
+            if ($m['sender_type'] === 'user') {
+                $transcript .= "👤 **{$sender}** *(Customer)* &bull; `{$time}`\n\n";
+                $transcript .= "> " . str_replace("\n", "\n> ", $msgContent) . "\n\n";
+            } elseif ($m['sender_type'] === 'staff') {
+                $transcript .= "🛡️ **{$sender}** *(Staff Support)* &bull; `{$time}`\n\n";
+                $transcript .= $msgContent . "\n\n";
+            } elseif ($m['sender_type'] === 'system') {
+                $transcript .= "ℹ️ *{$msgContent}* &bull; `{$time}`\n\n";
+            } else {
+                $transcript .= "🤖 **{$sender}** *(AI Assistant)* &bull; `{$time}`\n\n";
+                $transcript .= $msgContent . "\n\n";
+            }
+            $transcript .= "---\n\n";
+        }
+
+        $transcript .= "*This ticket was escalated automatically from a live customer conversation via Sahdev AI.*";
 
         $subject = "Live Chat Escalation: " . ($session->title ?: "Support Inquiry");
 
@@ -591,27 +654,21 @@ class ChatService
                     'updated_at' => Carbon::now(),
                 ]);
 
+                $ticketUrl = !empty($systemUrl)
+                    ? "{$systemUrl}/viewticket.php?tid={$tid}"
+                    : "viewticket.php?tid={$tid}";
+
                 return [
                     'success'    => true,
                     'ticket_id'  => $ticketId,
                     'tid'        => $tid,
-                    'ticket_url' => 'supporttickets.php',
+                    'ticket_url' => $ticketUrl,
                     'message'    => "Ticket #{$tid} created successfully.",
                 ];
             }
         }
 
         // Direct database insert fallback
-        $clientName = 'Live Chat Visitor';
-        $clientEmail = 'visitor@chat.local';
-        if ($userId > 0) {
-            $cl = Capsule::table('tblclients')->where('id', $userId)->first(['firstname', 'lastname', 'email']);
-            if ($cl) {
-                $clientName = trim(($cl->firstname ?? '') . ' ' . ($cl->lastname ?? ''));
-                $clientEmail = $cl->email ?: 'visitor@chat.local';
-            }
-        }
-
         $tid = rand(100000, 999999);
         $ticketId = Capsule::table('tbltickets')->insertGetId([
             'did'        => $deptId,
@@ -632,11 +689,15 @@ class ChatService
             'updated_at' => Carbon::now(),
         ]);
 
+        $ticketUrl = !empty($systemUrl)
+            ? "{$systemUrl}/viewticket.php?tid={$tid}"
+            : "viewticket.php?tid={$tid}";
+
         return [
             'success'    => true,
             'ticket_id'  => $ticketId,
             'tid'        => $tid,
-            'ticket_url' => 'supporttickets.php',
+            'ticket_url' => $ticketUrl,
             'message'    => "Support Ticket #{$tid} created successfully.",
         ];
     }
@@ -865,6 +926,52 @@ class ChatService
         }
 
         return null;
+    }
+
+    public static function getWhmcsSystemUrl(): string
+    {
+        try {
+            if (class_exists('\WHMCS\Config\Setting')) {
+                $su = \WHMCS\Config\Setting::getValue('SystemSSLURL') ?: \WHMCS\Config\Setting::getValue('SystemURL');
+                if (!empty($su)) {
+                    return rtrim($su, '/');
+                }
+            }
+            if (!empty($GLOBALS['CONFIG']['SystemSSLURL'])) {
+                return rtrim($GLOBALS['CONFIG']['SystemSSLURL'], '/');
+            }
+            if (!empty($GLOBALS['CONFIG']['SystemURL'])) {
+                return rtrim($GLOBALS['CONFIG']['SystemURL'], '/');
+            }
+            $dbUrl = Capsule::table('tblconfiguration')->where('setting', 'SystemSSLURL')->value('value')
+                ?: Capsule::table('tblconfiguration')->where('setting', 'SystemURL')->value('value');
+            if (!empty($dbUrl)) {
+                return rtrim($dbUrl, '/');
+            }
+        } catch (\Throwable $e) {}
+
+        return '';
+    }
+
+    public static function normalizeMarkdownLinks(string $text): string
+    {
+        $systemUrl = self::getWhmcsSystemUrl();
+        if (empty($systemUrl)) {
+            return $text;
+        }
+
+        return preg_replace_callback('/\[([^\]]+)\]\(([^)\s]+)\)/', function ($m) use ($systemUrl) {
+            $anchor = $m[1];
+            $href = trim($m[2]);
+
+            // If already absolute or mailto/tel/hash, keep as is
+            if (preg_match('/^(https?:\/\/|mailto:|tel:|#)/i', $href)) {
+                return $m[0];
+            }
+
+            $fullUrl = rtrim($systemUrl, '/') . '/' . ltrim($href, '/');
+            return "[{$anchor}]({$fullUrl})";
+        }, $text);
     }
 
     private static function getChatSetting(string $key, $default = null)
