@@ -26,6 +26,7 @@ class SchemaManager
         self::ensureMetricsTables();
         self::ensureVisitorTable();
         self::ensureClientChatPromptsTable();
+        self::ensureRateLimitsTable();
     }
 
     /**
@@ -399,6 +400,27 @@ class SchemaManager
             }
         } catch (\Throwable $e) {
             // Benign seeder
+        }
+    }
+
+    /**
+     * Ensure rate limits table exists for high-performance active throttling.
+     */
+    public static function ensureRateLimitsTable(): void
+    {
+        try {
+            if (!Capsule::schema()->hasTable('tblsahdev_rate_limits')) {
+                Capsule::schema()->create('tblsahdev_rate_limits', function ($table) {
+                    $table->increments('id');
+                    $table->string('rate_key', 128)->index();
+                    $table->string('action_type', 32)->index();
+                    $table->integer('hits')->default(1);
+                    $table->integer('reset_at')->index();
+                    $table->timestamps();
+                });
+            }
+        } catch (\Throwable $e) {
+            // Benign failure if table exists
         }
     }
 }

@@ -7216,10 +7216,20 @@ HTML;
 
     function resolveChatUrl(href) {
         if (!href) return '#';
-        href = href.trim();
-        if (/^(https?:\/\/|mailto:|tel:|#|javascript:)/i.test(href)) {
+        href = String(href).trim();
+        // Block dangerous pseudo-protocols explicitly (XSS defense)
+        if (/^(javascript|vbscript|data|file):/i.test(href)) {
+            return '#';
+        }
+        // Block protocol-relative URLs (phishing / external domain hijack)
+        if (/^\/\//.test(href)) {
+            return '#';
+        }
+        // Safe standard protocols
+        if (/^(https?:\/\/|mailto:|tel:|#)/i.test(href)) {
             return href;
         }
+        // Relative paths within WHMCS
         if (systemUrl && typeof systemUrl === 'string' && systemUrl.length > 0) {
             return systemUrl.replace(/\/+$/, '') + '/' + href.replace(/^\/+/, '');
         }
@@ -7524,9 +7534,24 @@ HTML;
         });
     }
 
+    function sdvGenerateSecureToken() {
+        try {
+            if (window.crypto && window.crypto.getRandomValues) {
+                var buf = new Uint8Array(16);
+                window.crypto.getRandomValues(buf);
+                var hex = '';
+                for (var i = 0; i < buf.length; i++) {
+                    hex += ('0' + buf[i].toString(16)).slice(-2);
+                }
+                return 'vt_' + hex;
+            }
+        } catch (e) {}
+        return 'vt_' + Math.random().toString(36).substring(2, 12) + Date.now().toString(36);
+    }
+
     var visitorToken = sdvSafeGet('sdv_visitor_token', '');
-    if (!visitorToken) {
-        visitorToken = 'vt_' + Math.random().toString(36).substring(2, 12) + Date.now().toString(36);
+    if (!visitorToken || !/^[a-zA-Z0-9_\-]{16,64}$/.test(visitorToken)) {
+        visitorToken = sdvGenerateSecureToken();
         sdvSafeSet('sdv_visitor_token', visitorToken);
     }
 
@@ -7567,20 +7592,22 @@ HTML;
 
         // Bold and Italics
         s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-        s = s.replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
+        s = s.replace(/\*([^*\\n\\r]+)\*/g, '<em>$1</em>');
 
         // Markdown Links [text](url) - smartly resolve WHMCS base URL
         s = s.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, function(_, anchor, href) {
             var resolved = resolveChatUrl(href);
-            return '<a href="' + resolved + '" target="_blank" rel="noopener noreferrer" class="sdv-chat-link">' +
+            var safeResolved = resolved.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+            return '<a href="' + safeResolved + '" target="_blank" rel="noopener noreferrer" class="sdv-chat-link">' +
                    anchor +
                    '<svg class="sdv-chat-link-icon" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>' +
                    '</a>';
         });
 
         // Auto-linkify standalone URLs
-        s = s.replace(/(^|[\s(])(https?:\/\/[^\s<)]+)([\s)]|$)/g, function(_, pre, url, post) {
-            return pre + '<a href="' + url + '" target="_blank" rel="noopener noreferrer" class="sdv-chat-link">' + url + '</a>' + post;
+        s = s.replace(/(^|[\s(])(https?:\/\/[^\s<)"]+)([\s)]|$)/g, function(_, pre, url, post) {
+            var safeUrl = url.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+            return pre + '<a href="' + safeUrl + '" target="_blank" rel="noopener noreferrer" class="sdv-chat-link">' + safeUrl + '</a>' + post;
         });
 
         // Contextual status badges (e.g. "is currently Unpaid", "Status: Paid")
@@ -7885,6 +7912,7 @@ HTML;
         var form = new FormData();
         form.append('action', 'client_chat_escalate');
         form.append('session_uuid', sessionUuid);
+        form.append('visitor_token', visitorToken);
 
         postAjaxWithFallback(form, function(err, data) {
             if (err || !(data.status === 'success' || data.success)) {
@@ -8078,7 +8106,10 @@ HTML;
         var launcher = document.getElementById('sdv-client-chat-launcher');
         if (launcher && !launcher._sdvBound) {
             launcher._sdvBound = true;
-            // Native inline onclick handles window.sdvToggleChat(event)
+            launcher.addEventListener('click', function(e) {
+                if (e && e.preventDefault) e.preventDefault();
+                window.sdvToggleChat();
+            });
         }
 
         var sendBtn = document.getElementById('sdv-cl-send');

@@ -55,6 +55,28 @@ if ($isClientChatAction) {
             exit;
         }
 
+        // ── Security Barrier: Origin & CSRF Validation for Mutating Actions ──
+        if (in_array($action, ['client_chat_message', 'client_chat_escalate', 'client_chat_new_session'], true)) {
+            $systemUrl = \Sahdev\Lib\ChatService::getWhmcsSystemUrl();
+            $whmcsHost = !empty($systemUrl) ? parse_url($systemUrl, PHP_URL_HOST) : ($_SERVER['HTTP_HOST'] ?? '');
+            
+            $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+            $referer = $_SERVER['HTTP_REFERER'] ?? '';
+            $requestHost = '';
+            if (!empty($origin)) {
+                $requestHost = parse_url($origin, PHP_URL_HOST);
+            } elseif (!empty($referer)) {
+                $requestHost = parse_url($referer, PHP_URL_HOST);
+            }
+
+            if (!empty($whmcsHost) && !empty($requestHost) && strcasecmp($whmcsHost, $requestHost) !== 0) {
+                \Sahdev\Lib\ModuleLogger::warning('client_chat_security', "Cross-origin live chat request blocked from [{$requestHost}] (expected [{$whmcsHost}])");
+                header('HTTP/1.1 403 Forbidden');
+                echo json_encode(['status' => 'error', 'message' => 'Cross-origin requests are forbidden.']);
+                exit;
+            }
+        }
+
         $clientId = !empty($_SESSION['uid']) ? (int) $_SESSION['uid'] : null;
         if (!empty($settings->client_chat_require_auth) && (!$clientId || $clientId <= 0)) {
             \Sahdev\Lib\ModuleLogger::info('client_chat', 'Live chat request rejected: user authentication required.');
@@ -62,14 +84,20 @@ if ($isClientChatAction) {
             exit;
         }
 
-        if ($action === 'client_chat_init') {
-            $visitorToken = trim((string) ($_REQUEST['visitor_token'] ?? ''));
-            if (empty($visitorToken) || strlen($visitorToken) > 64) {
-                $visitorToken = bin2hex(random_bytes(16));
-            }
+        // ── Secure Visitor Token Extraction & Sanitization ───────────────────
+        $rawVisitorToken = trim((string) ($_REQUEST['visitor_token'] ?? ''));
+        $visitorToken = '';
+        if (!empty($rawVisitorToken) && preg_match('/^[a-zA-Z0-9_\-]{16,64}$/', $rawVisitorToken)) {
+            $visitorToken = $rawVisitorToken;
+        } else {
+            $visitorToken = bin2hex(random_bytes(16));
+        }
 
+        $clientIp = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
+
+        if ($action === 'client_chat_init') {
             $metadata = [
-                'ip'         => $_SERVER['REMOTE_ADDR'] ?? '',
+                'ip'         => $clientIp,
                 'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? '',
                 'page'       => $_REQUEST['page_url'] ?? '',
             ];
@@ -107,7 +135,6 @@ if ($isClientChatAction) {
         }
 
         if ($action === 'client_chat_get_history') {
-            $visitorToken = trim((string) ($_REQUEST['visitor_token'] ?? ''));
             $history = \Sahdev\Lib\ChatService::getClientSessionList($visitorToken, $clientId);
             echo json_encode([
                 'status'  => 'success',
@@ -118,20 +145,14 @@ if ($isClientChatAction) {
 
         if ($action === 'client_chat_load_session') {
             $sessionUuid = trim((string) ($_REQUEST['session_uuid'] ?? ''));
-            $visitorToken = trim((string) ($_REQUEST['visitor_token'] ?? ''));
             $res = \Sahdev\Lib\ChatService::loadSessionMessages($sessionUuid, $visitorToken, $clientId);
             echo json_encode(array_merge(['status' => ($res['success'] ?? false) ? 'success' : 'error'], $res));
             exit;
         }
 
         if ($action === 'client_chat_new_session') {
-            $visitorToken = trim((string) ($_REQUEST['visitor_token'] ?? ''));
-            if (empty($visitorToken) || strlen($visitorToken) > 64) {
-                $visitorToken = bin2hex(random_bytes(16));
-            }
-
             $metadata = [
-                'ip'         => $_SERVER['REMOTE_ADDR'] ?? '',
+                'ip'         => $clientIp,
                 'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? '',
                 'page'       => $_REQUEST['page_url'] ?? '',
             ];
@@ -171,13 +192,25 @@ if ($isClientChatAction) {
                 exit;
             }
 
-            $visitorToken = trim((string) ($_POST['visitor_token'] ?? ''));
+            // ── Active Rate Limiting: 10 messages per minute per IP / visitor ─
+            $rateKey = 'msg_' . md5($clientIp . '_' . $visitorToken);
+            $rl = \Sahdev\Lib\ChatService::checkRateLimit($rateKey, 'message', 10, 60);
+            if (!$rl['allowed']) {
+                header('HTTP/1.1 429 Too Many Requests');
+                header('Retry-After: ' . $rl['retry_after']);
+                echo json_encode([
+                    'status'  => 'error',
+                    'message' => "You are sending messages too quickly. Please wait {$rl['retry_after']} seconds before sending another message."
+                ]);
+                exit;
+            }
+
             $messageText = trim((string) ($_POST['message'] ?? ''));
             $sessionUuid = trim((string) ($_POST['session_uuid'] ?? ''));
 
-            if (empty($visitorToken) || empty($messageText)) {
+            if (empty($messageText)) {
                 header('HTTP/1.1 400 Bad Request');
-                echo json_encode(['status' => 'error', 'message' => 'Missing visitor_token or message.']);
+                echo json_encode(['status' => 'error', 'message' => 'Message cannot be empty.']);
                 exit;
             }
 
@@ -191,11 +224,19 @@ if ($isClientChatAction) {
 
         if ($action === 'client_chat_poll') {
             $sessionUuid = trim((string) ($_REQUEST['session_uuid'] ?? ''));
-            $visitorToken = trim((string) ($_REQUEST['visitor_token'] ?? ''));
             $afterId = (int) ($_REQUEST['after_id'] ?? 0);
 
             if (empty($sessionUuid)) {
                 echo json_encode(['status' => 'error', 'message' => 'Missing session_uuid.']);
+                exit;
+            }
+
+            // ── Active Rate Limiting: Max 30 polls per minute per session/IP ─
+            $rateKey = 'poll_' . md5($clientIp . '_' . $sessionUuid);
+            $rl = \Sahdev\Lib\ChatService::checkRateLimit($rateKey, 'poll', 30, 60);
+            if (!$rl['allowed']) {
+                header('HTTP/1.1 429 Too Many Requests');
+                echo json_encode(['status' => 'error', 'message' => 'Polling rate exceeded.']);
                 exit;
             }
 
@@ -218,17 +259,31 @@ if ($isClientChatAction) {
                 exit;
             }
 
+            // ── Active Rate Limiting: Max 3 ticket escalations per hour per session/IP ─
+            $rateKey = 'esc_' . md5($clientIp . '_' . $sessionUuid);
+            $rl = \Sahdev\Lib\ChatService::checkRateLimit($rateKey, 'escalate', 3, 3600);
+            if (!$rl['allowed']) {
+                header('HTTP/1.1 429 Too Many Requests');
+                header('Retry-After: ' . $rl['retry_after']);
+                echo json_encode([
+                    'status'  => 'error',
+                    'message' => "Ticket escalation rate limit reached. Please wait before creating another support ticket."
+                ]);
+                exit;
+            }
+
             \Sahdev\Lib\ModuleLogger::info('client_chat', "Escalating session {$sessionUuid} to support ticket (client: " . ($clientId ?: 'guest') . ")");
 
-            $res = \Sahdev\Lib\ChatService::escalateChatToTicket($sessionUuid, $clientId);
+            $res = \Sahdev\Lib\ChatService::escalateChatToTicket($sessionUuid, $clientId, $visitorToken);
             echo json_encode(array_merge(['status' => ($res['success'] ?? false) ? 'success' : 'error'], $res));
             exit;
         }
     } catch (\Throwable $e) {
         \Sahdev\Lib\ModuleLogger::error('client_chat', "Fatal live chat endpoint error: " . $e->getMessage() . " in " . $e->getFile() . ":" . $e->getLine());
+        header('HTTP/1.1 500 Internal Server Error');
         echo json_encode([
             'status'  => 'error',
-            'message' => 'Live chat service error: ' . $e->getMessage()
+            'message' => 'Live chat service encountered a temporary issue. Please try again or open a support ticket.'
         ]);
         exit;
     }

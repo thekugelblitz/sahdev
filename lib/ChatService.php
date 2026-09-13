@@ -339,15 +339,24 @@ class ChatService
                 ->first();
             if ($session) {
                 $isOwner = false;
-                if ($clientId > 0 && ((int)$session->client_id === $clientId || empty($session->client_id))) {
-                    $isOwner = true;
-                    if (empty($session->client_id)) {
+                $sessionClientId = (int) ($session->client_id ?? 0);
+
+                if ($sessionClientId > 0) {
+                    // Authenticated session: Strictly require matching logged-in client ID
+                    if ($clientId > 0 && $clientId === $sessionClientId) {
+                        $isOwner = true;
+                    }
+                } else {
+                    // Guest session: Can be resumed by matching visitor token, or safely promoted to authenticated user
+                    if ($clientId > 0 && !empty($visitorToken) && $session->visitor_token === $visitorToken) {
                         Capsule::table('tblsahdev_chat_sessions')->where('id', $session->id)->update(['client_id' => $clientId]);
                         $session->client_id = $clientId;
+                        $isOwner = true;
+                    } elseif (!empty($visitorToken) && $session->visitor_token === $visitorToken) {
+                        $isOwner = true;
                     }
-                } elseif (!empty($visitorToken) && $session->visitor_token === $visitorToken) {
-                    $isOwner = true;
                 }
+
                 if ($isOwner) {
                     return (array) $session;
                 }
@@ -365,11 +374,14 @@ class ChatService
                 ->first();
         }
 
-        // 3. Otherwise find active session by visitor_token
+        // 3. Otherwise find active session by visitor_token (guest only)
         if (!$session && !empty($visitorToken)) {
             $session = Capsule::table('tblsahdev_chat_sessions')
                 ->where('visitor_token', $visitorToken)
                 ->where('session_type', 'client_livechat')
+                ->where(function ($q) {
+                    $q->where('client_id', 0)->orWhereNull('client_id');
+                })
                 ->whereIn('status', ['active', 'taken_over'])
                 ->orderBy('id', 'desc')
                 ->first();
@@ -405,8 +417,33 @@ class ChatService
      */
     public static function handleClientMessage(string $visitorToken, string $messageText, ?int $clientId = null, ?string $sessionUuid = null): array
     {
+        // Active Input Sanitization & Payload Bounding
+        $messageText = self::sanitizeClientInput($messageText, 2000);
+        if (empty($messageText)) {
+            return ['success' => false, 'error' => 'Message cannot be empty.'];
+        }
+
         $session = self::getOrCreateClientSession($visitorToken, $clientId, [], $sessionUuid);
         $sessionId = (int) $session['id'];
+
+        // Strict Tenant Verification: Verify caller owns this active session
+        $sessionClientId = (int) ($session['client_id'] ?? 0);
+        if ($sessionClientId > 0 && (!$clientId || $clientId !== $sessionClientId)) {
+            ModuleLogger::warning('client_chat_security', "Cross-tenant message rejection: user {$clientId} attempted to write to client {$sessionClientId} session {$session['session_uuid']}");
+            return ['success' => false, 'error' => 'Unauthorized session access.'];
+        }
+
+        // Active Prompt Injection Defense
+        if (self::detectPromptInjection($messageText)) {
+            ModuleLogger::warning('client_chat_security', "Prompt injection detected & blocked in session {$sessionId} (visitor: " . substr($visitorToken, 0, 8) . "...)");
+            $safeRefusal = "I am configured to assist with official hosting inquiries, active services, domains, and billing. How can I help you with your account today?";
+            self::recordAssistantMessage($sessionId, $safeRefusal);
+            return [
+                'success'      => true,
+                'reply'        => $safeRefusal,
+                'can_escalate' => true,
+            ];
+        }
 
         $senderName = $clientId > 0
             ? (Capsule::table('tblclients')->where('id', $clientId)->value('firstname') ?: 'Client')
@@ -569,17 +606,34 @@ class ChatService
     /**
      * 1-Click Support Ticket Escalation: Converts the full chat transcript into a WHMCS ticket.
      */
-    public static function escalateChatToTicket(string $sessionUuid, ?int $clientId = null, string $department = 'Support'): array
+    public static function escalateChatToTicket(string $sessionUuid, ?int $clientId = null, string $visitorToken = '', string $department = 'Support'): array
     {
         $session = Capsule::table('tblsahdev_chat_sessions')->where('session_uuid', $sessionUuid)->first();
         if (!$session) {
             return ['success' => false, 'error' => "Session not found."];
         }
 
-        // Verify session ownership if authenticated
-        $userId = $clientId ?: (int) ($session->client_id ?? 0);
-        if ($clientId > 0 && !empty($session->client_id) && (int) $session->client_id !== $clientId) {
-            return ['success' => false, 'error' => "Unauthorized session access."];
+        // 1. Prevent duplicate escalation abuse
+        if ($session->status === 'escalated_ticket') {
+            return ['success' => false, 'error' => "This conversation has already been escalated to a support ticket."];
+        }
+
+        // 2. Strict Tenant Authorization Verification (BOLA / IDOR Prevention)
+        $sessionClientId = (int) ($session->client_id ?? 0);
+        if ($sessionClientId > 0) {
+            // Client-owned session: Strictly require authenticated client ID match
+            if (!$clientId || $clientId <= 0 || (int)$clientId !== $sessionClientId) {
+                ModuleLogger::warning('client_chat_security', "BOLA escalation attempt blocked: user " . ($clientId ?: 'guest') . " attempted to escalate ticket for client {$sessionClientId} (session: {$sessionUuid})");
+                return ['success' => false, 'error' => "Unauthorized: You must be logged into the account associated with this chat session."];
+            }
+            $userId = $clientId;
+        } else {
+            // Guest session: Strictly require matching visitor token
+            if (empty($visitorToken) || $session->visitor_token !== $visitorToken) {
+                ModuleLogger::warning('client_chat_security', "Unauthorized guest escalation attempt for session {$sessionUuid} with mismatched visitor token");
+                return ['success' => false, 'error' => "Unauthorized: Invalid session credentials."];
+            }
+            $userId = 0;
         }
 
         $systemUrl = self::getWhmcsSystemUrl();
@@ -595,14 +649,18 @@ class ChatService
 
         $messages = self::getSessionMessages((int) $session->id, 100);
 
-        // Build elegant, executive Markdown ticket transcript
+        // Build elegant, executive Markdown ticket transcript with Stored XSS defense
         $nowFormatted = Carbon::now()->toDayDateTimeString();
+        $safeClientName = htmlspecialchars($clientName, ENT_QUOTES, 'UTF-8');
+        $safeClientEmail = htmlspecialchars($clientEmail, ENT_QUOTES, 'UTF-8');
+        $safeUuid = htmlspecialchars($session->session_uuid, ENT_QUOTES, 'UTF-8');
+
         $transcript = "### 💬 Live Chat Escalation Transcript\n\n";
         $transcript .= "| Field | Details |\n";
         $transcript .= "|:---|:---|\n";
-        $transcript .= "| **Customer** | {$clientName} (`{$clientEmail}`) |\n";
+        $transcript .= "| **Customer** | {$safeClientName} (`{$safeClientEmail}`) |\n";
         $transcript .= "| **Escalated Date** | {$nowFormatted} |\n";
-        $transcript .= "| **Live Chat Session** | `{$session->session_uuid}` |\n";
+        $transcript .= "| **Live Chat Session** | `{$safeUuid}` |\n";
         if (!empty($systemUrl)) {
             $transcript .= "| **Client Area** | [Open Portal]({$systemUrl}/clientarea.php) |\n";
         }
@@ -611,8 +669,11 @@ class ChatService
 
         foreach ($messages as $m) {
             $time = Carbon::parse($m['created_at'])->format('g:i A');
-            $sender = $m['sender_name'] ?: 'User';
-            $msgContent = self::normalizeMarkdownLinks(trim((string)$m['message_text']));
+            $sender = htmlspecialchars($m['sender_name'] ?: 'User', ENT_QUOTES, 'UTF-8');
+            // Stored XSS prevention: HTML entity encode untrusted message contents
+            $rawMsg = trim((string)$m['message_text']);
+            $safeMsg = htmlspecialchars($rawMsg, ENT_QUOTES, 'UTF-8');
+            $msgContent = self::normalizeMarkdownLinks($safeMsg);
 
             if ($m['sender_type'] === 'user') {
                 $transcript .= "👤 **{$sender}** *(Customer)* &bull; `{$time}`\n\n";
@@ -974,6 +1035,102 @@ class ChatService
         }, $text);
     }
 
+    /**
+     * Active Sliding-Window Rate Limiter.
+     *
+     * @param string $rateKey Unique identifier (e.g. "msg_" . md5($ip . '_' . $token))
+     * @param string $actionType Action category ('message', 'escalate', 'poll', 'init')
+     * @param int $maxHits Max allowed operations in window
+     * @param int $decaySeconds Window duration in seconds
+     * @return array ['allowed' => bool, 'retry_after' => int, 'current_hits' => int]
+     */
+    public static function checkRateLimit(string $rateKey, string $actionType, int $maxHits, int $decaySeconds): array
+    {
+        try {
+            SchemaManager::ensureRateLimitsTable();
+            $now = time();
+
+            // Periodic probabilistic cleanup of old expired records (1 in 50 requests)
+            if (mt_rand(1, 50) === 1) {
+                Capsule::table('tblsahdev_rate_limits')
+                    ->where('reset_at', '<', $now - 3600)
+                    ->delete();
+            }
+
+            $record = Capsule::table('tblsahdev_rate_limits')
+                ->where('rate_key', $rateKey)
+                ->where('action_type', $actionType)
+                ->first();
+
+            if (!$record || (int)$record->reset_at <= $now) {
+                // Window expired or brand new key
+                $resetAt = $now + $decaySeconds;
+                Capsule::table('tblsahdev_rate_limits')->updateOrInsert(
+                    ['rate_key' => $rateKey, 'action_type' => $actionType],
+                    ['hits' => 1, 'reset_at' => $resetAt, 'updated_at' => Carbon::now()]
+                );
+                return ['allowed' => true, 'retry_after' => 0, 'current_hits' => 1];
+            }
+
+            // Record exists and window is currently active
+            $currentHits = (int) $record->hits;
+            $retryAfter = max(1, (int)$record->reset_at - $now);
+
+            if ($currentHits >= $maxHits) {
+                ModuleLogger::warning('client_chat_security', "Rate limit exceeded for [{$actionType}] (key: {$rateKey}, hits: {$currentHits}/{$maxHits}, retry_after: {$retryAfter}s)");
+                return ['allowed' => false, 'retry_after' => $retryAfter, 'current_hits' => $currentHits];
+            }
+
+            Capsule::table('tblsahdev_rate_limits')
+                ->where('rate_key', $rateKey)
+                ->where('action_type', $actionType)
+                ->increment('hits');
+
+            return ['allowed' => true, 'retry_after' => 0, 'current_hits' => $currentHits + 1];
+        } catch (\Throwable $e) {
+            // Fail open on database errors so chat remains available
+            return ['allowed' => true, 'retry_after' => 0, 'current_hits' => 1];
+        }
+    }
+
+    /**
+     * Active Input Sanitization & Payload Bounding.
+     */
+    public static function sanitizeClientInput(string $input, int $maxLength = 2000): string
+    {
+        // 1. Strip null bytes and non-printable control characters except standard whitespace
+        $clean = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u', '', $input);
+        // 2. Normalize whitespace
+        $clean = trim((string)$clean);
+        // 3. Enforce maximum input length
+        if (mb_strlen($clean, 'UTF-8') > $maxLength) {
+            $clean = mb_substr($clean, 0, $maxLength, 'UTF-8');
+        }
+        return $clean;
+    }
+
+    /**
+     * Active Anti-Prompt-Injection & Jailbreak Detector.
+     */
+    public static function detectPromptInjection(string $text): bool
+    {
+        $patterns = [
+            '/\b(ignore\s+(all\s+)?(previous|prior|above)\s+(instructions|prompts|rules))\b/i',
+            '/\b(disregard\s+(all\s+)?(previous|prior|above)\s+(instructions|prompts))\b/i',
+            '/\b(you\s+are\s+now\s+(in\s+)?(developer\s+mode|unrestricted|DAN|jailbreak))\b/i',
+            '/\b(system\s+prompt\s+override)\b/i',
+            '/\b(reveal|print|output|dump|show)\s+(me\s+)?(your\s+)?(entire\s+|full\s+)?(system\s+prompt|initial\s+prompt|developer\s+instructions)\b/i',
+            '/\b(act\s+as\s+a\s+hacker|bypass\s+(all\s+)?safety\s+filters)\b/i',
+        ];
+
+        foreach ($patterns as $pattern) {
+            if (preg_match($pattern, $text)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static function getChatSetting(string $key, $default = null)
     {
         try {
@@ -1181,7 +1338,11 @@ class ChatService
                     }
                 });
             } else {
-                $q->where('visitor_token', $visitorToken);
+                // Guests strictly cannot see or enumerate any authenticated customer sessions
+                $q->where('visitor_token', $visitorToken)
+                  ->where(function ($sub) {
+                      $sub->where('client_id', 0)->orWhereNull('client_id');
+                  });
             }
 
             $sessions = $q->orderBy('last_message_at', 'desc')
@@ -1244,7 +1405,7 @@ class ChatService
     }
 
     /**
-     * Load historical session messages with authorization check.
+     * Load historical session messages with strict hierarchical authorization check.
      */
     public static function loadSessionMessages(string $sessionUuid, string $visitorToken, ?int $clientId = null): array
     {
@@ -1253,15 +1414,23 @@ class ChatService
             return ['success' => false, 'error' => 'Session not found'];
         }
 
+        $sessionClientId = (int) ($session->client_id ?? 0);
         $authorized = false;
-        if ($clientId > 0 && (int)$session->client_id === $clientId) {
-            $authorized = true;
-        }
-        if (!empty($visitorToken) && $session->visitor_token === $visitorToken) {
-            $authorized = true;
+
+        if ($sessionClientId > 0) {
+            // Client-owned session: Strictly require matching authenticated customer ID
+            if ($clientId > 0 && (int)$clientId === $sessionClientId) {
+                $authorized = true;
+            }
+        } else {
+            // Guest session: Strictly require matching visitor token
+            if (!empty($visitorToken) && $session->visitor_token === $visitorToken) {
+                $authorized = true;
+            }
         }
 
         if (!$authorized) {
+            ModuleLogger::warning('client_chat_security', "Unauthorized loadSessionMessages access blocked for session {$sessionUuid} (client: " . ($clientId ?: 'guest') . ")");
             return ['success' => false, 'error' => 'Unauthorized session access'];
         }
 
@@ -1276,7 +1445,7 @@ class ChatService
     }
 
     /**
-     * Poll for newly arrived messages in an active session (for multi-tab & live staff updates).
+     * Poll for newly arrived messages in an active session with strict authorization check.
      */
     public static function pollSessionMessages(string $sessionUuid, string $visitorToken, ?int $clientId = null, int $afterId = 0): array
     {
@@ -1285,13 +1454,19 @@ class ChatService
             return ['success' => false, 'messages' => [], 'error' => 'Session not found'];
         }
 
+        $sessionClientId = (int) ($session->client_id ?? 0);
         $authorized = false;
-        if ($clientId > 0 && (int)$session->client_id === $clientId) {
-            $authorized = true;
+
+        if ($sessionClientId > 0) {
+            if ($clientId > 0 && (int)$clientId === $sessionClientId) {
+                $authorized = true;
+            }
+        } else {
+            if (!empty($visitorToken) && $session->visitor_token === $visitorToken) {
+                $authorized = true;
+            }
         }
-        if (!empty($visitorToken) && $session->visitor_token === $visitorToken) {
-            $authorized = true;
-        }
+
         if (!$authorized) {
             return ['success' => false, 'messages' => [], 'error' => 'Unauthorized'];
         }
