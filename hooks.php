@@ -5871,6 +5871,15 @@ function sahdev_render_client_livechat_widget(array $vars): string
 
         $chatPosition = ($settings->client_chat_position ?? 'bottom-right') === 'bottom-left' ? 'bottom-left' : 'bottom-right';
 
+        $chatWidth = !empty($settings->client_chat_width) ? (int)$settings->client_chat_width : 380;
+        $chatHeight = !empty($settings->client_chat_height) ? (int)$settings->client_chat_height : 560;
+        $expandWidth = !empty($settings->client_chat_expand_width) ? (int)$settings->client_chat_expand_width : 700;
+        $expandHeight = !empty($settings->client_chat_expand_height) ? (int)$settings->client_chat_expand_height : 720;
+        $chatTheme = !empty($settings->client_chat_theme) ? preg_replace('/[^a-z0-9_]/', '', strtolower($settings->client_chat_theme)) : 'modern_light';
+        $launcherStyle = ($settings->client_chat_launcher_style ?? 'circular') === 'pill' ? 'pill' : 'circular';
+        $launcherText = !empty($settings->client_chat_launcher_text) ? htmlspecialchars($settings->client_chat_launcher_text, ENT_QUOTES, 'UTF-8') : 'Chat with Us';
+        $historyEnabled = isset($settings->client_chat_history_enabled) ? (bool)$settings->client_chat_history_enabled : true;
+
         $welcomeMsgRaw = !empty($settings->client_chat_welcome_message)
             ? $settings->client_chat_welcome_message
             : (!empty($settings->client_chat_greeting)
@@ -5934,17 +5943,45 @@ function sahdev_render_client_livechat_widget(array $vars): string
     $brandColorJs = json_encode($brandColor);
     $debugModeJs = json_encode($debugMode);
 
+    // Launcher markup based on style
+    $launcherHtml = '';
+    if ($launcherStyle === 'pill') {
+        $launcherHtml = <<<HTML
+<div id="sdv-client-chat-launcher" class="sdv-launcher-pill" title="{$launcherText}">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z"/>
+    </svg>
+    <span class="sdv-launcher-text">{$launcherText}</span>
+</div>
+HTML;
+    } else {
+        $launcherHtml = <<<HTML
+<div id="sdv-client-chat-launcher" class="sdv-launcher-circle" title="Support Chat">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z"/>
+    </svg>
+</div>
+HTML;
+    }
+
+    $historyBtnHtml = $historyEnabled ? '<button type="button" class="sdv-cl-action-btn" id="sdv-cl-history-btn" title="Conversation History"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></button>' : '';
+
     return <<<HTML
 <style>
 /* ── Sahdev Client Live Chat Widget ────────────────────────────────── */
+:root {
+    --sdv-brand: {$brandColor};
+    --sdv-chat-w: {$chatWidth}px;
+    --sdv-chat-h: {$chatHeight}px;
+    --sdv-expand-w: {$expandWidth}px;
+    --sdv-expand-h: {$expandHeight}px;
+}
+
 #sdv-client-chat-launcher {
     position: fixed;
     bottom: 24px;
     {$launcherPosCss}
-    width: 60px;
-    height: 60px;
-    border-radius: 50%;
-    background: {$brandColor};
+    background: var(--sdv-brand);
     color: #ffffff;
     display: flex;
     align-items: center;
@@ -5953,24 +5990,39 @@ function sahdev_render_client_livechat_widget(array $vars): string
     cursor: pointer;
     z-index: 99980;
     transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    user-select: none;
+}
+#sdv-client-chat-launcher.sdv-launcher-circle {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+}
+#sdv-client-chat-launcher.sdv-launcher-pill {
+    padding: 12px 22px;
+    border-radius: 30px;
+    gap: 9px;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 0.2px;
 }
 #sdv-client-chat-launcher:hover {
-    transform: scale(1.08) translateY(-2px);
+    transform: scale(1.06) translateY(-2px);
     box-shadow: 0 15px 30px -5px rgba(0, 0, 0, 0.4);
 }
+
 #sdv-client-chat-window {
     position: fixed;
     bottom: 96px;
     {$windowPosCss}
-    width: 360px;
-    height: 520px;
+    width: var(--sdv-chat-w);
+    height: var(--sdv-chat-h);
     max-height: calc(100vh - 120px);
     max-width: calc(100vw - 36px);
     z-index: 99985;
     background: #ffffff;
     color: #1e293b;
-    border-radius: 14px;
-    box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(0, 0, 0, 0.08);
+    border-radius: 16px;
+    box-shadow: 0 20px 45px -10px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(0, 0, 0, 0.08);
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -5985,23 +6037,33 @@ function sahdev_render_client_livechat_widget(array $vars): string
     transform: translateY(0) scale(1);
     pointer-events: auto;
 }
+#sdv-client-chat-window.sdv-expanded {
+    width: var(--sdv-expand-w);
+    height: var(--sdv-expand-h);
+    max-height: calc(100vh - 90px);
+    max-width: calc(100vw - 40px);
+}
+
+/* Header */
 .sdv-cl-header {
-    background: {$brandColor};
+    background: var(--sdv-brand);
     color: #ffffff;
-    padding: 14px 18px;
+    padding: 13px 16px;
     display: flex;
     align-items: center;
     justify-content: space-between;
+    flex-shrink: 0;
 }
 .sdv-cl-header-info {
     display: flex;
     align-items: center;
     gap: 10px;
+    overflow: hidden;
 }
 .sdv-cl-avatar {
     width: 34px;
     height: 34px;
-    background: rgba(255, 255, 255, 0.25);
+    background: rgba(255, 255, 255, 0.22);
     border-radius: 50%;
     display: flex;
     align-items: center;
@@ -6010,21 +6072,35 @@ function sahdev_render_client_livechat_widget(array $vars): string
     font-weight: 700;
     font-size: 13px;
     border: 1px solid rgba(255, 255, 255, 0.3);
+    flex-shrink: 0;
 }
-.sdv-cl-title { font-size: 14px; font-weight: 700; line-height: 1.2; color: #ffffff; }
+.sdv-cl-title { font-size: 14px; font-weight: 700; line-height: 1.2; color: #ffffff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sdv-cl-status { font-size: 11px; color: rgba(255, 255, 255, 0.9); display: flex; align-items: center; gap: 5px; margin-top: 2px; }
 .sdv-cl-status-dot { width: 7px; height: 7px; background: #34d399; border-radius: 50%; box-shadow: 0 0 0 2px rgba(255,255,255,0.4); }
-.sdv-cl-close {
+
+.sdv-cl-controls {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+}
+.sdv-cl-action-btn {
     background: transparent;
     border: none;
-    color: rgba(255, 255, 255, 0.85);
-    font-size: 22px;
+    color: rgba(255, 255, 255, 0.88);
+    font-size: 14px;
     cursor: pointer;
     line-height: 1;
-    padding: 2px 6px;
-    border-radius: 4px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, color 0.15s;
 }
-.sdv-cl-close:hover { color: #ffffff; background: rgba(255, 255, 255, 0.15); }
+.sdv-cl-action-btn:hover { color: #ffffff; background: rgba(255, 255, 255, 0.2); }
+
+/* Escalation Bar */
 .sdv-cl-escalate-bar {
     background: #f8fafc;
     border-bottom: 1px solid #e2e8f0;
@@ -6034,14 +6110,17 @@ function sahdev_render_client_livechat_widget(array $vars): string
     display: flex;
     justify-content: space-between;
     align-items: center;
+    flex-shrink: 0;
 }
 .sdv-cl-escalate-btn {
-    color: {$brandColor};
+    color: var(--sdv-brand);
     font-weight: 600;
     text-decoration: none;
     cursor: pointer;
 }
 .sdv-cl-escalate-btn:hover { text-decoration: underline; }
+
+/* Message Area */
 .sdv-cl-messages {
     flex: 1;
     padding: 16px;
@@ -6052,26 +6131,52 @@ function sahdev_render_client_livechat_widget(array $vars): string
     background: #f8fafc;
 }
 .sdv-cl-msg {
-    max-width: 85%;
-    padding: 10px 14px;
-    font-size: 13px;
-    line-height: 1.45;
+    max-width: 86%;
+    padding: 11px 15px;
+    font-size: 13.5px;
+    line-height: 1.5;
     word-break: break-word;
 }
 .sdv-cl-msg-user {
     align-self: flex-end;
-    background: {$brandColor};
+    background: var(--sdv-brand);
     color: #ffffff;
-    border-radius: 12px 12px 2px 12px;
+    border-radius: 14px 14px 2px 14px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.06);
 }
 .sdv-cl-msg-bot {
     align-self: flex-start;
-    background: #edf2f7;
+    background: #ffffff;
     color: #1e293b;
-    border-radius: 12px 12px 12px 2px;
+    border-radius: 14px 14px 14px 2px;
     border: 1px solid #e2e8f0;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
 }
+.sdv-code-block {
+    background: #1e293b;
+    color: #e2e8f0;
+    padding: 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    overflow-x: auto;
+    margin: 6px 0;
+}
+.sdv-inline-code {
+    background: rgba(0,0,0,0.07);
+    padding: 2px 5px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-family: monospace;
+}
+.sdv-msg-list {
+    margin: 6px 0;
+    padding-left: 20px;
+}
+.sdv-msg-list li {
+    margin-bottom: 3px;
+}
+
+/* Footer & Input */
 .sdv-cl-footer {
     padding: 12px;
     background: #ffffff;
@@ -6079,6 +6184,7 @@ function sahdev_render_client_livechat_widget(array $vars): string
     display: flex;
     flex-direction: column;
     gap: 6px;
+    flex-shrink: 0;
 }
 .sdv-cl-input-row {
     display: flex;
@@ -6089,55 +6195,262 @@ function sahdev_render_client_livechat_widget(array $vars): string
     flex: 1;
     border: 1px solid #cbd5e1;
     border-radius: 20px;
-    padding: 8px 14px;
-    font-size: 13px;
+    padding: 9px 15px;
+    font-size: 13.5px;
     font-family: inherit;
     outline: none;
+    background: #ffffff;
+    color: #1e293b;
 }
-#sdv-cl-input:focus { border-color: {$brandColor}; box-shadow: 0 0 0 2px rgba(13, 110, 253, 0.2); }
+#sdv-cl-input:focus { border-color: var(--sdv-brand); box-shadow: 0 0 0 2px rgba(13, 110, 253, 0.18); }
 #sdv-cl-send {
-    background: {$brandColor};
+    background: var(--sdv-brand);
     border: none;
     color: #fff;
-    width: 36px;
-    height: 36px;
+    width: 38px;
+    height: 38px;
     border-radius: 50%;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
     transition: opacity 0.15s, transform 0.15s;
+    flex-shrink: 0;
 }
-#sdv-cl-send:hover { opacity: 0.9; transform: scale(1.05); }
+#sdv-cl-send:hover { opacity: 0.92; transform: scale(1.05); }
 .sdv-cl-branding {
     font-size: 10px;
     color: #94a3b8;
     text-align: center;
 }
+
+/* ── History Drawer ───────────────────────────────────────────────── */
+.sdv-cl-history-drawer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: #ffffff;
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    transform: translateX(-100%);
+    transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.sdv-cl-history-drawer.sdv-drawer-open {
+    transform: translateX(0);
+}
+.sdv-drawer-header {
+    background: #f8fafc;
+    border-bottom: 1px solid #e2e8f0;
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.sdv-drawer-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: #1e293b;
+}
+.sdv-drawer-close {
+    background: none;
+    border: none;
+    font-size: 20px;
+    color: #64748b;
+    cursor: pointer;
+    line-height: 1;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+.sdv-drawer-close:hover { color: #1e293b; background: #e2e8f0; }
+.sdv-drawer-actions {
+    padding: 10px 14px;
+    border-bottom: 1px solid #f1f5f9;
+}
+.sdv-btn-new-chat {
+    width: 100%;
+    background: var(--sdv-brand);
+    color: #ffffff;
+    border: none;
+    border-radius: 8px;
+    padding: 9px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: opacity 0.15s;
+}
+.sdv-btn-new-chat:hover { opacity: 0.92; }
+.sdv-drawer-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.sdv-session-item {
+    padding: 10px 12px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+    background: #ffffff;
+}
+.sdv-session-item:hover {
+    background: #f8fafc;
+    border-color: var(--sdv-brand);
+}
+.sdv-session-item.sdv-item-active {
+    border-color: var(--sdv-brand);
+    background: #f0f7ff;
+}
+.sdv-session-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #1e293b;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+}
+.sdv-session-badge {
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 10px;
+    background: #e2e8f0;
+    color: #475569;
+    font-weight: 500;
+}
+.sdv-session-snippet {
+    font-size: 11.5px;
+    color: #64748b;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.sdv-session-time {
+    font-size: 10.5px;
+    color: #94a3b8;
+    margin-top: 4px;
+}
+
+/* ── Theme Variants ──────────────────────────────────────────────── */
+/* Cyber Dark Theme */
+#sdv-client-chat-window.sdv-theme-cyber_dark {
+    background: #0f172a;
+    color: #f1f5f9;
+    border: 1px solid #334155;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-cl-header {
+    background: #1e293b;
+    border-bottom: 1px solid #334155;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-cl-escalate-bar {
+    background: #1e293b;
+    border-bottom: 1px solid #334155;
+    color: #94a3b8;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-cl-messages {
+    background: #090d16;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-cl-msg-bot {
+    background: #1e293b;
+    color: #f8fafc;
+    border: 1px solid #334155;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-cl-footer {
+    background: #0f172a;
+    border-top: 1px solid #334155;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark #sdv-cl-input {
+    background: #1e293b;
+    color: #f8fafc;
+    border: 1px solid #475569;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-cl-history-drawer {
+    background: #0f172a;
+    color: #f8fafc;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-drawer-header {
+    background: #1e293b;
+    border-bottom: 1px solid #334155;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-drawer-title { color: #f8fafc; }
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-session-item {
+    background: #1e293b;
+    border-color: #334155;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-session-item:hover {
+    background: #273549;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-session-title { color: #f8fafc; }
+
+/* Glassmorphism Theme */
+#sdv-client-chat-window.sdv-theme-glassmorphism {
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.5);
+}
+#sdv-client-chat-window.sdv-theme-glassmorphism .sdv-cl-messages {
+    background: rgba(248, 250, 252, 0.65);
+}
+#sdv-client-chat-window.sdv-theme-glassmorphism .sdv-cl-footer {
+    background: rgba(255, 255, 255, 0.8);
+}
+
+/* Brand Gradient Theme */
+#sdv-client-chat-window.sdv-theme-brand_gradient .sdv-cl-header {
+    background: linear-gradient(135deg, var(--sdv-brand) 0%, #4f46e5 100%);
+}
 </style>
 
 <!-- Client Launcher Button -->
-<div id="sdv-client-chat-launcher" title="Support Chat">
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z"/>
-    </svg>
-</div>
+{$launcherHtml}
 
 <!-- Client Chat Window -->
-<div id="sdv-client-chat-window">
+<div id="sdv-client-chat-window" class="sdv-theme-{$chatTheme}">
+    <!-- In-Widget History Drawer -->
+    <div class="sdv-cl-history-drawer" id="sdv-cl-history-drawer">
+        <div class="sdv-drawer-header">
+            <div class="sdv-drawer-title">Past Conversations</div>
+            <button type="button" class="sdv-drawer-close" id="sdv-drawer-close" title="Close History">&times;</button>
+        </div>
+        <div class="sdv-drawer-actions">
+            <button type="button" class="sdv-btn-new-chat" id="sdv-btn-new-chat">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+                Start New Conversation
+            </button>
+        </div>
+        <div class="sdv-drawer-list" id="sdv-drawer-list">
+            <div style="text-align:center;padding:24px;color:#94a3b8;font-size:12px;">Loading past chats...</div>
+        </div>
+    </div>
+
+    <!-- Main Header -->
     <div class="sdv-cl-header">
         <div class="sdv-cl-header-info">
             <div class="sdv-cl-avatar">AI</div>
             <div>
                 <div class="sdv-cl-title">{$chatTitle}</div>
-                <div class="sdv-cl-status"><span class="sdv-cl-status-dot"></span> Online &bull; Instant Answers</div>
+                <div class="sdv-cl-status"><span class="sdv-cl-status-dot"></span> Online &bull; Self-Help AI</div>
             </div>
         </div>
-        <button type="button" class="sdv-cl-close" id="sdv-cl-close" title="Minimize">&minus;</button>
+        <div class="sdv-cl-controls">
+            {$historyBtnHtml}
+            <button type="button" class="sdv-cl-action-btn" id="sdv-cl-expand-btn" title="Expand / Minimize Window" aria-label="Expand">⛶</button>
+            <button type="button" class="sdv-cl-action-btn" id="sdv-cl-close" title="Minimize Window" aria-label="Close">&minus;</button>
+        </div>
     </div>
 
     <div class="sdv-cl-escalate-bar">
-        <span>Need a support ticket?</span>
+        <span>Need official staff assistance?</span>
         <a href="javascript:void(0);" class="sdv-cl-escalate-btn" id="sdv-cl-escalate">Convert to Ticket &rarr;</a>
     </div>
 
@@ -6147,7 +6460,7 @@ function sahdev_render_client_livechat_widget(array $vars): string
 
     <div class="sdv-cl-footer">
         <div class="sdv-cl-input-row">
-            <input type="text" id="sdv-cl-input" placeholder="Type message..." autocomplete="off" />
+            <input type="text" id="sdv-cl-input" placeholder="Ask about services, invoices, domains..." autocomplete="off" />
             <button type="button" id="sdv-cl-send" title="Send message">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
             </button>
@@ -6162,6 +6475,12 @@ function sahdev_render_client_livechat_widget(array $vars): string
     var launcher = document.getElementById('sdv-client-chat-launcher');
     var chatWin = document.getElementById('sdv-client-chat-window');
     var closeBtn = document.getElementById('sdv-cl-close');
+    var expandBtn = document.getElementById('sdv-cl-expand-btn');
+    var historyBtn = document.getElementById('sdv-cl-history-btn');
+    var historyDrawer = document.getElementById('sdv-cl-history-drawer');
+    var drawerCloseBtn = document.getElementById('sdv-drawer-close');
+    var newChatBtn = document.getElementById('sdv-btn-new-chat');
+    var drawerList = document.getElementById('sdv-drawer-list');
     var inputEl = document.getElementById('sdv-cl-input');
     var sendBtn = document.getElementById('sdv-cl-send');
     var msgsEl = document.getElementById('sdv-cl-msgs');
@@ -6174,7 +6493,7 @@ function sahdev_render_client_livechat_widget(array $vars): string
     var directUrl = {$primaryAjaxUrlJs};
     var debugMode = {$debugModeJs};
 
-    // 1. Native WHMCS routing (always works regardless of web server /modules protection)
+    // 1. Native WHMCS routing
     if (nativeUrl) candidates.push(nativeUrl);
     if (systemUrl) candidates.push(systemUrl + '/index.php?m=sahdev&sahdev_act=ajax_handler');
 
@@ -6212,7 +6531,6 @@ function sahdev_render_client_livechat_widget(array $vars): string
         }
     });
 
-    // If an endpoint previously worked in this browser session, prioritize it
     var cachedEndpoint = null;
     try { cachedEndpoint = localStorage.getItem('sdv_active_endpoint'); } catch(e) {}
     if (cachedEndpoint && uniqueEndpoints.indexOf(cachedEndpoint) > -1) {
@@ -6224,7 +6542,7 @@ function sahdev_render_client_livechat_widget(array $vars): string
         var targetUrl = uniqueEndpoints[candidateIdx];
 
         if (!targetUrl) {
-            callback(new Error('No reachable chat endpoint found. Please check server URL settings.'));
+            callback(new Error('No reachable chat endpoint found.'));
             return;
         }
 
@@ -6236,10 +6554,9 @@ function sahdev_render_client_livechat_widget(array $vars): string
         .then(function(r) {
             if (!r.ok) {
                 if (candidateIdx + 1 < uniqueEndpoints.length) {
-                    console.warn('[Sahdev LiveChat] Endpoint returned HTTP ' + r.status + ' (' + targetUrl + '). Trying fallback: ' + uniqueEndpoints[candidateIdx + 1]);
                     return postAjaxWithFallback(form, callback, candidateIdx + 1);
                 }
-                throw new Error('Server returned an unexpected response (HTTP ' + r.status + ')');
+                throw new Error('Server returned HTTP ' + r.status);
             }
 
             return r.text().then(function(rawText) {
@@ -6248,23 +6565,17 @@ function sahdev_render_client_livechat_widget(array $vars): string
                     data = JSON.parse(rawText);
                 } catch (jsonErr) {
                     if (candidateIdx + 1 < uniqueEndpoints.length) {
-                        console.warn('[Sahdev LiveChat] Endpoint returned non-JSON response (' + targetUrl + '). Trying fallback: ' + uniqueEndpoints[candidateIdx + 1]);
                         return postAjaxWithFallback(form, callback, candidateIdx + 1);
                     }
-                    throw new Error('Server returned an invalid JSON response.');
+                    throw new Error('Invalid JSON response');
                 }
 
-                // Cache the verified working endpoint
                 try { localStorage.setItem('sdv_active_endpoint', targetUrl); } catch(e) {}
-                if (debugMode) {
-                    console.log('[Sahdev LiveChat] Successful response from: ' + targetUrl, data);
-                }
                 callback(null, data);
             });
         })
         .catch(function(err) {
             if (candidateIdx + 1 < uniqueEndpoints.length) {
-                console.warn('[Sahdev LiveChat] Network error at ' + targetUrl + ' (' + err.message + '). Trying fallback: ' + uniqueEndpoints[candidateIdx + 1]);
                 return postAjaxWithFallback(form, callback, candidateIdx + 1);
             }
             callback(err);
@@ -6280,6 +6591,14 @@ function sahdev_render_client_livechat_widget(array $vars): string
     var sessionUuid = null;
     var isInitialized = false;
 
+    // Restore expanded window preference
+    try {
+        if (localStorage.getItem('sdv_chat_expanded') === '1') {
+            chatWin.classList.add('sdv-expanded');
+            if (expandBtn) expandBtn.textContent = '⤡';
+        }
+    } catch(e) {}
+
     function toggleChat(open) {
         var shouldOpen = typeof open === 'boolean' ? open : !chatWin.classList.contains('sdv-open');
         if (shouldOpen) {
@@ -6288,16 +6607,67 @@ function sahdev_render_client_livechat_widget(array $vars): string
             setTimeout(function() { inputEl.focus(); }, 150);
         } else {
             chatWin.classList.remove('sdv-open');
+            if (historyDrawer) historyDrawer.classList.remove('sdv-drawer-open');
         }
     }
 
     if (launcher) launcher.addEventListener('click', function() { toggleChat(); });
     if (closeBtn) closeBtn.addEventListener('click', function() { toggleChat(false); });
 
-    function appendClMsg(role, text) {
+    // Expand / contract toggle
+    if (expandBtn) {
+        expandBtn.addEventListener('click', function() {
+            var isExpanded = chatWin.classList.toggle('sdv-expanded');
+            expandBtn.textContent = isExpanded ? '⤡' : '⛶';
+            try { localStorage.setItem('sdv_chat_expanded', isExpanded ? '1' : '0'); } catch(e) {}
+        });
+    }
+
+    // Markdown Parser
+    function parseSimpleMarkdown(str) {
+        if (!str) return '';
+        var s = String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+
+        // Code blocks ```code```
+        s = s.replace(/```([\s\S]*?)```/g, function(_, c) {
+            return '<pre class="sdv-code-block"><code>' + c.trim() + '</code></pre>';
+        });
+        // Inline code `code`
+        s = s.replace(/`([^`]+)`/g, '<code class="sdv-inline-code">$1</code>');
+        // Bold **text**
+        s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+        // Markdown Links [text](url)
+        s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" style="color:var(--sdv-brand);text-decoration:underline;font-weight:600;">$1</a>');
+        // Simple bullet lines
+        var lines = s.split('\n');
+        var out = [];
+        var inUl = false;
+        for (var i = 0; i < lines.length; i++) {
+            var ln = lines[i];
+            if (/^\s*[-*]\s+(.*)/.test(ln)) {
+                if (!inUl) { out.push('<ul class="sdv-msg-list">'); inUl = true; }
+                out.push('<li>' + ln.replace(/^\s*[-*]\s+/, '') + '</li>');
+            } else {
+                if (inUl) { out.push('</ul>'); inUl = false; }
+                out.push(ln);
+            }
+        }
+        if (inUl) out.push('</ul>');
+
+        return out.join('<br>').replace(/(<\/ul>|<pre[\s\S]*?<\/pre>)<br>/g, '$1');
+    }
+
+    function appendClMsg(role, text, isHtml) {
         var d = document.createElement('div');
         d.className = 'sdv-cl-msg ' + (role === 'user' ? 'sdv-cl-msg-user' : 'sdv-cl-msg-bot');
-        d.innerHTML = text.replace(/\\n/g, '<br>');
+        if (isHtml) {
+            d.innerHTML = text;
+        } else {
+            d.innerHTML = parseSimpleMarkdown(text);
+        }
         msgsEl.appendChild(d);
         msgsEl.scrollTop = msgsEl.scrollHeight;
         return d;
@@ -6328,12 +6698,12 @@ function sahdev_render_client_livechat_widget(array $vars): string
         var text = (inputEl.value || '').trim();
         if (!text) return;
 
-        appendClMsg('user', text);
+        appendClMsg('user', text, false);
         inputEl.value = '';
         inputEl.disabled = true;
         sendBtn.disabled = true;
 
-        var tempBot = appendClMsg('bot', 'Typing...');
+        var tempBot = appendClMsg('bot', 'Typing...', false);
 
         var form = new FormData();
         form.append('action', 'client_chat_message');
@@ -6351,7 +6721,7 @@ function sahdev_render_client_livechat_widget(array $vars): string
             }
 
             if (data.status === 'success' || data.success) {
-                tempBot.innerHTML = (data.reply || 'Message received.').replace(/\\n/g, '<br>');
+                tempBot.innerHTML = parseSimpleMarkdown(data.reply || 'Message received.');
             } else {
                 tempBot.innerHTML = '⚠️ ' + (data.message || data.error || 'Could not send message.');
             }
@@ -6368,13 +6738,14 @@ function sahdev_render_client_livechat_widget(array $vars): string
         });
     }
 
+    // ── Ticket Escalation with universal /supporttickets.php link ──────
     if (escalateBtn) {
         escalateBtn.addEventListener('click', function() {
             if (!sessionUuid) {
-                alert('Please start a conversation before converting to a ticket.');
+                alert('Please send a message before converting to a support ticket.');
                 return;
             }
-            if (!confirm('Would you like to open a support ticket with your chat transcript?')) return;
+            if (!confirm('Would you like our staff to assist you? This will convert your chat transcript into a support ticket.')) return;
 
             escalateBtn.textContent = 'Creating ticket...';
             var form = new FormData();
@@ -6387,12 +6758,119 @@ function sahdev_render_client_livechat_widget(array $vars): string
                     alert('Escalation failed: ' + (err ? err.message : (data.message || data.error || 'Unknown error')));
                     return;
                 }
+
                 var tid = data.tid || data.ticket_id || '';
-                var ticketUrl = 'viewticket.php?tid=' + encodeURIComponent(tid);
-                appendClMsg('bot', '✅ <strong>Support Ticket #' + tid + ' created!</strong><br><a href="' + ticketUrl + '" style="color:' + encodeURIComponent(brandColor) + ';font-weight:600;text-decoration:underline;">Click here to view your ticket &rarr;</a>');
+                // Dynamic ticket URLs in WHMCS require hash parameters for direct view;
+                // linking directly to supporttickets.php guarantees the client sees all their tickets without error.
+                var ticketUrl = data.ticket_url || 'supporttickets.php';
+
+                appendClMsg('bot',
+                    '✅ <strong>Support Ticket #' + tid + ' created successfully!</strong><br><br>' +
+                    'Our staff team has received your chat transcript and will follow up shortly.<br><br>' +
+                    '<a href="' + ticketUrl + '" style="color:' + encodeURIComponent(brandColor) + ';font-weight:700;text-decoration:underline;">View All Support Tickets &rarr;</a>',
+                    true
+                );
                 escalateBtn.style.display = 'none';
             });
         });
+    }
+
+    // ── In-Widget History Drawer Management ─────────────────────────
+    function loadHistoryList() {
+        if (!drawerList) return;
+        drawerList.innerHTML = '<div style="text-align:center;padding:24px;color:#94a3b8;font-size:12px;">Loading past conversations...</div>';
+
+        var form = new FormData();
+        form.append('action', 'client_chat_get_history');
+        form.append('visitor_token', visitorToken);
+
+        postAjaxWithFallback(form, function(err, data) {
+            if (err || !data || data.status !== 'success' || !data.history || data.history.length === 0) {
+                drawerList.innerHTML = '<div style="text-align:center;padding:30px 14px;color:#94a3b8;font-size:12px;">No past conversations found.</div>';
+                return;
+            }
+
+            var html = '';
+            data.history.forEach(function(item) {
+                var isActive = (item.session_uuid === sessionUuid);
+                var statusBadge = item.status === 'escalated_ticket' ? '<span class="sdv-session-badge" style="background:#dcfce7;color:#15803d;">Ticket Opened</span>' : '<span class="sdv-session-badge">' + (item.status || 'active') + '</span>';
+                html += '<div class="sdv-session-item' + (isActive ? ' sdv-item-active' : '') + '" data-uuid="' + item.session_uuid + '">';
+                html += '<div class="sdv-session-title"><span>' + (item.title || 'Chat') + '</span> ' + statusBadge + '</div>';
+                html += '<div class="sdv-session-snippet">' + (item.last_message || 'Conversation') + '</div>';
+                html += '<div class="sdv-session-time">' + (item.created_at || '') + ' &bull; ' + item.message_count + ' messages</div>';
+                html += '</div>';
+            });
+            drawerList.innerHTML = html;
+
+            var items = drawerList.querySelectorAll('.sdv-session-item');
+            items.forEach(function(el) {
+                el.addEventListener('click', function() {
+                    var uuid = el.getAttribute('data-uuid');
+                    if (uuid) loadSessionTranscript(uuid);
+                });
+            });
+        });
+    }
+
+    function loadSessionTranscript(uuid) {
+        var form = new FormData();
+        form.append('action', 'client_chat_load_session');
+        form.append('session_uuid', uuid);
+        form.append('visitor_token', visitorToken);
+
+        postAjaxWithFallback(form, function(err, data) {
+            if (err || !data || !data.success) {
+                alert('Could not load conversation transcript.');
+                return;
+            }
+            sessionUuid = data.session_uuid;
+            msgsEl.innerHTML = '';
+            if (data.messages && data.messages.length > 0) {
+                data.messages.forEach(function(m) {
+                    appendClMsg(m.sender_type === 'user' ? 'user' : 'bot', m.message_text, false);
+                });
+            } else {
+                appendClMsg('bot', 'No messages recorded in this conversation yet.', false);
+            }
+            if (historyDrawer) historyDrawer.classList.remove('sdv-drawer-open');
+        });
+    }
+
+    function startNewChatThread() {
+        var form = new FormData();
+        form.append('action', 'client_chat_new_session');
+        form.append('visitor_token', visitorToken);
+        form.append('page_url', window.location.href);
+
+        postAjaxWithFallback(form, function(err, data) {
+            if (err || !data || data.status !== 'success') {
+                alert('Could not start new chat.');
+                return;
+            }
+            sessionUuid = data.session_uuid;
+            msgsEl.innerHTML = '';
+            appendClMsg('bot', data.greeting || 'Hi! How can I help you today?', false);
+            if (escalateBtn) escalateBtn.style.display = 'inline';
+            if (historyDrawer) historyDrawer.classList.remove('sdv-drawer-open');
+            inputEl.focus();
+        });
+    }
+
+    if (historyBtn) {
+        historyBtn.addEventListener('click', function() {
+            if (historyDrawer) {
+                var isOpen = historyDrawer.classList.toggle('sdv-drawer-open');
+                if (isOpen) loadHistoryList();
+            }
+        });
+    }
+    if (drawerCloseBtn) {
+        drawerCloseBtn.addEventListener('click', function() {
+            if (historyDrawer) historyDrawer.classList.remove('sdv-drawer-open');
+        });
+    }
+    if (newChatBtn) {
+        newChatBtn.addEventListener('click', startNewChatThread);
     }
 })();
 </script>

@@ -1337,7 +1337,11 @@ function sahdev_clientarea($vars)
     $action = $_REQUEST['action'] ?? '';
     $sahdevAct = $_REQUEST['sahdev_act'] ?? '';
 
-    $clientActions = ['client_chat_init', 'client_chat_message', 'client_chat_escalate', 'client_chat_feedback', 'visitor_heartbeat'];
+    $clientActions = [
+        'client_chat_init', 'client_chat_message', 'client_chat_escalate',
+        'client_chat_get_history', 'client_chat_load_session', 'client_chat_new_session',
+        'client_chat_feedback', 'visitor_heartbeat'
+    ];
     if ($sahdevAct === 'ajax_handler' || in_array($action, $clientActions, true) || !empty($action)) {
         while (ob_get_level() > 0) {
             @ob_end_clean();

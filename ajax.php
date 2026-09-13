@@ -20,7 +20,10 @@ if (ob_get_length()) ob_clean();
 $adminId = $_SESSION['adminid'] ?? null;
 
 $action = isset($_REQUEST['action']) ? $_REQUEST['action'] : '';
-$isClientChatAction = in_array($action, ['client_chat_init', 'client_chat_message', 'client_chat_escalate'], true);
+$isClientChatAction = in_array($action, [
+    'client_chat_init', 'client_chat_message', 'client_chat_escalate',
+    'client_chat_get_history', 'client_chat_load_session', 'client_chat_new_session'
+], true);
 
 if (!$adminId && !$isClientChatAction) {
     header('HTTP/1.1 403 Forbidden');
@@ -101,6 +104,64 @@ if ($isClientChatAction) {
             exit;
         }
 
+        if ($action === 'client_chat_get_history') {
+            $visitorToken = trim((string) ($_REQUEST['visitor_token'] ?? ''));
+            $history = \Sahdev\Lib\ChatService::getClientSessionList($visitorToken, $clientId);
+            echo json_encode([
+                'status'  => 'success',
+                'history' => $history,
+            ]);
+            exit;
+        }
+
+        if ($action === 'client_chat_load_session') {
+            $sessionUuid = trim((string) ($_REQUEST['session_uuid'] ?? ''));
+            $visitorToken = trim((string) ($_REQUEST['visitor_token'] ?? ''));
+            $res = \Sahdev\Lib\ChatService::loadSessionMessages($sessionUuid, $visitorToken, $clientId);
+            echo json_encode(array_merge(['status' => ($res['success'] ?? false) ? 'success' : 'error'], $res));
+            exit;
+        }
+
+        if ($action === 'client_chat_new_session') {
+            $visitorToken = trim((string) ($_REQUEST['visitor_token'] ?? ''));
+            if (empty($visitorToken) || strlen($visitorToken) > 64) {
+                $visitorToken = bin2hex(random_bytes(16));
+            }
+
+            $metadata = [
+                'ip'         => $_SERVER['REMOTE_ADDR'] ?? '',
+                'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? '',
+                'page'       => $_REQUEST['page_url'] ?? '',
+            ];
+
+            if ($clientId > 0) {
+                $client = Capsule::table('tblclients')->where('id', $clientId)->first();
+                if ($client) {
+                    $metadata['name']  = trim(($client->firstname ?? '') . ' ' . ($client->lastname ?? ''));
+                    $metadata['email'] = $client->email ?? '';
+                }
+            }
+
+            $session = \Sahdev\Lib\ChatService::startNewClientSession($visitorToken, $clientId, $metadata);
+            $greeting = !empty($settings->client_chat_welcome_message)
+                ? $settings->client_chat_welcome_message
+                : (!empty($settings->client_chat_greeting)
+                    ? $settings->client_chat_greeting
+                    : "Hi there! 👋 Need help with your hosting, domains, or billing? Chat with our AI assistant or open a ticket anytime.");
+
+            \Sahdev\Lib\ModuleLogger::info('client_chat', "New chat thread created for session {$session['session_uuid']} (client: " . ($clientId ?: 'guest') . ")");
+
+            echo json_encode([
+                'status'        => 'success',
+                'visitor_token' => $visitorToken,
+                'session_uuid'  => $session['session_uuid'],
+                'greeting'      => $greeting,
+                'messages'      => [],
+                'is_logged_in'  => ($clientId > 0),
+            ]);
+            exit;
+        }
+
         if ($action === 'client_chat_message') {
             if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
                 header('HTTP/1.1 405 Method Not Allowed');
@@ -158,7 +219,8 @@ if ($isClientChatAction) {
 // Actions allowed via GET (no ticket/POST needed)
 $getAllowedActions = [
     'get_analytics_period', 'get_header_server_widget', 'server_sso',
-    'copilot_stream', 'get_metrics_data', 'client_chat_init'
+    'copilot_stream', 'get_metrics_data', 'client_chat_init',
+    'client_chat_get_history', 'client_chat_load_session'
 ];
 $isGetAllowed = in_array($action, $getAllowedActions, true);
 
@@ -182,7 +244,8 @@ $allowedActions = [
     // Sahdev 3.2 Organization Assistant: Copilot, Safe Ops, Chat, Metrics
     'copilot_send_message', 'copilot_stream', 'copilot_execute_op', 'copilot_rollback_op',
     'chat_takeover', 'fetch_openrouter_models', 'get_metrics_data',
-    'client_chat_init', 'client_chat_message', 'client_chat_escalate'
+    'client_chat_init', 'client_chat_message', 'client_chat_escalate',
+    'client_chat_get_history', 'client_chat_load_session', 'client_chat_new_session'
 ];
 if (!in_array($action, $allowedActions, true)) {
     header('HTTP/1.1 400 Bad Request');
@@ -278,7 +341,8 @@ if ($intensity > 3) {
         'autopilot_test_run', 'set_ui_theme', 'get_header_server_widget',
         'copilot_send_message', 'copilot_stream', 'copilot_execute_op', 'copilot_rollback_op',
         'chat_takeover', 'fetch_openrouter_models', 'get_metrics_data',
-        'client_chat_init', 'client_chat_message', 'client_chat_escalate'
+        'client_chat_init', 'client_chat_message', 'client_chat_escalate',
+        'client_chat_get_history', 'client_chat_load_session', 'client_chat_new_session'
     ];
     if (!$ticketId && !in_array($action, $ticketNotRequiredActions) && !$isGetAllowed) {
         header('HTTP/1.1 400 Bad Request');
@@ -400,7 +464,8 @@ try {
     $skipPrefGuardActions = [
         'copilot_send_message', 'copilot_stream', 'copilot_execute_op', 'copilot_rollback_op',
         'chat_takeover', 'fetch_openrouter_models', 'get_metrics_data',
-        'client_chat_init', 'client_chat_message', 'client_chat_escalate'
+        'client_chat_init', 'client_chat_message', 'client_chat_escalate',
+        'client_chat_get_history', 'client_chat_load_session', 'client_chat_new_session'
     ];
     $actionMap = \Sahdev\Lib\AdminPreferences::actionFeatureMap();
     if (!in_array($action, \Sahdev\Lib\AdminPreferences::unguardedActions(), true) && !in_array($action, $skipPrefGuardActions, true)) {

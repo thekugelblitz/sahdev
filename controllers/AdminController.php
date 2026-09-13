@@ -7958,247 +7958,947 @@ class AdminController
         $adminId = (int) ($_SESSION['adminid'] ?? 0);
         require_once dirname(__DIR__) . '/lib/PermissionService.php';
         require_once dirname(__DIR__) . '/lib/SchemaManager.php';
+        \Sahdev\Lib\SchemaManager::ensureAll();
         \Sahdev\Lib\SchemaManager::ensureSettingsColumns();
+        \Sahdev\Lib\SchemaManager::ensureClientChatPromptsTable();
+        \Sahdev\Lib\SchemaManager::ensureChatSessionsTable();
+        \Sahdev\Lib\SchemaManager::ensureChatMessagesTable();
 
         if (!\Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_CLIENT_CHAT_MANAGE)) {
             return $this->getNavigationMarkup('client_chat') . '<div class="sahdev-page-container"><div class="alert alert-danger">Access Denied: Missing permissions for Client Live Chat settings.</div></div>';
         }
 
+        $currentTab = $_GET['tab'] ?? 'sessions';
+        if (!in_array($currentTab, ['sessions', 'prompts', 'datasources', 'customizer'], true)) {
+            $currentTab = 'sessions';
+        }
+
         $successMessage = '';
-        if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_client_chat'])) {
+        $errorMessage = '';
+
+        // Handle POST actions
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             check_token('WHMCS.admin.default');
 
-            Capsule::table('tblsahdev_settings')->where('id', 1)->update([
-                'client_chat_enabled'         => !empty($_POST['client_chat_enabled']) ? 1 : 0,
-                'client_chat_provider_id'     => (int) ($_POST['client_chat_provider_id'] ?? 0),
-                'client_chat_title'           => trim($_POST['client_chat_title'] ?? 'Hosting Support Assistant'),
-                'client_chat_brand_color'     => trim($_POST['client_chat_brand_color'] ?? '#0d6efd'),
-                'client_chat_position'        => trim($_POST['client_chat_position'] ?? 'bottom-right'),
-                'client_chat_welcome_message' => trim($_POST['client_chat_welcome_message'] ?? ''),
-                'client_chat_require_prechat' => !empty($_POST['client_chat_require_prechat']) ? 1 : 0,
-                'client_chat_proactive_delay' => (int) ($_POST['client_chat_proactive_delay'] ?? 15),
-                'client_chat_kb_enabled'      => !empty($_POST['client_chat_kb_enabled']) ? 1 : 0,
-                'client_chat_system_prompt'   => trim($_POST['client_chat_system_prompt'] ?? ''),
-                'client_chat_debug'           => !empty($_POST['client_chat_debug']) ? 1 : 0,
-                'updated_at'                  => \Carbon\Carbon::now(),
-            ]);
+            // 1. Save Widget Customizer
+            if (isset($_POST['save_client_chat_customizer']) || isset($_POST['save_client_chat'])) {
+                Capsule::table('tblsahdev_settings')->where('id', 1)->update([
+                    'client_chat_enabled'          => !empty($_POST['client_chat_enabled']) ? 1 : 0,
+                    'client_chat_provider_id'      => (int) ($_POST['client_chat_provider_id'] ?? 0),
+                    'client_chat_title'            => trim($_POST['client_chat_title'] ?? 'Hosting Support Assistant'),
+                    'client_chat_brand_color'      => trim($_POST['client_chat_brand_color'] ?? '#0d6efd'),
+                    'client_chat_position'         => trim($_POST['client_chat_position'] ?? 'bottom-right'),
+                    'client_chat_welcome_message'  => trim($_POST['client_chat_welcome_message'] ?? ''),
+                    'client_chat_require_auth'     => !empty($_POST['client_chat_require_auth']) ? 1 : 0,
+                    'client_chat_proactive_delay'  => (int) ($_POST['client_chat_proactive_delay'] ?? 15),
+                    'client_chat_debug'            => !empty($_POST['client_chat_debug']) ? 1 : 0,
+                    'client_chat_width'            => max(320, min(600, (int)($_POST['client_chat_width'] ?? 380))),
+                    'client_chat_height'           => max(400, min(850, (int)($_POST['client_chat_height'] ?? 560))),
+                    'client_chat_expand_width'     => max(450, min(1200, (int)($_POST['client_chat_expand_width'] ?? 700))),
+                    'client_chat_expand_height'    => max(450, min(1000, (int)($_POST['client_chat_expand_height'] ?? 720))),
+                    'client_chat_theme'            => trim($_POST['client_chat_theme'] ?? 'modern_light'),
+                    'client_chat_launcher_style'   => trim($_POST['client_chat_launcher_style'] ?? 'circular'),
+                    'client_chat_launcher_text'    => trim($_POST['client_chat_launcher_text'] ?? 'Chat with Us'),
+                    'client_chat_history_enabled'  => !empty($_POST['client_chat_history_enabled']) ? 1 : 0,
+                    'updated_at'                   => \Carbon\Carbon::now(),
+                ]);
+                $successMessage = "Widget configuration and appearance saved successfully.";
+                $currentTab = 'customizer';
+            }
 
-            $successMessage = "Client Live Chat settings saved successfully.";
+            // 2. Save Data Sources & Scope
+            if (isset($_POST['save_client_chat_datasources'])) {
+                Capsule::table('tblsahdev_settings')->where('id', 1)->update([
+                    'client_chat_ds_services'       => !empty($_POST['client_chat_ds_services']) ? 1 : 0,
+                    'client_chat_ds_domains'        => !empty($_POST['client_chat_ds_domains']) ? 1 : 0,
+                    'client_chat_ds_invoices'       => !empty($_POST['client_chat_ds_invoices']) ? 1 : 0,
+                    'client_chat_ds_tickets'        => !empty($_POST['client_chat_ds_tickets']) ? 1 : 0,
+                    'client_chat_ds_kb'             => !empty($_POST['client_chat_ds_kb']) ? 1 : 0,
+                    'client_chat_ds_network_issues' => !empty($_POST['client_chat_ds_network_issues']) ? 1 : 0,
+                    'updated_at'                    => \Carbon\Carbon::now(),
+                ]);
+                $successMessage = "Self-Help Data Source permissions updated successfully.";
+                $currentTab = 'datasources';
+            }
+
+            // 3. Save Client Chat Prompt Library
+            if (isset($_POST['save_client_chat_prompts'])) {
+                $prompts = Capsule::table('tblsahdev_client_chat_prompts')->get();
+                foreach ($prompts as $p) {
+                    $field = 'prompt_' . $p->prompt_key;
+                    if (isset($_POST[$field])) {
+                        Capsule::table('tblsahdev_client_chat_prompts')
+                            ->where('prompt_key', $p->prompt_key)
+                            ->update([
+                                'content'    => trim($_POST[$field]),
+                                'updated_at' => \Carbon\Carbon::now(),
+                            ]);
+                    }
+                }
+                $successMessage = "Client Chat Prompt Library saved successfully.";
+                $currentTab = 'prompts';
+            }
+
+            // 4. Reset Individual Prompt or All Prompts to Default
+            if (isset($_POST['reset_client_chat_prompt'])) {
+                $targetKey = trim($_POST['reset_prompt_key'] ?? '');
+                if ($targetKey === 'all') {
+                    $prompts = Capsule::table('tblsahdev_client_chat_prompts')->get();
+                    foreach ($prompts as $p) {
+                        Capsule::table('tblsahdev_client_chat_prompts')
+                            ->where('prompt_key', $p->prompt_key)
+                            ->update([
+                                'content'    => $p->default_content,
+                                'updated_at' => \Carbon\Carbon::now(),
+                            ]);
+                    }
+                    $successMessage = "All Client Chat Prompts have been reset to factory defaults.";
+                } elseif (!empty($targetKey)) {
+                    $row = Capsule::table('tblsahdev_client_chat_prompts')->where('prompt_key', $targetKey)->first();
+                    if ($row) {
+                        Capsule::table('tblsahdev_client_chat_prompts')
+                            ->where('prompt_key', $targetKey)
+                            ->update([
+                                'content'    => $row->default_content,
+                                'updated_at' => \Carbon\Carbon::now(),
+                            ]);
+                        $successMessage = "Prompt '{$row->label}' restored to default.";
+                    }
+                }
+                $currentTab = 'prompts';
+            }
+
+            // 5. Close Session Action
+            if (isset($_POST['close_chat_session'])) {
+                $closeSessionId = (int)($_POST['session_id'] ?? 0);
+                if ($closeSessionId > 0) {
+                    Capsule::table('tblsahdev_chat_sessions')->where('id', $closeSessionId)->update([
+                        'status'     => 'closed',
+                        'updated_at' => \Carbon\Carbon::now(),
+                    ]);
+                    $successMessage = "Chat session #{$closeSessionId} marked as closed.";
+                }
+                $currentTab = 'sessions';
+            }
         }
 
         $settings = Capsule::table('tblsahdev_settings')->first();
         $providers = Capsule::table('tblsahdev_providers')->where('is_active', 1)->get();
+        $prompts = Capsule::table('tblsahdev_client_chat_prompts')->orderBy('id', 'asc')->get();
+
         $csrfToken = generate_token('form');
-        $actionUrl = htmlspecialchars($this->moduleVars['modulelink']) . '&action=client_chat';
+        $baseActionUrl = htmlspecialchars($this->moduleVars['modulelink']) . '&action=client_chat';
+
+        // Transcript viewer modal data
+        $viewSessionId = (int)($_GET['view_session'] ?? 0);
+        $viewSession = null;
+        $viewMessages = [];
+        if ($viewSessionId > 0) {
+            $viewSession = Capsule::table('tblsahdev_chat_sessions')->where('id', $viewSessionId)->first();
+            if ($viewSession) {
+                $viewMessages = Capsule::table('tblsahdev_chat_messages')
+                    ->where('session_id', $viewSession->id)
+                    ->orderBy('id', 'asc')
+                    ->get();
+            }
+        }
+
+        // Sessions Statistics
+        $totalSessions = Capsule::table('tblsahdev_chat_sessions')->where('session_type', 'client_livechat')->count();
+        $activeSessions = Capsule::table('tblsahdev_chat_sessions')->where('session_type', 'client_livechat')->where('status', 'active')->count();
+        $escalatedSessions = Capsule::table('tblsahdev_chat_sessions')->where('session_type', 'client_livechat')->where('status', 'escalated_ticket')->count();
+        $totalMessages = Capsule::table('tblsahdev_chat_messages')
+            ->join('tblsahdev_chat_sessions', 'tblsahdev_chat_messages.session_id', '=', 'tblsahdev_chat_sessions.id')
+            ->where('tblsahdev_chat_sessions.session_type', 'client_livechat')
+            ->count();
+
+        // Recent Sessions Query
+        $sessionsList = Capsule::table('tblsahdev_chat_sessions')
+            ->where('session_type', 'client_livechat')
+            ->orderBy('id', 'desc')
+            ->limit(50)
+            ->get();
 
         ob_start();
         ?>
         <?php echo $this->getNavigationMarkup('client_chat'); ?>
         <div class="sahdev-page-container">
-            <h2 style="margin-bottom: 8px;"><i class="fas fa-comments text-primary"></i> Client Live Chat Management</h2>
-            <p class="text-muted" style="margin-bottom: 20px;">Configure the AI customer support widget embedded in the WHMCS Client Area with live takeover and 1-click ticket escalation.</p>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <div>
+                    <h2 style="margin: 0 0 4px 0;"><i class="fas fa-comments text-primary"></i> Client Live Chat Management Hub</h2>
+                    <p class="text-muted" style="margin: 0;">Autonomous client self-help live chat with tenant isolation, modular prompt engineering, and deep visual customizer.</p>
+                </div>
+                <div style="display: flex; gap: 8px;">
+                    <a href="<?php echo $baseActionUrl; ?>&tab=customizer" class="btn btn-default btn-sm"><i class="fas fa-palette"></i> Widget Customizer</a>
+                    <a href="<?php echo $baseActionUrl; ?>&tab=prompts" class="btn btn-default btn-sm"><i class="fas fa-book-open"></i> Prompt Library</a>
+                    <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=module_logs" class="btn btn-default btn-sm" target="_blank"><i class="fas fa-clipboard-list"></i> Logs</a>
+                </div>
+            </div>
 
             <?php if (!empty($successMessage)): ?>
-                <div class="alert alert-success"><i class="fas fa-check-circle"></i> <?php echo htmlspecialchars($successMessage); ?></div>
+                <div class="alert alert-success alert-dismissible" style="margin-bottom: 20px;">
+                    <button type="button" class="close" data-dismiss="alert">&times;</button>
+                    <i class="fas fa-check-circle"></i> <?php echo htmlspecialchars($successMessage); ?>
+                </div>
             <?php endif; ?>
 
-            <div class="row">
-                <!-- Left Column: Form Settings -->
-                <div class="col-md-7">
-                    <div class="panel panel-default" style="border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
-                        <div class="panel-heading" style="background: #fff; padding: 15px 20px;">
-                            <strong>Widget Configuration & Behavior</strong>
+            <!-- Navigation Tabs -->
+            <ul class="nav nav-tabs" style="margin-bottom: 22px; font-weight: 600;">
+                <li class="<?php echo $currentTab === 'sessions' ? 'active' : ''; ?>">
+                    <a href="<?php echo $baseActionUrl; ?>&tab=sessions"><i class="fas fa-history"></i> Sessions & Live History (<?php echo $totalSessions; ?>)</a>
+                </li>
+                <li class="<?php echo $currentTab === 'prompts' ? 'active' : ''; ?>">
+                    <a href="<?php echo $baseActionUrl; ?>&tab=prompts"><i class="fas fa-book-open"></i> Client Chat Prompt Library</a>
+                </li>
+                <li class="<?php echo $currentTab === 'datasources' ? 'active' : ''; ?>">
+                    <a href="<?php echo $baseActionUrl; ?>&tab=datasources"><i class="fas fa-database"></i> Data Sources & Scope</a>
+                </li>
+                <li class="<?php echo $currentTab === 'customizer' ? 'active' : ''; ?>">
+                    <a href="<?php echo $baseActionUrl; ?>&tab=customizer"><i class="fas fa-palette"></i> Widget Customizer & Appearance</a>
+                </li>
+            </ul>
+
+            <!-- ── TAB 1: SESSIONS & LIVE HISTORY ──────────────────────────────── -->
+            <?php if ($currentTab === 'sessions'): ?>
+                <!-- Metrics Bar -->
+                <div class="row" style="margin-bottom: 20px;">
+                    <div class="col-md-3">
+                        <div class="panel panel-default" style="border-radius: 8px; border-left: 4px solid #3b82f6;">
+                            <div class="panel-body" style="padding: 15px;">
+                                <div class="text-muted" style="font-size: 11px; text-transform: uppercase;">Total Chat Sessions</div>
+                                <div style="font-size: 24px; font-weight: 700; color: #1e293b;"><?php echo number_format($totalSessions); ?></div>
+                            </div>
                         </div>
-                        <div class="panel-body" style="padding: 20px;">
-                            <form method="post" action="<?php echo $actionUrl; ?>">
-                                <?php echo $csrfToken; ?>
-                                <input type="hidden" name="save_client_chat" value="1">
+                    </div>
+                    <div class="col-md-3">
+                        <div class="panel panel-default" style="border-radius: 8px; border-left: 4px solid #10b981;">
+                            <div class="panel-body" style="padding: 15px;">
+                                <div class="text-muted" style="font-size: 11px; text-transform: uppercase;">Active Chats</div>
+                                <div style="font-size: 24px; font-weight: 700; color: #10b981;"><?php echo number_format($activeSessions); ?></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="panel panel-default" style="border-radius: 8px; border-left: 4px solid #f59e0b;">
+                            <div class="panel-body" style="padding: 15px;">
+                                <div class="text-muted" style="font-size: 11px; text-transform: uppercase;">Tickets Escalated</div>
+                                <div style="font-size: 24px; font-weight: 700; color: #d97706;"><?php echo number_format($escalatedSessions); ?></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="panel panel-default" style="border-radius: 8px; border-left: 4px solid #6366f1;">
+                            <div class="panel-body" style="padding: 15px;">
+                                <div class="text-muted" style="font-size: 11px; text-transform: uppercase;">Client Messages Exchanged</div>
+                                <div style="font-size: 24px; font-weight: 700; color: #4338ca;"><?php echo number_format($totalMessages); ?></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
 
-                                <div class="form-group" style="margin-bottom: 18px;">
-                                    <div class="checkbox">
-                                        <label style="font-weight: 700;">
-                                            <input type="checkbox" name="client_chat_enabled" value="1" <?php echo !empty($settings->client_chat_enabled) ? 'checked' : ''; ?>>
-                                            Enable Client Live Chat Widget on WHMCS Client Area
-                                        </label>
-                                    </div>
-                                    <span class="help-block">When enabled, the floating chat launcher is injected automatically via WHMCS ClientAreaFooterOutput hook.</span>
-                                </div>
+                <!-- Sessions Table -->
+                <div class="panel panel-default" style="border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
+                    <div class="panel-heading" style="background: #fff; padding: 14px 20px; display: flex; justify-content: space-between; align-items: center;">
+                        <strong style="font-size: 15px;"><i class="fas fa-list"></i> Customer Live Chat Conversations</strong>
+                        <span class="text-muted" style="font-size: 12px;">Showing recent 50 sessions</span>
+                    </div>
+                    <div class="panel-body" style="padding: 0;">
+                        <div class="table-responsive" style="margin-bottom: 0;">
+                            <table class="table table-hover" style="margin-bottom: 0;">
+                                <thead>
+                                    <tr style="background: #f8fafc; font-size: 12px;">
+                                        <th>ID / UUID</th>
+                                        <th>User / Client</th>
+                                        <th>Status</th>
+                                        <th>Messages</th>
+                                        <th>Started</th>
+                                        <th>Last Active</th>
+                                        <th style="text-align: right;">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php if (count($sessionsList) === 0): ?>
+                                        <tr><td colspan="7" class="text-center" style="padding: 40px; color: #94a3b8;">No customer chat conversations recorded yet. Conversations will automatically appear as clients chat in the portal.</td></tr>
+                                    <?php else: ?>
+                                        <?php foreach ($sessionsList as $s): ?>
+                                            <?php
+                                            $msgCount = Capsule::table('tblsahdev_chat_messages')->where('session_id', $s->id)->count();
+                                            $clientInfo = 'Guest Visitor';
+                                            if ($s->client_id > 0) {
+                                                $cl = Capsule::table('tblclients')->where('id', $s->client_id)->first(['id', 'firstname', 'lastname', 'email']);
+                                                if ($cl) {
+                                                    $clientInfo = '<a href="clientssummary.php?userid=' . $cl->id . '" target="_blank"><strong>' . htmlspecialchars($cl->firstname . ' ' . $cl->lastname) . '</strong></a><br><small class="text-muted">' . htmlspecialchars($cl->email) . '</small>';
+                                                }
+                                            } else {
+                                                $meta = !empty($s->metadata_json) ? json_decode($s->metadata_json, true) : [];
+                                                $ip = $meta['ip'] ?? 'Unknown IP';
+                                                $clientInfo = '<span class="label label-default">Guest</span> <small class="text-muted">' . htmlspecialchars($ip) . '</small>';
+                                            }
 
-                                <div class="row">
-                                    <div class="col-md-6 form-group">
-                                        <label>Widget Header Title</label>
-                                        <input type="text" name="client_chat_title" class="form-control" value="<?php echo htmlspecialchars($settings->client_chat_title ?? 'Hosting Support Assistant'); ?>">
-                                    </div>
-                                    <div class="col-md-6 form-group">
-                                        <label>Brand Accent Color</label>
-                                        <input type="color" name="client_chat_brand_color" class="form-control" value="<?php echo htmlspecialchars($settings->client_chat_brand_color ?? '#0d6efd'); ?>" style="height: 34px; padding: 2px;">
-                                    </div>
-                                </div>
-
-                                <div class="row">
-                                    <div class="col-md-6 form-group">
-                                        <label>Widget Position</label>
-                                        <select name="client_chat_position" class="form-control">
-                                            <option value="bottom-right" <?php echo (($settings->client_chat_position ?? 'bottom-right') === 'bottom-right') ? 'selected' : ''; ?>>Bottom Right</option>
-                                            <option value="bottom-left" <?php echo (($settings->client_chat_position ?? '') === 'bottom-left') ? 'selected' : ''; ?>>Bottom Left</option>
-                                        </select>
-                                    </div>
-                                    <div class="col-md-6 form-group">
-                                        <label>Proactive Bubble Delay (Seconds)</label>
-                                        <input type="number" name="client_chat_proactive_delay" class="form-control" value="<?php echo (int)($settings->client_chat_proactive_delay ?? 15); ?>" min="0" max="300">
-                                        <span class="help-block">Set 0 to disable automated greeting popups.</span>
-                                    </div>
-                                </div>
-
-                                <div class="form-group">
-                                    <label>Welcome Greeting Message</label>
-                                    <textarea name="client_chat_welcome_message" class="form-control" rows="2"><?php echo htmlspecialchars($settings->client_chat_welcome_message ?? 'Hi there! 👋 Need help with your hosting, domains, or billing? Chat with our AI assistant or open a ticket anytime.'); ?></textarea>
-                                </div>
-
-                                <div class="row" style="margin-bottom: 15px;">
-                                    <div class="col-md-6">
-                                        <div class="checkbox">
-                                            <label>
-                                                <input type="checkbox" name="client_chat_require_prechat" value="1" <?php echo !empty($settings->client_chat_require_prechat) ? 'checked' : ''; ?>>
-                                                Require Name & Email Pre-Chat Form
-                                            </label>
-                                        </div>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <div class="checkbox">
-                                            <label>
-                                                <input type="checkbox" name="client_chat_kb_enabled" value="1" <?php echo !empty($settings->client_chat_kb_enabled) ? 'checked' : ''; ?>>
-                                                Enable Public Knowledgebase Grounding
-                                            </label>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div class="form-group" style="margin-bottom: 18px;">
-                                    <label>Assigned AI Provider for Client Live Chat</label>
-                                    <select name="client_chat_provider_id" class="form-control">
-                                        <option value="0">-- Inherit Global Primary Provider --</option>
-                                        <?php foreach ($providers as $p): ?>
-                                            <option value="<?php echo (int)$p->id; ?>" <?php echo ((int)($settings->client_chat_provider_id ?? 0) === (int)$p->id) ? 'selected' : ''; ?>>
-                                                <?php echo htmlspecialchars($p->name); ?> (<?php echo htmlspecialchars($p->provider_type); ?> &bull; <?php echo htmlspecialchars($p->model_name ?: 'default'); ?>)
-                                            </option>
+                                            $statusBadge = '<span class="label label-success">Active</span>';
+                                            if ($s->status === 'escalated_ticket') {
+                                                $statusBadge = '<span class="label label-warning"><i class="fas fa-ticket-alt"></i> Ticket Opened</span>';
+                                            } elseif ($s->status === 'closed') {
+                                                $statusBadge = '<span class="label label-default">Closed</span>';
+                                            }
+                                            ?>
+                                            <tr>
+                                                <td>
+                                                    <strong>#<?php echo (int)$s->id; ?></strong><br>
+                                                    <small class="text-muted" style="font-family: monospace; font-size: 11px;"><?php echo htmlspecialchars(substr($s->session_uuid, 0, 16)); ?>...</small>
+                                                </td>
+                                                <td><?php echo $clientInfo; ?></td>
+                                                <td><?php echo $statusBadge; ?></td>
+                                                <td><span class="badge"><?php echo $msgCount; ?></span></td>
+                                                <td><small class="text-muted"><?php echo htmlspecialchars(\Carbon\Carbon::parse($s->created_at)->diffForHumans()); ?></small></td>
+                                                <td><small class="text-muted"><?php echo htmlspecialchars($s->last_message_at ? \Carbon\Carbon::parse($s->last_message_at)->diffForHumans() : '-'); ?></small></td>
+                                                <td style="text-align: right;">
+                                                    <a href="<?php echo $baseActionUrl; ?>&tab=sessions&view_session=<?php echo (int)$s->id; ?>" class="btn btn-primary btn-xs">
+                                                        <i class="fas fa-eye"></i> View Transcript
+                                                    </a>
+                                                    <?php if ($s->status !== 'closed'): ?>
+                                                        <form method="post" action="<?php echo $baseActionUrl; ?>&tab=sessions" style="display: inline-block; margin: 0;">
+                                                            <?php echo $csrfToken; ?>
+                                                            <input type="hidden" name="close_chat_session" value="1">
+                                                            <input type="hidden" name="session_id" value="<?php echo (int)$s->id; ?>">
+                                                            <button type="submit" class="btn btn-default btn-xs" onclick="return confirm('Close this session?');" title="Close Session">
+                                                                <i class="fas fa-times"></i>
+                                                            </button>
+                                                        </form>
+                                                    <?php endif; ?>
+                                                </td>
+                                            </tr>
                                         <?php endforeach; ?>
-                                    </select>
-                                    <span class="help-block">Select which AI model powers live customer answers. Configure keys and endpoints in <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=providers">AI Providers</a>.</span>
-                                </div>
+                                    <?php endif; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
 
-                                <div class="form-group" style="margin-bottom: 20px;">
-                                    <label>Client Chat Persona & System Instructions</label>
-                                    <textarea name="client_chat_system_prompt" class="form-control" rows="4" placeholder="Enter instructions for how the AI should talk to customers..."><?php echo htmlspecialchars($settings->client_chat_system_prompt ?? ''); ?></textarea>
-                                </div>
-
-                                <div class="form-group" style="margin-bottom: 20px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px;">
-                                    <div class="checkbox" style="margin: 0 0 6px 0;">
-                                        <label style="font-weight: 600;">
-                                            <input type="checkbox" name="client_chat_debug" value="1" <?php echo !empty($settings->client_chat_debug) ? 'checked' : ''; ?>>
-                                            Enable Live Chat Diagnostics & Console Logging
-                                        </label>
+                <!-- Transcript Viewer Drawer / Modal -->
+                <?php if ($viewSession): ?>
+                    <div style="position: fixed; top: 0; right: 0; width: 500px; height: 100vh; background: #fff; box-shadow: -5px 0 25px rgba(0,0,0,0.15); z-index: 99999; display: flex; flex-direction: column;">
+                        <div style="background: #1e293b; color: #fff; padding: 16px 20px; display: flex; justify-content: space-between; align-items: center;">
+                            <div>
+                                <strong style="font-size: 15px;">Conversation #<?php echo (int)$viewSession->id; ?></strong>
+                                <div style="font-size: 12px; color: #94a3b8;"><?php echo htmlspecialchars($viewSession->title ?: 'Client Live Chat'); ?></div>
+                            </div>
+                            <a href="<?php echo $baseActionUrl; ?>&tab=sessions" style="color: #fff; font-size: 22px; text-decoration: none;">&times;</a>
+                        </div>
+                        <div style="flex: 1; overflow-y: auto; padding: 20px; background: #f8fafc; display: flex; flex-direction: column; gap: 12px;">
+                            <?php if (count($viewMessages) === 0): ?>
+                                <div class="text-center text-muted" style="padding: 30px;">No messages in this conversation.</div>
+                            <?php else: ?>
+                                <?php foreach ($viewMessages as $vm): ?>
+                                    <?php
+                                    $isUser = ($vm->sender_type === 'user');
+                                    $bubbleBg = $isUser ? '#0d6efd' : '#ffffff';
+                                    $bubbleColor = $isUser ? '#ffffff' : '#1e293b';
+                                    $align = $isUser ? 'flex-end' : 'flex-start';
+                                    ?>
+                                    <div style="align-self: <?php echo $align; ?>; max-width: 85%;">
+                                        <div style="font-size: 11px; color: #64748b; margin-bottom: 3px; text-align: <?php echo $isUser ? 'right' : 'left'; ?>;">
+                                            <?php echo htmlspecialchars($vm->sender_name ?: ($isUser ? 'Customer' : 'AI Assistant')); ?> &bull; <?php echo htmlspecialchars(\Carbon\Carbon::parse($vm->created_at)->format('g:i A')); ?>
+                                        </div>
+                                        <div style="background: <?php echo $bubbleBg; ?>; color: <?php echo $bubbleColor; ?>; padding: 10px 14px; border-radius: 12px; border: 1px solid <?php echo $isUser ? '#0d6efd' : '#e2e8f0'; ?>; font-size: 13px; line-height: 1.45; word-break: break-word;">
+                                            <?php echo nl2br(htmlspecialchars($vm->message_text)); ?>
+                                        </div>
                                     </div>
-                                    <span class="help-block" style="margin-bottom: 8px;">Logs each chat interaction, endpoint attempt, and LLM API response to Module Logs. Also prints verbose [Sahdev LiveChat] logs into browser console.</span>
-                                    <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=module_logs" class="btn btn-default btn-xs" target="_blank">
-                                        <i class="fas fa-list-alt"></i> View Module Diagnostic Log &rarr;
-                                    </a>
-                                </div>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
+                        </div>
+                        <div style="padding: 15px; background: #fff; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
+                            <span class="text-muted" style="font-size: 12px;">Status: <strong><?php echo htmlspecialchars($viewSession->status); ?></strong></span>
+                            <a href="<?php echo $baseActionUrl; ?>&tab=sessions" class="btn btn-default btn-sm">Close Transcript</a>
+                        </div>
+                    </div>
+                <?php endif; ?>
+            <?php endif; ?>
 
-                                <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Save Client Chat Settings</button>
+            <!-- ── TAB 2: CLIENT CHAT PROMPT LIBRARY ───────────────────────────── -->
+            <?php if ($currentTab === 'prompts'): ?>
+                <div class="alert alert-info" style="border-radius: 8px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <strong style="font-size: 14px;"><i class="fas fa-magic"></i> Modular System Prompt Architecture</strong>
+                            <p style="margin: 4px 0 0 0; font-size: 12.5px;">
+                                Sahdev dynamically stitches these 5 modular prompt components into the unified LLM instructions. You can customize the Assistant's persona, strengthen guardrails, adapt context rules, or 1-click restore individual prompts to factory defaults.
+                            </p>
+                        </div>
+                        <div>
+                            <form method="post" action="<?php echo $baseActionUrl; ?>&tab=prompts" style="margin: 0;" onsubmit="return confirm('Restore all 5 chat prompts to factory default text? Your custom edits will be overwritten.');">
+                                <?php echo $csrfToken; ?>
+                                <input type="hidden" name="reset_client_chat_prompt" value="1">
+                                <input type="hidden" name="reset_prompt_key" value="all">
+                                <button type="submit" class="btn btn-warning btn-sm" style="font-weight: 600;">
+                                    <i class="fas fa-undo"></i> Restore All to Defaults
+                                </button>
                             </form>
                         </div>
                     </div>
                 </div>
 
-                <!-- Right Column: Live Mockup Preview -->
-                <div class="col-md-5">
-                    <div class="panel panel-default" style="border-radius: 8px;">
-                        <div class="panel-heading" style="background: #fff; padding: 15px 20px;">
-                            <strong>Widget Live Mockup</strong>
-                            <span class="pull-right text-muted" style="font-size: 11px;">Real-time Preview</span>
+                <form method="post" action="<?php echo $baseActionUrl; ?>&tab=prompts">
+                    <?php echo $csrfToken; ?>
+                    <input type="hidden" name="save_client_chat_prompts" value="1">
+
+                    <?php foreach ($prompts as $idx => $p): ?>
+                        <div class="panel panel-default" style="border-radius: 8px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
+                            <div class="panel-heading" style="background: #fff; padding: 14px 20px; display: flex; justify-content: space-between; align-items: center;">
+                                <div>
+                                    <span class="label label-primary" style="font-family: monospace; font-size: 11px;"><?php echo htmlspecialchars($p->prompt_key); ?></span>
+                                    <strong style="font-size: 14px; margin-left: 8px;"><?php echo htmlspecialchars($p->label); ?></strong>
+                                </div>
+                                <div style="display: flex; gap: 8px;">
+                                    <button type="button" class="btn btn-default btn-xs" onclick="resetSinglePrompt('<?php echo htmlspecialchars($p->prompt_key); ?>')">
+                                        <i class="fas fa-undo"></i> Restore Default
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="panel-body" style="padding: 18px 20px;">
+                                <p class="text-muted" style="font-size: 12px; margin-bottom: 10px;">
+                                    <?php echo htmlspecialchars($p->description); ?>
+                                </p>
+                                <textarea name="prompt_<?php echo htmlspecialchars($p->prompt_key); ?>" id="prompt_field_<?php echo htmlspecialchars($p->prompt_key); ?>" rows="7" class="form-control" style="font-family: Consolas, Monaco, monospace; font-size: 12.5px; line-height: 1.45; background: #fafafa;"><?php echo htmlspecialchars($p->content); ?></textarea>
+                            </div>
                         </div>
-                        <div class="panel-body" style="background: #f8fafc; padding: 25px; display: flex; flex-direction: column; align-items: center; gap: 15px;">
-                            <!-- Mockup Widget Frame -->
-                            <div style="width: 320px; background: #fff; border-radius: 14px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); border: 1px solid #e2e8f0; overflow: hidden;" id="sdv-mockup-frame">
-                                <div style="background: <?php echo htmlspecialchars($settings->client_chat_brand_color ?? '#0d6efd'); ?>; color: #fff; padding: 14px 16px; display: flex; justify-content: space-between; align-items: center;" id="sdv-mockup-header">
-                                    <div style="display: flex; align-items: center; gap: 10px;">
-                                        <div style="width: 32px; height: 32px; background: rgba(255,255,255,0.25); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 12px; color: #fff; border: 1px solid rgba(255,255,255,0.3);">AI</div>
-                                        <div>
-                                            <strong style="font-size: 13px; display: block;" id="sdv-mockup-title"><?php echo htmlspecialchars($settings->client_chat_title ?? 'Hosting Support Assistant'); ?></strong>
-                                            <span style="font-size: 11px; opacity: 0.9;">● Online — Instant Answers</span>
+                    <?php endforeach; ?>
+
+                    <div style="margin-bottom: 40px;">
+                        <button type="submit" class="btn btn-primary btn-lg"><i class="fas fa-save"></i> Save All Prompt Changes</button>
+                    </div>
+                </form>
+
+                <!-- Hidden Reset Form for Single Prompts -->
+                <form id="singleResetForm" method="post" action="<?php echo $baseActionUrl; ?>&tab=prompts" style="display: none;">
+                    <?php echo $csrfToken; ?>
+                    <input type="hidden" name="reset_client_chat_prompt" value="1">
+                    <input type="hidden" name="reset_prompt_key" id="singleResetKey" value="">
+                </form>
+
+                <script>
+                function resetSinglePrompt(key) {
+                    if (confirm('Restore prompt "' + key + '" to factory default instructions?')) {
+                        document.getElementById('singleResetKey').value = key;
+                        document.getElementById('singleResetForm').submit();
+                    }
+                }
+                </script>
+            <?php endif; ?>
+
+            <!-- ── TAB 3: DATA SOURCES & SELF-HELP SCOPE ───────────────────────── -->
+            <?php if ($currentTab === 'datasources'): ?>
+                <div class="panel panel-default" style="border-radius: 8px; margin-bottom: 20px;">
+                    <div class="panel-heading" style="background: #fff; padding: 16px 20px;">
+                        <strong style="font-size: 15px;"><i class="fas fa-shield-alt text-success"></i> Customer Account Data Sources & Tenant Isolation</strong>
+                    </div>
+                    <div class="panel-body" style="padding: 20px;">
+                        <div class="alert alert-success" style="font-size: 12.5px; margin-bottom: 20px;">
+                            <strong><i class="fas fa-lock"></i> Strict Multi-Tenant Data Isolation Guarantee:</strong>
+                            Every database query executing for customer live chat strictly enforces <code>userid = :client_id</code>. Guests and non-logged-in visitors receive zero account data. Mutation is technically impossible—the AI operates solely on a read-only projection of the customer's profile.
+                        </div>
+
+                        <form method="post" action="<?php echo $baseActionUrl; ?>&tab=datasources">
+                            <?php echo $csrfToken; ?>
+                            <input type="hidden" name="save_client_chat_datasources" value="1">
+
+                            <div class="list-group" style="margin-bottom: 25px;">
+                                <!-- 1. Services -->
+                                <div class="list-group-item" style="padding: 16px;">
+                                    <div class="row">
+                                        <div class="col-md-9">
+                                            <h4 class="list-group-item-heading" style="font-size: 14px; font-weight: 700; color: #1e293b;">
+                                                <i class="fas fa-server text-primary"></i> Active Hosting & Services
+                                            </h4>
+                                            <p class="list-group-item-text text-muted" style="font-size: 12.5px; margin-top: 4px;">
+                                                Provides the AI with package names, domain bindings, IP addresses, renewal dates, and statuses for the client's products. Never exposes server root passwords or credentials.
+                                            </p>
+                                        </div>
+                                        <div class="col-md-3 text-right">
+                                            <label class="switch" style="margin: 5px 0 0 0;">
+                                                <input type="checkbox" name="client_chat_ds_services" value="1" <?php echo !empty($settings->client_chat_ds_services ?? 1) ? 'checked' : ''; ?>>
+                                                <span class="btn btn-sm <?php echo !empty($settings->client_chat_ds_services ?? 1) ? 'btn-success' : 'btn-default'; ?>">Enabled</span>
+                                            </label>
                                         </div>
                                     </div>
-                                    <span style="font-size: 20px; line-height: 1; opacity: 0.85; cursor: pointer;">&minus;</span>
                                 </div>
-                                <div style="padding: 8px 14px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; font-size: 11px; color: #64748b; display: flex; justify-content: space-between; align-items: center;">
-                                    <span>Need a support ticket?</span>
-                                    <span style="color: <?php echo htmlspecialchars($settings->client_chat_brand_color ?? '#0d6efd'); ?>; font-weight: 600; cursor: pointer;" id="sdv-mockup-escalate">Convert to Ticket &rarr;</span>
+
+                                <!-- 2. Domains -->
+                                <div class="list-group-item" style="padding: 16px;">
+                                    <div class="row">
+                                        <div class="col-md-9">
+                                            <h4 class="list-group-item-heading" style="font-size: 14px; font-weight: 700; color: #1e293b;">
+                                                <i class="fas fa-globe text-info"></i> Registered Domains & DNS Status
+                                            </h4>
+                                            <p class="list-group-item-text text-muted" style="font-size: 12.5px; margin-top: 4px;">
+                                                Allows the AI to answer domain status, expiration date, registrar status, and nameserver guidance for domains owned by the client.
+                                            </p>
+                                        </div>
+                                        <div class="col-md-3 text-right">
+                                            <label class="switch" style="margin: 5px 0 0 0;">
+                                                <input type="checkbox" name="client_chat_ds_domains" value="1" <?php echo !empty($settings->client_chat_ds_domains ?? 1) ? 'checked' : ''; ?>>
+                                                <span class="btn btn-sm <?php echo !empty($settings->client_chat_ds_domains ?? 1) ? 'btn-success' : 'btn-default'; ?>">Enabled</span>
+                                            </label>
+                                        </div>
+                                    </div>
                                 </div>
-                                <div style="padding: 16px; min-height: 220px; background: #fcfdfe; display: flex; flex-direction: column; gap: 10px; font-size: 12px;">
-                                    <div style="align-self: flex-start; background: #edf2f7; color: #1e293b; padding: 8px 12px; border-radius: 12px 12px 12px 2px; max-width: 85%;" id="sdv-mockup-welcome">
-                                        <?php echo htmlspecialchars($settings->client_chat_welcome_message ?? ($settings->client_chat_greeting ?? 'Hi there! How can I help you today?')); ?>
-                                    </div>
-                                    <div style="align-self: flex-end; background: <?php echo htmlspecialchars($settings->client_chat_brand_color ?? '#0d6efd'); ?>; color: #fff; padding: 8px 12px; border-radius: 12px 12px 2px 12px; max-width: 85%;" id="sdv-mockup-user-msg">
-                                        How do I configure nameservers for my domain?
-                                    </div>
-                                    <div style="align-self: flex-start; background: #edf2f7; color: #1e293b; padding: 8px 12px; border-radius: 12px 12px 12px 2px; max-width: 85%;">
-                                        You can update your nameservers by navigating to <strong>Domains > Manage Nameservers</strong>. Point them to ns1.yourhost.com and ns2.yourhost.com!
+
+                                <!-- 3. Invoices -->
+                                <div class="list-group-item" style="padding: 16px;">
+                                    <div class="row">
+                                        <div class="col-md-9">
+                                            <h4 class="list-group-item-heading" style="font-size: 14px; font-weight: 700; color: #1e293b;">
+                                                <i class="fas fa-file-invoice-dollar text-warning"></i> Recent Invoices & Billing Due Status
+                                            </h4>
+                                            <p class="list-group-item-text text-muted" style="font-size: 12.5px; margin-top: 4px;">
+                                                Enables the assistant to inform the client of unpaid invoice balances, invoice numbers, and due dates with direct links to pay securely.
+                                            </p>
+                                        </div>
+                                        <div class="col-md-3 text-right">
+                                            <label class="switch" style="margin: 5px 0 0 0;">
+                                                <input type="checkbox" name="client_chat_ds_invoices" value="1" <?php echo !empty($settings->client_chat_ds_invoices ?? 1) ? 'checked' : ''; ?>>
+                                                <span class="btn btn-sm <?php echo !empty($settings->client_chat_ds_invoices ?? 1) ? 'btn-success' : 'btn-default'; ?>">Enabled</span>
+                                            </label>
+                                        </div>
                                     </div>
                                 </div>
-                                <div style="padding: 10px 14px; border-top: 1px solid #edf2f7; display: flex; gap: 8px; background: #fff;">
-                                    <input type="text" class="form-control input-sm" placeholder="Type message..." disabled>
-                                    <button class="btn btn-sm btn-primary" style="background: <?php echo htmlspecialchars($settings->client_chat_brand_color ?? '#0d6efd'); ?>; border-color: <?php echo htmlspecialchars($settings->client_chat_brand_color ?? '#0d6efd'); ?>;" id="sdv-mockup-send"><i class="fas fa-paper-plane"></i></button>
+
+                                <!-- 4. Tickets -->
+                                <div class="list-group-item" style="padding: 16px;">
+                                    <div class="row">
+                                        <div class="col-md-9">
+                                            <h4 class="list-group-item-heading" style="font-size: 14px; font-weight: 700; color: #1e293b;">
+                                                <i class="fas fa-ticket-alt text-danger"></i> Recent Support Tickets
+                                            </h4>
+                                            <p class="list-group-item-text text-muted" style="font-size: 12.5px; margin-top: 4px;">
+                                                Shares ticket numbers, subject lines, and open/answered statuses. Staff-only internal notes are strictly excluded from client live chat context.
+                                            </p>
+                                        </div>
+                                        <div class="col-md-3 text-right">
+                                            <label class="switch" style="margin: 5px 0 0 0;">
+                                                <input type="checkbox" name="client_chat_ds_tickets" value="1" <?php echo !empty($settings->client_chat_ds_tickets ?? 1) ? 'checked' : ''; ?>>
+                                                <span class="btn btn-sm <?php echo !empty($settings->client_chat_ds_tickets ?? 1) ? 'btn-success' : 'btn-default'; ?>">Enabled</span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 5. Knowledgebase -->
+                                <div class="list-group-item" style="padding: 16px;">
+                                    <div class="row">
+                                        <div class="col-md-9">
+                                            <h4 class="list-group-item-heading" style="font-size: 14px; font-weight: 700; color: #1e293b;">
+                                                <i class="fas fa-book text-success"></i> Public Knowledge Base Grounding
+                                            </h4>
+                                            <p class="list-group-item-text text-muted" style="font-size: 12.5px; margin-top: 4px;">
+                                                Performs keyword searches on your public WHMCS knowledge base to ground AI troubleshooting answers directly in your official tutorials.
+                                            </p>
+                                        </div>
+                                        <div class="col-md-3 text-right">
+                                            <label class="switch" style="margin: 5px 0 0 0;">
+                                                <input type="checkbox" name="client_chat_ds_kb" value="1" <?php echo !empty($settings->client_chat_ds_kb ?? 1) ? 'checked' : ''; ?>>
+                                                <span class="btn btn-sm <?php echo !empty($settings->client_chat_ds_kb ?? 1) ? 'btn-success' : 'btn-default'; ?>">Enabled</span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 6. Network Issues -->
+                                <div class="list-group-item" style="padding: 16px;">
+                                    <div class="row">
+                                        <div class="col-md-9">
+                                            <h4 class="list-group-item-heading" style="font-size: 14px; font-weight: 700; color: #1e293b;">
+                                                <i class="fas fa-satellite-dish text-info"></i> Active Network & Server Incident Broadcasts
+                                            </h4>
+                                            <p class="list-group-item-text text-muted" style="font-size: 12.5px; margin-top: 4px;">
+                                                Injects active incidents from WHMCS Network Issues into chat context so the AI proactively reassures customers during ongoing maintenance or outages.
+                                            </p>
+                                        </div>
+                                        <div class="col-md-3 text-right">
+                                            <label class="switch" style="margin: 5px 0 0 0;">
+                                                <input type="checkbox" name="client_chat_ds_network_issues" value="1" <?php echo !empty($settings->client_chat_ds_network_issues ?? 1) ? 'checked' : ''; ?>>
+                                                <span class="btn btn-sm <?php echo !empty($settings->client_chat_ds_network_issues ?? 1) ? 'btn-success' : 'btn-default'; ?>">Enabled</span>
+                                            </label>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
 
-                            <!-- Launcher Button Mockup -->
-                            <div style="display: flex; align-items: center; gap: 10px; font-size: 12px; color: #64748b;">
-                                <span>Launcher Preview:</span>
-                                <div style="width: 46px; height: 46px; border-radius: 50%; background: <?php echo htmlspecialchars($settings->client_chat_brand_color ?? '#0d6efd'); ?>; color: #fff; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(0,0,0,0.15);" id="sdv-mockup-launcher">
-                                    <i class="fas fa-comment-dots" style="font-size: 20px;"></i>
+                            <button type="submit" class="btn btn-primary btn-lg"><i class="fas fa-save"></i> Save Data Source Rules</button>
+                        </form>
+                    </div>
+                </div>
+            <?php endif; ?>
+
+            <!-- ── TAB 4: WIDGET CUSTOMIZER & APPEARANCE ──────────────────────── -->
+            <?php if ($currentTab === 'customizer'): ?>
+                <div class="row">
+                    <!-- Left Column: Customization Controls -->
+                    <div class="col-md-7">
+                        <div class="panel panel-default" style="border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
+                            <div class="panel-heading" style="background: #fff; padding: 16px 20px;">
+                                <strong style="font-size: 15px;"><i class="fas fa-sliders-h"></i> Live Chat Widget UI/UX Customizer</strong>
+                            </div>
+                            <div class="panel-body" style="padding: 20px;">
+                                <form method="post" action="<?php echo $baseActionUrl; ?>&tab=customizer" id="customizerForm">
+                                    <?php echo $csrfToken; ?>
+                                    <input type="hidden" name="save_client_chat_customizer" value="1">
+
+                                    <!-- Main Switch -->
+                                    <div class="form-group" style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 14px 18px; margin-bottom: 22px;">
+                                        <div class="checkbox" style="margin: 0;">
+                                            <label style="font-weight: 700; color: #166534; font-size: 14px;">
+                                                <input type="checkbox" name="client_chat_enabled" value="1" <?php echo !empty($settings->client_chat_enabled) ? 'checked' : ''; ?>>
+                                                Enable Client Live Chat Widget in Customer Portal
+                                            </label>
+                                        </div>
+                                        <span class="help-block" style="margin: 4px 0 0 0; color: #15803d; font-size: 12px;">
+                                            Automatically injects widget floating launcher into WHMCS Client Area via hook.
+                                        </span>
+                                    </div>
+
+                                    <!-- Theme Selector -->
+                                    <div class="form-group" style="margin-bottom: 20px;">
+                                        <label style="font-weight: 700;">UI/UX Theme Style</label>
+                                        <select name="client_chat_theme" id="ctrl_theme" class="form-control" style="font-weight: 600;">
+                                            <option value="modern_light" <?php echo (($settings->client_chat_theme ?? 'modern_light') === 'modern_light') ? 'selected' : ''; ?>>Modern Crisp Light (Clean, soft shadows, high readability)</option>
+                                            <option value="cyber_dark" <?php echo (($settings->client_chat_theme ?? '') === 'cyber_dark') ? 'selected' : ''; ?>>Cyber Slate Dark (Deep slate background, vivid contrast)</option>
+                                            <option value="glassmorphism" <?php echo (($settings->client_chat_theme ?? '') === 'glassmorphism') ? 'selected' : ''; ?>>Frosted Glassmorphism (Backdrop blur, translucent glass)</option>
+                                            <option value="brand_gradient" <?php echo (($settings->client_chat_theme ?? '') === 'brand_gradient') ? 'selected' : ''; ?>>Brand Gradient (Vibrant multi-stop header gradient)</option>
+                                        </select>
+                                    </div>
+
+                                    <!-- Sizing Controls -->
+                                    <div class="panel panel-default" style="border-radius: 8px; margin-bottom: 20px; background: #f8fafc;">
+                                        <div class="panel-heading" style="background: #f1f5f9; padding: 10px 15px; font-weight: 700; font-size: 13px;">
+                                            <i class="fas fa-arrows-alt"></i> Responsive Window Dimensions (Normal & Expanded)
+                                        </div>
+                                        <div class="panel-body" style="padding: 15px;">
+                                            <div class="row">
+                                                <div class="col-md-6 form-group">
+                                                    <label style="font-size: 12px;">Normal Width (Collapsed, px)</label>
+                                                    <input type="number" name="client_chat_width" id="ctrl_width" class="form-control" value="<?php echo (int)($settings->client_chat_width ?? 380); ?>" min="320" max="500">
+                                                    <span class="help-block" style="font-size: 11px;">Default: 380px</span>
+                                                </div>
+                                                <div class="col-md-6 form-group">
+                                                    <label style="font-size: 12px;">Normal Height (Collapsed, px)</label>
+                                                    <input type="number" name="client_chat_height" id="ctrl_height" class="form-control" value="<?php echo (int)($settings->client_chat_height ?? 560); ?>" min="450" max="750">
+                                                    <span class="help-block" style="font-size: 11px;">Default: 560px</span>
+                                                </div>
+                                            </div>
+                                            <div class="row">
+                                                <div class="col-md-6 form-group" style="margin-bottom: 0;">
+                                                    <label style="font-size: 12px;">Expanded Width (Wide Mode, px)</label>
+                                                    <input type="number" name="client_chat_expand_width" id="ctrl_expand_width" class="form-control" value="<?php echo (int)($settings->client_chat_expand_width ?? 700); ?>" min="500" max="1000">
+                                                    <span class="help-block" style="font-size: 11px;">When user clicks ⛶ expand</span>
+                                                </div>
+                                                <div class="col-md-6 form-group" style="margin-bottom: 0;">
+                                                    <label style="font-size: 12px;">Expanded Height (Wide Mode, px)</label>
+                                                    <input type="number" name="client_chat_expand_height" id="ctrl_expand_height" class="form-control" value="<?php echo (int)($settings->client_chat_expand_height ?? 720); ?>" min="500" max="900">
+                                                    <span class="help-block" style="font-size: 11px;">Default: 720px</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Launcher Styling -->
+                                    <div class="panel panel-default" style="border-radius: 8px; margin-bottom: 20px; background: #f8fafc;">
+                                        <div class="panel-heading" style="background: #f1f5f9; padding: 10px 15px; font-weight: 700; font-size: 13px;">
+                                            <i class="fas fa-bullseye"></i> Launcher Button Variant
+                                        </div>
+                                        <div class="panel-body" style="padding: 15px;">
+                                            <div class="row">
+                                                <div class="col-md-6 form-group">
+                                                    <label style="font-size: 12px;">Launcher Button Style</label>
+                                                    <select name="client_chat_launcher_style" id="ctrl_launcher_style" class="form-control">
+                                                        <option value="circular" <?php echo (($settings->client_chat_launcher_style ?? 'circular') === 'circular') ? 'selected' : ''; ?>>Circular Action Button (60px FAB)</option>
+                                                        <option value="pill" <?php echo (($settings->client_chat_launcher_style ?? '') === 'pill') ? 'selected' : ''; ?>>Expanded Pill with Call-To-Action Text</option>
+                                                    </select>
+                                                </div>
+                                                <div class="col-md-6 form-group">
+                                                    <label style="font-size: 12px;">Pill Button Text</label>
+                                                    <input type="text" name="client_chat_launcher_text" id="ctrl_launcher_text" class="form-control" value="<?php echo htmlspecialchars($settings->client_chat_launcher_text ?? 'Chat with Us'); ?>">
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Branding & Header Settings -->
+                                    <div class="row">
+                                        <div class="col-md-6 form-group">
+                                            <label>Widget Header Title</label>
+                                            <input type="text" name="client_chat_title" id="ctrl_title" class="form-control" value="<?php echo htmlspecialchars($settings->client_chat_title ?? 'Hosting Support Assistant'); ?>">
+                                        </div>
+                                        <div class="col-md-6 form-group">
+                                            <label>Brand Accent Color</label>
+                                            <input type="color" name="client_chat_brand_color" id="ctrl_color" class="form-control" value="<?php echo htmlspecialchars($settings->client_chat_brand_color ?? '#0d6efd'); ?>" style="height: 34px; padding: 2px;">
+                                        </div>
+                                    </div>
+
+                                    <div class="row">
+                                        <div class="col-md-6 form-group">
+                                            <label>Widget Screen Position</label>
+                                            <select name="client_chat_position" class="form-control">
+                                                <option value="bottom-right" <?php echo (($settings->client_chat_position ?? 'bottom-right') === 'bottom-right') ? 'selected' : ''; ?>>Bottom Right</option>
+                                                <option value="bottom-left" <?php echo (($settings->client_chat_position ?? '') === 'bottom-left') ? 'selected' : ''; ?>>Bottom Left</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-6 form-group">
+                                            <label>Proactive Bubble Delay (Seconds)</label>
+                                            <input type="number" name="client_chat_proactive_delay" class="form-control" value="<?php echo (int)($settings->client_chat_proactive_delay ?? 15); ?>" min="0" max="300">
+                                        </div>
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label>Welcome Greeting Message</label>
+                                        <textarea name="client_chat_welcome_message" id="ctrl_welcome" class="form-control" rows="2"><?php echo htmlspecialchars($settings->client_chat_welcome_message ?? 'Hi there! 👋 Need help with your hosting, domains, or billing? Chat with our AI assistant or open a ticket anytime.'); ?></textarea>
+                                    </div>
+
+                                    <div class="row" style="margin-bottom: 15px;">
+                                        <div class="col-md-6">
+                                            <div class="checkbox">
+                                                <label style="font-weight: 600;">
+                                                    <input type="checkbox" name="client_chat_require_auth" value="1" <?php echo !empty($settings->client_chat_require_auth) ? 'checked' : ''; ?>>
+                                                    Require Client Login to Chat
+                                                </label>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="checkbox">
+                                                <label style="font-weight: 600;">
+                                                    <input type="checkbox" name="client_chat_history_enabled" value="1" <?php echo !empty($settings->client_chat_history_enabled ?? 1) ? 'checked' : ''; ?>>
+                                                    Enable In-Widget Chat History Drawer
+                                                </label>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="form-group" style="margin-bottom: 20px;">
+                                        <label>Assigned AI Provider for Client Live Chat</label>
+                                        <select name="client_chat_provider_id" class="form-control">
+                                            <option value="0">-- Inherit Global Primary Provider --</option>
+                                            <?php foreach ($providers as $p): ?>
+                                                <option value="<?php echo (int)$p->id; ?>" <?php echo ((int)($settings->client_chat_provider_id ?? 0) === (int)$p->id) ? 'selected' : ''; ?>>
+                                                    <?php echo htmlspecialchars($p->name); ?> (<?php echo htmlspecialchars($p->provider_type); ?> &bull; <?php echo htmlspecialchars($p->model_name ?: 'default'); ?>)
+                                                </option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+
+                                    <div class="form-group" style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px; margin-bottom: 25px;">
+                                        <div class="checkbox" style="margin: 0 0 4px 0;">
+                                            <label style="font-weight: 600;">
+                                                <input type="checkbox" name="client_chat_debug" value="1" <?php echo !empty($settings->client_chat_debug) ? 'checked' : ''; ?>>
+                                                Enable Live Chat Diagnostics & Console Logging
+                                            </label>
+                                        </div>
+                                        <span class="help-block" style="margin: 0; font-size: 11.5px;">Logs full endpoint handshakes and LLM payloads to Module Logs for real-time debugging.</span>
+                                    </div>
+
+                                    <button type="submit" class="btn btn-primary btn-lg"><i class="fas fa-save"></i> Save Widget Customization</button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Right Column: Interactive Live Preview Mockup -->
+                    <div class="col-md-5">
+                        <div class="panel panel-default" style="border-radius: 8px; position: sticky; top: 20px;">
+                            <div class="panel-heading" style="background: #fff; padding: 14px 20px; display: flex; justify-content: space-between; align-items: center;">
+                                <strong><i class="fas fa-eye"></i> Live Interactive Preview</strong>
+                                <span class="badge" id="previewModeBadge">Collapsed (380x560)</span>
+                            </div>
+                            <div class="panel-body" style="background: #e2e8f0; padding: 30px; display: flex; flex-direction: column; align-items: center; gap: 20px; overflow-x: auto;">
+                                <!-- Mockup Frame -->
+                                <div id="previewFrame" style="width: 320px; height: 480px; background: #fff; border-radius: 16px; box-shadow: 0 20px 40px -10px rgba(0,0,0,0.25); display: flex; flex-direction: column; overflow: hidden; transition: all 0.25s ease;">
+                                    <!-- Header -->
+                                    <div id="previewHeader" style="background: <?php echo htmlspecialchars($settings->client_chat_brand_color ?? '#0d6efd'); ?>; color: #fff; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center;">
+                                        <div style="display: flex; align-items: center; gap: 8px;">
+                                            <div style="width: 30px; height: 30px; border-radius: 50%; background: rgba(255,255,255,0.25); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 11px;">AI</div>
+                                            <div>
+                                                <div id="previewTitle" style="font-weight: 700; font-size: 13px;"><?php echo htmlspecialchars($settings->client_chat_title ?? 'Hosting Support Assistant'); ?></div>
+                                                <div style="font-size: 10px; opacity: 0.9;">● Online &bull; Self-Help AI</div>
+                                            </div>
+                                        </div>
+                                        <div style="display: flex; gap: 4px;">
+                                            <button type="button" id="previewExpandBtn" style="background:none;border:none;color:#fff;cursor:pointer;font-size:12px;">⛶</button>
+                                            <button type="button" style="background:none;border:none;color:#fff;cursor:pointer;font-size:16px;line-height:1;">&minus;</button>
+                                        </div>
+                                    </div>
+                                    <!-- Escalation Bar -->
+                                    <div id="previewEscalateBar" style="padding: 7px 14px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; font-size: 11px; color: #64748b; display: flex; justify-content: space-between;">
+                                        <span>Need official staff?</span>
+                                        <span id="previewEscalateLink" style="color: <?php echo htmlspecialchars($settings->client_chat_brand_color ?? '#0d6efd'); ?>; font-weight: 600; cursor: pointer;">Convert to Ticket &rarr;</span>
+                                    </div>
+                                    <!-- Messages Area -->
+                                    <div id="previewMessages" style="flex: 1; padding: 14px; background: #f8fafc; display: flex; flex-direction: column; gap: 10px; overflow-y: auto;">
+                                        <div id="previewWelcome" style="align-self: flex-start; background: #fff; color: #1e293b; padding: 9px 13px; border-radius: 12px 12px 12px 2px; border: 1px solid #e2e8f0; font-size: 12px; max-width: 85%;">
+                                            <?php echo htmlspecialchars($settings->client_chat_welcome_message ?? 'Hi there! Need help with your hosting, domains, or billing?'); ?>
+                                        </div>
+                                        <div id="previewUserBubble" style="align-self: flex-end; background: <?php echo htmlspecialchars($settings->client_chat_brand_color ?? '#0d6efd'); ?>; color: #fff; padding: 9px 13px; border-radius: 12px 12px 2px 12px; font-size: 12px; max-width: 85%;">
+                                            When is my next hosting invoice due?
+                                        </div>
+                                        <div id="previewBotReply" style="align-self: flex-start; background: #fff; color: #1e293b; padding: 9px 13px; border-radius: 12px 12px 12px 2px; border: 1px solid #e2e8f0; font-size: 12px; max-width: 85%;">
+                                            Your hosting service <strong>cPanel Premium (example.com)</strong> has an invoice of <strong>$14.99</strong> due on <strong>Oct 1st, 2026</strong>.
+                                        </div>
+                                    </div>
+                                    <!-- Input Row -->
+                                    <div id="previewFooter" style="padding: 10px 14px; background: #fff; border-top: 1px solid #e2e8f0; display: flex; gap: 8px;">
+                                        <input type="text" id="previewInput" class="form-control input-sm" placeholder="Type message..." disabled style="border-radius: 20px;">
+                                        <button type="button" id="previewSend" class="btn btn-sm" style="background: <?php echo htmlspecialchars($settings->client_chat_brand_color ?? '#0d6efd'); ?>; color: #fff; border-radius: 50%; width: 32px; height: 32px; padding: 0;"><i class="fas fa-paper-plane" style="font-size: 11px;"></i></button>
+                                    </div>
+                                </div>
+
+                                <!-- Launcher Preview -->
+                                <div style="display: flex; flex-direction: column; align-items: center; gap: 8px;">
+                                    <span style="font-size: 11px; color: #64748b; font-weight: 600;">Launcher Preview:</span>
+                                    <div id="previewLauncher" style="background: <?php echo htmlspecialchars($settings->client_chat_brand_color ?? '#0d6efd'); ?>; color: #fff; display: flex; align-items: center; justify-content: center; box-shadow: 0 10px 25px rgba(0,0,0,0.25); cursor: pointer; transition: all 0.2s;">
+                                        <i class="fas fa-comment-dots" style="font-size: 20px;"></i>
+                                        <span id="previewLauncherText" style="display: none; font-weight: 600; font-size: 13px; margin-left: 8px;">Chat with Us</span>
+                                    </div>
                                 </div>
                             </div>
                         </div>
                     </div>
                 </div>
-            </div>
-        </div>
-        <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            var titleInput = document.querySelector('input[name="client_chat_title"]');
-            var colorInput = document.querySelector('input[name="client_chat_brand_color"]');
-            var welcomeInput = document.querySelector('textarea[name="client_chat_welcome_message"]');
 
-            if (titleInput) {
-                titleInput.addEventListener('input', function() {
-                    var el = document.getElementById('sdv-mockup-title');
-                    if (el) el.textContent = this.value || 'Hosting Support Assistant';
+                <script>
+                document.addEventListener('DOMContentLoaded', function() {
+                    var themeSelect = document.getElementById('ctrl_theme');
+                    var colorInput = document.getElementById('ctrl_color');
+                    var titleInput = document.getElementById('ctrl_title');
+                    var welcomeInput = document.getElementById('ctrl_welcome');
+                    var launcherStyleSelect = document.getElementById('ctrl_launcher_style');
+                    var launcherTextInput = document.getElementById('ctrl_launcher_text');
+
+                    var frame = document.getElementById('previewFrame');
+                    var header = document.getElementById('previewHeader');
+                    var title = document.getElementById('previewTitle');
+                    var welcome = document.getElementById('previewWelcome');
+                    var userBubble = document.getElementById('previewUserBubble');
+                    var botReply = document.getElementById('previewBotReply');
+                    var messages = document.getElementById('previewMessages');
+                    var footer = document.getElementById('previewFooter');
+                    var send = document.getElementById('previewSend');
+                    var escalateBar = document.getElementById('previewEscalateBar');
+                    var escalateLink = document.getElementById('previewEscalateLink');
+                    var launcher = document.getElementById('previewLauncher');
+                    var launcherText = document.getElementById('previewLauncherText');
+                    var expandBtn = document.getElementById('previewExpandBtn');
+                    var badge = document.getElementById('previewModeBadge');
+
+                    var isExpanded = false;
+
+                    function updatePreview() {
+                        var brand = colorInput ? colorInput.value : '#0d6efd';
+                        var theme = themeSelect ? themeSelect.value : 'modern_light';
+                        var tText = titleInput ? titleInput.value : 'Hosting Support Assistant';
+                        var wText = welcomeInput ? welcomeInput.value : 'Hi there!';
+                        var lStyle = launcherStyleSelect ? launcherStyleSelect.value : 'circular';
+                        var lText = launcherTextInput ? launcherTextInput.value : 'Chat with Us';
+
+                        if (title) title.textContent = tText;
+                        if (welcome) welcome.textContent = wText;
+                        if (userBubble) userBubble.style.background = brand;
+                        if (send) send.style.background = brand;
+                        if (escalateLink) escalateLink.style.color = brand;
+
+                        // Launcher update
+                        if (launcher) {
+                            launcher.style.background = brand;
+                            if (lStyle === 'pill') {
+                                launcher.style.width = 'auto';
+                                launcher.style.height = 'auto';
+                                launcher.style.padding = '10px 18px';
+                                launcher.style.borderRadius = '30px';
+                                if (launcherText) {
+                                    launcherText.style.display = 'inline';
+                                    launcherText.textContent = lText;
+                                }
+                            } else {
+                                launcher.style.width = '52px';
+                                launcher.style.height = '52px';
+                                launcher.style.padding = '0';
+                                launcher.style.borderRadius = '50%';
+                                if (launcherText) launcherText.style.display = 'none';
+                            }
+                        }
+
+                        // Theme update
+                        if (theme === 'cyber_dark') {
+                            frame.style.background = '#0f172a';
+                            frame.style.border = '1px solid #334155';
+                            header.style.background = '#1e293b';
+                            escalateBar.style.background = '#1e293b';
+                            escalateBar.style.borderBottom = '1px solid #334155';
+                            messages.style.background = '#090d16';
+                            footer.style.background = '#0f172a';
+                            footer.style.borderTop = '1px solid #334155';
+                            welcome.style.background = '#1e293b';
+                            welcome.style.color = '#f8fafc';
+                            welcome.style.borderColor = '#334155';
+                            botReply.style.background = '#1e293b';
+                            botReply.style.color = '#f8fafc';
+                            botReply.style.borderColor = '#334155';
+                        } else if (theme === 'brand_gradient') {
+                            frame.style.background = '#ffffff';
+                            frame.style.border = 'none';
+                            header.style.background = 'linear-gradient(135deg, ' + brand + ' 0%, #4338ca 100%)';
+                            escalateBar.style.background = '#f8fafc';
+                            messages.style.background = '#f8fafc';
+                            footer.style.background = '#ffffff';
+                            welcome.style.background = '#ffffff';
+                            welcome.style.color = '#1e293b';
+                            welcome.style.borderColor = '#e2e8f0';
+                            botReply.style.background = '#ffffff';
+                            botReply.style.color = '#1e293b';
+                            botReply.style.borderColor = '#e2e8f0';
+                        } else {
+                            frame.style.background = '#ffffff';
+                            frame.style.border = 'none';
+                            header.style.background = brand;
+                            escalateBar.style.background = '#f8fafc';
+                            messages.style.background = '#f8fafc';
+                            footer.style.background = '#ffffff';
+                            welcome.style.background = '#ffffff';
+                            welcome.style.color = '#1e293b';
+                            welcome.style.borderColor = '#e2e8f0';
+                            botReply.style.background = '#ffffff';
+                            botReply.style.color = '#1e293b';
+                            botReply.style.borderColor = '#e2e8f0';
+                        }
+                    }
+
+                    if (expandBtn) {
+                        expandBtn.addEventListener('click', function() {
+                            isExpanded = !isExpanded;
+                            if (isExpanded) {
+                                frame.style.width = '380px';
+                                frame.style.height = '520px';
+                                expandBtn.textContent = '⤡';
+                                if (badge) badge.textContent = 'Expanded (380x520 preview)';
+                            } else {
+                                frame.style.width = '320px';
+                                frame.style.height = '480px';
+                                expandBtn.textContent = '⛶';
+                                if (badge) badge.textContent = 'Collapsed (320x480 preview)';
+                            }
+                        });
+                    }
+
+                    if (themeSelect) themeSelect.addEventListener('change', updatePreview);
+                    if (colorInput) colorInput.addEventListener('input', updatePreview);
+                    if (titleInput) titleInput.addEventListener('input', updatePreview);
+                    if (welcomeInput) welcomeInput.addEventListener('input', updatePreview);
+                    if (launcherStyleSelect) launcherStyleSelect.addEventListener('change', updatePreview);
+                    if (launcherTextInput) launcherTextInput.addEventListener('input', updatePreview);
+
+                    updatePreview();
                 });
-            }
-            if (colorInput) {
-                colorInput.addEventListener('input', function() {
-                    var c = this.value || '#0d6efd';
-                    var header = document.getElementById('sdv-mockup-header');
-                    var userMsg = document.getElementById('sdv-mockup-user-msg');
-                    var send = document.getElementById('sdv-mockup-send');
-                    var escalate = document.getElementById('sdv-mockup-escalate');
-                    var launcher = document.getElementById('sdv-mockup-launcher');
-                    if (header) header.style.background = c;
-                    if (userMsg) userMsg.style.background = c;
-                    if (send) { send.style.background = c; send.style.borderColor = c; }
-                    if (escalate) escalate.style.color = c;
-                    if (launcher) launcher.style.background = c;
-                });
-            }
-            if (welcomeInput) {
-                welcomeInput.addEventListener('input', function() {
-                    var el = document.getElementById('sdv-mockup-welcome');
-                    if (el) el.textContent = this.value || 'Hi there! How can I help you today?';
-                });
-            }
-        });
-        </script>
+                </script>
+            <?php endif; ?>
+        </div>
         <?php
         return ob_get_clean();
     }
