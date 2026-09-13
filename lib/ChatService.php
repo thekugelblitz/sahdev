@@ -68,7 +68,7 @@ class ChatService
                     'id'               => (int) $m->id,
                     'sender_type'      => $m->sender_type,
                     'sender_name'      => $m->sender_name,
-                    'message_text'     => $m->message_text,
+                    'message_text'     => html_entity_decode((string)$m->message_text, ENT_QUOTES | ENT_HTML5, 'UTF-8'),
                     'action_card'      => !empty($m->action_card_json) ? json_decode($m->action_card_json, true) : null,
                     'tool_calls'       => !empty($m->tool_calls_json) ? json_decode($m->tool_calls_json, true) : null,
                     'created_at'       => $m->created_at,
@@ -604,9 +604,39 @@ class ChatService
     }
 
     /**
-     * 1-Click Support Ticket Escalation: Converts the full chat transcript into a WHMCS ticket.
+     * Sanitizes text for WHMCS ticket storage to prevent MySQL utf8 (utf8mb3) silent truncation.
+     * Replaces 4-byte emojis with clean, professional text badges and strips any remaining 4-byte code points.
      */
-    public static function escalateChatToTicket(string $sessionUuid, ?int $clientId = null, string $visitorToken = '', string $department = 'Support'): array
+    public static function sanitizeForWhmcsTicket(string $text): string
+    {
+        $replacements = [
+            '💬' => '[Live Chat]',
+            '📋' => '[Transcript]',
+            '👤' => '[Customer]',
+            '🛡️' => '[Staff]',
+            '🛡'  => '[Staff]',
+            '🤖' => '[AI Assistant]',
+            'ℹ️' => '[Info]',
+            'ℹ'  => '[Info]',
+            '⚠️' => '[Notice]',
+            '⚠'  => '[Notice]',
+            '✅' => '[Yes]',
+            '❌' => '[No]',
+            '🎫' => '[Ticket]',
+            '💡' => '[Tip]',
+            '⚡' => '[Quick]',
+        ];
+        $text = strtr($text, $replacements);
+        // Strip any 4-byte UTF-8 sequences that crash or truncate standard MySQL utf8 tables
+        $clean = preg_replace('/[\x{10000}-\x{10FFFF}]/u', '', $text);
+        return $clean !== null ? $clean : $text;
+    }
+
+    /**
+     * 1-Click Support Ticket Escalation: Converts the full chat transcript into a WHMCS ticket.
+     * Handles both authenticated clients and guest visitors seamlessly.
+     */
+    public static function escalateChatToTicket(string $sessionUuid, ?int $clientId = null, string $visitorToken = '', string $department = 'Support', string $customName = '', string $customEmail = ''): array
     {
         $session = Capsule::table('tblsahdev_chat_sessions')->where('session_uuid', $sessionUuid)->first();
         if (!$session) {
@@ -639,11 +669,30 @@ class ChatService
         $systemUrl = self::getWhmcsSystemUrl();
         $clientName = 'Live Chat Visitor';
         $clientEmail = 'visitor@chat.local';
+
         if ($userId > 0) {
             $cl = Capsule::table('tblclients')->where('id', $userId)->first(['firstname', 'lastname', 'email']);
             if ($cl) {
                 $clientName = trim(($cl->firstname ?? '') . ' ' . ($cl->lastname ?? ''));
                 $clientEmail = $cl->email ?: 'visitor@chat.local';
+            }
+        } else {
+            // Unauthenticated / Guest visitor: Use provided custom contact info if given
+            $customName = trim($customName);
+            $customEmail = trim($customEmail);
+            if (!empty($customName)) {
+                $clientName = self::sanitizeClientInput($customName, 100);
+            }
+            if (!empty($customEmail) && filter_var($customEmail, FILTER_VALIDATE_EMAIL)) {
+                $clientEmail = $customEmail;
+                // If this email matches a registered client in WHMCS, link to their account
+                $existingClient = Capsule::table('tblclients')->where('email', $customEmail)->first(['id', 'firstname', 'lastname', 'email']);
+                if ($existingClient) {
+                    $userId = (int) $existingClient->id;
+                    if (empty($customName)) {
+                        $clientName = trim(($existingClient->firstname ?? '') . ' ' . ($existingClient->lastname ?? '')) ?: $clientName;
+                    }
+                }
             }
         }
 
@@ -655,7 +704,7 @@ class ChatService
         $safeClientEmail = htmlspecialchars($clientEmail, ENT_QUOTES, 'UTF-8');
         $safeUuid = htmlspecialchars($session->session_uuid, ENT_QUOTES, 'UTF-8');
 
-        $transcript = "### 💬 Live Chat Escalation Transcript\n\n";
+        $transcript = "### [Live Chat] Escalation Transcript\n\n";
         $transcript .= "| Field | Details |\n";
         $transcript .= "|:---|:---|\n";
         $transcript .= "| **Customer** | {$safeClientName} (`{$safeClientEmail}`) |\n";
@@ -665,26 +714,27 @@ class ChatService
             $transcript .= "| **Client Area** | [Open Portal]({$systemUrl}/clientarea.php) |\n";
         }
         $transcript .= "\n---\n\n";
-        $transcript .= "#### 📋 Conversation Thread\n\n";
+        $transcript .= "#### [Transcript] Conversation Thread\n\n";
 
         foreach ($messages as $m) {
             $time = Carbon::parse($m['created_at'])->format('g:i A');
             $sender = htmlspecialchars($m['sender_name'] ?: 'User', ENT_QUOTES, 'UTF-8');
-            // Stored XSS prevention: HTML entity encode untrusted message contents
             $rawMsg = trim((string)$m['message_text']);
-            $safeMsg = htmlspecialchars($rawMsg, ENT_QUOTES, 'UTF-8');
+            // Decode any WHMCS global HTML entities so messages like I'm aren't corrupted
+            $rawMsg = html_entity_decode($rawMsg, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+            $safeMsg = htmlspecialchars($rawMsg, ENT_NOQUOTES, 'UTF-8');
             $msgContent = self::normalizeMarkdownLinks($safeMsg);
 
             if ($m['sender_type'] === 'user') {
-                $transcript .= "👤 **{$sender}** *(Customer)* &bull; `{$time}`\n\n";
+                $transcript .= "**[Customer] {$sender}** &bull; `{$time}`\n\n";
                 $transcript .= "> " . str_replace("\n", "\n> ", $msgContent) . "\n\n";
             } elseif ($m['sender_type'] === 'staff') {
-                $transcript .= "🛡️ **{$sender}** *(Staff Support)* &bull; `{$time}`\n\n";
+                $transcript .= "**[Staff] {$sender}** &bull; `{$time}`\n\n";
                 $transcript .= $msgContent . "\n\n";
             } elseif ($m['sender_type'] === 'system') {
-                $transcript .= "ℹ️ *{$msgContent}* &bull; `{$time}`\n\n";
+                $transcript .= "*[Info] {$msgContent}* &bull; `{$time}`\n\n";
             } else {
-                $transcript .= "🤖 **{$sender}** *(AI Assistant)* &bull; `{$time}`\n\n";
+                $transcript .= "**[AI Assistant] {$sender}** &bull; `{$time}`\n\n";
                 $transcript .= $msgContent . "\n\n";
             }
             $transcript .= "---\n\n";
@@ -692,74 +742,155 @@ class ChatService
 
         $transcript .= "*This ticket was escalated automatically from a live customer conversation via Sahdev AI.*";
 
-        $subject = "Live Chat Escalation: " . ($session->title ?: "Support Inquiry");
+        // Sanitize for WHMCS database (replaces emojis, strips 4-byte UTF-8 to prevent MySQL utf8 truncation)
+        $cleanTranscript = self::sanitizeForWhmcsTicket($transcript);
+        $cleanSubject = self::sanitizeForWhmcsTicket("Live Chat Escalation: " . ($session->title ?: "Support Inquiry"));
 
-        // Default dept ID
-        $deptId = Capsule::table('tblticketdepartments')->value('id') ?: 1;
+        // Resolve Target Department
+        $configuredDeptId = (int) self::getChatSetting('client_chat_department_id', 0);
+        $deptId = 0;
+        if ($configuredDeptId > 0 && Capsule::table('tblticketdepartments')->where('id', $configuredDeptId)->exists()) {
+            $deptId = $configuredDeptId;
+        } else {
+            // Intelligent Auto-Routing: Search for general/customer/technical support first, avoiding compliance or abuse
+            $preferredDept = Capsule::table('tblticketdepartments')
+                ->where(function ($q) {
+                    $q->where('name', 'LIKE', '%support%')
+                      ->orWhere('name', 'LIKE', '%general%')
+                      ->orWhere('name', 'LIKE', '%help%')
+                      ->orWhere('name', 'LIKE', '%customer%')
+                      ->orWhere('name', 'LIKE', '%billing%');
+                })
+                ->where('name', 'NOT LIKE', '%abuse%')
+                ->where('name', 'NOT LIKE', '%compliance%')
+                ->orderBy('order', 'asc')
+                ->value('id');
 
-        if (function_exists('localAPI') && $userId > 0) {
-            $res = localAPI('OpenTicket', [
-                'clientid'   => $userId,
+            $deptId = $preferredDept ?: (Capsule::table('tblticketdepartments')->value('id') ?: 1);
+        }
+
+        // Designated Staff Identity for Live Chat Escalations
+        $designatedAdminId = (int) self::getChatSetting('client_chat_admin_id', 0);
+        $escalateAdmin = null;
+        $adminUsername = '';
+        $adminDisplayName = '';
+        if ($designatedAdminId > 0) {
+            $escalateAdmin = Capsule::table('tbladmins')->where('id', $designatedAdminId)->first();
+            if ($escalateAdmin) {
+                $adminUsername = $escalateAdmin->username;
+                $adminDisplayName = trim(($escalateAdmin->firstname ?? '') . ' ' . ($escalateAdmin->lastname ?? '')) ?: $adminUsername;
+            }
+        }
+
+        if (function_exists('localAPI')) {
+            $apiParams = [
                 'deptid'     => $deptId,
-                'subject'    => $subject,
-                'message'    => $transcript,
+                'subject'    => $cleanSubject,
+                'message'    => $cleanTranscript,
                 'priority'   => 'Medium',
                 'admin'      => true,
-            ]);
+            ];
+            if ($userId > 0) {
+                $apiParams['clientid'] = $userId;
+            } else {
+                $apiParams['name']  = $clientName;
+                $apiParams['email'] = $clientEmail;
+            }
+            if (!empty($adminUsername)) {
+                $apiParams['adminusername'] = $adminUsername;
+            }
+            $res = localAPI('OpenTicket', $apiParams, !empty($adminUsername) ? $adminUsername : null);
 
-            if ($res['result'] === 'success') {
-                $ticketId = $res['id'] ?? 0;
-                $tid = $res['tid'] ?? '';
+            if (!empty($res['result']) && $res['result'] === 'success') {
+                $ticketId = (int) ($res['id'] ?? 0);
+                $tid = (string) ($res['tid'] ?? '');
+
+                // Ensure ticket is assigned / attributed to designated admin account
+                if ($ticketId > 0 && $escalateAdmin) {
+                    try {
+                        Capsule::table('tbltickets')->where('id', $ticketId)->update([
+                            'flag'  => $escalateAdmin->id,
+                            'admin' => $adminDisplayName,
+                        ]);
+                    } catch (\Throwable $e) {}
+                }
+
+                // Fetch ticket access key (c) if guest for secure direct link
+                $accessKey = '';
+                if ($ticketId > 0) {
+                    $accessKey = (string) Capsule::table('tbltickets')->where('id', $ticketId)->value('c');
+                }
+
                 Capsule::table('tblsahdev_chat_sessions')->where('id', $session->id)->update([
-                    'status'     => 'escalated_ticket',
-                    'updated_at' => Carbon::now(),
+                    'status'            => 'escalated_ticket',
+                    'assigned_admin_id' => $designatedAdminId ?: 0,
+                    'updated_at'        => Carbon::now(),
                 ]);
 
+                ModuleLogger::info('client_chat', "Live chat session {$sessionUuid} escalated to ticket #{$tid} (user: " . ($userId ?: 'guest') . ") attributed to admin " . ($adminUsername ?: 'System') . " (ID: {$designatedAdminId})");
+
+                // Generate appropriate ticket URL for client/guest
                 $ticketUrl = !empty($systemUrl)
-                    ? "{$systemUrl}/viewticket.php?tid={$tid}"
-                    : "viewticket.php?tid={$tid}";
+                    ? ($accessKey && $userId === 0 ? "{$systemUrl}/viewticket.php?tid={$tid}&c={$accessKey}" : "{$systemUrl}/viewticket.php?tid={$tid}")
+                    : ($accessKey && $userId === 0 ? "viewticket.php?tid={$tid}&c={$accessKey}" : "viewticket.php?tid={$tid}");
 
                 return [
-                    'success'    => true,
-                    'ticket_id'  => $ticketId,
-                    'tid'        => $tid,
-                    'ticket_url' => $ticketUrl,
-                    'message'    => "Ticket #{$tid} created successfully.",
+                    'success'      => true,
+                    'ticket_id'    => $ticketId,
+                    'tid'          => $tid,
+                    'ticket_url'   => $ticketUrl,
+                    'client_email' => $clientEmail,
+                    'client_name'  => $clientName,
+                    'message'      => "Ticket #{$tid} created successfully.",
                 ];
+            } else {
+                ModuleLogger::warning('client_chat', "localAPI OpenTicket returned non-success: " . json_encode($res) . ". Falling back to direct database insert.");
             }
         }
 
         // Direct database insert fallback
         $tid = rand(100000, 999999);
-        $ticketId = Capsule::table('tbltickets')->insertGetId([
+        $accessKey = substr(md5(uniqid(rand(), true)), 0, 10);
+        $ticketPayload = [
             'did'        => $deptId,
             'userid'     => $userId,
             'name'       => $clientName,
             'email'      => $clientEmail,
             'date'       => Carbon::now(),
-            'title'      => $subject,
-            'message'    => $transcript,
+            'title'      => $cleanSubject,
+            'message'    => $cleanTranscript,
             'status'     => 'Open',
             'urgency'    => 'Medium',
             'lastreply'  => Carbon::now(),
             'tid'        => $tid,
-        ]);
+            'c'          => $accessKey,
+        ];
+        if ($escalateAdmin) {
+            $ticketPayload['flag'] = $escalateAdmin->id;
+            $ticketPayload['admin'] = $adminDisplayName;
+        }
+        $ticketId = Capsule::table('tbltickets')->insertGetId($ticketPayload);
 
         Capsule::table('tblsahdev_chat_sessions')->where('id', $session->id)->update([
-            'status'     => 'escalated_ticket',
-            'updated_at' => Carbon::now(),
+            'status'            => 'escalated_ticket',
+            'assigned_admin_id' => $designatedAdminId ?: 0,
+            'updated_at'        => Carbon::now(),
         ]);
 
+        ModuleLogger::info('client_chat', "Live chat session {$sessionUuid} escalated to ticket #{$tid} via direct insert attributed to admin " . ($adminUsername ?: 'System'));
+
         $ticketUrl = !empty($systemUrl)
-            ? "{$systemUrl}/viewticket.php?tid={$tid}"
-            : "viewticket.php?tid={$tid}";
+            ? ($accessKey && $userId === 0 ? "{$systemUrl}/viewticket.php?tid={$tid}&c={$accessKey}" : "{$systemUrl}/viewticket.php?tid={$tid}")
+            : ($accessKey && $userId === 0 ? "viewticket.php?tid={$tid}&c={$accessKey}" : "viewticket.php?tid={$tid}");
 
         return [
-            'success'    => true,
-            'ticket_id'  => $ticketId,
-            'tid'        => $tid,
-            'ticket_url' => $ticketUrl,
-            'message'    => "Support Ticket #{$tid} created successfully.",
+            'success'      => true,
+            'ticket_id'    => $ticketId,
+            'tid'          => $tid,
+            'ticket_url'   => $ticketUrl,
+            'client_email' => $clientEmail,
+            'client_name'  => $clientName,
+            'message'      => "Support Ticket #{$tid} created successfully.",
         ];
     }
 
@@ -1098,6 +1229,8 @@ class ChatService
      */
     public static function sanitizeClientInput(string $input, int $maxLength = 2000): string
     {
+        // 0. Decode any HTML entities (e.g. WHMCS global $_POST filter converting ' to &#039;)
+        $input = html_entity_decode($input, ENT_QUOTES | ENT_HTML5, 'UTF-8');
         // 1. Strip null bytes and non-printable control characters except standard whitespace
         $clean = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u', '', $input);
         // 2. Normalize whitespace
@@ -1164,10 +1297,12 @@ class ChatService
 
         $out = "";
         try {
-            // Search WHMCS Knowledgebase
+            // Search WHMCS Knowledgebase (master articles where parentid = 0 or null)
             $words = array_filter(explode(' ', preg_replace('/[^a-zA-Z0-9\s]/', '', $query)));
             if (!empty($words)) {
-                $q = Capsule::table('tblknowledgebase')->where('parentid', '!=', 0);
+                $q = Capsule::table('tblknowledgebase')->where(function ($sub) {
+                    $sub->where('parentid', 0)->orWhereNull('parentid');
+                });
                 $q->where(function ($sub) use ($words) {
                     foreach ($words as $w) {
                         if (strlen($w) > 3) {
@@ -1185,6 +1320,105 @@ class ChatService
         } catch (\Throwable $e) {}
 
         return !empty($out) ? $out : "(No specific KB articles matched.)";
+    }
+
+    /**
+     * Search and retrieve client-accessible WHMCS Knowledgebase articles for the live chat widget.
+     */
+    public static function getClientKnowledgeBaseArticles(string $query = '', int $limit = 10): array
+    {
+        try {
+            if (!Capsule::schema()->hasTable('tblknowledgebase')) {
+                return ['success' => true, 'articles' => [], 'categories' => []];
+            }
+
+            $articlesQuery = Capsule::table('tblknowledgebase')->where(function ($sub) {
+                $sub->where('parentid', 0)->orWhereNull('parentid');
+            });
+            $query = trim($query);
+
+            if (!empty($query)) {
+                $terms = array_filter(explode(' ', preg_replace('/[^\p{L}\p{N}\s]/u', '', $query)));
+                if (!empty($terms)) {
+                    $articlesQuery->where(function ($sub) use ($terms) {
+                        foreach ($terms as $t) {
+                            if (mb_strlen($t) >= 2) {
+                                $sub->orWhere('title', 'LIKE', "%{$t}%")
+                                    ->orWhere('article', 'LIKE', "%{$t}%");
+                            }
+                        }
+                    });
+                }
+            }
+
+            // Order by views if available, else by id desc
+            try {
+                $articlesQuery->orderBy('views', 'desc');
+            } catch (\Throwable $e) {
+                $articlesQuery->orderBy('id', 'desc');
+            }
+
+            $rawArticles = $articlesQuery->limit($limit)->get();
+            $articles = [];
+            $systemUrl = self::getWhmcsSystemUrl();
+
+            foreach ($rawArticles as $art) {
+                $cleanText = strip_tags((string) $art->article);
+                $cleanText = html_entity_decode($cleanText, ENT_QUOTES, 'UTF-8');
+                $snippet = mb_substr(preg_replace('/\s+/', ' ', $cleanText), 0, 150);
+                if (mb_strlen($cleanText) > 150) {
+                    $snippet .= '...';
+                }
+
+                $artId = (int) $art->id;
+                $relUrl = "knowledgebase.php?action=displayarticle&id={$artId}";
+                $fullUrl = !empty($systemUrl) ? "{$systemUrl}/{$relUrl}" : $relUrl;
+
+                $articles[] = [
+                    'id'       => $artId,
+                    'title'    => (string) $art->title,
+                    'snippet'  => $snippet,
+                    'views'    => (int) ($art->views ?? 0),
+                    'useful'   => (int) ($art->useful ?? 0),
+                    'rel_url'  => $relUrl,
+                    'full_url' => $fullUrl,
+                ];
+            }
+
+            // Also load top categories if available
+            $categories = [];
+            if (Capsule::schema()->hasTable('tblknowledgebasecats')) {
+                try {
+                    $rawCats = Capsule::table('tblknowledgebasecats')
+                        ->where(function ($sub) {
+                            $sub->where('parentid', 0)->orWhereNull('parentid');
+                        })
+                        ->where(function ($q) {
+                            $q->where('hidden', 0)->orWhere('hidden', 'no')->orWhereNull('hidden')->orWhere('hidden', '');
+                        })
+                        ->limit(6)
+                        ->get();
+
+                    foreach ($rawCats as $cat) {
+                        $catId = (int) $cat->id;
+                        $categories[] = [
+                            'id'      => $catId,
+                            'name'    => (string) $cat->name,
+                            'rel_url' => "knowledgebase.php?action=displaycat&catid={$catId}",
+                        ];
+                    }
+                } catch (\Throwable $e) {}
+            }
+
+            return [
+                'success'    => true,
+                'articles'   => $articles,
+                'categories' => $categories,
+            ];
+        } catch (\Throwable $e) {
+            ModuleLogger::error('client_chat', "KB search error: " . $e->getMessage());
+            return ['success' => false, 'error' => 'Unable to search knowledge base.', 'articles' => [], 'categories' => []];
+        }
     }
 
     private static function getClientScopeSummary(?int $clientId): string
@@ -1486,7 +1720,7 @@ class ChatService
                 'id'           => (int) $m->id,
                 'sender_type'  => $m->sender_type,
                 'sender_name'  => $m->sender_name,
-                'message_text' => $m->message_text,
+                'message_text' => html_entity_decode((string)$m->message_text, ENT_QUOTES | ENT_HTML5, 'UTF-8'),
                 'created_at'   => Carbon::parse($m->created_at)->diffForHumans(),
             ];
         }

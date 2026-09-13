@@ -85,8 +85,11 @@ class SchemaManager
                 // Client Live Chat
                 'client_chat_enabled'          => ['type' => 'boolean', 'default' => 0],
                 'client_chat_provider_id'      => ['type' => 'integer', 'default' => 0],
+                'client_chat_admin_id'         => ['type' => 'integer', 'default' => null, 'nullable' => true],
+                'client_chat_department_id'    => ['type' => 'integer', 'default' => null, 'nullable' => true],
                 'client_chat_model_name'       => ['type' => 'string', 'length' => 128, 'default' => 'openai/gpt-4o-mini'],
                 'client_chat_title'            => ['type' => 'string', 'length' => 128, 'default' => 'Hosting Support Assistant'],
+                'client_chat_logo'             => ['type' => 'string', 'length' => 500, 'default' => null, 'nullable' => true],
                 'client_chat_brand_color'      => ['type' => 'string', 'length' => 32, 'default' => '#0d6efd'],
                 'client_chat_position'         => ['type' => 'string', 'length' => 32, 'default' => 'bottom-right'],
                 'client_chat_welcome_message'  => ['type' => 'text'],
@@ -133,7 +136,12 @@ class SchemaManager
                                 $table->boolean($name)->default($spec['default'] ?? 0);
                                 break;
                             case 'integer':
-                                $table->integer($name)->default($spec['default'] ?? 0);
+                                $col = $table->integer($name);
+                                if (!empty($spec['nullable'])) {
+                                    $col->nullable();
+                                } else {
+                                    $col->default($spec['default'] ?? 0);
+                                }
                                 break;
                             case 'decimal':
                                 $table->decimal($name, $spec['precision'], $spec['scale'])->default($spec['default'] ?? 0.0);
@@ -146,7 +154,12 @@ class SchemaManager
                                 break;
                             case 'string':
                             default:
-                                $table->string($name, $spec['length'] ?? 255)->default($spec['default'] ?? '');
+                                $col = $table->string($name, $spec['length'] ?? 255);
+                                if (!empty($spec['nullable'])) {
+                                    $col->nullable();
+                                } else {
+                                    $col->default($spec['default'] ?? '');
+                                }
                                 break;
                         }
                     });

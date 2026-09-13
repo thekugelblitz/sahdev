@@ -23,7 +23,7 @@ $action = isset($_REQUEST['action']) ? $_REQUEST['action'] : '';
 $isClientChatAction = in_array($action, [
     'client_chat_init', 'client_chat_message', 'client_chat_escalate',
     'client_chat_get_history', 'client_chat_load_session', 'client_chat_new_session',
-    'client_chat_poll'
+    'client_chat_poll', 'client_chat_kb_search'
 ], true);
 
 if (!$adminId && !$isClientChatAction) {
@@ -205,7 +205,7 @@ if ($isClientChatAction) {
                 exit;
             }
 
-            $messageText = trim((string) ($_POST['message'] ?? ''));
+            $messageText = html_entity_decode(trim((string) ($_POST['message'] ?? '')), ENT_QUOTES | ENT_HTML5, 'UTF-8');
             $sessionUuid = trim((string) ($_POST['session_uuid'] ?? ''));
 
             if (empty($messageText)) {
@@ -272,9 +272,28 @@ if ($isClientChatAction) {
                 exit;
             }
 
-            \Sahdev\Lib\ModuleLogger::info('client_chat', "Escalating session {$sessionUuid} to support ticket (client: " . ($clientId ?: 'guest') . ")");
+            $customName = trim((string) ($_POST['name'] ?? ($_POST['client_name'] ?? '')));
+            $customEmail = trim((string) ($_POST['email'] ?? ($_POST['client_email'] ?? '')));
 
-            $res = \Sahdev\Lib\ChatService::escalateChatToTicket($sessionUuid, $clientId, $visitorToken);
+            \Sahdev\Lib\ModuleLogger::info('client_chat', "Escalating session {$sessionUuid} to support ticket (client: " . ($clientId ?: 'guest') . ", email: " . ($customEmail ?: 'n/a') . ")");
+
+            $res = \Sahdev\Lib\ChatService::escalateChatToTicket($sessionUuid, $clientId, $visitorToken, 'Support', $customName, $customEmail);
+            echo json_encode(array_merge(['status' => ($res['success'] ?? false) ? 'success' : 'error'], $res));
+            exit;
+        }
+
+        if ($action === 'client_chat_kb_search') {
+            $query = trim((string) ($_REQUEST['query'] ?? ''));
+            // Rate limiting: max 60 KB queries per minute per IP
+            $rateKey = 'kb_' . md5($clientIp . '_' . $visitorToken);
+            $rl = \Sahdev\Lib\ChatService::checkRateLimit($rateKey, 'kb_search', 60, 60);
+            if (!$rl['allowed']) {
+                header('HTTP/1.1 429 Too Many Requests');
+                echo json_encode(['status' => 'error', 'message' => 'Knowledgebase search rate limit exceeded.']);
+                exit;
+            }
+
+            $res = \Sahdev\Lib\ChatService::getClientKnowledgeBaseArticles($query, 10);
             echo json_encode(array_merge(['status' => ($res['success'] ?? false) ? 'success' : 'error'], $res));
             exit;
         }

@@ -7996,13 +7996,17 @@ class AdminController
                 Capsule::table('tblsahdev_settings')->where('id', $settingsId)->update([
                     'client_chat_enabled'           => !empty($_POST['client_chat_enabled']) ? 1 : 0,
                     'client_chat_provider_id'       => (int) ($_POST['client_chat_provider_id'] ?? 0),
+                    'client_chat_admin_id'          => (int) ($_POST['client_chat_admin_id'] ?? 0) ?: null,
+                    'client_chat_department_id'     => (int) ($_POST['client_chat_department_id'] ?? 0) ?: null,
                     'client_chat_title'             => trim($_POST['client_chat_title'] ?? 'Hosting Support Assistant'),
+                    'client_chat_logo'              => trim($_POST['client_chat_logo'] ?? '') ?: null,
                     'client_chat_brand_color'       => trim($_POST['client_chat_brand_color'] ?? '#0d6efd'),
                     'client_chat_position'          => trim($_POST['client_chat_position'] ?? 'bottom-right'),
                     'client_chat_welcome_message'   => trim($_POST['client_chat_welcome_message'] ?? ''),
                     'client_chat_require_auth'      => !empty($_POST['client_chat_require_auth']) ? 1 : 0,
                     'client_chat_proactive_delay'   => (int) ($_POST['client_chat_proactive_delay'] ?? 15),
                     'client_chat_proactive_message' => trim($_POST['client_chat_proactive_message'] ?? ''),
+                    'client_chat_kb_enabled'        => !empty($_POST['client_chat_kb_enabled']) ? 1 : 0,
                     'client_chat_debug'             => !empty($_POST['client_chat_debug']) ? 1 : 0,
                     'client_chat_width'             => max(320, min(600, (int)($_POST['client_chat_width'] ?? 380))),
                     'client_chat_height'            => max(400, min(850, (int)($_POST['client_chat_height'] ?? 560))),
@@ -8097,6 +8101,17 @@ class AdminController
         $settings = Capsule::table('tblsahdev_settings')->first();
         $providers = Capsule::table('tblsahdev_providers')->where('is_active', 1)->get();
         $prompts = Capsule::table('tblsahdev_client_chat_prompts')->orderBy('id', 'asc')->get();
+        $allAdmins = Capsule::table('tbladmins')
+            ->select('id', 'firstname', 'lastname', 'username', 'disabled')
+            ->where('disabled', 0)
+            ->orderBy('firstname')
+            ->get();
+
+        $allDepartments = Capsule::table('tblticketdepartments')
+            ->select('id', 'name', 'description')
+            ->orderBy('order', 'asc')
+            ->orderBy('name', 'asc')
+            ->get();
 
         $csrfToken = generate_token('form');
         $baseActionUrl = htmlspecialchars($this->moduleVars['modulelink']) . '&action=client_chat';
@@ -8648,6 +8663,46 @@ class AdminController
                                         </div>
                                     </div>
 
+                                    <div class="form-group">
+                                        <label><i class="fas fa-image"></i> Chat Assistant Logo / Avatar URL</label>
+                                        <input type="text" name="client_chat_logo" id="ctrl_logo" class="form-control" placeholder="https://manage.hostingspell.com/assets/img/logo.png or assets/img/avatar.png" value="<?php echo htmlspecialchars($settings->client_chat_logo ?? ''); ?>">
+                                        <p class="help-block" style="font-size: 11.5px; margin-bottom: 0;">Direct image URL for the assistant avatar displayed in the widget header and cards. Leave blank for default AI badge.</p>
+                                    </div>
+
+                                    <!-- Escalation Identity Card -->
+                                    <div class="panel panel-default" style="border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 18px;">
+                                        <div class="panel-heading" style="background: #f8fafc; font-weight: 600; padding: 10px 15px; font-size: 13px;">
+                                            <i class="fas fa-ticket-alt"></i> Ticket Escalation & Reply Identity
+                                        </div>
+                                        <div class="panel-body" style="padding: 15px;">
+                                            <div class="form-group" style="margin-bottom: 15px;">
+                                                <label>Reply as admin account <span class="text-danger">*</span></label>
+                                                <select name="client_chat_admin_id" class="form-control">
+                                                    <option value="0">— Select an admin account (or Auto System) —</option>
+                                                    <?php foreach ($allAdmins as $adm): ?>
+                                                        <option value="<?php echo (int)$adm->id; ?>" <?php echo ((int)($settings->client_chat_admin_id ?? 0) === (int)$adm->id) ? 'selected' : ''; ?>>
+                                                            <?php echo htmlspecialchars(trim($adm->firstname . ' ' . $adm->lastname) . ' (' . $adm->username . ')'); ?>
+                                                        </option>
+                                                    <?php endforeach; ?>
+                                                </select>
+                                                <p class="help-block" style="font-size: 11.5px; margin-bottom: 0;">Designates which staff administrator account is credited as creator and assigned operator when live chat conversations are converted to support tickets (independent of Ticket Autopilot).</p>
+                                            </div>
+
+                                            <div class="form-group" style="margin-bottom: 0;">
+                                                <label>Escalation Support Department</label>
+                                                <select name="client_chat_department_id" class="form-control">
+                                                    <option value="0">— Auto-Detect General/Technical Support —</option>
+                                                    <?php foreach ($allDepartments as $dept): ?>
+                                                        <option value="<?php echo (int)$dept->id; ?>" <?php echo ((int)($settings->client_chat_department_id ?? 0) === (int)$dept->id) ? 'selected' : ''; ?>>
+                                                            #<?php echo (int)$dept->id; ?> &bull; <?php echo htmlspecialchars($dept->name); ?>
+                                                        </option>
+                                                    <?php endforeach; ?>
+                                                </select>
+                                                <p class="help-block" style="font-size: 11.5px; margin-bottom: 0;">Target WHMCS department where escalated live chat tickets are opened. If auto-detect is selected, customer inquiries automatically route to Technical/General Support instead of compliance or abuse.</p>
+                                            </div>
+                                        </div>
+                                    </div>
+
                                     <div class="row">
                                         <div class="col-md-6 form-group">
                                             <label>Widget Screen Position</label>
@@ -8674,19 +8729,27 @@ class AdminController
                                     </div>
 
                                     <div class="row" style="margin-bottom: 15px;">
-                                        <div class="col-md-6">
+                                        <div class="col-md-4">
                                             <div class="checkbox">
                                                 <label style="font-weight: 600;">
                                                     <input type="checkbox" name="client_chat_require_auth" value="1" <?php echo !empty($settings->client_chat_require_auth) ? 'checked' : ''; ?>>
-                                                    Require Client Login to Chat
+                                                    Require Client Login
                                                 </label>
                                             </div>
                                         </div>
-                                        <div class="col-md-6">
+                                        <div class="col-md-4">
                                             <div class="checkbox">
                                                 <label style="font-weight: 600;">
                                                     <input type="checkbox" name="client_chat_history_enabled" value="1" <?php echo !empty($settings->client_chat_history_enabled ?? 1) ? 'checked' : ''; ?>>
-                                                    Enable In-Widget Chat History Drawer
+                                                    Past Chats Drawer
+                                                </label>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <div class="checkbox">
+                                                <label style="font-weight: 600;">
+                                                    <input type="checkbox" name="client_chat_kb_enabled" value="1" <?php echo !empty($settings->client_chat_kb_enabled ?? 1) ? 'checked' : ''; ?>>
+                                                    Knowledge Base Tab
                                                 </label>
                                             </div>
                                         </div>
@@ -8733,7 +8796,13 @@ class AdminController
                                     <!-- Header -->
                                     <div id="previewHeader" style="background: <?php echo htmlspecialchars($settings->client_chat_brand_color ?? '#0d6efd'); ?>; color: #fff; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center;">
                                         <div style="display: flex; align-items: center; gap: 8px;">
-                                            <div style="width: 30px; height: 30px; border-radius: 50%; background: rgba(255,255,255,0.25); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 11px;">AI</div>
+                                            <div id="previewAvatarContainer" style="width: 30px; height: 30px; border-radius: 50%; background: rgba(255,255,255,0.25); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 11px; overflow: hidden; flex-shrink: 0;">
+                                                <?php if (!empty($settings->client_chat_logo)): ?>
+                                                    <img id="previewAvatarImg" src="<?php echo htmlspecialchars($settings->client_chat_logo); ?>" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">
+                                                <?php else: ?>
+                                                    <span id="previewAvatarText">AI</span>
+                                                <?php endif; ?>
+                                            </div>
                                             <div>
                                                 <div id="previewTitle" style="font-weight: 700; font-size: 13px;"><?php echo htmlspecialchars($settings->client_chat_title ?? 'Hosting Support Assistant'); ?></div>
                                                 <div style="font-size: 10px; opacity: 0.9;">● Online &bull; Self-Help AI</div>
@@ -8901,6 +8970,21 @@ class AdminController
                                 frame.style.height = '480px';
                                 expandBtn.textContent = '⛶';
                                 if (badge) badge.textContent = 'Collapsed (320x480 preview)';
+                            }
+                        });
+                    }
+
+                    var logoInput = document.getElementById('ctrl_logo');
+                    if (logoInput) {
+                        logoInput.addEventListener('input', function() {
+                            var url = this.value.trim();
+                            var avatarCont = document.getElementById('previewAvatarContainer');
+                            if (avatarCont) {
+                                if (url) {
+                                    avatarCont.innerHTML = '<img id="previewAvatarImg" src="' + url.replace(/"/g, '&quot;') + '" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">';
+                                } else {
+                                    avatarCont.innerHTML = '<span id="previewAvatarText">AI</span>';
+                                }
                             }
                         });
                     }

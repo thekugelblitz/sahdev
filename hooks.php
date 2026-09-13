@@ -5879,6 +5879,10 @@ function sahdev_render_client_livechat_widget(array $vars): string
         $launcherStyle = ($settings->client_chat_launcher_style ?? 'circular') === 'pill' ? 'pill' : 'circular';
         $launcherText = !empty($settings->client_chat_launcher_text) ? htmlspecialchars($settings->client_chat_launcher_text, ENT_QUOTES, 'UTF-8') : 'Chat with Us';
         $historyEnabled = isset($settings->client_chat_history_enabled) ? (bool)$settings->client_chat_history_enabled : true;
+        $chatLogo = !empty($settings->client_chat_logo)
+            ? htmlspecialchars(trim($settings->client_chat_logo), ENT_QUOTES, 'UTF-8')
+            : '';
+        $kbEnabled = isset($settings->client_chat_kb_enabled) ? (bool)$settings->client_chat_kb_enabled : true;
 
         $welcomeMsgRaw = !empty($settings->client_chat_welcome_message)
             ? $settings->client_chat_welcome_message
@@ -5963,6 +5967,21 @@ function sahdev_render_client_livechat_widget(array $vars): string
 
     $debugMode = !empty($settings->client_chat_debug);
 
+    $clientName = '';
+    $clientEmail = '';
+    if ($clientId > 0) {
+        try {
+            $cl = \WHMCS\Database\Capsule::table('tblclients')->where('id', $clientId)->first(['firstname', 'lastname', 'email']);
+            if ($cl) {
+                $clientName = trim(($cl->firstname ?? '') . ' ' . ($cl->lastname ?? ''));
+                $clientEmail = (string) ($cl->email ?? '');
+            }
+        } catch (\Throwable $e) {}
+    }
+    $isLoggedInJs = json_encode($clientId > 0);
+    $clientNameJs = json_encode($clientName);
+    $clientEmailJs = json_encode($clientEmail);
+
     $systemUrlJs = json_encode($fullSystemUrl);
     $whmcsBaseJs = json_encode($whmcsBase);
     $nativeAjaxUrlJs = json_encode($nativeAjaxUrl);
@@ -6000,11 +6019,14 @@ HTML;
 
     $proactiveBubbleHtml = '';
     if ($proactiveDelay > 0) {
+        $proactiveBadgeIcon = !empty($chatLogo)
+            ? '<img src="' . $chatLogo . '" alt="Logo" style="width:14px;height:14px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:4px;">'
+            : '<span class="sdv-proactive-pulse"></span>';
         $proactiveBubbleHtml = <<<HTML
 <div id="sdv-proactive-bubble" class="sdv-proactive-bubble" style="display:none;" role="region" aria-label="Support Message" onclick="window.sdvAcceptProactive && window.sdvAcceptProactive(event);">
     <button type="button" class="sdv-proactive-close" title="Dismiss message" aria-label="Dismiss" onclick="window.sdvDismissProactive && window.sdvDismissProactive(event);">&times;</button>
     <div class="sdv-proactive-top">
-        <div class="sdv-proactive-badge"><span class="sdv-proactive-pulse"></span> {$chatTitle}</div>
+        <div class="sdv-proactive-badge">{$proactiveBadgeIcon} {$chatTitle}</div>
         <span class="sdv-proactive-now">Just now</span>
     </div>
     <div class="sdv-proactive-text">{$proactiveMsg}</div>
@@ -6017,6 +6039,12 @@ HTML;
     }
 
     $historyBtnHtml = $historyEnabled ? '<button type="button" class="sdv-cl-action-btn" id="sdv-cl-history-btn" title="Conversation History" onclick="window.sdvToggleHistory && window.sdvToggleHistory();"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></button>' : '';
+
+    $kbBtnHtml = $kbEnabled ? '<button type="button" class="sdv-cl-action-btn" id="sdv-cl-kb-btn" title="Help & Knowledge Base" aria-label="Knowledge Base" onclick="window.sdvToggleKb && window.sdvToggleKb();"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><line x1="9" y1="7" x2="15" y2="7"/><line x1="9" y1="11" x2="13" y2="11"/></svg></button>' : '';
+
+    $avatarHtml = !empty($chatLogo)
+        ? '<img src="' . $chatLogo . '" alt="Logo" class="sdv-cl-avatar-img">'
+        : 'AI';
 
     return <<<HTML
 <style>
@@ -6250,6 +6278,14 @@ HTML;
     font-size: 13px;
     border: 1px solid rgba(255, 255, 255, 0.3);
     flex-shrink: 0;
+    overflow: hidden;
+}
+.sdv-cl-avatar-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 50%;
+    display: block;
 }
 .sdv-cl-title { font-size: 14px; font-weight: 700; line-height: 1.2; color: #ffffff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sdv-cl-status { font-size: 11px; color: rgba(255, 255, 255, 0.9); display: flex; align-items: center; gap: 5px; margin-top: 2px; }
@@ -7066,6 +7102,28 @@ HTML;
 #sdv-client-chat-window.sdv-theme-cyber_dark .sdv-convo-card-bottom {
     border-top-color: #1e293b !important;
 }
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-guest-intro-card {
+    background: #0f172a !important;
+    border-color: #334155 !important;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-guest-intro-title {
+    color: #f8fafc !important;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-guest-intro-desc {
+    color: #94a3b8 !important;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-guest-label {
+    color: #cbd5e1 !important;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-guest-input {
+    background: #1e293b !important;
+    color: #f8fafc !important;
+    border-color: #475569 !important;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-guest-input:focus {
+    border-color: #60a5fa !important;
+    box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.25) !important;
+}
 
 /* Glassmorphism Theme */
 #sdv-client-chat-window.sdv-theme-glassmorphism {
@@ -7084,6 +7142,103 @@ HTML;
 /* Brand Gradient Theme */
 #sdv-client-chat-window.sdv-theme-brand_gradient .sdv-cl-header {
     background: linear-gradient(135deg, var(--sdv-brand) 0%, #4f46e5 100%) !important;
+}
+/* Knowledge Base Drawer Styling */
+.sdv-cl-kb-drawer {
+    z-index: 15;
+}
+.sdv-kb-item {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 13px 15px;
+    margin-bottom: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+.sdv-kb-item:hover {
+    border-color: var(--sdv-brand, #0d6efd);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    transform: translateY(-1px);
+}
+.sdv-kb-title {
+    font-size: 13.5px;
+    font-weight: 700;
+    color: #0f172a;
+    line-height: 1.35;
+    display: flex;
+    align-items: flex-start;
+    gap: 7px;
+}
+.sdv-kb-title svg {
+    color: var(--sdv-brand, #0d6efd);
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+.sdv-kb-snippet {
+    font-size: 12px;
+    color: #64748b;
+    line-height: 1.45;
+}
+.sdv-kb-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 4px;
+    padding-top: 8px;
+    border-top: 1px solid #f1f5f9;
+}
+.sdv-kb-link {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--sdv-brand, #0d6efd);
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+.sdv-kb-link:hover {
+    text-decoration: underline;
+}
+.sdv-kb-ask-btn {
+    font-size: 11px;
+    font-weight: 600;
+    background: rgba(99, 102, 241, 0.08);
+    color: #4f46e5;
+    border: 1px solid rgba(99, 102, 241, 0.2);
+    border-radius: 6px;
+    padding: 3px 8px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+.sdv-kb-ask-btn:hover {
+    background: #4f46e5;
+    color: #ffffff;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-kb-item {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-kb-title {
+    color: #f1f5f9 !important;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-kb-snippet {
+    color: #94a3b8 !important;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-kb-actions {
+    border-top-color: #334155 !important;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-kb-ask-btn {
+    background: rgba(129, 140, 248, 0.15) !important;
+    color: #a5b4fc !important;
+    border-color: rgba(129, 140, 248, 0.3) !important;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-kb-ask-btn:hover {
+    background: #6366f1 !important;
+    color: #ffffff !important;
 }
 </style>
 
@@ -7142,16 +7297,87 @@ HTML;
         </div>
     </div>
 
+    <!-- In-Widget Knowledge Base Drawer -->
+    <div class="sdv-cl-history-drawer sdv-cl-kb-drawer" id="sdv-cl-kb-drawer">
+        <div class="sdv-drawer-header">
+            <button type="button" class="sdv-drawer-back-btn" id="sdv-kb-back" title="Return to active chat" onclick="window.sdvCloseKb && window.sdvCloseKb();">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                <span>Back to Chat</span>
+            </button>
+            <div class="sdv-drawer-headline">
+                <span class="sdv-drawer-badge" style="background: rgba(16, 185, 129, 0.12); color: #059669;">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px; vertical-align: -1px;"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>Knowledge Base
+                </span>
+            </div>
+        </div>
+
+        <div class="sdv-drawer-filter-bar">
+            <div class="sdv-search-box">
+                <svg class="sdv-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+                <input type="text" id="sdv-kb-search" placeholder="Search knowledge base articles..." oninput="window.sdvFilterKb && window.sdvFilterKb(this.value);" />
+                <button type="button" class="sdv-search-clear" id="sdv-kb-search-clear" onclick="var inp=document.getElementById('sdv-kb-search');if(inp){inp.value='';window.sdvFilterKb('');this.style.display='none';}" style="display:none;">&times;</button>
+            </div>
+        </div>
+
+        <div class="sdv-drawer-list" id="sdv-kb-list">
+            <div class="sdv-history-loading">
+                <div class="sdv-spinner"></div>
+                <span>Searching knowledge base...</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Slide-Out Guest Escalation Drawer -->
+    <div class="sdv-cl-history-drawer sdv-cl-guest-drawer" id="sdv-cl-guest-drawer">
+        <div class="sdv-drawer-header">
+            <button type="button" class="sdv-drawer-back-btn" onclick="window.sdvCloseGuestDrawer && window.sdvCloseGuestDrawer();">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                <span>Back to Chat</span>
+            </button>
+            <span class="sdv-drawer-badge">Create Ticket</span>
+        </div>
+
+        <div class="sdv-drawer-body" style="padding: 18px 16px; overflow-y: auto; flex: 1; display: flex; flex-direction: column;">
+            <div class="sdv-guest-intro-card" style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px; margin-bottom: 16px;">
+                <div class="sdv-guest-intro-title" style="font-weight: 700; font-size: 13.5px; color: #1e293b; margin-bottom: 4px; display: flex; align-items: center; gap: 6px;">
+                    <span>🎫</span> Connect with Support Staff
+                </div>
+                <div class="sdv-guest-intro-desc" style="font-size: 12px; color: #64748b; line-height: 1.45;">
+                    Our support engineers will receive your complete live chat transcript. Please enter your contact details so our team can reply directly to your inbox.
+                </div>
+            </div>
+
+            <form id="sdv-guest-form" onsubmit="return window.sdvSubmitGuestEscalation && window.sdvSubmitGuestEscalation(event);">
+                <div class="sdv-guest-form-group" style="margin-bottom: 14px;">
+                    <label class="sdv-guest-label" style="display: block; font-size: 12px; font-weight: 600; color: #475569; margin-bottom: 5px;">Your Full Name <span style="color: #ef4444;">*</span></label>
+                    <input type="text" id="sdv-guest-name" class="sdv-guest-input" required placeholder="e.g. Dhruv Joshi" style="width: 100%; box-sizing: border-box; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 13px; outline: none; background: #fff; color: #0f172a;" />
+                </div>
+
+                <div class="sdv-guest-form-group" style="margin-bottom: 16px;">
+                    <label class="sdv-guest-label" style="display: block; font-size: 12px; font-weight: 600; color: #475569; margin-bottom: 5px;">Your Email Address <span style="color: #ef4444;">*</span></label>
+                    <input type="email" id="sdv-guest-email" class="sdv-guest-input" required placeholder="e.g. name@example.com" style="width: 100%; box-sizing: border-box; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 13px; outline: none; background: #fff; color: #0f172a;" />
+                </div>
+
+                <div id="sdv-guest-error" class="sdv-guest-error" style="display: none; color: #ef4444; font-size: 12px; margin-bottom: 12px; line-height: 1.4;"></div>
+
+                <button type="submit" id="sdv-guest-submit-btn" class="sdv-hero-new-btn" style="justify-content: center; font-weight: 600; font-size: 13px; padding: 11px;">
+                    <span>Submit &amp; Create Ticket &rarr;</span>
+                </button>
+            </form>
+        </div>
+    </div>
+
     <!-- Main Header -->
     <div class="sdv-cl-header">
         <div class="sdv-cl-header-info">
-            <div class="sdv-cl-avatar">AI</div>
+            <div class="sdv-cl-avatar">{$avatarHtml}</div>
             <div>
                 <div class="sdv-cl-title">{$chatTitle}</div>
                 <div class="sdv-cl-status"><span class="sdv-cl-status-dot"></span> Online &bull; Self-Help AI</div>
             </div>
         </div>
         <div class="sdv-cl-controls">
+            {$kbBtnHtml}
             {$historyBtnHtml}
             <button type="button" class="sdv-cl-action-btn" id="sdv-cl-expand-btn" title="Expand / Minimize Window" aria-label="Expand" onclick="window.sdvToggleExpand && window.sdvToggleExpand(event);">
                 <svg id="sdv-expand-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
@@ -7213,6 +7439,9 @@ HTML;
     var defaultChatHeight = {$chatHeightJs};
     var defaultExpandWidth = {$expandWidthJs};
     var defaultExpandHeight = {$expandHeightJs};
+    var isLoggedIn = {$isLoggedInJs};
+    var clientNamePrefill = {$clientNameJs};
+    var clientEmailPrefill = {$clientEmailJs};
 
     function resolveChatUrl(href) {
         if (!href) return '#';
@@ -7340,6 +7569,15 @@ HTML;
                 window.sdvInitChat();
             }
             sdvStartLivePolling();
+
+            var drawer = document.getElementById('sdv-cl-history-drawer');
+            if (drawer) {
+                drawer.classList.remove('sdv-drawer-open');
+            }
+            var kbDrawer = document.getElementById('sdv-cl-kb-drawer');
+            if (kbDrawer) {
+                kbDrawer.classList.remove('sdv-drawer-open');
+            }
         } else {
             win.classList.remove('sdv-open');
             win.style.setProperty('display', 'none', 'important');
@@ -7350,6 +7588,10 @@ HTML;
             var drawer = document.getElementById('sdv-cl-history-drawer');
             if (drawer) {
                 drawer.classList.remove('sdv-drawer-open');
+            }
+            var kbDrawer = document.getElementById('sdv-cl-kb-drawer');
+            if (kbDrawer) {
+                kbDrawer.classList.remove('sdv-drawer-open');
             }
         }
     };
@@ -7381,6 +7623,8 @@ HTML;
 
     window.sdvToggleHistory = function() {
         var drawer = document.getElementById('sdv-cl-history-drawer');
+        var kbDrawer = document.getElementById('sdv-cl-kb-drawer');
+        if (kbDrawer) kbDrawer.classList.remove('sdv-drawer-open');
         if (drawer) {
             var isOpen = drawer.classList.toggle('sdv-drawer-open');
             if (isOpen && typeof loadHistoryList === 'function') {
@@ -7558,10 +7802,36 @@ HTML;
     var sessionUuid = sdvSafeGet('sdv_active_session_uuid', null);
     var isInitialized = false;
 
+    function sdvDecodeEntities(str) {
+        if (!str) return '';
+        var s = String(str);
+        for (var i = 0; i < 2; i++) {
+            if (!/&(?:#0*39|#39|#x27|apos|quot|#0*34|#x22|lt|#0*60|#x3c|gt|#0*62|#x3e|amp|#0*38|#x26);/i.test(s)) {
+                break;
+            }
+            s = s.replace(/&#0*39;|&apos;|&#x27;/gi, "'")
+                 .replace(/&quot;|&#0*34;|&#x22;/gi, '"')
+                 .replace(/&lt;|&#0*60;|&#x3c;/gi, '<')
+                 .replace(/&gt;|&#0*62;|&#x3e;/gi, '>')
+                 .replace(/&amp;|&#0*38;|&#x26;/gi, '&');
+        }
+        return s;
+    }
+
+    function sdvEscapeHtml(str) {
+        if (!str) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
     // Markdown Parser
     function parseSimpleMarkdown(str) {
         if (!str) return '';
-        var s = String(str)
+        var s = sdvDecodeEntities(String(str))
             .replace(/&/g, '&amp;')
             .replace(/</g, '&lt;')
             .replace(/>/g, '&gt;');
@@ -7900,48 +8170,138 @@ HTML;
         });
     }
 
+    window.sdvCloseGuestDrawer = function() {
+        var dr = document.getElementById('sdv-cl-guest-drawer');
+        if (dr) dr.classList.remove('sdv-drawer-open');
+    };
+
+    window.sdvOpenGuestDrawer = function() {
+        var nameInput = document.getElementById('sdv-guest-name');
+        var emailInput = document.getElementById('sdv-guest-email');
+        if (nameInput && !nameInput.value) {
+            nameInput.value = sdvSafeGet('sdv_guest_name', clientNamePrefill || '');
+        }
+        if (emailInput && !emailInput.value) {
+            emailInput.value = sdvSafeGet('sdv_guest_email', clientEmailPrefill || '');
+        }
+        var errEl = document.getElementById('sdv-guest-error');
+        if (errEl) errEl.style.display = 'none';
+
+        var dr = document.getElementById('sdv-cl-guest-drawer');
+        if (dr) dr.classList.add('sdv-drawer-open');
+    };
+
+    window.sdvSubmitGuestEscalation = function(e) {
+        if (e && e.preventDefault) e.preventDefault();
+        var nameInput = document.getElementById('sdv-guest-name');
+        var emailInput = document.getElementById('sdv-guest-email');
+        var errEl = document.getElementById('sdv-guest-error');
+        var submitBtn = document.getElementById('sdv-guest-submit-btn');
+
+        var name = (nameInput ? nameInput.value : '').trim();
+        var email = (emailInput ? emailInput.value : '').trim();
+
+        if (!name) {
+            if (errEl) { errEl.textContent = 'Please enter your name.'; errEl.style.display = 'block'; }
+            if (nameInput) nameInput.focus();
+            return false;
+        }
+        if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            if (errEl) { errEl.textContent = 'Please enter a valid email address.'; errEl.style.display = 'block'; }
+            if (emailInput) emailInput.focus();
+            return false;
+        }
+
+        sdvSafeSet('sdv_guest_name', name);
+        sdvSafeSet('sdv_guest_email', email);
+
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span>Creating Ticket...</span>';
+        }
+
+        performEscalate(name, email, function(err, data) {
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<span>Submit &amp; Create Ticket &rarr;</span>';
+            }
+            if (err || !(data.status === 'success' || data.success)) {
+                if (errEl) {
+                    errEl.textContent = err ? err.message : (data.message || data.error || 'Failed to create ticket.');
+                    errEl.style.display = 'block';
+                }
+                return;
+            }
+            window.sdvCloseGuestDrawer();
+            renderTicketCreatedCard(data);
+        });
+        return false;
+    };
+
+    function performEscalate(customName, customEmail, callback) {
+        var form = new FormData();
+        form.append('action', 'client_chat_escalate');
+        form.append('session_uuid', sessionUuid);
+        form.append('visitor_token', visitorToken);
+        if (customName) form.append('client_name', customName);
+        if (customEmail) form.append('client_email', customEmail);
+
+        postAjaxWithFallback(form, callback);
+    }
+
+    function renderTicketCreatedCard(data) {
+        var tid = data.tid || data.ticket_id || '';
+        var ticketUrl = data.ticket_url ? resolveChatUrl(data.ticket_url) : resolveChatUrl('supporttickets.php');
+        var clientEmail = data.client_email || '';
+
+        var emailNotice = clientEmail && clientEmail !== 'visitor@chat.local'
+            ? '<div style="font-size: 12px; margin-top: 6px; color: #047857; font-weight: 500;">✉️ Confirmation sent to <strong>' + sdvEscapeHtml(clientEmail) + '</strong>.</div>'
+            : '';
+
+        var cardHtml = '<div class="sdv-escalate-success-card">' +
+            '<div class="sdv-escalate-header">' +
+                '<span class="sdv-escalate-icon">🎫</span>' +
+                '<div>' +
+                    '<div class="sdv-escalate-title">Support Ticket #' + tid + ' Created</div>' +
+                    '<div class="sdv-escalate-sub">Live chat conversation escalated to staff</div>' +
+                '</div>' +
+            '</div>' +
+            '<div class="sdv-escalate-desc">' +
+                'Our technical staff has received your complete conversation transcript and inquiry details.' +
+                emailNotice +
+            '</div>' +
+            '<a href="' + ticketUrl + '" target="_blank" rel="noopener noreferrer" class="sdv-chat-link sdv-escalate-link">' +
+                '<span>Open Support Ticket #' + tid + '</span>' +
+                '<svg class="sdv-chat-link-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>' +
+            '</a>' +
+        '</div>';
+
+        appendClMsg('bot', cardHtml, true);
+        var escalateBar = document.querySelector('.sdv-cl-escalate-bar');
+        if (escalateBar) escalateBar.style.display = 'none';
+    }
+
     window.sdvEscalateToTicket = function() {
         var escalateBtn = document.getElementById('sdv-cl-escalate');
         if (!sessionUuid) {
             alert('Please send a message before converting to a support ticket.');
             return;
         }
-        if (!confirm('Would you like our staff to assist you? This will convert your chat transcript into a support ticket.')) return;
 
-        if (escalateBtn) escalateBtn.textContent = 'Creating ticket...';
-        var form = new FormData();
-        form.append('action', 'client_chat_escalate');
-        form.append('session_uuid', sessionUuid);
-        form.append('visitor_token', visitorToken);
-
-        postAjaxWithFallback(form, function(err, data) {
-            if (err || !(data.status === 'success' || data.success)) {
+        if (isLoggedIn) {
+            if (!confirm('Would you like our staff to assist you? This will convert your chat transcript into a support ticket.')) return;
+            if (escalateBtn) escalateBtn.textContent = 'Creating ticket...';
+            performEscalate(clientNamePrefill, clientEmailPrefill, function(err, data) {
                 if (escalateBtn) escalateBtn.textContent = 'Convert to Ticket →';
-                alert('Escalation failed: ' + (err ? err.message : (data.message || data.error || 'Unknown error')));
-                return;
-            }
-
-            var tid = data.tid || data.ticket_id || '';
-            var ticketUrl = data.ticket_url ? resolveChatUrl(data.ticket_url) : resolveChatUrl('supporttickets.php');
-
-            var cardHtml = '<div class="sdv-escalate-success-card">' +
-                '<div class="sdv-escalate-header">' +
-                    '<span class="sdv-escalate-icon">🎫</span>' +
-                    '<div>' +
-                        '<div class="sdv-escalate-title">Support Ticket #' + tid + ' Created</div>' +
-                        '<div class="sdv-escalate-sub">Live chat conversation escalated to staff</div>' +
-                    '</div>' +
-                '</div>' +
-                '<div class="sdv-escalate-desc">Our technical staff has received your complete conversation transcript and account details. You can track updates or reply directly from your client area.</div>' +
-                '<a href="' + ticketUrl + '" target="_blank" rel="noopener noreferrer" class="sdv-chat-link sdv-escalate-link">' +
-                    '<span>Open Support Ticket #' + tid + '</span>' +
-                    '<svg class="sdv-chat-link-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>' +
-                '</a>' +
-            '</div>';
-
-            appendClMsg('bot', cardHtml, true);
-            if (escalateBtn) escalateBtn.style.display = 'none';
-        });
+                if (err || !(data.status === 'success' || data.success)) {
+                    alert('Escalation failed: ' + (err ? err.message : (data.message || data.error || 'Unknown error')));
+                    return;
+                }
+                renderTicketCreatedCard(data);
+            });
+        } else {
+            window.sdvOpenGuestDrawer();
+        }
     };
 
     // ── Ultra-Modern Conversation History Engine ──────────────────────────
@@ -8094,11 +8454,110 @@ HTML;
             var escalateBtn = document.getElementById('sdv-cl-escalate');
             if (escalateBtn) escalateBtn.style.display = 'inline';
             window.sdvCloseHistory();
+            window.sdvCloseKb();
             var inputEl = document.getElementById('sdv-cl-input');
             if (inputEl) try { inputEl.focus(); } catch(e) {}
 
             broadcastLiveSync('session_switched', { session_uuid: sessionUuid });
         });
+    };
+
+    // ── Knowledge Base Self-Help Engine ───────────────────────────────────
+    var _cachedKbList = [];
+    var _cachedKbCats = [];
+    var _kbSearchTimer = null;
+
+    function loadKbArticles(query) {
+        var listEl = document.getElementById('sdv-kb-list');
+        if (!listEl) return;
+        listEl.innerHTML = '<div class="sdv-history-loading"><div class="sdv-spinner"></div><span>Searching knowledge base...</span></div>';
+
+        var form = new FormData();
+        form.append('action', 'client_chat_kb_search');
+        form.append('query', query || '');
+        form.append('visitor_token', visitorToken);
+
+        postAjaxWithFallback(form, function(err, data) {
+            if (err || !data || (data.status !== 'success' && !data.success) || !data.articles) {
+                renderKbItems([]);
+                return;
+            }
+            _cachedKbList = data.articles;
+            _cachedKbCats = data.categories || [];
+            renderKbItems(data.articles, data.categories);
+        });
+    }
+
+    window.sdvFilterKb = function(query) {
+        var clearBtn = document.getElementById('sdv-kb-search-clear');
+        var q = (query || '').trim();
+        if (clearBtn) clearBtn.style.display = q ? 'block' : 'none';
+
+        if (_kbSearchTimer) clearTimeout(_kbSearchTimer);
+        _kbSearchTimer = setTimeout(function() {
+            loadKbArticles(q);
+        }, 220);
+    };
+
+    function renderKbItems(articles, categories) {
+        var listEl = document.getElementById('sdv-kb-list');
+        if (!listEl) return;
+
+        if (!articles || articles.length === 0) {
+            listEl.innerHTML = '<div class="sdv-history-empty">' +
+                '<div class="sdv-history-empty-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div>' +
+                '<div class="sdv-history-empty-title">No articles found</div>' +
+                '<div class="sdv-history-empty-desc">Try another keyword, browse categories, or ask our AI assistant directly.</div>' +
+            '</div>';
+            return;
+        }
+
+        var html = '';
+
+        if (categories && categories.length > 0) {
+            html += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;padding:0 2px;">';
+            categories.forEach(function(cat) {
+                var safeName = String(cat.name).replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                var catUrl = resolveChatUrl(cat.rel_url);
+                html += '<a href="' + catUrl + '" target="_blank" rel="noopener noreferrer" style="text-decoration:none;font-size:11.5px;padding:3px 9px;background:rgba(0,0,0,0.05);color:#475569;border:1px solid rgba(0,0,0,0.08);border-radius:20px;display:inline-flex;align-items:center;gap:4px;">' +
+                    '📁 ' + safeName +
+                '</a>';
+            });
+            html += '</div>';
+        }
+
+        articles.forEach(function(art) {
+            var safeTitle = String(art.title).replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            var safeSnippet = String(art.snippet || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            var artUrl = resolveChatUrl(art.rel_url);
+            var safeTitleAttr = encodeURIComponent(art.title || '');
+
+            html += '<div class="sdv-kb-item">' +
+                '<div class="sdv-kb-title">' +
+                    '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>' +
+                    '<span>' + safeTitle + '</span>' +
+                '</div>' +
+                '<div class="sdv-kb-snippet">' + safeSnippet + '</div>' +
+                '<div class="sdv-kb-actions">' +
+                    '<a href="' + artUrl + '" target="_blank" rel="noopener noreferrer" class="sdv-kb-link">' +
+                        '<span>Read Article</span>' +
+                        '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>' +
+                    '</a>' +
+                    '<button type="button" class="sdv-kb-ask-btn" onclick="window.sdvAskArticle(decodeURIComponent(\'' + safeTitleAttr + '\'));">Ask AI &rarr;</button>' +
+                '</div>' +
+            '</div>';
+        });
+
+        listEl.innerHTML = html;
+    }
+
+    window.sdvAskArticle = function(title) {
+        window.sdvCloseKb();
+        var input = document.getElementById('sdv-cl-input');
+        if (input) {
+            input.value = 'Can you summarize and help me with the article: "' + title + '"?';
+            input.focus();
+        }
     };
 
     // Attach listeners defensively to avoid missing events or double clicks
