@@ -6043,6 +6043,9 @@ HTML;
 }
 #sdv-client-chat-window.sdv-open {
     display: flex !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
     animation: sdvFadeInUp 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
 }
 #sdv-client-chat-window.sdv-expanded {
@@ -6526,6 +6529,87 @@ HTML;
         } catch(e) {}
     }
 
+    var _lastToggleTime = 0;
+
+    // ── Immediate Global Window Controls (Defined FIRST for fail-safe response) ───
+    window.sdvToggleChat = function(open) {
+        var now = Date.now();
+        if (typeof open !== 'boolean' && (now - _lastToggleTime) < 250) {
+            return;
+        }
+        _lastToggleTime = now;
+
+        var win = document.getElementById('sdv-client-chat-window');
+        if (!win) {
+            console.warn('[Sahdev Chat] Widget window #sdv-client-chat-window not found in DOM.');
+            return;
+        }
+
+        var isCurrentlyOpen = win.classList.contains('sdv-open') && win.style.display !== 'none';
+        var shouldOpen = (typeof open === 'boolean') ? open : !isCurrentlyOpen;
+
+        if (shouldOpen) {
+            win.classList.add('sdv-open');
+            win.style.setProperty('display', 'flex', 'important');
+            win.style.setProperty('visibility', 'visible', 'important');
+            win.style.setProperty('opacity', '1', 'important');
+            win.style.setProperty('pointer-events', 'auto', 'important');
+            win.style.setProperty('z-index', '2147483647', 'important');
+
+            var input = document.getElementById('sdv-cl-input');
+            if (input) {
+                setTimeout(function() {
+                    try { input.focus(); } catch(e) {}
+                }, 120);
+            }
+            if (typeof window.sdvInitChat === 'function') {
+                window.sdvInitChat();
+            }
+        } else {
+            win.classList.remove('sdv-open');
+            win.style.setProperty('display', 'none', 'important');
+            win.style.setProperty('pointer-events', 'none', 'important');
+            var drawer = document.getElementById('sdv-cl-history-drawer');
+            if (drawer) {
+                drawer.classList.remove('sdv-drawer-open');
+            }
+        }
+    };
+
+    window.sdvToggleExpand = function() {
+        var win = document.getElementById('sdv-client-chat-window');
+        var btn = document.getElementById('sdv-cl-expand-btn');
+        if (!win) return;
+        var isExpanded = win.classList.toggle('sdv-expanded');
+        if (btn) btn.textContent = isExpanded ? '⤡' : '⛶';
+        sdvSafeSet('sdv_chat_expanded', isExpanded ? '1' : '0');
+    };
+
+    window.sdvToggleHistory = function() {
+        var drawer = document.getElementById('sdv-cl-history-drawer');
+        if (drawer) {
+            var isOpen = drawer.classList.toggle('sdv-drawer-open');
+            if (isOpen && typeof loadHistoryList === 'function') {
+                loadHistoryList();
+            }
+        }
+    };
+
+    window.sdvCloseHistory = function() {
+        var drawer = document.getElementById('sdv-cl-history-drawer');
+        if (drawer) drawer.classList.remove('sdv-drawer-open');
+    };
+
+    // Restore expanded window preference on initial load
+    try {
+        if (sdvSafeGet('sdv_chat_expanded', '0') === '1') {
+            var winEl = document.getElementById('sdv-client-chat-window');
+            var expBtnEl = document.getElementById('sdv-cl-expand-btn');
+            if (winEl) winEl.classList.add('sdv-expanded');
+            if (expBtnEl) expBtnEl.textContent = '⤡';
+        }
+    } catch(e) {}
+
     var brandColor = {$brandColorJs};
     var systemUrl = {$systemUrlJs};
     var nativeUrl = {$nativeAjaxUrlJs};
@@ -6627,80 +6711,6 @@ HTML;
 
     var sessionUuid = null;
     var isInitialized = false;
-    var _lastToggleTime = 0;
-
-    // ── Global Fail-Safe Window Controls ──────────────────────────────────
-    window.sdvToggleChat = function(open) {
-        var now = Date.now();
-        if (typeof open !== 'boolean' && (now - _lastToggleTime) < 250) {
-            return;
-        }
-        _lastToggleTime = now;
-
-        var win = document.getElementById('sdv-client-chat-window');
-        if (!win) {
-            console.warn('[Sahdev Chat] Widget window #sdv-client-chat-window not found in DOM.');
-            return;
-        }
-
-        var isCurrentlyOpen = win.classList.contains('sdv-open') || (win.style.display === 'flex');
-        var shouldOpen = (typeof open === 'boolean') ? open : !isCurrentlyOpen;
-
-        if (shouldOpen) {
-            win.classList.add('sdv-open');
-            win.style.display = 'flex';
-            var input = document.getElementById('sdv-cl-input');
-            if (input) {
-                setTimeout(function() {
-                    try { input.focus(); } catch(e) {}
-                }, 120);
-            }
-            if (!isInitialized && typeof window.sdvInitChat === 'function') {
-                window.sdvInitChat();
-            }
-        } else {
-            win.classList.remove('sdv-open');
-            win.style.display = 'none';
-            var drawer = document.getElementById('sdv-cl-history-drawer');
-            if (drawer) {
-                drawer.classList.remove('sdv-drawer-open');
-            }
-        }
-    };
-
-    window.sdvToggleExpand = function() {
-        var win = document.getElementById('sdv-client-chat-window');
-        var btn = document.getElementById('sdv-cl-expand-btn');
-        if (!win) return;
-        var isExpanded = win.classList.toggle('sdv-expanded');
-        if (btn) btn.textContent = isExpanded ? '⤡' : '⛶';
-        sdvSafeSet('sdv_chat_expanded', isExpanded ? '1' : '0');
-    };
-
-    window.sdvToggleHistory = function() {
-        var drawer = document.getElementById('sdv-cl-history-drawer');
-        if (drawer) {
-            var isOpen = drawer.classList.toggle('sdv-drawer-open');
-            if (isOpen) {
-                loadHistoryList();
-            }
-        }
-    };
-
-    window.sdvCloseHistory = function() {
-        var drawer = document.getElementById('sdv-cl-history-drawer');
-        if (drawer) drawer.classList.remove('sdv-drawer-open');
-    };
-
-    // Restore expanded window preference on initial load
-    try {
-        if (sdvSafeGet('sdv_chat_expanded', '0') === '1') {
-            var winEl = document.getElementById('sdv-client-chat-window');
-            var expBtnEl = document.getElementById('sdv-cl-expand-btn');
-            if (winEl) winEl.classList.add('sdv-expanded');
-            if (expBtnEl) expBtnEl.textContent = '⤡';
-        }
-    } catch(e) {}
 
     // Markdown Parser
     function parseSimpleMarkdown(str) {
@@ -6720,8 +6730,8 @@ HTML;
         s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
         // Markdown Links [text](url)
         s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" style="color:var(--sdv-brand);text-decoration:underline;font-weight:600;">$1</a>');
-        // Simple bullet lines
-        var lines = s.split('\n');
+        // Simple bullet lines split safely without literal newline in heredoc
+        var lines = s.split(String.fromCharCode(10));
         var out = [];
         var inUl = false;
         for (var i = 0; i < lines.length; i++) {
