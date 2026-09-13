@@ -1051,6 +1051,7 @@ class AdminController
         // Handle form submission
         if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_settings'])) {
             check_token("WHMCS.admin.default"); // Verify CSRF
+            \Sahdev\Lib\SchemaManager::ensureSettingsColumns();
 
             $primaryProviderId = (int) ($_POST['primary_provider_id'] ?? 1);
             $fallbackProviderId = (int) ($_POST['fallback_provider_id'] ?? 0);

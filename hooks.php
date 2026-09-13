@@ -5931,8 +5931,8 @@ function sahdev_render_client_livechat_widget(array $vars): string
     $primaryAjaxUrl = ($whmcsBase !== '' ? $whmcsBase : '') . '/modules/addons/sahdev/ajax.php';
 
     $isLeft = ($chatPosition === 'bottom-left');
-    $launcherPosCss = $isLeft ? 'left: 24px; right: auto;' : 'right: 24px; left: auto;';
-    $windowPosCss = $isLeft ? 'left: 24px; right: auto;' : 'right: 24px; left: auto;';
+    $launcherPosCss = $isLeft ? 'left: 24px !important; right: auto !important;' : 'right: 24px !important; left: auto !important;';
+    $windowPosCss = $isLeft ? 'left: 24px !important; right: auto !important;' : 'right: 24px !important; left: auto !important;';
 
     $debugMode = !empty($settings->client_chat_debug);
 
@@ -5943,28 +5943,28 @@ function sahdev_render_client_livechat_widget(array $vars): string
     $brandColorJs = json_encode($brandColor);
     $debugModeJs = json_encode($debugMode);
 
-    // Launcher markup based on style
+    // Launcher markup based on style with robust inline onclick and keyboard handlers
     $launcherHtml = '';
     if ($launcherStyle === 'pill') {
         $launcherHtml = <<<HTML
-<div id="sdv-client-chat-launcher" class="sdv-launcher-pill" title="{$launcherText}">
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z"/>
+<div id="sdv-client-chat-launcher" class="sdv-launcher-pill" role="button" tabindex="0" title="{$launcherText}" onclick="window.sdvToggleChat && window.sdvToggleChat(event);" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.sdvToggleChat&&window.sdvToggleChat(event);}">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style="pointer-events: none; flex-shrink: 0; display: block;">
+        <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z" style="pointer-events: none;"/>
     </svg>
-    <span class="sdv-launcher-text">{$launcherText}</span>
+    <span class="sdv-launcher-text" style="pointer-events: none;">{$launcherText}</span>
 </div>
 HTML;
     } else {
         $launcherHtml = <<<HTML
-<div id="sdv-client-chat-launcher" class="sdv-launcher-circle" title="Support Chat">
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z"/>
+<div id="sdv-client-chat-launcher" class="sdv-launcher-circle" role="button" tabindex="0" title="Support Chat" onclick="window.sdvToggleChat && window.sdvToggleChat(event);" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.sdvToggleChat&&window.sdvToggleChat(event);}">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" style="pointer-events: none; flex-shrink: 0; display: block;">
+        <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z" style="pointer-events: none;"/>
     </svg>
 </div>
 HTML;
     }
 
-    $historyBtnHtml = $historyEnabled ? '<button type="button" class="sdv-cl-action-btn" id="sdv-cl-history-btn" title="Conversation History"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></button>' : '';
+    $historyBtnHtml = $historyEnabled ? '<button type="button" class="sdv-cl-action-btn" id="sdv-cl-history-btn" title="Conversation History" onclick="window.sdvToggleHistory && window.sdvToggleHistory();"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="pointer-events:none;"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></button>' : '';
 
     return <<<HTML
 <style>
@@ -5978,75 +5978,107 @@ HTML;
 }
 
 #sdv-client-chat-launcher {
-    position: fixed;
-    bottom: 24px;
+    position: fixed !important;
+    bottom: 24px !important;
     {$launcherPosCss}
-    background: var(--sdv-brand);
-    color: #ffffff;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.2);
-    cursor: pointer;
-    z-index: 99980;
-    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-    user-select: none;
+    background: {$brandColor} !important;
+    background: var(--sdv-brand, {$brandColor}) !important;
+    color: #ffffff !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.2) !important;
+    cursor: pointer !important;
+    z-index: 999998 !important;
+    transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.22s ease !important;
+    user-select: none !important;
+    -webkit-user-select: none !important;
+    outline: none !important;
+    pointer-events: auto !important;
 }
 #sdv-client-chat-launcher.sdv-launcher-circle {
-    width: 60px;
-    height: 60px;
-    border-radius: 50%;
+    width: 60px !important;
+    height: 60px !important;
+    border-radius: 50% !important;
 }
 #sdv-client-chat-launcher.sdv-launcher-pill {
-    padding: 12px 22px;
-    border-radius: 30px;
-    gap: 9px;
-    font-size: 14px;
-    font-weight: 600;
-    letter-spacing: 0.2px;
+    padding: 12px 22px !important;
+    border-radius: 30px !important;
+    gap: 9px !important;
+    font-size: 14px !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.2px !important;
 }
 #sdv-client-chat-launcher:hover {
-    transform: scale(1.06) translateY(-2px);
-    box-shadow: 0 15px 30px -5px rgba(0, 0, 0, 0.4);
+    transform: scale(1.06) translateY(-2px) !important;
+    box-shadow: 0 16px 32px -4px rgba(0, 0, 0, 0.45) !important;
+}
+#sdv-client-chat-launcher:active {
+    transform: scale(0.96) translateY(0) !important;
 }
 
 #sdv-client-chat-window {
-    position: fixed;
-    bottom: 96px;
+    position: fixed !important;
+    bottom: 96px !important;
     {$windowPosCss}
-    width: var(--sdv-chat-w);
-    height: var(--sdv-chat-h);
-    max-height: calc(100vh - 120px);
-    max-width: calc(100vw - 36px);
-    z-index: 99985;
-    background: #ffffff;
-    color: #1e293b;
-    border-radius: 16px;
-    box-shadow: 0 20px 45px -10px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(0, 0, 0, 0.08);
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    opacity: 0;
-    transform: translateY(16px) scale(0.96);
-    pointer-events: none;
-    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    width: {$chatWidth}px !important;
+    width: var(--sdv-chat-w, {$chatWidth}px) !important;
+    height: {$chatHeight}px !important;
+    height: var(--sdv-chat-h, {$chatHeight}px) !important;
+    max-height: calc(100vh - 120px) !important;
+    max-width: calc(100vw - 36px) !important;
+    z-index: 999999 !important;
+    background: #ffffff !important;
+    color: #1e293b !important;
+    border-radius: 16px !important;
+    box-shadow: 0 24px 50px -12px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(0, 0, 0, 0.08) !important;
+    display: none;
+    flex-direction: column !important;
+    overflow: hidden !important;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+    box-sizing: border-box !important;
+}
+#sdv-client-chat-window * {
+    box-sizing: border-box;
 }
 #sdv-client-chat-window.sdv-open {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-    pointer-events: auto;
+    display: flex !important;
+    animation: sdvFadeInUp 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
 }
 #sdv-client-chat-window.sdv-expanded {
-    width: var(--sdv-expand-w);
-    height: var(--sdv-expand-h);
-    max-height: calc(100vh - 90px);
-    max-width: calc(100vw - 40px);
+    width: {$expandWidth}px !important;
+    width: var(--sdv-expand-w, {$expandWidth}px) !important;
+    height: {$expandHeight}px !important;
+    height: var(--sdv-expand-h, {$expandHeight}px) !important;
+    max-height: calc(100vh - 90px) !important;
+    max-width: calc(100vw - 40px) !important;
+}
+@keyframes sdvFadeInUp {
+    0% {
+        opacity: 0;
+        transform: translateY(14px) scale(0.97);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+@media (max-width: 640px) {
+    #sdv-client-chat-window {
+        bottom: 84px !important;
+        left: 12px !important;
+        right: 12px !important;
+        width: auto !important;
+        max-width: none !important;
+        height: calc(100vh - 110px) !important;
+        max-height: none !important;
+    }
 }
 
 /* Header */
 .sdv-cl-header {
-    background: var(--sdv-brand);
+    background: {$brandColor};
+    background: var(--sdv-brand, {$brandColor});
     color: #ffffff;
     padding: 13px 16px;
     display: flex;
@@ -6113,7 +6145,8 @@ HTML;
     flex-shrink: 0;
 }
 .sdv-cl-escalate-btn {
-    color: var(--sdv-brand);
+    color: {$brandColor};
+    color: var(--sdv-brand, {$brandColor});
     font-weight: 600;
     text-decoration: none;
     cursor: pointer;
@@ -6139,7 +6172,8 @@ HTML;
 }
 .sdv-cl-msg-user {
     align-self: flex-end;
-    background: var(--sdv-brand);
+    background: {$brandColor};
+    background: var(--sdv-brand, {$brandColor});
     color: #ffffff;
     border-radius: 14px 14px 2px 14px;
     box-shadow: 0 2px 5px rgba(0,0,0,0.06);
@@ -6204,7 +6238,8 @@ HTML;
 }
 #sdv-cl-input:focus { border-color: var(--sdv-brand); box-shadow: 0 0 0 2px rgba(13, 110, 253, 0.18); }
 #sdv-cl-send {
-    background: var(--sdv-brand);
+    background: {$brandColor};
+    background: var(--sdv-brand, {$brandColor});
     border: none;
     color: #fff;
     width: 38px;
@@ -6271,7 +6306,8 @@ HTML;
 }
 .sdv-btn-new-chat {
     width: 100%;
-    background: var(--sdv-brand);
+    background: {$brandColor};
+    background: var(--sdv-brand, {$brandColor});
     color: #ffffff;
     border: none;
     border-radius: 8px;
@@ -6343,71 +6379,71 @@ HTML;
 /* ── Theme Variants ──────────────────────────────────────────────── */
 /* Cyber Dark Theme */
 #sdv-client-chat-window.sdv-theme-cyber_dark {
-    background: #0f172a;
-    color: #f1f5f9;
-    border: 1px solid #334155;
+    background: #0f172a !important;
+    color: #f1f5f9 !important;
+    border: 1px solid #334155 !important;
 }
 #sdv-client-chat-window.sdv-theme-cyber_dark .sdv-cl-header {
-    background: #1e293b;
+    background: #1e293b !important;
     border-bottom: 1px solid #334155;
 }
 #sdv-client-chat-window.sdv-theme-cyber_dark .sdv-cl-escalate-bar {
-    background: #1e293b;
+    background: #1e293b !important;
     border-bottom: 1px solid #334155;
     color: #94a3b8;
 }
 #sdv-client-chat-window.sdv-theme-cyber_dark .sdv-cl-messages {
-    background: #090d16;
+    background: #090d16 !important;
 }
 #sdv-client-chat-window.sdv-theme-cyber_dark .sdv-cl-msg-bot {
-    background: #1e293b;
-    color: #f8fafc;
+    background: #1e293b !important;
+    color: #f8fafc !important;
     border: 1px solid #334155;
 }
 #sdv-client-chat-window.sdv-theme-cyber_dark .sdv-cl-footer {
-    background: #0f172a;
+    background: #0f172a !important;
     border-top: 1px solid #334155;
 }
 #sdv-client-chat-window.sdv-theme-cyber_dark #sdv-cl-input {
-    background: #1e293b;
-    color: #f8fafc;
+    background: #1e293b !important;
+    color: #f8fafc !important;
     border: 1px solid #475569;
 }
 #sdv-client-chat-window.sdv-theme-cyber_dark .sdv-cl-history-drawer {
-    background: #0f172a;
-    color: #f8fafc;
+    background: #0f172a !important;
+    color: #f8fafc !important;
 }
 #sdv-client-chat-window.sdv-theme-cyber_dark .sdv-drawer-header {
-    background: #1e293b;
+    background: #1e293b !important;
     border-bottom: 1px solid #334155;
 }
 #sdv-client-chat-window.sdv-theme-cyber_dark .sdv-drawer-title { color: #f8fafc; }
 #sdv-client-chat-window.sdv-theme-cyber_dark .sdv-session-item {
-    background: #1e293b;
+    background: #1e293b !important;
     border-color: #334155;
 }
 #sdv-client-chat-window.sdv-theme-cyber_dark .sdv-session-item:hover {
-    background: #273549;
+    background: #273549 !important;
 }
 #sdv-client-chat-window.sdv-theme-cyber_dark .sdv-session-title { color: #f8fafc; }
 
 /* Glassmorphism Theme */
 #sdv-client-chat-window.sdv-theme-glassmorphism {
-    background: rgba(255, 255, 255, 0.85);
+    background: rgba(255, 255, 255, 0.88) !important;
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
     border: 1px solid rgba(255, 255, 255, 0.5);
 }
 #sdv-client-chat-window.sdv-theme-glassmorphism .sdv-cl-messages {
-    background: rgba(248, 250, 252, 0.65);
+    background: rgba(248, 250, 252, 0.65) !important;
 }
 #sdv-client-chat-window.sdv-theme-glassmorphism .sdv-cl-footer {
-    background: rgba(255, 255, 255, 0.8);
+    background: rgba(255, 255, 255, 0.8) !important;
 }
 
 /* Brand Gradient Theme */
 #sdv-client-chat-window.sdv-theme-brand_gradient .sdv-cl-header {
-    background: linear-gradient(135deg, var(--sdv-brand) 0%, #4f46e5 100%);
+    background: linear-gradient(135deg, var(--sdv-brand) 0%, #4f46e5 100%) !important;
 }
 </style>
 
@@ -6420,11 +6456,11 @@ HTML;
     <div class="sdv-cl-history-drawer" id="sdv-cl-history-drawer">
         <div class="sdv-drawer-header">
             <div class="sdv-drawer-title">Past Conversations</div>
-            <button type="button" class="sdv-drawer-close" id="sdv-drawer-close" title="Close History">&times;</button>
+            <button type="button" class="sdv-drawer-close" id="sdv-drawer-close" title="Close History" onclick="window.sdvCloseHistory && window.sdvCloseHistory();">&times;</button>
         </div>
         <div class="sdv-drawer-actions">
-            <button type="button" class="sdv-btn-new-chat" id="sdv-btn-new-chat">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+            <button type="button" class="sdv-btn-new-chat" id="sdv-btn-new-chat" onclick="window.sdvStartNewChat && window.sdvStartNewChat();">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="pointer-events:none;"><path d="M12 5v14M5 12h14"/></svg>
                 Start New Conversation
             </button>
         </div>
@@ -6444,14 +6480,14 @@ HTML;
         </div>
         <div class="sdv-cl-controls">
             {$historyBtnHtml}
-            <button type="button" class="sdv-cl-action-btn" id="sdv-cl-expand-btn" title="Expand / Minimize Window" aria-label="Expand">⛶</button>
-            <button type="button" class="sdv-cl-action-btn" id="sdv-cl-close" title="Minimize Window" aria-label="Close">&minus;</button>
+            <button type="button" class="sdv-cl-action-btn" id="sdv-cl-expand-btn" title="Expand / Minimize Window" aria-label="Expand" onclick="window.sdvToggleExpand && window.sdvToggleExpand();">⛶</button>
+            <button type="button" class="sdv-cl-action-btn" id="sdv-cl-close" title="Minimize Window" aria-label="Close" onclick="window.sdvToggleChat && window.sdvToggleChat(false);">&minus;</button>
         </div>
     </div>
 
     <div class="sdv-cl-escalate-bar">
         <span>Need official staff assistance?</span>
-        <a href="javascript:void(0);" class="sdv-cl-escalate-btn" id="sdv-cl-escalate">Convert to Ticket &rarr;</a>
+        <a href="javascript:void(0);" class="sdv-cl-escalate-btn" id="sdv-cl-escalate" onclick="window.sdvEscalateToTicket && window.sdvEscalateToTicket();">Convert to Ticket &rarr;</a>
     </div>
 
     <div class="sdv-cl-messages" id="sdv-cl-msgs">
@@ -6461,8 +6497,8 @@ HTML;
     <div class="sdv-cl-footer">
         <div class="sdv-cl-input-row">
             <input type="text" id="sdv-cl-input" placeholder="Ask about services, invoices, domains..." autocomplete="off" />
-            <button type="button" id="sdv-cl-send" title="Send message">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+            <button type="button" id="sdv-cl-send" title="Send message" onclick="window.sdvSendMessage && window.sdvSendMessage();">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" style="pointer-events:none;"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
             </button>
         </div>
         <div class="sdv-cl-branding">Powered by Sahdev AI</div>
@@ -6471,33 +6507,36 @@ HTML;
 
 <script>
 (function() {
-    var brandColor = {$brandColorJs};
-    var launcher = document.getElementById('sdv-client-chat-launcher');
-    var chatWin = document.getElementById('sdv-client-chat-window');
-    var closeBtn = document.getElementById('sdv-cl-close');
-    var expandBtn = document.getElementById('sdv-cl-expand-btn');
-    var historyBtn = document.getElementById('sdv-cl-history-btn');
-    var historyDrawer = document.getElementById('sdv-cl-history-drawer');
-    var drawerCloseBtn = document.getElementById('sdv-drawer-close');
-    var newChatBtn = document.getElementById('sdv-btn-new-chat');
-    var drawerList = document.getElementById('sdv-drawer-list');
-    var inputEl = document.getElementById('sdv-cl-input');
-    var sendBtn = document.getElementById('sdv-cl-send');
-    var msgsEl = document.getElementById('sdv-cl-msgs');
-    var escalateBtn = document.getElementById('sdv-cl-escalate');
+    // ── Safe LocalStorage Access Layer (Never throws DOMException) ─────────
+    function sdvSafeGet(key, fallback) {
+        try {
+            if (typeof window !== 'undefined' && window.localStorage) {
+                var v = window.localStorage.getItem(key);
+                return v !== null ? v : fallback;
+            }
+        } catch(e) {}
+        return fallback;
+    }
 
-    // Build resilient endpoint list prioritizing native WHMCS module routing
-    var candidates = [];
+    function sdvSafeSet(key, val) {
+        try {
+            if (typeof window !== 'undefined' && window.localStorage) {
+                window.localStorage.setItem(key, val);
+            }
+        } catch(e) {}
+    }
+
+    var brandColor = {$brandColorJs};
     var systemUrl = {$systemUrlJs};
     var nativeUrl = {$nativeAjaxUrlJs};
     var directUrl = {$primaryAjaxUrlJs};
     var debugMode = {$debugModeJs};
 
-    // 1. Native WHMCS routing
+    // Build resilient endpoint list prioritizing native WHMCS module routing
+    var candidates = [];
     if (nativeUrl) candidates.push(nativeUrl);
     if (systemUrl) candidates.push(systemUrl + '/index.php?m=sahdev&sahdev_act=ajax_handler');
 
-    // 2. Base element candidate check
     var baseEl = document.querySelector('base');
     if (baseEl && baseEl.href) {
         var cleanBase = baseEl.href.replace(/\/+$/, '');
@@ -6505,7 +6544,6 @@ HTML;
         candidates.push(cleanBase + '/modules/addons/sahdev/ajax.php');
     }
 
-    // 3. Direct script candidates
     if (directUrl) candidates.push(directUrl);
     if (systemUrl) candidates.push(systemUrl + '/modules/addons/sahdev/ajax.php');
 
@@ -6531,8 +6569,7 @@ HTML;
         }
     });
 
-    var cachedEndpoint = null;
-    try { cachedEndpoint = localStorage.getItem('sdv_active_endpoint'); } catch(e) {}
+    var cachedEndpoint = sdvSafeGet('sdv_active_endpoint', null);
     if (cachedEndpoint && uniqueEndpoints.indexOf(cachedEndpoint) > -1) {
         uniqueEndpoints = [cachedEndpoint].concat(uniqueEndpoints.filter(function(u) { return u !== cachedEndpoint; }));
     }
@@ -6570,7 +6607,7 @@ HTML;
                     throw new Error('Invalid JSON response');
                 }
 
-                try { localStorage.setItem('sdv_active_endpoint', targetUrl); } catch(e) {}
+                sdvSafeSet('sdv_active_endpoint', targetUrl);
                 callback(null, data);
             });
         })
@@ -6582,46 +6619,88 @@ HTML;
         });
     }
 
-    var visitorToken = localStorage.getItem('sdv_visitor_token');
+    var visitorToken = sdvSafeGet('sdv_visitor_token', '');
     if (!visitorToken) {
         visitorToken = 'vt_' + Math.random().toString(36).substring(2, 12) + Date.now().toString(36);
-        localStorage.setItem('sdv_visitor_token', visitorToken);
+        sdvSafeSet('sdv_visitor_token', visitorToken);
     }
 
     var sessionUuid = null;
     var isInitialized = false;
+    var _lastToggleTime = 0;
 
-    // Restore expanded window preference
+    // ── Global Fail-Safe Window Controls ──────────────────────────────────
+    window.sdvToggleChat = function(open) {
+        var now = Date.now();
+        if (typeof open !== 'boolean' && (now - _lastToggleTime) < 250) {
+            return;
+        }
+        _lastToggleTime = now;
+
+        var win = document.getElementById('sdv-client-chat-window');
+        if (!win) {
+            console.warn('[Sahdev Chat] Widget window #sdv-client-chat-window not found in DOM.');
+            return;
+        }
+
+        var isCurrentlyOpen = win.classList.contains('sdv-open') || (win.style.display === 'flex');
+        var shouldOpen = (typeof open === 'boolean') ? open : !isCurrentlyOpen;
+
+        if (shouldOpen) {
+            win.classList.add('sdv-open');
+            win.style.display = 'flex';
+            var input = document.getElementById('sdv-cl-input');
+            if (input) {
+                setTimeout(function() {
+                    try { input.focus(); } catch(e) {}
+                }, 120);
+            }
+            if (!isInitialized && typeof window.sdvInitChat === 'function') {
+                window.sdvInitChat();
+            }
+        } else {
+            win.classList.remove('sdv-open');
+            win.style.display = 'none';
+            var drawer = document.getElementById('sdv-cl-history-drawer');
+            if (drawer) {
+                drawer.classList.remove('sdv-drawer-open');
+            }
+        }
+    };
+
+    window.sdvToggleExpand = function() {
+        var win = document.getElementById('sdv-client-chat-window');
+        var btn = document.getElementById('sdv-cl-expand-btn');
+        if (!win) return;
+        var isExpanded = win.classList.toggle('sdv-expanded');
+        if (btn) btn.textContent = isExpanded ? '⤡' : '⛶';
+        sdvSafeSet('sdv_chat_expanded', isExpanded ? '1' : '0');
+    };
+
+    window.sdvToggleHistory = function() {
+        var drawer = document.getElementById('sdv-cl-history-drawer');
+        if (drawer) {
+            var isOpen = drawer.classList.toggle('sdv-drawer-open');
+            if (isOpen) {
+                loadHistoryList();
+            }
+        }
+    };
+
+    window.sdvCloseHistory = function() {
+        var drawer = document.getElementById('sdv-cl-history-drawer');
+        if (drawer) drawer.classList.remove('sdv-drawer-open');
+    };
+
+    // Restore expanded window preference on initial load
     try {
-        if (localStorage.getItem('sdv_chat_expanded') === '1') {
-            chatWin.classList.add('sdv-expanded');
-            if (expandBtn) expandBtn.textContent = '⤡';
+        if (sdvSafeGet('sdv_chat_expanded', '0') === '1') {
+            var winEl = document.getElementById('sdv-client-chat-window');
+            var expBtnEl = document.getElementById('sdv-cl-expand-btn');
+            if (winEl) winEl.classList.add('sdv-expanded');
+            if (expBtnEl) expBtnEl.textContent = '⤡';
         }
     } catch(e) {}
-
-    function toggleChat(open) {
-        var shouldOpen = typeof open === 'boolean' ? open : !chatWin.classList.contains('sdv-open');
-        if (shouldOpen) {
-            chatWin.classList.add('sdv-open');
-            if (!isInitialized) initChat();
-            setTimeout(function() { inputEl.focus(); }, 150);
-        } else {
-            chatWin.classList.remove('sdv-open');
-            if (historyDrawer) historyDrawer.classList.remove('sdv-drawer-open');
-        }
-    }
-
-    if (launcher) launcher.addEventListener('click', function() { toggleChat(); });
-    if (closeBtn) closeBtn.addEventListener('click', function() { toggleChat(false); });
-
-    // Expand / contract toggle
-    if (expandBtn) {
-        expandBtn.addEventListener('click', function() {
-            var isExpanded = chatWin.classList.toggle('sdv-expanded');
-            expandBtn.textContent = isExpanded ? '⤡' : '⛶';
-            try { localStorage.setItem('sdv_chat_expanded', isExpanded ? '1' : '0'); } catch(e) {}
-        });
-    }
 
     // Markdown Parser
     function parseSimpleMarkdown(str) {
@@ -6661,6 +6740,8 @@ HTML;
     }
 
     function appendClMsg(role, text, isHtml) {
+        var msgsEl = document.getElementById('sdv-cl-msgs');
+        if (!msgsEl) return null;
         var d = document.createElement('div');
         d.className = 'sdv-cl-msg ' + (role === 'user' ? 'sdv-cl-msg-user' : 'sdv-cl-msg-bot');
         if (isHtml) {
@@ -6673,7 +6754,8 @@ HTML;
         return d;
     }
 
-    function initChat() {
+    window.sdvInitChat = function() {
+        if (isInitialized) return;
         isInitialized = true;
         var form = new FormData();
         form.append('action', 'client_chat_init');
@@ -6685,23 +6767,29 @@ HTML;
             if (data && data.status === 'success') {
                 sessionUuid = data.session_uuid;
                 if (data.messages && data.messages.length > 0) {
-                    msgsEl.innerHTML = '';
-                    data.messages.forEach(function(m) {
-                        appendClMsg(m.sender_type === 'user' ? 'user' : 'bot', m.message_text);
-                    });
+                    var msgsEl = document.getElementById('sdv-cl-msgs');
+                    if (msgsEl) {
+                        msgsEl.innerHTML = '';
+                        data.messages.forEach(function(m) {
+                            appendClMsg(m.sender_type === 'user' ? 'user' : 'bot', m.message_text, false);
+                        });
+                    }
                 }
             }
         });
-    }
+    };
 
-    function sendClientMessage() {
+    window.sdvSendMessage = function() {
+        var inputEl = document.getElementById('sdv-cl-input');
+        var sendBtn = document.getElementById('sdv-cl-send');
+        if (!inputEl) return;
         var text = (inputEl.value || '').trim();
         if (!text) return;
 
         appendClMsg('user', text, false);
         inputEl.value = '';
         inputEl.disabled = true;
-        sendBtn.disabled = true;
+        if (sendBtn) sendBtn.disabled = true;
 
         var tempBot = appendClMsg('bot', 'Typing...', false);
 
@@ -6712,71 +6800,57 @@ HTML;
 
         postAjaxWithFallback(form, function(err, data) {
             inputEl.disabled = false;
-            sendBtn.disabled = false;
-            inputEl.focus();
+            if (sendBtn) sendBtn.disabled = false;
+            try { inputEl.focus(); } catch(e) {}
 
             if (err) {
-                tempBot.innerHTML = '⚠️ ' + (err.message || 'Connection error. Please try again.');
+                if (tempBot) tempBot.innerHTML = '⚠️ ' + (err.message || 'Connection error. Please try again.');
                 return;
             }
 
             if (data.status === 'success' || data.success) {
-                tempBot.innerHTML = parseSimpleMarkdown(data.reply || 'Message received.');
+                if (tempBot) tempBot.innerHTML = parseSimpleMarkdown(data.reply || 'Message received.');
             } else {
-                tempBot.innerHTML = '⚠️ ' + (data.message || data.error || 'Could not send message.');
+                if (tempBot) tempBot.innerHTML = '⚠️ ' + (data.message || data.error || 'Could not send message.');
             }
         });
-    }
+    };
 
-    if (sendBtn) sendBtn.addEventListener('click', sendClientMessage);
-    if (inputEl) {
-        inputEl.addEventListener('keydown', function(e) {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                sendClientMessage();
-            }
-        });
-    }
+    window.sdvEscalateToTicket = function() {
+        var escalateBtn = document.getElementById('sdv-cl-escalate');
+        if (!sessionUuid) {
+            alert('Please send a message before converting to a support ticket.');
+            return;
+        }
+        if (!confirm('Would you like our staff to assist you? This will convert your chat transcript into a support ticket.')) return;
 
-    // ── Ticket Escalation with universal /supporttickets.php link ──────
-    if (escalateBtn) {
-        escalateBtn.addEventListener('click', function() {
-            if (!sessionUuid) {
-                alert('Please send a message before converting to a support ticket.');
+        if (escalateBtn) escalateBtn.textContent = 'Creating ticket...';
+        var form = new FormData();
+        form.append('action', 'client_chat_escalate');
+        form.append('session_uuid', sessionUuid);
+
+        postAjaxWithFallback(form, function(err, data) {
+            if (err || !(data.status === 'success' || data.success)) {
+                if (escalateBtn) escalateBtn.textContent = 'Convert to Ticket →';
+                alert('Escalation failed: ' + (err ? err.message : (data.message || data.error || 'Unknown error')));
                 return;
             }
-            if (!confirm('Would you like our staff to assist you? This will convert your chat transcript into a support ticket.')) return;
 
-            escalateBtn.textContent = 'Creating ticket...';
-            var form = new FormData();
-            form.append('action', 'client_chat_escalate');
-            form.append('session_uuid', sessionUuid);
+            var tid = data.tid || data.ticket_id || '';
+            var ticketUrl = data.ticket_url || 'supporttickets.php';
 
-            postAjaxWithFallback(form, function(err, data) {
-                if (err || !(data.status === 'success' || data.success)) {
-                    escalateBtn.textContent = 'Convert to Ticket →';
-                    alert('Escalation failed: ' + (err ? err.message : (data.message || data.error || 'Unknown error')));
-                    return;
-                }
-
-                var tid = data.tid || data.ticket_id || '';
-                // Dynamic ticket URLs in WHMCS require hash parameters for direct view;
-                // linking directly to supporttickets.php guarantees the client sees all their tickets without error.
-                var ticketUrl = data.ticket_url || 'supporttickets.php';
-
-                appendClMsg('bot',
-                    '✅ <strong>Support Ticket #' + tid + ' created successfully!</strong><br><br>' +
-                    'Our staff team has received your chat transcript and will follow up shortly.<br><br>' +
-                    '<a href="' + ticketUrl + '" style="color:' + encodeURIComponent(brandColor) + ';font-weight:700;text-decoration:underline;">View All Support Tickets &rarr;</a>',
-                    true
-                );
-                escalateBtn.style.display = 'none';
-            });
+            appendClMsg('bot',
+                '✅ <strong>Support Ticket #' + tid + ' created successfully!</strong><br><br>' +
+                'Our staff team has received your chat transcript and will follow up shortly.<br><br>' +
+                '<a href="' + ticketUrl + '" style="color:' + encodeURIComponent(brandColor) + ';font-weight:700;text-decoration:underline;">View All Support Tickets &rarr;</a>',
+                true
+            );
+            if (escalateBtn) escalateBtn.style.display = 'none';
         });
-    }
+    };
 
-    // ── In-Widget History Drawer Management ─────────────────────────
     function loadHistoryList() {
+        var drawerList = document.getElementById('sdv-drawer-list');
         if (!drawerList) return;
         drawerList.innerHTML = '<div style="text-align:center;padding:24px;color:#94a3b8;font-size:12px;">Loading past conversations...</div>';
 
@@ -6824,19 +6898,23 @@ HTML;
                 return;
             }
             sessionUuid = data.session_uuid;
-            msgsEl.innerHTML = '';
-            if (data.messages && data.messages.length > 0) {
-                data.messages.forEach(function(m) {
-                    appendClMsg(m.sender_type === 'user' ? 'user' : 'bot', m.message_text, false);
-                });
-            } else {
-                appendClMsg('bot', 'No messages recorded in this conversation yet.', false);
+            var msgsEl = document.getElementById('sdv-cl-msgs');
+            if (msgsEl) {
+                msgsEl.innerHTML = '';
+                if (data.messages && data.messages.length > 0) {
+                    data.messages.forEach(function(m) {
+                        appendClMsg(m.sender_type === 'user' ? 'user' : 'bot', m.message_text, false);
+                    });
+                } else {
+                    appendClMsg('bot', 'No messages recorded in this conversation yet.', false);
+                }
             }
-            if (historyDrawer) historyDrawer.classList.remove('sdv-drawer-open');
+            var drawer = document.getElementById('sdv-cl-history-drawer');
+            if (drawer) drawer.classList.remove('sdv-drawer-open');
         });
     }
 
-    function startNewChatThread() {
+    window.sdvStartNewChat = function() {
         var form = new FormData();
         form.append('action', 'client_chat_new_session');
         form.append('visitor_token', visitorToken);
@@ -6848,29 +6926,71 @@ HTML;
                 return;
             }
             sessionUuid = data.session_uuid;
-            msgsEl.innerHTML = '';
-            appendClMsg('bot', data.greeting || 'Hi! How can I help you today?', false);
+            var msgsEl = document.getElementById('sdv-cl-msgs');
+            if (msgsEl) {
+                msgsEl.innerHTML = '';
+                appendClMsg('bot', data.greeting || 'Hi! How can I help you today?', false);
+            }
+            var escalateBtn = document.getElementById('sdv-cl-escalate');
             if (escalateBtn) escalateBtn.style.display = 'inline';
-            if (historyDrawer) historyDrawer.classList.remove('sdv-drawer-open');
-            inputEl.focus();
+            var drawer = document.getElementById('sdv-cl-history-drawer');
+            if (drawer) drawer.classList.remove('sdv-drawer-open');
+            var inputEl = document.getElementById('sdv-cl-input');
+            if (inputEl) try { inputEl.focus(); } catch(e) {}
         });
+    };
+
+    // Attach listeners defensively to avoid missing events
+    function attachListeners() {
+        var launcher = document.getElementById('sdv-client-chat-launcher');
+        if (launcher && !launcher._sdvBound) {
+            launcher._sdvBound = true;
+            launcher.addEventListener('click', function(e) {
+                e.preventDefault();
+                window.sdvToggleChat();
+            });
+        }
+
+        var closeBtn = document.getElementById('sdv-cl-close');
+        if (closeBtn && !closeBtn._sdvBound) {
+            closeBtn._sdvBound = true;
+            closeBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                window.sdvToggleChat(false);
+            });
+        }
+
+        var expandBtn = document.getElementById('sdv-cl-expand-btn');
+        if (expandBtn && !expandBtn._sdvBound) {
+            expandBtn._sdvBound = true;
+            expandBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                window.sdvToggleExpand();
+            });
+        }
+
+        var sendBtn = document.getElementById('sdv-cl-send');
+        if (sendBtn && !sendBtn._sdvBound) {
+            sendBtn._sdvBound = true;
+            sendBtn.addEventListener('click', window.sdvSendMessage);
+        }
+
+        var inputEl = document.getElementById('sdv-cl-input');
+        if (inputEl && !inputEl._sdvBound) {
+            inputEl._sdvBound = true;
+            inputEl.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    window.sdvSendMessage();
+                }
+            });
+        }
     }
 
-    if (historyBtn) {
-        historyBtn.addEventListener('click', function() {
-            if (historyDrawer) {
-                var isOpen = historyDrawer.classList.toggle('sdv-drawer-open');
-                if (isOpen) loadHistoryList();
-            }
-        });
-    }
-    if (drawerCloseBtn) {
-        drawerCloseBtn.addEventListener('click', function() {
-            if (historyDrawer) historyDrawer.classList.remove('sdv-drawer-open');
-        });
-    }
-    if (newChatBtn) {
-        newChatBtn.addEventListener('click', startNewChatThread);
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', attachListeners);
+    } else {
+        attachListeners();
     }
 })();
 </script>
