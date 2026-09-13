@@ -1145,6 +1145,7 @@ class AdminController
             $clientChatKbEnabled = !empty($_POST['client_chat_kb_enabled']) ? 1 : 0;
             $clientChatRequirePrechat = !empty($_POST['client_chat_require_prechat']) ? 1 : 0;
             $clientChatProactiveDelay = max(0, (int) ($_POST['client_chat_proactive_delay'] ?? 15));
+            $clientChatProactiveMessage = trim($_POST['client_chat_proactive_message'] ?? '');
             $clientChatSystemPrompt = trim($_POST['client_chat_system_prompt'] ?? '');
             $clientChatDebug = !empty($_POST['client_chat_debug']) ? 1 : 0;
 
@@ -1220,6 +1221,7 @@ class AdminController
                 'client_chat_kb_enabled' => $clientChatKbEnabled,
                 'client_chat_require_prechat' => $clientChatRequirePrechat,
                 'client_chat_proactive_delay' => $clientChatProactiveDelay,
+                'client_chat_proactive_message' => $clientChatProactiveMessage,
                 'client_chat_system_prompt' => $clientChatSystemPrompt,
                 'client_chat_debug' => $clientChatDebug,
                 'metrics_cron_enabled' => $metricsCronEnabled,
@@ -1869,9 +1871,15 @@ class AdminController
                                 </div>
                                 <div class="form-group" style="flex: 1; min-width: 180px;">
                                     <label style="font-weight: 600; display: block; margin-bottom: 5px;">Proactive Popup Delay (Seconds)</label>
-                                    <input type="number" min="0" max="120" name="client_chat_proactive_delay" class="form-control" value="<?php echo htmlspecialchars($settings->client_chat_proactive_delay ?? 15); ?>">
-                                    <small class="text-muted">0 to disable automatic popup.</small>
+                                    <input type="number" min="0" max="300" name="client_chat_proactive_delay" class="form-control" value="<?php echo htmlspecialchars($settings->client_chat_proactive_delay ?? 15); ?>">
+                                    <small class="text-muted">Seconds before teaser bubble pops up (0 to disable).</small>
                                 </div>
+                            </div>
+
+                            <div class="form-group" style="margin-bottom: 15px;">
+                                <label style="font-weight: 600; display: block; margin-bottom: 5px;">Proactive Teaser Message (Triggered after X seconds)</label>
+                                <input type="text" name="client_chat_proactive_message" class="form-control" placeholder="Hi there! 👋 Need quick assistance with your hosting or account?" value="<?php echo htmlspecialchars($settings->client_chat_proactive_message ?? ''); ?>">
+                                <small class="text-muted">Pops up above the launcher button to engage visitors. If left empty, uses the welcome message.</small>
                             </div>
 
                             <div class="form-group" style="margin-bottom: 15px;">
@@ -7980,28 +7988,31 @@ class AdminController
         // Handle POST actions
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             check_token('WHMCS.admin.default');
+            $settingsRecord = Capsule::table('tblsahdev_settings')->first();
+            $settingsId = $settingsRecord ? $settingsRecord->id : 1;
 
             // 1. Save Widget Customizer
             if (isset($_POST['save_client_chat_customizer']) || isset($_POST['save_client_chat'])) {
-                Capsule::table('tblsahdev_settings')->where('id', 1)->update([
-                    'client_chat_enabled'          => !empty($_POST['client_chat_enabled']) ? 1 : 0,
-                    'client_chat_provider_id'      => (int) ($_POST['client_chat_provider_id'] ?? 0),
-                    'client_chat_title'            => trim($_POST['client_chat_title'] ?? 'Hosting Support Assistant'),
-                    'client_chat_brand_color'      => trim($_POST['client_chat_brand_color'] ?? '#0d6efd'),
-                    'client_chat_position'         => trim($_POST['client_chat_position'] ?? 'bottom-right'),
-                    'client_chat_welcome_message'  => trim($_POST['client_chat_welcome_message'] ?? ''),
-                    'client_chat_require_auth'     => !empty($_POST['client_chat_require_auth']) ? 1 : 0,
-                    'client_chat_proactive_delay'  => (int) ($_POST['client_chat_proactive_delay'] ?? 15),
-                    'client_chat_debug'            => !empty($_POST['client_chat_debug']) ? 1 : 0,
-                    'client_chat_width'            => max(320, min(600, (int)($_POST['client_chat_width'] ?? 380))),
-                    'client_chat_height'           => max(400, min(850, (int)($_POST['client_chat_height'] ?? 560))),
-                    'client_chat_expand_width'     => max(450, min(1200, (int)($_POST['client_chat_expand_width'] ?? 700))),
-                    'client_chat_expand_height'    => max(450, min(1000, (int)($_POST['client_chat_expand_height'] ?? 720))),
-                    'client_chat_theme'            => trim($_POST['client_chat_theme'] ?? 'modern_light'),
-                    'client_chat_launcher_style'   => trim($_POST['client_chat_launcher_style'] ?? 'circular'),
-                    'client_chat_launcher_text'    => trim($_POST['client_chat_launcher_text'] ?? 'Chat with Us'),
-                    'client_chat_history_enabled'  => !empty($_POST['client_chat_history_enabled']) ? 1 : 0,
-                    'updated_at'                   => \Carbon\Carbon::now(),
+                Capsule::table('tblsahdev_settings')->where('id', $settingsId)->update([
+                    'client_chat_enabled'           => !empty($_POST['client_chat_enabled']) ? 1 : 0,
+                    'client_chat_provider_id'       => (int) ($_POST['client_chat_provider_id'] ?? 0),
+                    'client_chat_title'             => trim($_POST['client_chat_title'] ?? 'Hosting Support Assistant'),
+                    'client_chat_brand_color'       => trim($_POST['client_chat_brand_color'] ?? '#0d6efd'),
+                    'client_chat_position'          => trim($_POST['client_chat_position'] ?? 'bottom-right'),
+                    'client_chat_welcome_message'   => trim($_POST['client_chat_welcome_message'] ?? ''),
+                    'client_chat_require_auth'      => !empty($_POST['client_chat_require_auth']) ? 1 : 0,
+                    'client_chat_proactive_delay'   => (int) ($_POST['client_chat_proactive_delay'] ?? 15),
+                    'client_chat_proactive_message' => trim($_POST['client_chat_proactive_message'] ?? ''),
+                    'client_chat_debug'             => !empty($_POST['client_chat_debug']) ? 1 : 0,
+                    'client_chat_width'             => max(320, min(600, (int)($_POST['client_chat_width'] ?? 380))),
+                    'client_chat_height'            => max(400, min(850, (int)($_POST['client_chat_height'] ?? 560))),
+                    'client_chat_expand_width'      => max(450, min(1200, (int)($_POST['client_chat_expand_width'] ?? 700))),
+                    'client_chat_expand_height'     => max(450, min(1000, (int)($_POST['client_chat_expand_height'] ?? 720))),
+                    'client_chat_theme'             => trim($_POST['client_chat_theme'] ?? 'modern_light'),
+                    'client_chat_launcher_style'    => trim($_POST['client_chat_launcher_style'] ?? 'circular'),
+                    'client_chat_launcher_text'     => trim($_POST['client_chat_launcher_text'] ?? 'Chat with Us'),
+                    'client_chat_history_enabled'   => !empty($_POST['client_chat_history_enabled']) ? 1 : 0,
+                    'updated_at'                    => \Carbon\Carbon::now(),
                 ]);
                 $successMessage = "Widget configuration and appearance saved successfully.";
                 $currentTab = 'customizer';
@@ -8009,7 +8020,7 @@ class AdminController
 
             // 2. Save Data Sources & Scope
             if (isset($_POST['save_client_chat_datasources'])) {
-                Capsule::table('tblsahdev_settings')->where('id', 1)->update([
+                Capsule::table('tblsahdev_settings')->where('id', $settingsId)->update([
                     'client_chat_ds_services'       => !empty($_POST['client_chat_ds_services']) ? 1 : 0,
                     'client_chat_ds_domains'        => !empty($_POST['client_chat_ds_domains']) ? 1 : 0,
                     'client_chat_ds_invoices'       => !empty($_POST['client_chat_ds_invoices']) ? 1 : 0,
@@ -8649,6 +8660,12 @@ class AdminController
                                             <label>Proactive Bubble Delay (Seconds)</label>
                                             <input type="number" name="client_chat_proactive_delay" class="form-control" value="<?php echo (int)($settings->client_chat_proactive_delay ?? 15); ?>" min="0" max="300">
                                         </div>
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label>Proactive Teaser Message (Triggered after X seconds)</label>
+                                        <input type="text" name="client_chat_proactive_message" class="form-control" placeholder="Hi there! 👋 Need quick assistance with your hosting or account?" value="<?php echo htmlspecialchars($settings->client_chat_proactive_message ?? ''); ?>">
+                                        <small class="text-muted">Shown in the floating teaser notification bubble above the launcher. Leave blank to use welcome message.</small>
                                     </div>
 
                                     <div class="form-group">

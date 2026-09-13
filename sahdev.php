@@ -312,6 +312,7 @@ function sahdev_activate()
                     $table->boolean('client_chat_require_prechat')->default(0);
                     $table->boolean('client_chat_require_auth')->default(0);
                     $table->integer('client_chat_proactive_delay')->default(15);
+                    $table->text('client_chat_proactive_message')->nullable();
                     $table->boolean('client_chat_kb_enabled')->default(1);
                     $table->longText('client_chat_system_prompt')->nullable();
                     $table->boolean('client_chat_debug')->default(0);
@@ -1367,7 +1368,7 @@ function sahdev_clientarea($vars)
     $clientActions = [
         'client_chat_init', 'client_chat_message', 'client_chat_escalate',
         'client_chat_get_history', 'client_chat_load_session', 'client_chat_new_session',
-        'client_chat_feedback', 'visitor_heartbeat'
+        'client_chat_poll', 'client_chat_feedback', 'visitor_heartbeat'
     ];
     if ($sahdevAct === 'ajax_handler' || in_array($action, $clientActions, true) || !empty($action)) {
         while (ob_get_level() > 0) {

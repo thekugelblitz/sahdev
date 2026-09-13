@@ -22,7 +22,8 @@ $adminId = $_SESSION['adminid'] ?? null;
 $action = isset($_REQUEST['action']) ? $_REQUEST['action'] : '';
 $isClientChatAction = in_array($action, [
     'client_chat_init', 'client_chat_message', 'client_chat_escalate',
-    'client_chat_get_history', 'client_chat_load_session', 'client_chat_new_session'
+    'client_chat_get_history', 'client_chat_load_session', 'client_chat_new_session',
+    'client_chat_poll'
 ], true);
 
 if (!$adminId && !$isClientChatAction) {
@@ -81,7 +82,8 @@ if ($isClientChatAction) {
                 }
             }
 
-            $session = \Sahdev\Lib\ChatService::getOrCreateClientSession($visitorToken, $clientId, $metadata);
+            $sessionUuid = trim((string) ($_REQUEST['session_uuid'] ?? ''));
+            $session = \Sahdev\Lib\ChatService::getOrCreateClientSession($visitorToken, $clientId, $metadata, $sessionUuid);
             $messages = \Sahdev\Lib\ChatService::getSessionMessages((int) $session['id'], 50);
             $greeting = !empty($settings->client_chat_welcome_message)
                 ? $settings->client_chat_welcome_message
@@ -171,6 +173,7 @@ if ($isClientChatAction) {
 
             $visitorToken = trim((string) ($_POST['visitor_token'] ?? ''));
             $messageText = trim((string) ($_POST['message'] ?? ''));
+            $sessionUuid = trim((string) ($_POST['session_uuid'] ?? ''));
 
             if (empty($visitorToken) || empty($messageText)) {
                 header('HTTP/1.1 400 Bad Request');
@@ -181,7 +184,22 @@ if ($isClientChatAction) {
             $preview = strlen($messageText) > 60 ? substr($messageText, 0, 60) . '...' : $messageText;
             \Sahdev\Lib\ModuleLogger::info('client_chat', "Received user message: \"{$preview}\" (visitor: " . substr($visitorToken, 0, 8) . "...)");
 
-            $res = \Sahdev\Lib\ChatService::handleClientMessage($visitorToken, $messageText, $clientId);
+            $res = \Sahdev\Lib\ChatService::handleClientMessage($visitorToken, $messageText, $clientId, $sessionUuid);
+            echo json_encode(array_merge(['status' => ($res['success'] ?? false) ? 'success' : 'error'], $res));
+            exit;
+        }
+
+        if ($action === 'client_chat_poll') {
+            $sessionUuid = trim((string) ($_REQUEST['session_uuid'] ?? ''));
+            $visitorToken = trim((string) ($_REQUEST['visitor_token'] ?? ''));
+            $afterId = (int) ($_REQUEST['after_id'] ?? 0);
+
+            if (empty($sessionUuid)) {
+                echo json_encode(['status' => 'error', 'message' => 'Missing session_uuid.']);
+                exit;
+            }
+
+            $res = \Sahdev\Lib\ChatService::pollSessionMessages($sessionUuid, $visitorToken, $clientId, $afterId);
             echo json_encode(array_merge(['status' => ($res['success'] ?? false) ? 'success' : 'error'], $res));
             exit;
         }
@@ -220,7 +238,7 @@ if ($isClientChatAction) {
 $getAllowedActions = [
     'get_analytics_period', 'get_header_server_widget', 'server_sso',
     'copilot_stream', 'get_metrics_data', 'client_chat_init',
-    'client_chat_get_history', 'client_chat_load_session'
+    'client_chat_get_history', 'client_chat_load_session', 'client_chat_poll'
 ];
 $isGetAllowed = in_array($action, $getAllowedActions, true);
 
@@ -245,7 +263,8 @@ $allowedActions = [
     'copilot_send_message', 'copilot_stream', 'copilot_execute_op', 'copilot_rollback_op',
     'chat_takeover', 'fetch_openrouter_models', 'get_metrics_data',
     'client_chat_init', 'client_chat_message', 'client_chat_escalate',
-    'client_chat_get_history', 'client_chat_load_session', 'client_chat_new_session'
+    'client_chat_get_history', 'client_chat_load_session', 'client_chat_new_session',
+    'client_chat_poll'
 ];
 if (!in_array($action, $allowedActions, true)) {
     header('HTTP/1.1 400 Bad Request');
@@ -342,7 +361,8 @@ if ($intensity > 3) {
         'copilot_send_message', 'copilot_stream', 'copilot_execute_op', 'copilot_rollback_op',
         'chat_takeover', 'fetch_openrouter_models', 'get_metrics_data',
         'client_chat_init', 'client_chat_message', 'client_chat_escalate',
-        'client_chat_get_history', 'client_chat_load_session', 'client_chat_new_session'
+        'client_chat_get_history', 'client_chat_load_session', 'client_chat_new_session',
+        'client_chat_poll'
     ];
     if (!$ticketId && !in_array($action, $ticketNotRequiredActions) && !$isGetAllowed) {
         header('HTTP/1.1 400 Bad Request');

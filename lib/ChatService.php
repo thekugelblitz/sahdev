@@ -308,9 +308,9 @@ class ChatService
     }
 
     /**
-     * Client Live Chat Session Handler.
+     * Client Live Chat Session Handler with cross-tab and client_id persistence.
      */
-    public static function getOrCreateClientSession(string $visitorToken, ?int $clientId = null, array $metadata = []): array
+    public static function getOrCreateClientSession(string $visitorToken, ?int $clientId = null, array $metadata = [], ?string $requestedUuid = null): array
     {
         SchemaManager::ensureChatSessionsTable();
         SchemaManager::ensureVisitorTable();
@@ -331,18 +331,57 @@ class ChatService
             ]
         );
 
-        $session = Capsule::table('tblsahdev_chat_sessions')
-            ->where('visitor_token', $visitorToken)
-            ->where('session_type', 'client_livechat')
-            ->whereIn('status', ['active', 'taken_over'])
-            ->first();
+        // 1. If explicit session_uuid was requested and belongs to this client/visitor, resume it!
+        if (!empty($requestedUuid)) {
+            $session = Capsule::table('tblsahdev_chat_sessions')
+                ->where('session_uuid', $requestedUuid)
+                ->where('session_type', 'client_livechat')
+                ->first();
+            if ($session) {
+                $isOwner = false;
+                if ($clientId > 0 && ((int)$session->client_id === $clientId || empty($session->client_id))) {
+                    $isOwner = true;
+                    if (empty($session->client_id)) {
+                        Capsule::table('tblsahdev_chat_sessions')->where('id', $session->id)->update(['client_id' => $clientId]);
+                        $session->client_id = $clientId;
+                    }
+                } elseif (!empty($visitorToken) && $session->visitor_token === $visitorToken) {
+                    $isOwner = true;
+                }
+                if ($isOwner) {
+                    return (array) $session;
+                }
+            }
+        }
+
+        // 2. If authenticated client, find active session by client_id
+        $session = null;
+        if ($clientId > 0) {
+            $session = Capsule::table('tblsahdev_chat_sessions')
+                ->where('client_id', $clientId)
+                ->where('session_type', 'client_livechat')
+                ->whereIn('status', ['active', 'taken_over'])
+                ->orderBy('id', 'desc')
+                ->first();
+        }
+
+        // 3. Otherwise find active session by visitor_token
+        if (!$session && !empty($visitorToken)) {
+            $session = Capsule::table('tblsahdev_chat_sessions')
+                ->where('visitor_token', $visitorToken)
+                ->where('session_type', 'client_livechat')
+                ->whereIn('status', ['active', 'taken_over'])
+                ->orderBy('id', 'desc')
+                ->first();
+        }
 
         if ($session) {
             return (array) $session;
         }
 
+        // 4. Create fresh session
         $uuid = 'chat_' . bin2hex(random_bytes(16));
-        $title = !empty($metadata['name']) ? "Chat with {$metadata['name']}" : "Visitor Chat (" . substr($visitorToken, 0, 8) . ")";
+        $title = !empty($metadata['name']) ? "Chat with {$metadata['name']}" : "Support Chat " . Carbon::now()->format('M j, g:i a');
 
         $id = Capsule::table('tblsahdev_chat_sessions')->insertGetId([
             'session_uuid'    => $uuid,
@@ -364,9 +403,9 @@ class ChatService
     /**
      * Handle incoming visitor message in Client Live Chat.
      */
-    public static function handleClientMessage(string $visitorToken, string $messageText, ?int $clientId = null): array
+    public static function handleClientMessage(string $visitorToken, string $messageText, ?int $clientId = null, ?string $sessionUuid = null): array
     {
-        $session = self::getOrCreateClientSession($visitorToken, $clientId);
+        $session = self::getOrCreateClientSession($visitorToken, $clientId, [], $sessionUuid);
         $sessionId = (int) $session['id'];
 
         $senderName = $clientId > 0
@@ -1126,6 +1165,55 @@ class ChatService
             'status'       => $session->status,
             'title'        => $session->title,
             'messages'     => $messages,
+        ];
+    }
+
+    /**
+     * Poll for newly arrived messages in an active session (for multi-tab & live staff updates).
+     */
+    public static function pollSessionMessages(string $sessionUuid, string $visitorToken, ?int $clientId = null, int $afterId = 0): array
+    {
+        $session = Capsule::table('tblsahdev_chat_sessions')->where('session_uuid', $sessionUuid)->first();
+        if (!$session) {
+            return ['success' => false, 'messages' => [], 'error' => 'Session not found'];
+        }
+
+        $authorized = false;
+        if ($clientId > 0 && (int)$session->client_id === $clientId) {
+            $authorized = true;
+        }
+        if (!empty($visitorToken) && $session->visitor_token === $visitorToken) {
+            $authorized = true;
+        }
+        if (!$authorized) {
+            return ['success' => false, 'messages' => [], 'error' => 'Unauthorized'];
+        }
+
+        $query = Capsule::table('tblsahdev_chat_messages')
+            ->where('session_id', $session->id);
+
+        if ($afterId > 0) {
+            $query->where('id', '>', $afterId);
+        }
+
+        $messages = $query->orderBy('id', 'asc')->get();
+
+        $formatted = [];
+        foreach ($messages as $m) {
+            $formatted[] = [
+                'id'           => (int) $m->id,
+                'sender_type'  => $m->sender_type,
+                'sender_name'  => $m->sender_name,
+                'message_text' => $m->message_text,
+                'created_at'   => Carbon::parse($m->created_at)->diffForHumans(),
+            ];
+        }
+
+        return [
+            'success'      => true,
+            'session_uuid' => $session->session_uuid,
+            'status'       => $session->status,
+            'messages'     => $formatted,
         ];
     }
 }

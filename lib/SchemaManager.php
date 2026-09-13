@@ -91,8 +91,9 @@ class SchemaManager
                 'client_chat_welcome_message'  => ['type' => 'text'],
                 'client_chat_require_prechat'  => ['type' => 'boolean', 'default' => 0],
                 'client_chat_require_auth'     => ['type' => 'boolean', 'default' => 0],
-                'client_chat_proactive_delay'  => ['type' => 'integer', 'default' => 15],
-                'client_chat_kb_enabled'       => ['type' => 'boolean', 'default' => 1],
+                'client_chat_proactive_delay'   => ['type' => 'integer', 'default' => 15],
+                'client_chat_proactive_message' => ['type' => 'text'],
+                'client_chat_kb_enabled'        => ['type' => 'boolean', 'default' => 1],
                 'client_chat_system_prompt'    => ['type' => 'longtext'],
                 'client_chat_debug'            => ['type' => 'boolean', 'default' => 0],
 

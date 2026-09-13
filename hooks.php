@@ -5886,6 +5886,12 @@ function sahdev_render_client_livechat_widget(array $vars): string
                 ? $settings->client_chat_greeting
                 : 'Hi there! 👋 How can our organization assistant help you today?');
         $welcomeMsg = htmlspecialchars($welcomeMsgRaw, ENT_QUOTES, 'UTF-8');
+
+        $proactiveDelay = isset($settings->client_chat_proactive_delay) ? max(0, (int)$settings->client_chat_proactive_delay) : 15;
+        $proactiveMsgRaw = !empty($settings->client_chat_proactive_message)
+            ? $settings->client_chat_proactive_message
+            : (!empty($welcomeMsgRaw) ? $welcomeMsgRaw : 'Hi there! 👋 Need assistance with your hosting services, domains, or billing? Chat with our AI assistant anytime.');
+        $proactiveMsg = htmlspecialchars($proactiveMsgRaw, ENT_QUOTES, 'UTF-8');
     } catch (\Throwable $e) {
         return '';
     }
@@ -5940,8 +5946,14 @@ function sahdev_render_client_livechat_widget(array $vars): string
     $nativeAjaxUrlJs = json_encode($nativeAjaxUrl);
     $primaryAjaxUrlJs = json_encode($primaryAjaxUrl);
     $welcomeMsgJs = json_encode($welcomeMsgRaw);
+    $proactiveMsgJs = json_encode($proactiveMsgRaw);
+    $proactiveDelayJs = json_encode($proactiveDelay);
     $brandColorJs = json_encode($brandColor);
     $debugModeJs = json_encode($debugMode);
+    $chatWidthJs = json_encode($chatWidth);
+    $chatHeightJs = json_encode($chatHeight);
+    $expandWidthJs = json_encode($expandWidth);
+    $expandHeightJs = json_encode($expandHeight);
 
     // Launcher markup based on style with robust inline onclick and keyboard handlers
     $launcherHtml = '';
@@ -5964,7 +5976,25 @@ HTML;
 HTML;
     }
 
-    $historyBtnHtml = $historyEnabled ? '<button type="button" class="sdv-cl-action-btn" id="sdv-cl-history-btn" title="Conversation History" onclick="window.sdvToggleHistory && window.sdvToggleHistory();"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="pointer-events:none;"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></button>' : '';
+    $proactiveBubbleHtml = '';
+    if ($proactiveDelay > 0) {
+        $proactiveBubbleHtml = <<<HTML
+<div id="sdv-proactive-bubble" class="sdv-proactive-bubble" style="display:none;" role="region" aria-label="Support Message" onclick="window.sdvAcceptProactive && window.sdvAcceptProactive(event);">
+    <button type="button" class="sdv-proactive-close" title="Dismiss message" aria-label="Dismiss" onclick="window.sdvDismissProactive && window.sdvDismissProactive(event);">&times;</button>
+    <div class="sdv-proactive-top">
+        <div class="sdv-proactive-badge"><span class="sdv-proactive-pulse"></span> {$chatTitle}</div>
+        <span class="sdv-proactive-now">Just now</span>
+    </div>
+    <div class="sdv-proactive-text">{$proactiveMsg}</div>
+    <div class="sdv-proactive-reply-btn">
+        <span>Click to chat</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+    </div>
+</div>
+HTML;
+    }
+
+    $historyBtnHtml = $historyEnabled ? '<button type="button" class="sdv-cl-action-btn" id="sdv-cl-history-btn" title="Conversation History" onclick="window.sdvToggleHistory && window.sdvToggleHistory();"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></button>' : '';
 
     return <<<HTML
 <style>
@@ -6017,6 +6047,95 @@ HTML;
     transform: scale(0.96) translateY(0) !important;
 }
 
+/* Proactive Trigger Bubble */
+.sdv-proactive-bubble {
+    position: fixed !important;
+    bottom: 96px !important;
+    {$launcherPosCss}
+    width: 290px !important;
+    background: #ffffff !important;
+    color: #1e293b !important;
+    border-radius: 16px !important;
+    box-shadow: 0 12px 30px -4px rgba(0, 0, 0, 0.22), 0 0 0 1px rgba(0, 0, 0, 0.08) !important;
+    padding: 13px 15px !important;
+    z-index: 999997 !important;
+    cursor: pointer !important;
+    box-sizing: border-box !important;
+    animation: sdvBubblePop 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+    transition: transform 0.2s ease, box-shadow 0.2s ease !important;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+}
+.sdv-proactive-bubble:hover {
+    transform: translateY(-3px) !important;
+    box-shadow: 0 16px 36px -4px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(0, 0, 0, 0.1) !important;
+}
+.sdv-proactive-close {
+    position: absolute !important;
+    top: 8px !important;
+    right: 8px !important;
+    width: 20px !important;
+    height: 20px !important;
+    background: rgba(0, 0, 0, 0.06) !important;
+    border: none !important;
+    border-radius: 50% !important;
+    font-size: 13px !important;
+    line-height: 1 !important;
+    color: #64748b !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    cursor: pointer !important;
+    transition: background 0.15s, color 0.15s !important;
+}
+.sdv-proactive-close:hover {
+    background: #e2e8f0 !important;
+    color: #0f172a !important;
+}
+.sdv-proactive-top {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    margin-bottom: 6px !important;
+    padding-right: 18px !important;
+}
+.sdv-proactive-badge {
+    font-size: 11.5px !important;
+    font-weight: 700 !important;
+    color: var(--sdv-brand, {$brandColor}) !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 6px !important;
+}
+.sdv-proactive-pulse {
+    width: 7px !important;
+    height: 7px !important;
+    background: #10b981 !important;
+    border-radius: 50% !important;
+    box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.3) !important;
+}
+.sdv-proactive-now {
+    font-size: 10px !important;
+    color: #94a3b8 !important;
+}
+.sdv-proactive-text {
+    font-size: 12.5px !important;
+    line-height: 1.4 !important;
+    color: #334155 !important;
+    margin-bottom: 8px !important;
+}
+.sdv-proactive-reply-btn {
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 5px !important;
+    font-size: 11.5px !important;
+    font-weight: 600 !important;
+    color: var(--sdv-brand, {$brandColor}) !important;
+}
+@keyframes sdvBubblePop {
+    0% { opacity: 0; transform: translateY(12px) scale(0.92); }
+    100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
 #sdv-client-chat-window {
     position: fixed !important;
     bottom: 96px !important;
@@ -6037,6 +6156,7 @@ HTML;
     overflow: hidden !important;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
     box-sizing: border-box !important;
+    transition: width 0.25s cubic-bezier(0.16, 1, 0.3, 1), height 0.25s cubic-bezier(0.16, 1, 0.3, 1), transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.22s ease !important;
 }
 #sdv-client-chat-window * {
     box-sizing: border-box;
@@ -6131,9 +6251,10 @@ HTML;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    transition: background 0.15s, color 0.15s;
+    transition: background 0.15s, color 0.15s, transform 0.12s;
 }
 .sdv-cl-action-btn:hover { color: #ffffff; background: rgba(255, 255, 255, 0.2); }
+.sdv-cl-action-btn:active { transform: scale(0.92); }
 
 /* Escalation Bar */
 .sdv-cl-escalate-bar {
@@ -6262,7 +6383,7 @@ HTML;
     text-align: center;
 }
 
-/* ── History Drawer ───────────────────────────────────────────────── */
+/* ── Ultra-Modern Conversation History Drawer ──────────────────────── */
 .sdv-cl-history-drawer {
     position: absolute;
     top: 0;
@@ -6270,113 +6391,331 @@ HTML;
     width: 100%;
     height: 100%;
     background: #ffffff;
-    z-index: 20;
+    z-index: 50;
     display: flex;
     flex-direction: column;
     transform: translateX(-100%);
-    transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    transition: transform 0.26s cubic-bezier(0.16, 1, 0.3, 1);
+    box-sizing: border-box;
 }
 .sdv-cl-history-drawer.sdv-drawer-open {
     transform: translateX(0);
 }
 .sdv-drawer-header {
-    background: #f8fafc;
-    border-bottom: 1px solid #e2e8f0;
-    padding: 12px 16px;
+    background: #ffffff;
+    border-bottom: 1px solid #edf2f7;
+    padding: 12px 14px;
     display: flex;
     align-items: center;
     justify-content: space-between;
+    flex-shrink: 0;
 }
-.sdv-drawer-title {
-    font-size: 14px;
-    font-weight: 700;
-    color: #1e293b;
-}
-.sdv-drawer-close {
-    background: none;
+.sdv-drawer-back-btn {
+    background: #f1f5f9;
     border: none;
-    font-size: 20px;
-    color: #64748b;
-    cursor: pointer;
-    line-height: 1;
-    padding: 2px 6px;
-    border-radius: 4px;
-}
-.sdv-drawer-close:hover { color: #1e293b; background: #e2e8f0; }
-.sdv-drawer-actions {
-    padding: 10px 14px;
-    border-bottom: 1px solid #f1f5f9;
-}
-.sdv-btn-new-chat {
-    width: 100%;
-    background: {$brandColor};
-    background: var(--sdv-brand, {$brandColor});
-    color: #ffffff;
-    border: none;
-    border-radius: 8px;
-    padding: 9px 14px;
-    font-size: 13px;
+    color: #334155;
+    font-size: 12.5px;
     font-weight: 600;
     cursor: pointer;
+    padding: 6px 12px;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: background 0.15s, color 0.15s, transform 0.12s;
+}
+.sdv-drawer-back-btn:hover {
+    background: #e2e8f0;
+    color: #0f172a;
+    transform: translateX(-2px);
+}
+.sdv-drawer-badge {
+    font-size: 11px;
+    font-weight: 700;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.sdv-drawer-hero-action {
+    padding: 12px 14px 6px;
+    flex-shrink: 0;
+}
+.sdv-hero-new-btn {
+    width: 100%;
+    background: linear-gradient(135deg, var(--sdv-brand, {$brandColor}) 0%, #312e81 100%);
+    color: #ffffff;
+    border: none;
+    border-radius: 12px;
+    padding: 12px 14px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+    transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.18s ease, filter 0.15s;
+    text-align: left;
+}
+.sdv-hero-new-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+    filter: brightness(1.06);
+}
+.sdv-hero-new-btn:active {
+    transform: translateY(0);
+}
+.sdv-hero-new-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.22);
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 8px;
-    transition: opacity 0.15s;
+    flex-shrink: 0;
+    border: 1px solid rgba(255, 255, 255, 0.25);
 }
-.sdv-btn-new-chat:hover { opacity: 0.92; }
-.sdv-drawer-list {
+.sdv-hero-new-content {
     flex: 1;
-    overflow-y: auto;
-    padding: 10px 14px;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
+    min-width: 0;
 }
-.sdv-session-item {
-    padding: 10px 12px;
-    border: 1px solid #e2e8f0;
-    border-radius: 8px;
-    cursor: pointer;
-    transition: background 0.15s, border-color 0.15s;
-    background: #ffffff;
+.sdv-hero-new-title {
+    font-size: 13.5px;
+    font-weight: 700;
+    line-height: 1.2;
+    color: #ffffff;
 }
-.sdv-session-item:hover {
-    background: #f8fafc;
-    border-color: var(--sdv-brand);
-}
-.sdv-session-item.sdv-item-active {
-    border-color: var(--sdv-brand);
-    background: #f0f7ff;
-}
-.sdv-session-title {
-    font-size: 13px;
-    font-weight: 600;
-    color: #1e293b;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 4px;
-}
-.sdv-session-badge {
-    font-size: 10px;
-    padding: 2px 6px;
-    border-radius: 10px;
-    background: #e2e8f0;
-    color: #475569;
-    font-weight: 500;
-}
-.sdv-session-snippet {
-    font-size: 11.5px;
-    color: #64748b;
+.sdv-hero-new-sub {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.82);
+    margin-top: 2px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
-.sdv-session-time {
+.sdv-hero-new-arrow {
+    color: rgba(255, 255, 255, 0.7);
+    flex-shrink: 0;
+    transition: transform 0.15s;
+}
+.sdv-hero-new-btn:hover .sdv-hero-new-arrow {
+    transform: translateX(3px);
+    color: #ffffff;
+}
+.sdv-drawer-filter-bar {
+    padding: 8px 14px;
+    flex-shrink: 0;
+}
+.sdv-search-box {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+.sdv-search-box svg.sdv-search-icon {
+    position: absolute;
+    left: 11px;
+    color: #94a3b8;
+    pointer-events: none;
+}
+.sdv-search-box input {
+    width: 100%;
+    padding: 8px 30px 8px 32px;
+    border-radius: 20px;
+    border: 1px solid #e2e8f0;
+    background: #f8fafc;
+    font-size: 12.5px;
+    outline: none;
+    color: #1e293b;
+    font-family: inherit;
+    transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+.sdv-search-box input:focus {
+    border-color: var(--sdv-brand, {$brandColor});
+    background: #ffffff;
+    box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.15);
+}
+.sdv-search-clear {
+    position: absolute;
+    right: 8px;
+    background: none;
+    border: none;
+    color: #94a3b8;
+    font-size: 16px;
+    cursor: pointer;
+    line-height: 1;
+    padding: 2px 6px;
+    border-radius: 50%;
+}
+.sdv-search-clear:hover {
+    color: #334155;
+    background: #e2e8f0;
+}
+.sdv-drawer-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 6px 14px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.sdv-convo-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 11px 12px;
+    cursor: pointer;
+    transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s;
+    position: relative;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+.sdv-convo-card:hover {
+    border-color: var(--sdv-brand, {$brandColor});
+    transform: translateY(-1px);
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.06);
+    background: #fcfdff;
+}
+.sdv-convo-card.sdv-convo-current {
+    border-color: var(--sdv-brand, {$brandColor});
+    background: #f0f7ff;
+    box-shadow: 0 0 0 1px var(--sdv-brand, {$brandColor});
+}
+.sdv-convo-card-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 5px;
+}
+.sdv-convo-title-wrap {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    overflow: hidden;
+}
+.sdv-convo-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #cbd5e1;
+    flex-shrink: 0;
+}
+.sdv-convo-current .sdv-convo-dot {
+    background: #10b981;
+    box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.25);
+}
+.sdv-convo-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #1e293b;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.sdv-convo-time {
     font-size: 10.5px;
     color: #94a3b8;
-    margin-top: 4px;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+.sdv-convo-snippet {
+    font-size: 12px;
+    color: #64748b;
+    line-height: 1.4;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    margin-bottom: 7px;
+}
+.sdv-convo-card-bottom {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 11px;
+    padding-top: 5px;
+    border-top: 1px solid #f1f5f9;
+}
+.sdv-status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 7px;
+    border-radius: 12px;
+    font-size: 10px;
+    font-weight: 600;
+}
+.sdv-pill-active {
+    background: #ecfdf5;
+    color: #059669;
+}
+.sdv-pill-ticket {
+    background: #e0e7ff;
+    color: #4338ca;
+}
+.sdv-pill-taken_over {
+    background: #fdf4ff;
+    color: #9333ea;
+}
+.sdv-pill-closed {
+    background: #f1f5f9;
+    color: #64748b;
+}
+.sdv-msg-count-chip {
+    color: #94a3b8;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10.5px;
+}
+.sdv-history-empty {
+    text-align: center;
+    padding: 40px 16px;
+    color: #64748b;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+}
+.sdv-history-empty-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: #f1f5f9;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #94a3b8;
+}
+.sdv-history-empty-title {
+    font-size: 13.5px;
+    font-weight: 600;
+    color: #334155;
+}
+.sdv-history-empty-desc {
+    font-size: 11.5px;
+    color: #94a3b8;
+    max-width: 240px;
+    line-height: 1.4;
+}
+.sdv-history-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 36px 16px;
+    gap: 10px;
+    color: #94a3b8;
+    font-size: 12px;
+}
+.sdv-spinner {
+    width: 22px;
+    height: 22px;
+    border: 2.5px solid #e2e8f0;
+    border-top-color: var(--sdv-brand, {$brandColor});
+    border-radius: 50%;
+    animation: sdvSpin 0.7s linear infinite;
+}
+@keyframes sdvSpin {
+    to { transform: rotate(360deg); }
 }
 
 /* ── Theme Variants ──────────────────────────────────────────────── */
@@ -6413,22 +6752,47 @@ HTML;
     border: 1px solid #475569;
 }
 #sdv-client-chat-window.sdv-theme-cyber_dark .sdv-cl-history-drawer {
-    background: #0f172a !important;
-    color: #f8fafc !important;
+    background: #0b1120 !important;
+    color: #f1f5f9 !important;
 }
 #sdv-client-chat-window.sdv-theme-cyber_dark .sdv-drawer-header {
+    background: #0f172a !important;
+    border-bottom-color: #1e293b !important;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-drawer-back-btn {
     background: #1e293b !important;
-    border-bottom: 1px solid #334155;
+    color: #cbd5e1 !important;
 }
-#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-drawer-title { color: #f8fafc; }
-#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-session-item {
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-drawer-back-btn:hover {
+    background: #334155 !important;
+    color: #ffffff !important;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-search-box input {
     background: #1e293b !important;
-    border-color: #334155;
+    border-color: #334155 !important;
+    color: #f1f5f9 !important;
 }
-#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-session-item:hover {
-    background: #273549 !important;
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-convo-card {
+    background: #131d31 !important;
+    border-color: #1e293b !important;
 }
-#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-session-title { color: #f8fafc; }
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-convo-card:hover {
+    background: #1a2742 !important;
+    border-color: #3b82f6 !important;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-convo-card.sdv-convo-current {
+    background: #1a2742 !important;
+    border-color: #3b82f6 !important;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-convo-title {
+    color: #f8fafc !important;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-convo-snippet {
+    color: #94a3b8 !important;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-convo-card-bottom {
+    border-top-color: #1e293b !important;
+}
 
 /* Glassmorphism Theme */
 #sdv-client-chat-window.sdv-theme-glassmorphism {
@@ -6450,25 +6814,58 @@ HTML;
 }
 </style>
 
+<!-- Proactive Teaser Bubble -->
+{$proactiveBubbleHtml}
+
 <!-- Client Launcher Button -->
 {$launcherHtml}
 
 <!-- Client Chat Window -->
 <div id="sdv-client-chat-window" class="sdv-theme-{$chatTheme}">
-    <!-- In-Widget History Drawer -->
+    <!-- In-Widget History Drawer (Ultra-Modern Redesign) -->
     <div class="sdv-cl-history-drawer" id="sdv-cl-history-drawer">
+        <!-- Navigation Header -->
         <div class="sdv-drawer-header">
-            <div class="sdv-drawer-title">Past Conversations</div>
-            <button type="button" class="sdv-drawer-close" id="sdv-drawer-close" title="Close History" onclick="window.sdvCloseHistory && window.sdvCloseHistory();">&times;</button>
+            <button type="button" class="sdv-drawer-back-btn" id="sdv-drawer-close" title="Return to active chat" onclick="window.sdvCloseHistory && window.sdvCloseHistory();">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                <span>Back to Chat</span>
+            </button>
+            <div class="sdv-drawer-headline">
+                <span class="sdv-drawer-badge">Past Chats</span>
+            </div>
         </div>
-        <div class="sdv-drawer-actions">
-            <button type="button" class="sdv-btn-new-chat" id="sdv-btn-new-chat" onclick="window.sdvStartNewChat && window.sdvStartNewChat();">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="pointer-events:none;"><path d="M12 5v14M5 12h14"/></svg>
-                Start New Conversation
+
+        <!-- Hero New Conversation Card -->
+        <div class="sdv-drawer-hero-action">
+            <button type="button" class="sdv-hero-new-btn" id="sdv-btn-new-chat" onclick="window.sdvStartNewChat && window.sdvStartNewChat();">
+                <div class="sdv-hero-new-icon">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                </div>
+                <div class="sdv-hero-new-content">
+                    <div class="sdv-hero-new-title">New Discussion</div>
+                    <div class="sdv-hero-new-sub">Start a fresh AI support inquiry</div>
+                </div>
+                <div class="sdv-hero-new-arrow">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><path d="M9 18l6-6-6-6"/></svg>
+                </div>
             </button>
         </div>
+
+        <!-- Filter & Search Bar -->
+        <div class="sdv-drawer-filter-bar">
+            <div class="sdv-search-box">
+                <svg class="sdv-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+                <input type="text" id="sdv-history-search" placeholder="Search past discussions..." oninput="window.sdvFilterHistory && window.sdvFilterHistory(this.value);" />
+                <button type="button" class="sdv-search-clear" id="sdv-search-clear" onclick="var inp=document.getElementById('sdv-history-search');if(inp){inp.value='';window.sdvFilterHistory('');this.style.display='none';}" style="display:none;">&times;</button>
+            </div>
+        </div>
+
+        <!-- Scrollable Conversation Cards List -->
         <div class="sdv-drawer-list" id="sdv-drawer-list">
-            <div style="text-align:center;padding:24px;color:#94a3b8;font-size:12px;">Loading past chats...</div>
+            <div class="sdv-history-loading">
+                <div class="sdv-spinner"></div>
+                <span>Retrieving conversation history...</span>
+            </div>
         </div>
     </div>
 
@@ -6483,7 +6880,9 @@ HTML;
         </div>
         <div class="sdv-cl-controls">
             {$historyBtnHtml}
-            <button type="button" class="sdv-cl-action-btn" id="sdv-cl-expand-btn" title="Expand / Minimize Window" aria-label="Expand" onclick="window.sdvToggleExpand && window.sdvToggleExpand();">⛶</button>
+            <button type="button" class="sdv-cl-action-btn" id="sdv-cl-expand-btn" title="Expand / Minimize Window" aria-label="Expand" onclick="window.sdvToggleExpand && window.sdvToggleExpand(event);">
+                <svg id="sdv-expand-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+            </button>
             <button type="button" class="sdv-cl-action-btn" id="sdv-cl-close" title="Minimize Window" aria-label="Close" onclick="window.sdvToggleChat && window.sdvToggleChat(false);">&minus;</button>
         </div>
     </div>
@@ -6529,9 +6928,84 @@ HTML;
         } catch(e) {}
     }
 
-    var _lastToggleTime = 0;
+    var brandColor = {$brandColorJs};
+    var systemUrl = {$systemUrlJs};
+    var nativeUrl = {$nativeAjaxUrlJs};
+    var directUrl = {$primaryAjaxUrlJs};
+    var debugMode = {$debugModeJs};
+    var proactiveDelay = {$proactiveDelayJs};
+    var proactiveMsg = {$proactiveMsgJs};
+    var defaultChatWidth = {$chatWidthJs};
+    var defaultChatHeight = {$chatHeightJs};
+    var defaultExpandWidth = {$expandWidthJs};
+    var defaultExpandHeight = {$expandHeightJs};
 
-    // ── Immediate Global Window Controls (Defined FIRST for fail-safe response) ───
+    var _lastToggleTime = 0;
+    var _lastExpandTime = 0;
+    var highestMsgId = 0;
+    var pollTimer = null;
+    var isPolling = false;
+    var _cachedHistoryList = [];
+
+    // Helper: Update SVG expand/compress icon
+    function sdvUpdateExpandIcon(isExpanded) {
+        var icon = document.getElementById('sdv-expand-icon');
+        if (!icon) return;
+        if (isExpanded) {
+            icon.innerHTML = '<path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/>';
+        } else {
+            icon.innerHTML = '<path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>';
+        }
+    }
+
+    // ── Cross-Window Live Broadcast Engine ────────────────────────────────
+    var syncChannel = null;
+    try {
+        if (typeof window.BroadcastChannel !== 'undefined') {
+            syncChannel = new window.BroadcastChannel('sdv_livechat_sync');
+            syncChannel.onmessage = function(ev) {
+                if (ev && ev.data) handleLiveSync(ev.data);
+            };
+        }
+    } catch(e) {}
+
+    window.addEventListener('storage', function(e) {
+        if (e.key === 'sdv_livechat_event' && e.newValue) {
+            try {
+                var payload = JSON.parse(e.newValue);
+                handleLiveSync(payload);
+            } catch(err) {}
+        }
+    });
+
+    function broadcastLiveSync(action, payload) {
+        var data = Object.assign({ action: action, ts: Date.now() }, payload);
+        if (syncChannel) {
+            try { syncChannel.postMessage(data); } catch(e) {}
+        }
+        sdvSafeSet('sdv_livechat_event', JSON.stringify(data));
+    }
+
+    function handleLiveSync(data) {
+        if (!data || !data.action) return;
+        if (data.action === 'new_message' && data.session_uuid === sessionUuid) {
+            if (data.msg_id && document.getElementById('sdv-msg-' + data.msg_id)) {
+                return;
+            }
+            appendClMsg(data.role, data.text, false, data.msg_id);
+            if (data.msg_id && data.msg_id > highestMsgId) {
+                highestMsgId = data.msg_id;
+            }
+        } else if (data.action === 'session_switched' && data.session_uuid) {
+            if (sessionUuid !== data.session_uuid) {
+                sessionUuid = data.session_uuid;
+                sdvSafeSet('sdv_active_session_uuid', sessionUuid);
+                loadSessionTranscript(sessionUuid, false);
+            }
+        }
+    }
+
+    // ── Window Controls ───────────────────────────────────────────────────
     window.sdvToggleChat = function(open) {
         var now = Date.now();
         if (typeof open !== 'boolean' && (now - _lastToggleTime) < 250) {
@@ -6541,7 +7015,6 @@ HTML;
 
         var win = document.getElementById('sdv-client-chat-window');
         if (!win) {
-            console.warn('[Sahdev Chat] Widget window #sdv-client-chat-window not found in DOM.');
             return;
         }
 
@@ -6556,6 +7029,9 @@ HTML;
             win.style.setProperty('pointer-events', 'auto', 'important');
             win.style.setProperty('z-index', '2147483647', 'important');
 
+            sdvSafeSet('sdv_chat_open', '1');
+            window.sdvDismissProactive();
+
             var input = document.getElementById('sdv-cl-input');
             if (input) {
                 setTimeout(function() {
@@ -6565,10 +7041,14 @@ HTML;
             if (typeof window.sdvInitChat === 'function') {
                 window.sdvInitChat();
             }
+            sdvStartLivePolling();
         } else {
             win.classList.remove('sdv-open');
             win.style.setProperty('display', 'none', 'important');
             win.style.setProperty('pointer-events', 'none', 'important');
+            sdvSafeSet('sdv_chat_open', '0');
+            sdvStopLivePolling();
+
             var drawer = document.getElementById('sdv-cl-history-drawer');
             if (drawer) {
                 drawer.classList.remove('sdv-drawer-open');
@@ -6576,12 +7056,28 @@ HTML;
         }
     };
 
-    window.sdvToggleExpand = function() {
+    window.sdvToggleExpand = function(e) {
+        if (e && e.preventDefault) e.preventDefault();
+        if (e && e.stopPropagation) e.stopPropagation();
+
+        var now = Date.now();
+        if ((now - _lastExpandTime) < 250) {
+            return;
+        }
+        _lastExpandTime = now;
+
         var win = document.getElementById('sdv-client-chat-window');
-        var btn = document.getElementById('sdv-cl-expand-btn');
         if (!win) return;
+
         var isExpanded = win.classList.toggle('sdv-expanded');
-        if (btn) btn.textContent = isExpanded ? '⤡' : '⛶';
+        if (isExpanded) {
+            win.style.setProperty('width', defaultExpandWidth + 'px', 'important');
+            win.style.setProperty('height', defaultExpandHeight + 'px', 'important');
+        } else {
+            win.style.setProperty('width', defaultChatWidth + 'px', 'important');
+            win.style.setProperty('height', defaultChatHeight + 'px', 'important');
+        }
+        sdvUpdateExpandIcon(isExpanded);
         sdvSafeSet('sdv_chat_expanded', isExpanded ? '1' : '0');
     };
 
@@ -6600,21 +7096,58 @@ HTML;
         if (drawer) drawer.classList.remove('sdv-drawer-open');
     };
 
+    // ── Proactive Message Trigger Engine ─────────────────────────────────
+    window.sdvDismissProactive = function(e) {
+        if (e && e.stopPropagation) e.stopPropagation();
+        var bubble = document.getElementById('sdv-proactive-bubble');
+        if (bubble) bubble.style.display = 'none';
+        try {
+            if (window.sessionStorage) sessionStorage.setItem('sdv_proactive_dismissed', '1');
+        } catch(err) {}
+    };
+
+    window.sdvAcceptProactive = function(e) {
+        if (e && e.stopPropagation) e.stopPropagation();
+        window.sdvDismissProactive();
+        window.sdvToggleChat(true);
+    };
+
+    function initProactiveTrigger() {
+        if (proactiveDelay <= 0) return;
+        try {
+            if (window.sessionStorage && sessionStorage.getItem('sdv_proactive_dismissed') === '1') {
+                return;
+            }
+        } catch(err) {}
+
+        var win = document.getElementById('sdv-client-chat-window');
+        if (win && win.classList.contains('sdv-open')) return;
+
+        setTimeout(function() {
+            var currentWin = document.getElementById('sdv-client-chat-window');
+            if (currentWin && currentWin.classList.contains('sdv-open')) return;
+            try {
+                if (window.sessionStorage && sessionStorage.getItem('sdv_proactive_dismissed') === '1') return;
+            } catch(e) {}
+            var bubble = document.getElementById('sdv-proactive-bubble');
+            if (bubble) {
+                bubble.style.display = 'block';
+            }
+        }, proactiveDelay * 1000);
+    }
+
     // Restore expanded window preference on initial load
     try {
         if (sdvSafeGet('sdv_chat_expanded', '0') === '1') {
             var winEl = document.getElementById('sdv-client-chat-window');
-            var expBtnEl = document.getElementById('sdv-cl-expand-btn');
-            if (winEl) winEl.classList.add('sdv-expanded');
-            if (expBtnEl) expBtnEl.textContent = '⤡';
+            if (winEl) {
+                winEl.classList.add('sdv-expanded');
+                winEl.style.setProperty('width', defaultExpandWidth + 'px', 'important');
+                winEl.style.setProperty('height', defaultExpandHeight + 'px', 'important');
+                sdvUpdateExpandIcon(true);
+            }
         }
     } catch(e) {}
-
-    var brandColor = {$brandColorJs};
-    var systemUrl = {$systemUrlJs};
-    var nativeUrl = {$nativeAjaxUrlJs};
-    var directUrl = {$primaryAjaxUrlJs};
-    var debugMode = {$debugModeJs};
 
     // Build resilient endpoint list prioritizing native WHMCS module routing
     var candidates = [];
@@ -6709,7 +7242,7 @@ HTML;
         sdvSafeSet('sdv_visitor_token', visitorToken);
     }
 
-    var sessionUuid = null;
+    var sessionUuid = sdvSafeGet('sdv_active_session_uuid', null);
     var isInitialized = false;
 
     // Markdown Parser
@@ -6749,11 +7282,15 @@ HTML;
         return out.join('<br>').replace(/(<\/ul>|<pre[\s\S]*?<\/pre>)<br>/g, '$1');
     }
 
-    function appendClMsg(role, text, isHtml) {
+    function appendClMsg(role, text, isHtml, msgId) {
         var msgsEl = document.getElementById('sdv-cl-msgs');
         if (!msgsEl) return null;
         var d = document.createElement('div');
         d.className = 'sdv-cl-msg ' + (role === 'user' ? 'sdv-cl-msg-user' : 'sdv-cl-msg-bot');
+        if (msgId) {
+            d.id = 'sdv-msg-' + msgId;
+            if (msgId > highestMsgId) highestMsgId = msgId;
+        }
         if (isHtml) {
             d.innerHTML = text;
         } else {
@@ -6767,24 +7304,32 @@ HTML;
     window.sdvInitChat = function() {
         if (isInitialized) return;
         isInitialized = true;
+
+        var savedUuid = sdvSafeGet('sdv_active_session_uuid', '');
         var form = new FormData();
         form.append('action', 'client_chat_init');
         form.append('visitor_token', visitorToken);
+        if (savedUuid) {
+            form.append('session_uuid', savedUuid);
+        }
         form.append('page_url', window.location.href);
 
         postAjaxWithFallback(form, function(err, data) {
             if (err) return;
             if (data && data.status === 'success') {
                 sessionUuid = data.session_uuid;
+                sdvSafeSet('sdv_active_session_uuid', sessionUuid);
+
                 if (data.messages && data.messages.length > 0) {
                     var msgsEl = document.getElementById('sdv-cl-msgs');
                     if (msgsEl) {
                         msgsEl.innerHTML = '';
                         data.messages.forEach(function(m) {
-                            appendClMsg(m.sender_type === 'user' ? 'user' : 'bot', m.message_text, false);
+                            appendClMsg(m.sender_type === 'user' ? 'user' : 'bot', m.message_text, false, m.id);
                         });
                     }
                 }
+                sdvStartLivePolling();
             }
         });
     };
@@ -6803,9 +7348,16 @@ HTML;
 
         var tempBot = appendClMsg('bot', 'Typing...', false);
 
+        broadcastLiveSync('new_message', {
+            session_uuid: sessionUuid,
+            role: 'user',
+            text: text
+        });
+
         var form = new FormData();
         form.append('action', 'client_chat_message');
         form.append('visitor_token', visitorToken);
+        if (sessionUuid) form.append('session_uuid', sessionUuid);
         form.append('message', text);
 
         postAjaxWithFallback(form, function(err, data) {
@@ -6819,12 +7371,74 @@ HTML;
             }
 
             if (data.status === 'success' || data.success) {
-                if (tempBot) tempBot.innerHTML = parseSimpleMarkdown(data.reply || 'Message received.');
+                var replyText = data.reply || 'Message received.';
+                if (tempBot) tempBot.innerHTML = parseSimpleMarkdown(replyText);
+                if (data.session_uuid && data.session_uuid !== sessionUuid) {
+                    sessionUuid = data.session_uuid;
+                    sdvSafeSet('sdv_active_session_uuid', sessionUuid);
+                }
+                broadcastLiveSync('new_message', {
+                    session_uuid: sessionUuid,
+                    role: 'bot',
+                    text: replyText
+                });
             } else {
                 if (tempBot) tempBot.innerHTML = '⚠️ ' + (data.message || data.error || 'Could not send message.');
             }
         });
     };
+
+    // ── Live Polling Engine for Multi-Tab & Staff Takeover ────────────────
+    function sdvStartLivePolling() {
+        if (pollTimer) clearInterval(pollTimer);
+        pollTimer = setInterval(function() {
+            sdvPollMessages();
+        }, 4000);
+    }
+
+    function sdvStopLivePolling() {
+        if (pollTimer) {
+            clearInterval(pollTimer);
+            pollTimer = null;
+        }
+    }
+
+    function sdvPollMessages() {
+        if (!sessionUuid || isPolling) return;
+        var win = document.getElementById('sdv-client-chat-window');
+        if (!win || !win.classList.contains('sdv-open') || win.style.display === 'none') {
+            return;
+        }
+
+        isPolling = true;
+        var form = new FormData();
+        form.append('action', 'client_chat_poll');
+        form.append('session_uuid', sessionUuid);
+        form.append('visitor_token', visitorToken);
+        form.append('after_id', highestMsgId);
+
+        postAjaxWithFallback(form, function(err, res) {
+            isPolling = false;
+            if (err || !res || !res.success) return;
+
+            if (res.messages && res.messages.length > 0) {
+                var msgsEl = document.getElementById('sdv-cl-msgs');
+                var shouldScroll = false;
+                res.messages.forEach(function(m) {
+                    if (m.id > highestMsgId) highestMsgId = m.id;
+                    var exists = document.getElementById('sdv-msg-' + m.id);
+                    if (!exists && msgsEl) {
+                        var role = (m.sender_type === 'user') ? 'user' : 'bot';
+                        appendClMsg(role, m.message_text, false, m.id);
+                        shouldScroll = true;
+                    }
+                });
+                if (shouldScroll && msgsEl) {
+                    msgsEl.scrollTop = msgsEl.scrollHeight;
+                }
+            }
+        });
+    }
 
     window.sdvEscalateToTicket = function() {
         var escalateBtn = document.getElementById('sdv-cl-escalate');
@@ -6847,56 +7461,115 @@ HTML;
             }
 
             var tid = data.tid || data.ticket_id || '';
-            var ticketUrl = data.ticket_url || 'supporttickets.php';
+            var ticketUrl = 'supporttickets.php';
 
             appendClMsg('bot',
                 '✅ <strong>Support Ticket #' + tid + ' created successfully!</strong><br><br>' +
-                'Our staff team has received your chat transcript and will follow up shortly.<br><br>' +
-                '<a href="' + ticketUrl + '" style="color:' + encodeURIComponent(brandColor) + ';font-weight:700;text-decoration:underline;">View All Support Tickets &rarr;</a>',
+                'Our support team has received your inquiry transcript and will follow up shortly.<br><br>' +
+                '<a href="' + ticketUrl + '" target="_blank" rel="noopener noreferrer" style="color:' + encodeURIComponent(brandColor) + ';font-weight:700;text-decoration:underline;">View All Support Tickets &rarr;</a>',
                 true
             );
             if (escalateBtn) escalateBtn.style.display = 'none';
         });
     };
 
+    // ── Ultra-Modern Conversation History Engine ──────────────────────────
+    function renderHistoryItems(items) {
+        var drawerList = document.getElementById('sdv-drawer-list');
+        if (!drawerList) return;
+
+        if (!items || items.length === 0) {
+            drawerList.innerHTML = '<div class="sdv-history-empty">' +
+                '<div class="sdv-history-empty-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>' +
+                '<div class="sdv-history-empty-title">No conversations found</div>' +
+                '<div class="sdv-history-empty-desc">Start a new discussion to get instant answers from our AI assistant.</div>' +
+                '</div>';
+            return;
+        }
+
+        var html = '';
+        items.forEach(function(item) {
+            var isActive = (item.session_uuid === sessionUuid);
+            var statusPill = '';
+            if (item.status === 'escalated_ticket') {
+                statusPill = '<span class="sdv-status-pill sdv-pill-ticket">🎟️ Ticket Opened</span>';
+            } else if (item.status === 'taken_over') {
+                statusPill = '<span class="sdv-status-pill sdv-pill-taken_over">👤 Staff Takeover</span>';
+            } else if (item.status === 'closed') {
+                statusPill = '<span class="sdv-status-pill sdv-pill-closed">✓ Closed</span>';
+            } else {
+                statusPill = '<span class="sdv-status-pill sdv-pill-active"><span class="sdv-convo-dot" style="background:#10b981;"></span> Active</span>';
+            }
+
+            html += '<div class="sdv-convo-card' + (isActive ? ' sdv-convo-current' : '') + '" data-uuid="' + item.session_uuid + '">';
+            html += '<div class="sdv-convo-card-top">';
+            html += '<div class="sdv-convo-title-wrap">';
+            html += '<span class="sdv-convo-dot"></span>';
+            html += '<span class="sdv-convo-title">' + (item.title || 'Support Discussion') + '</span>';
+            html += '</div>';
+            html += '<span class="sdv-convo-time">' + (item.created_at || '') + '</span>';
+            html += '</div>';
+            html += '<div class="sdv-convo-snippet">' + (item.last_message || 'Conversation started') + '</div>';
+            html += '<div class="sdv-convo-card-bottom">';
+            html += statusPill;
+            html += '<span class="sdv-msg-count-chip"><svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg> ' + item.message_count + ' msgs</span>';
+            html += '</div>';
+            html += '</div>';
+        });
+        drawerList.innerHTML = html;
+
+        var cardEls = drawerList.querySelectorAll('.sdv-convo-card');
+        cardEls.forEach(function(el) {
+            el.addEventListener('click', function() {
+                var uuid = el.getAttribute('data-uuid');
+                if (uuid) loadSessionTranscript(uuid, true);
+            });
+        });
+    }
+
     function loadHistoryList() {
         var drawerList = document.getElementById('sdv-drawer-list');
         if (!drawerList) return;
-        drawerList.innerHTML = '<div style="text-align:center;padding:24px;color:#94a3b8;font-size:12px;">Loading past conversations...</div>';
+        drawerList.innerHTML = '<div class="sdv-history-loading"><div class="sdv-spinner"></div><span>Retrieving discussions...</span></div>';
 
         var form = new FormData();
         form.append('action', 'client_chat_get_history');
         form.append('visitor_token', visitorToken);
 
         postAjaxWithFallback(form, function(err, data) {
-            if (err || !data || data.status !== 'success' || !data.history || data.history.length === 0) {
-                drawerList.innerHTML = '<div style="text-align:center;padding:30px 14px;color:#94a3b8;font-size:12px;">No past conversations found.</div>';
+            if (err || !data || data.status !== 'success' || !data.history) {
+                renderHistoryItems([]);
                 return;
             }
-
-            var html = '';
-            data.history.forEach(function(item) {
-                var isActive = (item.session_uuid === sessionUuid);
-                var statusBadge = item.status === 'escalated_ticket' ? '<span class="sdv-session-badge" style="background:#dcfce7;color:#15803d;">Ticket Opened</span>' : '<span class="sdv-session-badge">' + (item.status || 'active') + '</span>';
-                html += '<div class="sdv-session-item' + (isActive ? ' sdv-item-active' : '') + '" data-uuid="' + item.session_uuid + '">';
-                html += '<div class="sdv-session-title"><span>' + (item.title || 'Chat') + '</span> ' + statusBadge + '</div>';
-                html += '<div class="sdv-session-snippet">' + (item.last_message || 'Conversation') + '</div>';
-                html += '<div class="sdv-session-time">' + (item.created_at || '') + ' &bull; ' + item.message_count + ' messages</div>';
-                html += '</div>';
-            });
-            drawerList.innerHTML = html;
-
-            var items = drawerList.querySelectorAll('.sdv-session-item');
-            items.forEach(function(el) {
-                el.addEventListener('click', function() {
-                    var uuid = el.getAttribute('data-uuid');
-                    if (uuid) loadSessionTranscript(uuid);
-                });
-            });
+            _cachedHistoryList = data.history;
+            var searchInp = document.getElementById('sdv-history-search');
+            var q = searchInp ? searchInp.value : '';
+            window.sdvFilterHistory(q);
         });
     }
 
-    function loadSessionTranscript(uuid) {
+    window.sdvFilterHistory = function(query) {
+        var clearBtn = document.getElementById('sdv-search-clear');
+        var q = (query || '').toLowerCase().trim();
+        if (clearBtn) clearBtn.style.display = q ? 'block' : 'none';
+
+        if (!_cachedHistoryList || _cachedHistoryList.length === 0) {
+            renderHistoryItems([]);
+            return;
+        }
+
+        var filtered = _cachedHistoryList.filter(function(item) {
+            if (!q) return true;
+            var title = (item.title || '').toLowerCase();
+            var snippet = (item.last_message || '').toLowerCase();
+            var status = (item.status || '').toLowerCase();
+            return title.indexOf(q) > -1 || snippet.indexOf(q) > -1 || status.indexOf(q) > -1;
+        });
+
+        renderHistoryItems(filtered);
+    };
+
+    function loadSessionTranscript(uuid, closeDrawerOnDone) {
         var form = new FormData();
         form.append('action', 'client_chat_load_session');
         form.append('session_uuid', uuid);
@@ -6908,19 +7581,23 @@ HTML;
                 return;
             }
             sessionUuid = data.session_uuid;
+            sdvSafeSet('sdv_active_session_uuid', sessionUuid);
+
             var msgsEl = document.getElementById('sdv-cl-msgs');
             if (msgsEl) {
                 msgsEl.innerHTML = '';
                 if (data.messages && data.messages.length > 0) {
                     data.messages.forEach(function(m) {
-                        appendClMsg(m.sender_type === 'user' ? 'user' : 'bot', m.message_text, false);
+                        appendClMsg(m.sender_type === 'user' ? 'user' : 'bot', m.message_text, false, m.id);
                     });
                 } else {
                     appendClMsg('bot', 'No messages recorded in this conversation yet.', false);
                 }
             }
-            var drawer = document.getElementById('sdv-cl-history-drawer');
-            if (drawer) drawer.classList.remove('sdv-drawer-open');
+            if (closeDrawerOnDone) {
+                window.sdvCloseHistory();
+            }
+            broadcastLiveSync('session_switched', { session_uuid: sessionUuid });
         });
     }
 
@@ -6936,6 +7613,8 @@ HTML;
                 return;
             }
             sessionUuid = data.session_uuid;
+            sdvSafeSet('sdv_active_session_uuid', sessionUuid);
+
             var msgsEl = document.getElementById('sdv-cl-msgs');
             if (msgsEl) {
                 msgsEl.innerHTML = '';
@@ -6943,40 +7622,20 @@ HTML;
             }
             var escalateBtn = document.getElementById('sdv-cl-escalate');
             if (escalateBtn) escalateBtn.style.display = 'inline';
-            var drawer = document.getElementById('sdv-cl-history-drawer');
-            if (drawer) drawer.classList.remove('sdv-drawer-open');
+            window.sdvCloseHistory();
             var inputEl = document.getElementById('sdv-cl-input');
             if (inputEl) try { inputEl.focus(); } catch(e) {}
+
+            broadcastLiveSync('session_switched', { session_uuid: sessionUuid });
         });
     };
 
-    // Attach listeners defensively to avoid missing events
+    // Attach listeners defensively to avoid missing events or double clicks
     function attachListeners() {
         var launcher = document.getElementById('sdv-client-chat-launcher');
         if (launcher && !launcher._sdvBound) {
             launcher._sdvBound = true;
-            launcher.addEventListener('click', function(e) {
-                e.preventDefault();
-                window.sdvToggleChat();
-            });
-        }
-
-        var closeBtn = document.getElementById('sdv-cl-close');
-        if (closeBtn && !closeBtn._sdvBound) {
-            closeBtn._sdvBound = true;
-            closeBtn.addEventListener('click', function(e) {
-                e.preventDefault();
-                window.sdvToggleChat(false);
-            });
-        }
-
-        var expandBtn = document.getElementById('sdv-cl-expand-btn');
-        if (expandBtn && !expandBtn._sdvBound) {
-            expandBtn._sdvBound = true;
-            expandBtn.addEventListener('click', function(e) {
-                e.preventDefault();
-                window.sdvToggleExpand();
-            });
+            // Native inline onclick handles window.sdvToggleChat(event)
         }
 
         var sendBtn = document.getElementById('sdv-cl-send');
@@ -6997,10 +7656,22 @@ HTML;
         }
     }
 
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', attachListeners);
-    } else {
+    function initWidget() {
         attachListeners();
+        initProactiveTrigger();
+
+        // Restore chat window open state across tabs / page navigations
+        if (sdvSafeGet('sdv_chat_open', '0') === '1') {
+            setTimeout(function() {
+                window.sdvToggleChat(true);
+            }, 80);
+        }
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initWidget);
+    } else {
+        initWidget();
     }
 })();
 </script>
