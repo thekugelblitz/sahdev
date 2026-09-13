@@ -302,6 +302,33 @@ function sahdev_activate()
                     $table->boolean('scrub_phones')->default(1);
                     $table->boolean('metrics_cron_enabled')->default(1);
                     $table->integer('metrics_retention_days')->default(365);
+                    $table->boolean('client_chat_enabled')->default(0);
+                    $table->integer('client_chat_provider_id')->default(0);
+                    $table->string('client_chat_model_name', 128)->default('openai/gpt-4o-mini');
+                    $table->string('client_chat_title', 128)->default('Hosting Support Assistant');
+                    $table->string('client_chat_brand_color', 32)->default('#0d6efd');
+                    $table->string('client_chat_position', 32)->default('bottom-right');
+                    $table->text('client_chat_welcome_message')->nullable();
+                    $table->boolean('client_chat_require_prechat')->default(0);
+                    $table->boolean('client_chat_require_auth')->default(0);
+                    $table->integer('client_chat_proactive_delay')->default(15);
+                    $table->boolean('client_chat_kb_enabled')->default(1);
+                    $table->longText('client_chat_system_prompt')->nullable();
+                    $table->boolean('client_chat_debug')->default(0);
+                    $table->boolean('client_chat_ds_services')->default(1);
+                    $table->boolean('client_chat_ds_domains')->default(1);
+                    $table->boolean('client_chat_ds_invoices')->default(1);
+                    $table->boolean('client_chat_ds_tickets')->default(1);
+                    $table->boolean('client_chat_ds_kb')->default(1);
+                    $table->boolean('client_chat_ds_network_issues')->default(1);
+                    $table->integer('client_chat_width')->default(380);
+                    $table->integer('client_chat_height')->default(560);
+                    $table->integer('client_chat_expand_width')->default(700);
+                    $table->integer('client_chat_expand_height')->default(720);
+                    $table->string('client_chat_theme', 32)->default('modern_light');
+                    $table->string('client_chat_launcher_style', 32)->default('circular');
+                    $table->string('client_chat_launcher_text', 64)->default('Chat with Us');
+                    $table->boolean('client_chat_history_enabled')->default(1);
                     $table->timestamps(); // creates created_at, updated_at
                 }
             );

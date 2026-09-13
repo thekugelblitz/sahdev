@@ -84,11 +84,13 @@ class SchemaManager
                 // Client Live Chat
                 'client_chat_enabled'          => ['type' => 'boolean', 'default' => 0],
                 'client_chat_provider_id'      => ['type' => 'integer', 'default' => 0],
+                'client_chat_model_name'       => ['type' => 'string', 'length' => 128, 'default' => 'openai/gpt-4o-mini'],
                 'client_chat_title'            => ['type' => 'string', 'length' => 128, 'default' => 'Hosting Support Assistant'],
                 'client_chat_brand_color'      => ['type' => 'string', 'length' => 32, 'default' => '#0d6efd'],
                 'client_chat_position'         => ['type' => 'string', 'length' => 32, 'default' => 'bottom-right'],
                 'client_chat_welcome_message'  => ['type' => 'text'],
                 'client_chat_require_prechat'  => ['type' => 'boolean', 'default' => 0],
+                'client_chat_require_auth'     => ['type' => 'boolean', 'default' => 0],
                 'client_chat_proactive_delay'  => ['type' => 'integer', 'default' => 15],
                 'client_chat_kb_enabled'       => ['type' => 'boolean', 'default' => 1],
                 'client_chat_system_prompt'    => ['type' => 'longtext'],
@@ -104,12 +106,12 @@ class SchemaManager
 
                 // Client Live Chat Widget Dimensions & Themes
                 'client_chat_width'             => ['type' => 'integer', 'default' => 380],
-                'client_chat_height'            => ['type' => 'integer', 'default' => 540],
-                'client_chat_expand_width'      => ['type' => 'integer', 'default' => 680],
+                'client_chat_height'            => ['type' => 'integer', 'default' => 560],
+                'client_chat_expand_width'      => ['type' => 'integer', 'default' => 700],
                 'client_chat_expand_height'     => ['type' => 'integer', 'default' => 720],
                 'client_chat_theme'             => ['type' => 'string', 'length' => 32, 'default' => 'modern_light'],
-                'client_chat_launcher_style'    => ['type' => 'string', 'length' => 32, 'default' => 'circle'],
-                'client_chat_launcher_text'     => ['type' => 'string', 'length' => 64, 'default' => 'Support Assistant'],
+                'client_chat_launcher_style'    => ['type' => 'string', 'length' => 32, 'default' => 'circular'],
+                'client_chat_launcher_text'     => ['type' => 'string', 'length' => 64, 'default' => 'Chat with Us'],
                 'client_chat_history_enabled'   => ['type' => 'boolean', 'default' => 1],
 
                 // Safe Ops & Rollback Governance
