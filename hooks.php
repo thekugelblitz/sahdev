@@ -7523,6 +7523,8 @@ HTML;
             if (data.msg_id && data.msg_id > highestMsgId) {
                 highestMsgId = data.msg_id;
             }
+        } else if (data.action === 'ticket_escalated' && data.session_uuid === sessionUuid) {
+            renderTicketCreatedCard(data.action_card || {});
         } else if (data.action === 'session_switched' && data.session_uuid) {
             if (sessionUuid !== data.session_uuid) {
                 sessionUuid = data.session_uuid;
@@ -8031,6 +8033,82 @@ HTML;
         return d;
     }
 
+    function renderEscalateSuccessCardHtml(data) {
+        data = data || {};
+        var tid = data.tid || data.ticket_id || '';
+        var ticketUrl = resolveChatUrl('supporttickets.php');
+        var clientEmail = data.client_email || '';
+
+        var emailNotice = clientEmail && clientEmail !== 'visitor@chat.local'
+            ? '<div style="font-size: 12px; margin-top: 6px; color: #047857; font-weight: 500;">✉️ Confirmation sent to <strong>' + sdvEscapeHtml(clientEmail) + '</strong>.</div>'
+            : '';
+
+        return '<div class="sdv-escalate-success-card">' +
+            '<div class="sdv-escalate-header">' +
+                '<span class="sdv-escalate-icon">🎫</span>' +
+                '<div>' +
+                    '<div class="sdv-escalate-title">Support Ticket #' + tid + ' Created</div>' +
+                    '<div class="sdv-escalate-sub">Live chat conversation escalated to staff</div>' +
+                '</div>' +
+            '</div>' +
+            '<div class="sdv-escalate-desc">' +
+                'Our technical staff has received your complete conversation transcript and account details. You can track updates or reply directly from your client area.' +
+                emailNotice +
+            '</div>' +
+            '<a href="' + ticketUrl + '" target="_blank" rel="noopener noreferrer" class="sdv-chat-link sdv-escalate-link">' +
+                '<span>Open Support Ticket' + (tid ? ' #' + tid : '') + '</span>' +
+                '<svg class="sdv-chat-link-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>' +
+            '</a>' +
+        '</div>';
+    }
+
+    function renderTicketCreatedCard(data) {
+        var cardHtml = renderEscalateSuccessCardHtml(data);
+        appendClMsg('bot', cardHtml, true);
+        var escalateBar = document.querySelector('.sdv-cl-escalate-bar');
+        if (escalateBar) escalateBar.style.display = 'none';
+
+        broadcastLiveSync('ticket_escalated', {
+            session_uuid: sessionUuid,
+            action_card: {
+                type: 'ticket_escalated',
+                tid: data.tid || data.ticket_id || '',
+                ticket_url: 'supporttickets.php',
+                client_email: data.client_email || ''
+            }
+        });
+    }
+
+    function renderSingleMessage(m) {
+        if (!m) return;
+        if (m.id && document.getElementById('sdv-msg-' + m.id)) {
+            return;
+        }
+
+        // Check if message is an escalation confirmation card
+        if (m.action_card && m.action_card.type === 'ticket_escalated') {
+            var cardHtml = renderEscalateSuccessCardHtml(m.action_card);
+            appendClMsg('bot', cardHtml, true, m.id);
+            var escalateBar = document.querySelector('.sdv-cl-escalate-bar');
+            if (escalateBar) escalateBar.style.display = 'none';
+            return;
+        }
+
+        // Fallback: detect if plain text is an escalation message
+        if (m.message_text && m.message_text.indexOf('Support Ticket #') > -1 && m.message_text.indexOf('escalated to staff') > -1) {
+            var matchTid = m.message_text.match(/Support Ticket #([^\s:]+)/);
+            var tid = matchTid ? matchTid[1] : '';
+            var cardHtml = renderEscalateSuccessCardHtml({ tid: tid, ticket_url: 'supporttickets.php' });
+            appendClMsg('bot', cardHtml, true, m.id);
+            var escalateBar = document.querySelector('.sdv-cl-escalate-bar');
+            if (escalateBar) escalateBar.style.display = 'none';
+            return;
+        }
+
+        var role = (m.sender_type === 'user') ? 'user' : 'bot';
+        appendClMsg(role, m.message_text, false, m.id);
+    }
+
     window.sdvInitChat = function() {
         if (isInitialized) return;
         isInitialized = true;
@@ -8050,12 +8128,17 @@ HTML;
                 sessionUuid = data.session_uuid;
                 sdvSafeSet('sdv_active_session_uuid', sessionUuid);
 
+                if (data.status_chat === 'escalated_ticket' || data.status === 'escalated_ticket') {
+                    var escalateBar = document.querySelector('.sdv-cl-escalate-bar');
+                    if (escalateBar) escalateBar.style.display = 'none';
+                }
+
                 if (data.messages && data.messages.length > 0) {
                     var msgsEl = document.getElementById('sdv-cl-msgs');
                     if (msgsEl) {
                         msgsEl.innerHTML = '';
                         data.messages.forEach(function(m) {
-                            appendClMsg(m.sender_type === 'user' ? 'user' : 'bot', m.message_text, false, m.id);
+                            renderSingleMessage(m);
                         });
                     }
                 }
@@ -8158,8 +8241,7 @@ HTML;
                     if (m.id > highestMsgId) highestMsgId = m.id;
                     var exists = document.getElementById('sdv-msg-' + m.id);
                     if (!exists && msgsEl) {
-                        var role = (m.sender_type === 'user') ? 'user' : 'bot';
-                        appendClMsg(role, m.message_text, false, m.id);
+                        renderSingleMessage(m);
                         shouldScroll = true;
                     }
                 });
@@ -8247,38 +8329,6 @@ HTML;
         if (customEmail) form.append('client_email', customEmail);
 
         postAjaxWithFallback(form, callback);
-    }
-
-    function renderTicketCreatedCard(data) {
-        var tid = data.tid || data.ticket_id || '';
-        var ticketUrl = data.ticket_url ? resolveChatUrl(data.ticket_url) : resolveChatUrl('supporttickets.php');
-        var clientEmail = data.client_email || '';
-
-        var emailNotice = clientEmail && clientEmail !== 'visitor@chat.local'
-            ? '<div style="font-size: 12px; margin-top: 6px; color: #047857; font-weight: 500;">✉️ Confirmation sent to <strong>' + sdvEscapeHtml(clientEmail) + '</strong>.</div>'
-            : '';
-
-        var cardHtml = '<div class="sdv-escalate-success-card">' +
-            '<div class="sdv-escalate-header">' +
-                '<span class="sdv-escalate-icon">🎫</span>' +
-                '<div>' +
-                    '<div class="sdv-escalate-title">Support Ticket #' + tid + ' Created</div>' +
-                    '<div class="sdv-escalate-sub">Live chat conversation escalated to staff</div>' +
-                '</div>' +
-            '</div>' +
-            '<div class="sdv-escalate-desc">' +
-                'Our technical staff has received your complete conversation transcript and inquiry details.' +
-                emailNotice +
-            '</div>' +
-            '<a href="' + ticketUrl + '" target="_blank" rel="noopener noreferrer" class="sdv-chat-link sdv-escalate-link">' +
-                '<span>Open Support Ticket #' + tid + '</span>' +
-                '<svg class="sdv-chat-link-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>' +
-            '</a>' +
-        '</div>';
-
-        appendClMsg('bot', cardHtml, true);
-        var escalateBar = document.querySelector('.sdv-cl-escalate-bar');
-        if (escalateBar) escalateBar.style.display = 'none';
     }
 
     window.sdvEscalateToTicket = function() {
@@ -8417,9 +8467,16 @@ HTML;
             var msgsEl = document.getElementById('sdv-cl-msgs');
             if (msgsEl) {
                 msgsEl.innerHTML = '';
+                var escalateBar = document.querySelector('.sdv-cl-escalate-bar');
+                if (data.status === 'escalated_ticket') {
+                    if (escalateBar) escalateBar.style.display = 'none';
+                } else if (escalateBar) {
+                    escalateBar.style.display = 'flex';
+                }
+
                 if (data.messages && data.messages.length > 0) {
                     data.messages.forEach(function(m) {
-                        appendClMsg(m.sender_type === 'user' ? 'user' : 'bot', m.message_text, false, m.id);
+                        renderSingleMessage(m);
                     });
                 } else {
                     appendClMsg('bot', 'No messages recorded in this conversation yet.', false);
@@ -8451,8 +8508,13 @@ HTML;
                 msgsEl.innerHTML = '';
                 appendClMsg('bot', data.greeting || 'Hi! How can I help you today?', false);
             }
+            var escalateBar = document.querySelector('.sdv-cl-escalate-bar');
+            if (escalateBar) escalateBar.style.display = 'flex';
             var escalateBtn = document.getElementById('sdv-cl-escalate');
-            if (escalateBtn) escalateBtn.style.display = 'inline';
+            if (escalateBtn) {
+                escalateBtn.textContent = 'Convert to Ticket →';
+                escalateBtn.style.display = 'inline';
+            }
             window.sdvCloseHistory();
             window.sdvCloseKb();
             var inputEl = document.getElementById('sdv-cl-input');

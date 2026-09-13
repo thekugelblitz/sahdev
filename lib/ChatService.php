@@ -58,6 +58,50 @@ class ChatService
     public static function getSessionMessages(int $sessionId, int $limit = 50): array
     {
         SchemaManager::ensureChatMessagesTable();
+
+        // Self-healing backfill: If this session is marked escalated_ticket but has no escalation card message, create one
+        try {
+            $session = Capsule::table('tblsahdev_chat_sessions')->where('id', $sessionId)->first();
+            if ($session && $session->status === 'escalated_ticket') {
+                $hasEscalatedMsg = Capsule::table('tblsahdev_chat_messages')
+                    ->where('session_id', $sessionId)
+                    ->where('action_card_json', 'LIKE', '%ticket_escalated%')
+                    ->exists();
+                if (!$hasEscalatedMsg) {
+                    $tid = '';
+                    $ticketId = 0;
+                    $ticket = Capsule::table('tbltickets')
+                        ->where('title', 'LIKE', "%{$session->session_uuid}%")
+                        ->orWhere('message', 'LIKE', "%{$session->session_uuid}%")
+                        ->orderBy('id', 'desc')
+                        ->first(['id', 'tid']);
+                    if ($ticket) {
+                        $tid = (string)$ticket->tid;
+                        $ticketId = (int)$ticket->id;
+                    }
+                    if (empty($tid)) {
+                        $tid = 'Support';
+                    }
+                    Capsule::table('tblsahdev_chat_messages')->insert([
+                        'session_id'       => $sessionId,
+                        'sender_type'      => 'system',
+                        'sender_id'        => (int)($session->assigned_admin_id ?? 0),
+                        'sender_name'      => 'System',
+                        'message_text'     => "Support Ticket #{$tid} Created: Live chat conversation escalated to staff. Our technical staff has received your complete conversation transcript and account details.",
+                        'action_card_json' => json_encode([
+                            'type'         => 'ticket_escalated',
+                            'tid'          => $tid,
+                            'ticket_id'    => $ticketId,
+                            'ticket_url'   => 'supporttickets.php',
+                        ]),
+                        'created_at'       => $session->updated_at ?: Carbon::now(),
+                    ]);
+                }
+            }
+        } catch (\Throwable $e) {
+            // Silently continue
+        }
+
         return Capsule::table('tblsahdev_chat_messages')
             ->where('session_id', $sessionId)
             ->orderBy('id', 'asc')
@@ -829,10 +873,27 @@ class ChatService
 
                 ModuleLogger::info('client_chat', "Live chat session {$sessionUuid} escalated to ticket #{$tid} (user: " . ($userId ?: 'guest') . ") attributed to admin " . ($adminUsername ?: 'System') . " (ID: {$designatedAdminId})");
 
-                // Generate appropriate ticket URL for client/guest
+                // Generate appropriate ticket URL for client/guest: Always link to supporttickets.php
                 $ticketUrl = !empty($systemUrl)
-                    ? ($accessKey && $userId === 0 ? "{$systemUrl}/viewticket.php?tid={$tid}&c={$accessKey}" : "{$systemUrl}/viewticket.php?tid={$tid}")
-                    : ($accessKey && $userId === 0 ? "viewticket.php?tid={$tid}&c={$accessKey}" : "viewticket.php?tid={$tid}");
+                    ? rtrim($systemUrl, '/') . '/supporttickets.php'
+                    : 'supporttickets.php';
+
+                // Persist the escalation confirmation card message in tblsahdev_chat_messages
+                Capsule::table('tblsahdev_chat_messages')->insert([
+                    'session_id'       => $session->id,
+                    'sender_type'      => 'system',
+                    'sender_id'        => $designatedAdminId ?: 0,
+                    'sender_name'      => 'System',
+                    'message_text'     => "Support Ticket #{$tid} Created: Live chat conversation escalated to staff. Our technical staff has received your complete conversation transcript and account details.",
+                    'action_card_json' => json_encode([
+                        'type'         => 'ticket_escalated',
+                        'tid'          => $tid,
+                        'ticket_id'    => $ticketId,
+                        'ticket_url'   => 'supporttickets.php',
+                        'client_email' => $clientEmail,
+                    ]),
+                    'created_at'       => Carbon::now(),
+                ]);
 
                 return [
                     'success'      => true,
@@ -880,8 +941,25 @@ class ChatService
         ModuleLogger::info('client_chat', "Live chat session {$sessionUuid} escalated to ticket #{$tid} via direct insert attributed to admin " . ($adminUsername ?: 'System'));
 
         $ticketUrl = !empty($systemUrl)
-            ? ($accessKey && $userId === 0 ? "{$systemUrl}/viewticket.php?tid={$tid}&c={$accessKey}" : "{$systemUrl}/viewticket.php?tid={$tid}")
-            : ($accessKey && $userId === 0 ? "viewticket.php?tid={$tid}&c={$accessKey}" : "viewticket.php?tid={$tid}");
+            ? rtrim($systemUrl, '/') . '/supporttickets.php'
+            : 'supporttickets.php';
+
+        // Persist the escalation confirmation card message in tblsahdev_chat_messages
+        Capsule::table('tblsahdev_chat_messages')->insert([
+            'session_id'       => $session->id,
+            'sender_type'      => 'system',
+            'sender_id'        => $designatedAdminId ?: 0,
+            'sender_name'      => 'System',
+            'message_text'     => "Support Ticket #{$tid} Created: Live chat conversation escalated to staff. Our technical staff has received your complete conversation transcript and account details.",
+            'action_card_json' => json_encode([
+                'type'         => 'ticket_escalated',
+                'tid'          => $tid,
+                'ticket_id'    => $ticketId,
+                'ticket_url'   => 'supporttickets.php',
+                'client_email' => $clientEmail,
+            ]),
+            'created_at'       => Carbon::now(),
+        ]);
 
         return [
             'success'      => true,
@@ -1721,6 +1799,7 @@ class ChatService
                 'sender_type'  => $m->sender_type,
                 'sender_name'  => $m->sender_name,
                 'message_text' => html_entity_decode((string)$m->message_text, ENT_QUOTES | ENT_HTML5, 'UTF-8'),
+                'action_card'  => !empty($m->action_card_json) ? json_decode($m->action_card_json, true) : null,
                 'created_at'   => Carbon::parse($m->created_at)->diffForHumans(),
             ];
         }
