@@ -6611,29 +6611,63 @@ DISC;
         transform: translateY(0) scale(1);
     }
 }
-@media (max-width: 640px) {
-    #sdv-client-chat-window,
-    #sdv-client-chat-window.sdv-expanded {
-        bottom: 76px !important;
-        left: 8px !important;
-        right: 8px !important;
-        width: auto !important;
-        max-width: none !important;
-        height: calc(100vh - 92px) !important;
-        height: calc(100dvh - 92px) !important;
-        max-height: none !important;
-        border-radius: 14px !important;
+@media (max-width: 768px) {
+    html body #sdv-client-chat-window,
+    html body #sdv-client-chat-window.sdv-expanded,
+    html body #sdv-client-chat-window[class*="sdv-theme-"] {
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        bottom: 0 !important;
+        inset: 0 !important;
+        width: 100vw !important;
+        width: 100% !important;
+        max-width: 100vw !important;
+        max-width: 100% !important;
+        height: 100vh !important;
+        height: 100dvh !important;
+        max-height: 100dvh !important;
+        max-height: 100% !important;
+        border-radius: 0 !important;
+        border: none !important;
+        margin: 0 !important;
+        box-shadow: none !important;
+        z-index: 2147483647 !important;
     }
-}
-@media (max-width: 360px) {
-    #sdv-client-chat-window,
-    #sdv-client-chat-window.sdv-expanded {
-        bottom: 70px !important;
-        left: 4px !important;
-        right: 4px !important;
-        height: calc(100vh - 80px) !important;
-        height: calc(100dvh - 80px) !important;
-        border-radius: 12px !important;
+    body.sdv-mobile-chat-active {
+        overflow: hidden !important;
+    }
+    body.sdv-mobile-chat-active #sdv-client-chat-launcher {
+        display: none !important;
+    }
+    #sdv-cl-expand,
+    #sdv-cl-expand-btn,
+    html body #sdv-client-chat-window #sdv-cl-expand-btn,
+    html body #sdv-client-chat-window[class*="sdv-theme-"] #sdv-cl-expand-btn,
+    html body #sdv-client-chat-window[class*="sdv-theme-"] #sdv-cl-expand {
+        display: none !important;
+    }
+    #sdv-cl-close {
+        width: 44px !important;
+        height: 44px !important;
+        min-width: 44px !important;
+        min-height: 44px !important;
+        font-size: 26px !important;
+        line-height: 1 !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        border-radius: 8px !important;
+        cursor: pointer !important;
+        padding: 0 !important;
+    }
+    .sdv-cl-header {
+        border-radius: 0 !important;
+        padding: 12px 14px !important;
+    }
+    .sdv-cl-footer {
+        padding: 10px 12px max(12px, env(safe-area-inset-bottom, 12px)) !important;
     }
 }
 
@@ -10653,6 +10687,10 @@ DISC;
             win.style.setProperty('pointer-events', 'auto', 'important');
             win.style.setProperty('z-index', '2147483647', 'important');
 
+            if (window.innerWidth <= 768) {
+                document.body.classList.add('sdv-mobile-chat-active');
+            }
+
             sdvSafeSet('sdv_chat_open', '1');
             try { if (typeof window.sdvDismissProactive === 'function') window.sdvDismissProactive(); } catch(e) {}
 
@@ -10670,11 +10708,23 @@ DISC;
             win.classList.remove('sdv-open');
             win.style.setProperty('display', 'none', 'important');
             win.style.setProperty('pointer-events', 'none', 'important');
+            document.body.classList.remove('sdv-mobile-chat-active');
             sdvSafeSet('sdv_chat_open', '0');
             try { if (typeof sdvStopLivePolling === 'function') sdvStopLivePolling(); } catch(e) {}
             window.sdvCloseAllMsgMenus && window.sdvCloseAllMsgMenus();
         }
     };
+
+    window.addEventListener('resize', function() {
+        var win = document.getElementById('sdv-client-chat-window');
+        if (win && win.classList.contains('sdv-open')) {
+            if (window.innerWidth <= 768) {
+                document.body.classList.add('sdv-mobile-chat-active');
+            } else {
+                document.body.classList.remove('sdv-mobile-chat-active');
+            }
+        }
+    });
 
     // Global capture listener ensuring click always activates launcher even if theme stops propagation
     document.addEventListener('click', function(e) {

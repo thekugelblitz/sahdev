@@ -108,6 +108,8 @@ class SchemaManager
                 'client_chat_ds_tickets'        => ['type' => 'boolean', 'default' => 1],
                 'client_chat_ds_kb'             => ['type' => 'boolean', 'default' => 1],
                 'client_chat_ds_network_issues' => ['type' => 'boolean', 'default' => 1],
+                'client_chat_ds_catalog'        => ['type' => 'boolean', 'default' => 1],
+                'client_chat_ds_domain_pricing' => ['type' => 'boolean', 'default' => 1],
 
                 // Client Live Chat Widget Dimensions & Themes
                 'client_chat_width'             => ['type' => 'integer', 'default' => 380],

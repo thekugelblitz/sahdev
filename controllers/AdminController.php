@@ -1960,6 +1960,12 @@ class AdminController
             if (isset($_POST['client_chat_siri_orb_enabled'])) {
                 $updatePayload['client_chat_siri_orb_enabled'] = !empty($_POST['client_chat_siri_orb_enabled']) ? 1 : 0;
             }
+            if (isset($_POST['client_chat_ds_catalog'])) {
+                $updatePayload['client_chat_ds_catalog'] = !empty($_POST['client_chat_ds_catalog']) ? 1 : 0;
+            }
+            if (isset($_POST['client_chat_ds_domain_pricing'])) {
+                $updatePayload['client_chat_ds_domain_pricing'] = !empty($_POST['client_chat_ds_domain_pricing']) ? 1 : 0;
+            }
             if (isset($_POST['client_chat_theme'])) {
                 $updatePayload['client_chat_theme'] = trim($_POST['client_chat_theme']);
             }
@@ -8778,6 +8784,8 @@ class AdminController
                     'client_chat_ds_tickets'        => !empty($_POST['client_chat_ds_tickets']) ? 1 : 0,
                     'client_chat_ds_kb'             => !empty($_POST['client_chat_ds_kb']) ? 1 : 0,
                     'client_chat_ds_network_issues' => !empty($_POST['client_chat_ds_network_issues']) ? 1 : 0,
+                    'client_chat_ds_catalog'        => !empty($_POST['client_chat_ds_catalog']) ? 1 : 0,
+                    'client_chat_ds_domain_pricing' => !empty($_POST['client_chat_ds_domain_pricing']) ? 1 : 0,
                     'updated_at'                    => \Carbon\Carbon::now(),
                 ]);
                 $successMessage = "Self-Help Data Source permissions updated successfully.";
@@ -9342,6 +9350,46 @@ class AdminController
                                             <label class="switch" style="margin: 5px 0 0 0;">
                                                 <input type="checkbox" name="client_chat_ds_network_issues" value="1" <?php echo !empty($settings->client_chat_ds_network_issues ?? 1) ? 'checked' : ''; ?>>
                                                 <span class="btn btn-sm <?php echo !empty($settings->client_chat_ds_network_issues ?? 1) ? 'btn-success' : 'btn-default'; ?>">Enabled</span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 7. Active Products & Services Catalog -->
+                                <div class="list-group-item" style="padding: 16px;">
+                                    <div class="row">
+                                        <div class="col-md-9">
+                                            <h4 class="list-group-item-heading" style="font-size: 14px; font-weight: 700; color: #1e293b;">
+                                                <i class="fas fa-cubes text-primary"></i> Active Products &amp; Services Catalog (Presales &amp; Tech Sales)
+                                            </h4>
+                                            <p class="list-group-item-text text-muted" style="font-size: 12.5px; margin-top: 4px;">
+                                                Enables the AI to answer presales, plan recommendations, and technical queries regarding your active hosting plans, cloud servers, and specifications. Automatically excludes hidden, retired, or disabled products and includes direct 1-click cart order links.
+                                            </p>
+                                        </div>
+                                        <div class="col-md-3 text-right">
+                                            <label class="switch" style="margin: 5px 0 0 0;">
+                                                <input type="checkbox" name="client_chat_ds_catalog" value="1" <?php echo !empty($settings->client_chat_ds_catalog ?? 1) ? 'checked' : ''; ?>>
+                                                <span class="btn btn-sm <?php echo !empty($settings->client_chat_ds_catalog ?? 1) ? 'btn-success' : 'btn-default'; ?>">Enabled</span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 8. Domain Pricing & TLD Registration Search -->
+                                <div class="list-group-item" style="padding: 16px;">
+                                    <div class="row">
+                                        <div class="col-md-9">
+                                            <h4 class="list-group-item-heading" style="font-size: 14px; font-weight: 700; color: #1e293b;">
+                                                <i class="fas fa-search-dollar text-success"></i> Domain Pricing, TLD Extensions &amp; Registration
+                                            </h4>
+                                            <p class="list-group-item-text text-muted" style="font-size: 12.5px; margin-top: 4px;">
+                                                Allows the AI to answer domain pricing, supported TLD extensions, registration and transfer queries, with direct cart registration links.
+                                            </p>
+                                        </div>
+                                        <div class="col-md-3 text-right">
+                                            <label class="switch" style="margin: 5px 0 0 0;">
+                                                <input type="checkbox" name="client_chat_ds_domain_pricing" value="1" <?php echo !empty($settings->client_chat_ds_domain_pricing ?? 1) ? 'checked' : ''; ?>>
+                                                <span class="btn btn-sm <?php echo !empty($settings->client_chat_ds_domain_pricing ?? 1) ? 'btn-success' : 'btn-default'; ?>">Enabled</span>
                                             </label>
                                         </div>
                                     </div>
