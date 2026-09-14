@@ -8705,6 +8705,11 @@ class AdminController
                     'client_chat_launcher_style'    => trim($_POST['client_chat_launcher_style'] ?? 'circular'),
                     'client_chat_launcher_text'     => trim($_POST['client_chat_launcher_text'] ?? 'Chat with Us'),
                     'client_chat_history_enabled'   => !empty($_POST['client_chat_history_enabled']) ? 1 : 0,
+                    'client_chat_powered_by_show'    => !empty($_POST['client_chat_powered_by_show']) ? 1 : 0,
+                    'client_chat_powered_by_text'    => trim($_POST['client_chat_powered_by_text'] ?? 'Powered by Sahdev AI'),
+                    'client_chat_powered_by_url'     => trim($_POST['client_chat_powered_by_url'] ?? ''),
+                    'client_chat_disclaimer_enabled' => !empty($_POST['client_chat_disclaimer_enabled']) ? 1 : 0,
+                    'client_chat_disclaimer_text'    => trim($_POST['client_chat_disclaimer_text'] ?? ''),
                     'client_chat_csat_enabled'      => !empty($_POST['client_chat_csat_enabled']) ? 1 : 0,
                     'client_chat_sound_enabled'     => !empty($_POST['client_chat_sound_enabled']) ? 1 : 0,
                     'client_chat_starter_chips'     => trim($_POST['client_chat_starter_chips'] ?? '') ?: null,
@@ -9328,17 +9333,38 @@ class AdminController
 
                                     <!-- Theme Selector -->
                                     <div class="form-group" style="margin-bottom: 20px;">
-                                        <label style="font-weight: 700;">UI/UX Theme Style</label>
+                                        <label style="font-weight: 700;">UI/UX Theme Style &amp; Structural Architecture</label>
+                                        <?php $currentTheme = $settings->client_chat_theme ?? 'modern_light'; ?>
                                         <select name="client_chat_theme" id="ctrl_theme" class="form-control" style="font-weight: 600;">
-                                            <option value="modern_light" <?php echo (($settings->client_chat_theme ?? 'modern_light') === 'modern_light') ? 'selected' : ''; ?>>Modern Crisp Light (Clean, soft shadows, high readability)</option>
-                                            <option value="cyber_dark" <?php echo (($settings->client_chat_theme ?? '') === 'cyber_dark') ? 'selected' : ''; ?>>Cyber Slate Dark (OLED deep slate background, vivid contrast)</option>
-                                            <option value="midnight_indigo" <?php echo (($settings->client_chat_theme ?? '') === 'midnight_indigo') ? 'selected' : ''; ?>>Midnight Indigo (Deep night blue, electric indigo accents)</option>
-                                            <option value="emerald_clean" <?php echo (($settings->client_chat_theme ?? '') === 'emerald_clean') ? 'selected' : ''; ?>>Emerald SaaS (Mint & emerald accents, Shopify/Crisp style)</option>
-                                            <option value="sunset_amber" <?php echo (($settings->client_chat_theme ?? '') === 'sunset_amber') ? 'selected' : ''; ?>>Sunset Amber (Warm terracotta & sandstone, Notion/Stripe warm style)</option>
-                                            <option value="glassmorphism" <?php echo (($settings->client_chat_theme ?? '') === 'glassmorphism') ? 'selected' : ''; ?>>Frosted Glassmorphism (Backdrop blur, glowing translucent glass)</option>
-                                            <option value="high_contrast" <?php echo (($settings->client_chat_theme ?? '') === 'high_contrast') ? 'selected' : ''; ?>>Enterprise High Contrast (Monochrome bold borders, WCAG AAA accessibility)</option>
-                                            <option value="brand_gradient" <?php echo (($settings->client_chat_theme ?? '') === 'brand_gradient') ? 'selected' : ''; ?>>Brand Gradient (Vibrant dynamic multi-stop header gradient)</option>
+                                            <optgroup label="Modern Conversational &amp; SaaS">
+                                                <option value="modern_light" <?php echo in_array($currentTheme, ['modern_light', 'intercom_saas']) ? 'selected' : ''; ?>>1. Intercom Modern &mdash; Soft ambient elevation, pillowy 18px radii, rounded search-pill input, humanist layout</option>
+                                                <option value="crisp_bubbly" <?php echo ($currentTheme === 'crisp_bubbly') ? 'selected' : ''; ?>>2. Crisp Playful &mdash; Hyper-rounded 24px teardrop bubbles, bouncy micro-interactions, friendly energetic vibe</option>
+                                                <option value="drift_bold" <?php echo ($currentTheme === 'drift_bold') ? 'selected' : ''; ?>>3. Drift Conversational &mdash; Bold high-contrast header, asymmetric speech tails, prominent CTA accents</option>
+                                            </optgroup>
+                                            <optgroup label="Enterprise &amp; Formal Support">
+                                                <option value="zendesk_clean" <?php echo ($currentTheme === 'zendesk_clean') ? 'selected' : ''; ?>>4. Zendesk Enterprise &mdash; Crisp 6px hairlines, formal ticketing structure, clean boxed input, corporate support feel</option>
+                                                <option value="notion_paper" <?php echo ($currentTheme === 'notion_paper') ? 'selected' : ''; ?>>5. Notion Editorial &mdash; Warm ivory paper (#fbfbfa), borderless flat cards, refined typography, zen reading focus</option>
+                                            </optgroup>
+                                            <optgroup label="Developer &amp; High-Tech Dark Modes">
+                                                <option value="linear_geist" <?php echo ($currentTheme === 'linear_geist') ? 'selected' : ''; ?>>6. Linear / Geist Dev &mdash; Obsidian dark, 4px-6px chamfers, monospace accents, zinc #18181b, high-density HUD</option>
+                                                <option value="cyber_dark" <?php echo ($currentTheme === 'cyber_dark') ? 'selected' : ''; ?>>7. Cyber Slate OLED &mdash; Deep slate background, electric contrast, modern gaming/tech support aesthetic</option>
+                                                <option value="terminal_cli" <?php echo ($currentTheme === 'terminal_cli') ? 'selected' : ''; ?>>8. Retro Terminal CLI &mdash; Matrix phosphor green on black, monospace font, scanlines, &gt; prompt, [X] actions</option>
+                                            </optgroup>
+                                            <optgroup label="Futuristic &amp; Tactile Aesthetics">
+                                                <option value="glassmorphism" <?php echo ($currentTheme === 'glassmorphism') ? 'selected' : ''; ?>>9. Frosted Glassmorphism &mdash; Apple macOS/VisionOS 24px backdrop-blur, translucent acrylic, reflective borders</option>
+                                                <option value="neumorphism_soft" <?php echo ($currentTheme === 'neumorphism_soft') ? 'selected' : ''; ?>>10. Neumorphic Soft 3D &mdash; Dual-shadow extruded clay, inset pillowy interactive controls, tactile depth</option>
+                                            </optgroup>
+                                            <optgroup label="Classic Colorways (Legacy Compatibility)">
+                                                <option value="midnight_indigo" <?php echo ($currentTheme === 'midnight_indigo') ? 'selected' : ''; ?>>Midnight Indigo (Deep night blue, electric indigo accents)</option>
+                                                <option value="emerald_clean" <?php echo ($currentTheme === 'emerald_clean') ? 'selected' : ''; ?>>Emerald SaaS (Mint &amp; emerald accents)</option>
+                                                <option value="sunset_amber" <?php echo ($currentTheme === 'sunset_amber') ? 'selected' : ''; ?>>Sunset Amber (Warm terracotta &amp; sandstone)</option>
+                                                <option value="high_contrast" <?php echo ($currentTheme === 'high_contrast') ? 'selected' : ''; ?>>Enterprise High Contrast (Monochrome bold borders)</option>
+                                                <option value="brand_gradient" <?php echo ($currentTheme === 'brand_gradient') ? 'selected' : ''; ?>>Brand Gradient (Vibrant dynamic header gradient)</option>
+                                            </optgroup>
                                         </select>
+                                        <span class="help-block" style="font-size: 11.5px; margin-top: 4px;">
+                                            Each theme provides a complete UI/UX overhaul: unique bubble geometries, border radiuses, shadows, typography, and interactive control paradigms.
+                                        </span>
                                     </div>
 
                                     <!-- Sizing Controls -->
@@ -9408,10 +9434,56 @@ class AdminController
                                         </div>
                                     </div>
 
-                                    <div class="form-group">
+                                    <div class="form-group" style="margin-bottom: 20px;">
                                         <label><i class="fas fa-image"></i> Chat Assistant Logo / Avatar URL</label>
                                         <input type="text" name="client_chat_logo" id="ctrl_logo" class="form-control" placeholder="https://manage.hostingspell.com/assets/img/logo.png or assets/img/avatar.png" value="<?php echo htmlspecialchars($settings->client_chat_logo ?? ''); ?>">
                                         <p class="help-block" style="font-size: 11.5px; margin-bottom: 0;">Direct image URL for the assistant avatar displayed in the widget header and cards. Leave blank for default AI badge.</p>
+                                    </div>
+
+                                    <!-- Branding, White-Label & AI Compliance -->
+                                    <div class="panel panel-default" style="border-radius: 8px; margin-bottom: 20px; background: #f8fafc; border: 1px solid #e2e8f0;">
+                                        <div class="panel-heading" style="background: #f1f5f9; padding: 10px 15px; font-weight: 700; font-size: 13px;">
+                                            <i class="fas fa-shield-alt text-primary"></i> Branding, White-Label &amp; AI Compliance
+                                        </div>
+                                        <div class="panel-body" style="padding: 15px;">
+                                            <!-- Powered By Customization -->
+                                            <div style="margin-bottom: 18px; padding-bottom: 15px; border-bottom: 1px solid #e2e8f0;">
+                                                <div class="checkbox" style="margin-top: 0; margin-bottom: 8px;">
+                                                    <label style="font-weight: 700;">
+                                                        <input type="checkbox" name="client_chat_powered_by_show" value="1" <?php echo (!isset($settings->client_chat_powered_by_show) || !empty($settings->client_chat_powered_by_show)) ? 'checked' : ''; ?>>
+                                                        Display "Powered by" Footer Branding
+                                                    </label>
+                                                </div>
+                                                <span class="help-block" style="font-size: 11.5px; margin-bottom: 10px; color: #64748b;">Uncheck this box to completely whitelabel the widget footer with zero branding.</span>
+                                                <div class="row">
+                                                    <div class="col-md-6 form-group" style="margin-bottom: 0;">
+                                                        <label style="font-size: 12px; font-weight: 600;">Custom Branding Text</label>
+                                                        <input type="text" name="client_chat_powered_by_text" class="form-control input-sm" value="<?php echo htmlspecialchars($settings->client_chat_powered_by_text ?? 'Powered by Sahdev AI'); ?>" placeholder="e.g. Powered by YourBrand">
+                                                    </div>
+                                                    <div class="col-md-6 form-group" style="margin-bottom: 0;">
+                                                        <label style="font-size: 12px; font-weight: 600;">Branding Link Target URL (Optional)</label>
+                                                        <input type="text" name="client_chat_powered_by_url" class="form-control input-sm" value="<?php echo htmlspecialchars($settings->client_chat_powered_by_url ?? ''); ?>" placeholder="https://yourdomain.com (Leave blank for plain text)">
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <!-- AI Usage Disclaimer Notice -->
+                                            <div>
+                                                <div class="checkbox" style="margin-top: 0; margin-bottom: 8px;">
+                                                    <label style="font-weight: 700;">
+                                                        <input type="checkbox" name="client_chat_disclaimer_enabled" value="1" <?php echo !empty($settings->client_chat_disclaimer_enabled) ? 'checked' : ''; ?>>
+                                                        Display AI Usage Disclaimer Notice
+                                                    </label>
+                                                </div>
+                                                <span class="help-block" style="font-size: 11.5px; margin-bottom: 8px; color: #64748b;">
+                                                    Shows a subtle, dismissible compliance banner informing users that responses may be AI-assisted (helps fulfill EU AI Act &amp; FTC transparency guidelines).
+                                                </span>
+                                                <div class="form-group" style="margin-bottom: 0;">
+                                                    <label style="font-size: 12px; font-weight: 600;">Disclaimer Copy</label>
+                                                    <textarea name="client_chat_disclaimer_text" class="form-control input-sm" rows="2" placeholder="AI Assistant: Responses may be AI-generated. Please verify critical account information with our staff."><?php echo htmlspecialchars($settings->client_chat_disclaimer_text ?? 'AI Assistant: Responses may be AI-generated. Please verify critical information.'); ?></textarea>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
 
                                     <!-- Escalation Identity Card -->

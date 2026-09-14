@@ -332,6 +332,11 @@ function sahdev_activate()
                     $table->string('client_chat_launcher_style', 32)->default('circular');
                     $table->string('client_chat_launcher_text', 64)->default('Chat with Us');
                     $table->boolean('client_chat_history_enabled')->default(1);
+                    $table->boolean('client_chat_powered_by_show')->default(1);
+                    $table->string('client_chat_powered_by_text', 128)->default('Powered by Sahdev AI');
+                    $table->string('client_chat_powered_by_url', 255)->default('');
+                    $table->boolean('client_chat_disclaimer_enabled')->default(1);
+                    $table->text('client_chat_disclaimer_text')->nullable();
                     $table->integer('client_chat_auth_limit_count')->default(30);
                     $table->string('client_chat_auth_limit_window', 16)->default('daily');
                     $table->integer('client_chat_guest_limit_count')->default(5);

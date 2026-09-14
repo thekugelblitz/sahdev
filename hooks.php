@@ -5889,6 +5889,11 @@ function sahdev_render_client_livechat_widget(array $vars): string
         $maxSessionChars = isset($settings->client_chat_max_session_chars) ? (int)$settings->client_chat_max_session_chars : 10000;
         $csatEnabled = !isset($settings->client_chat_csat_enabled) || !empty($settings->client_chat_csat_enabled);
         $soundEnabled = !isset($settings->client_chat_sound_enabled) || !empty($settings->client_chat_sound_enabled);
+        $poweredByShow = !isset($settings->client_chat_powered_by_show) || !empty($settings->client_chat_powered_by_show);
+        $poweredByText = !empty($settings->client_chat_powered_by_text) ? htmlspecialchars(trim($settings->client_chat_powered_by_text), ENT_QUOTES, 'UTF-8') : 'Powered by Sahdev AI';
+        $poweredByUrl = !empty($settings->client_chat_powered_by_url) ? htmlspecialchars(trim($settings->client_chat_powered_by_url), ENT_QUOTES, 'UTF-8') : '';
+        $disclaimerEnabled = !empty($settings->client_chat_disclaimer_enabled);
+        $disclaimerText = !empty($settings->client_chat_disclaimer_text) ? htmlspecialchars(trim($settings->client_chat_disclaimer_text), ENT_QUOTES, 'UTF-8') : 'AI Assistant: Responses may be AI-generated. Please verify critical information.';
 
         $welcomeMsgRaw = !empty($settings->client_chat_welcome_message)
             ? $settings->client_chat_welcome_message
@@ -6012,7 +6017,7 @@ function sahdev_render_client_livechat_widget(array $vars): string
     $launcherHtml = '';
     if ($launcherStyle === 'pill') {
         $launcherHtml = <<<HTML
-<div id="sdv-client-chat-launcher" class="sdv-launcher-pill" role="button" tabindex="0" title="{$launcherText}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.sdvToggleChat&&window.sdvToggleChat(event);}">
+<div id="sdv-client-chat-launcher" class="sdv-launcher-pill" role="button" tabindex="0" title="{$launcherText}" onclick="if(window.sdvToggleChat){window.sdvToggleChat(event);}else{(function(){var w=document.getElementById('sdv-client-chat-window');if(w){var o=w.classList.contains('sdv-open')&&w.style.display!=='none';w.classList.toggle('sdv-open',!o);w.style.setProperty('display',!o?'flex':'none','important');w.style.setProperty('visibility',!o?'visible':'hidden','important');w.style.setProperty('opacity',!o?'1':'0','important');w.style.setProperty('z-index','2147483647','important');}})();}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();if(window.sdvToggleChat){window.sdvToggleChat(event);}}">
     <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style="pointer-events: none; flex-shrink: 0; display: block;">
         <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z" style="pointer-events: none;"/>
     </svg>
@@ -6021,7 +6026,7 @@ function sahdev_render_client_livechat_widget(array $vars): string
 HTML;
     } else {
         $launcherHtml = <<<HTML
-<div id="sdv-client-chat-launcher" class="sdv-launcher-circle" role="button" tabindex="0" title="Support Chat" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.sdvToggleChat&&window.sdvToggleChat(event);}">
+<div id="sdv-client-chat-launcher" class="sdv-launcher-circle" role="button" tabindex="0" title="Support Chat" onclick="if(window.sdvToggleChat){window.sdvToggleChat(event);}else{(function(){var w=document.getElementById('sdv-client-chat-window');if(w){var o=w.classList.contains('sdv-open')&&w.style.display!=='none';w.classList.toggle('sdv-open',!o);w.style.setProperty('display',!o?'flex':'none','important');w.style.setProperty('visibility',!o?'visible':'hidden','important');w.style.setProperty('opacity',!o?'1':'0','important');w.style.setProperty('z-index','2147483647','important');}})();}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();if(window.sdvToggleChat){window.sdvToggleChat(event);}}">
     <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" style="pointer-events: none; flex-shrink: 0; display: block;">
         <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z" style="pointer-events: none;"/>
     </svg>
@@ -6062,6 +6067,26 @@ HTML;
         ? '<img src="' . $chatLogo . '" alt="Logo" class="sdv-cl-avatar-img">'
         : 'AI';
 
+    $poweredByHtml = '';
+    if ($poweredByShow) {
+        if (!empty($poweredByUrl)) {
+            $poweredByHtml = '<div class="sdv-cl-branding"><a href="' . $poweredByUrl . '" target="_blank" rel="noopener noreferrer">' . $poweredByText . '</a></div>';
+        } else {
+            $poweredByHtml = '<div class="sdv-cl-branding">' . $poweredByText . '</div>';
+        }
+    }
+
+    $disclaimerHtml = '';
+    if ($disclaimerEnabled) {
+        $disclaimerHtml = <<<DISC
+    <div id="sdv-cl-disclaimer" class="sdv-cl-disclaimer" role="note">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="sdv-disclaimer-icon" style="flex-shrink:0;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+        <span class="sdv-disclaimer-text">{$disclaimerText}</span>
+        <button type="button" class="sdv-disclaimer-close" title="Dismiss notice" aria-label="Dismiss disclaimer" onclick="(function(btn){var d=document.getElementById('sdv-cl-disclaimer');if(d){d.style.display='none';try{sessionStorage.setItem('sdv_dismiss_disclaimer','1');}catch(e){}}})(this);">&times;</button>
+    </div>
+DISC;
+    }
+
     return <<<HTML
 <style>
 /* ── Sahdev Client Live Chat Widget ────────────────────────────────── */
@@ -6085,7 +6110,7 @@ HTML;
     justify-content: center !important;
     box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.2) !important;
     cursor: pointer !important;
-    z-index: 999998 !important;
+    z-index: 2147483646 !important;
     transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.22s ease !important;
     user-select: none !important;
     -webkit-user-select: none !important;
@@ -6212,7 +6237,7 @@ HTML;
     height: var(--sdv-chat-h, {$chatHeight}px) !important;
     max-height: calc(100vh - 120px) !important;
     max-width: calc(100vw - 36px) !important;
-    z-index: 999999 !important;
+    z-index: 2147483647 !important;
     background: #ffffff !important;
     color: #1e293b !important;
     border-radius: 16px !important;
@@ -7027,132 +7052,659 @@ HTML;
     to { transform: rotate(360deg); }
 }
 
-/* ── Theme Variants ──────────────────────────────────────────────── */
-/* Cyber Dark Theme */
-#sdv-client-chat-window.sdv-theme-cyber_dark {
-    background: #0f172a !important;
-    color: #f1f5f9 !important;
-    border: 1px solid #334155 !important;
+/* ── White-Label & Branding Styles ────────────────────────────────── */
+.sdv-cl-branding {
+    text-align: center;
+    font-size: 11px;
+    color: #94a3b8;
+    margin-top: 6px;
+    padding-bottom: 2px;
+    letter-spacing: 0.01em;
+    user-select: none;
+    line-height: 1.2;
 }
-#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-cl-header {
-    background: #1e293b !important;
-    border-bottom: 1px solid #334155;
+.sdv-cl-branding a {
+    color: inherit;
+    text-decoration: none;
+    font-weight: 500;
+    transition: color 0.15s ease;
 }
-#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-cl-escalate-bar {
-    background: #1e293b !important;
+.sdv-cl-branding a:hover {
+    color: var(--sdv-brand, #0d6efd);
+    text-decoration: underline;
+}
+
+/* ── AI Usage Disclaimer Notice Banner ────────────────────────────── */
+.sdv-cl-disclaimer {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 6px 12px;
+    background: #f8fafc;
+    border-bottom: 1px solid #e2e8f0;
+    font-size: 11px;
+    line-height: 1.35;
+    color: #64748b;
+    flex-shrink: 0;
+    transition: all 0.2s ease;
+}
+.sdv-cl-disclaimer .sdv-disclaimer-icon {
+    flex-shrink: 0;
+    color: var(--sdv-brand, #0d6efd);
+}
+.sdv-cl-disclaimer .sdv-disclaimer-text {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.sdv-cl-disclaimer .sdv-disclaimer-close {
+    background: transparent;
+    border: none;
+    color: #94a3b8;
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    transition: color 0.15s ease, background 0.15s ease;
+    flex-shrink: 0;
+}
+.sdv-cl-disclaimer .sdv-disclaimer-close:hover {
+    color: #0f172a;
+    background: rgba(0, 0, 0, 0.05);
+}
+
+/* ═════════════════════════════════════════════════════════════════════
+   10 DISTINCT UI/UX ARCHITECTURE THEMES (COMPETITOR-BENCHMARKED)
+   ═════════════════════════════════════════════════════════════════════ */
+
+/* ── 1. Modern SaaS / Intercom (modern_light / intercom_saas) ──────── */
+#sdv-client-chat-window.sdv-theme-modern_light,
+#sdv-client-chat-window.sdv-theme-intercom_saas {
+    border-radius: 18px;
+    box-shadow: 0 20px 45px -10px rgba(0, 0, 0, 0.14), 0 0 1px rgba(0, 0, 0, 0.1);
+    background: #ffffff;
+}
+#sdv-client-chat-window.sdv-theme-modern_light .sdv-cl-header,
+#sdv-client-chat-window.sdv-theme-intercom_saas .sdv-cl-header {
+    border-radius: 18px 18px 0 0;
+    background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+    border-bottom: 1px solid #e2e8f0;
+    color: #0f172a;
+}
+#sdv-client-chat-window.sdv-theme-modern_light .sdv-cl-header .sdv-cl-title,
+#sdv-client-chat-window.sdv-theme-intercom_saas .sdv-cl-header .sdv-cl-title {
+    color: #0f172a;
+    font-weight: 700;
+}
+#sdv-client-chat-window.sdv-theme-modern_light .sdv-cl-header .sdv-cl-status,
+#sdv-client-chat-window.sdv-theme-intercom_saas .sdv-cl-header .sdv-cl-status {
+    color: #64748b;
+}
+#sdv-client-chat-window.sdv-theme-modern_light .sdv-cl-action-btn,
+#sdv-client-chat-window.sdv-theme-intercom_saas .sdv-cl-action-btn {
+    background: #f1f5f9;
+    color: #475569;
+    border: 1px solid #e2e8f0;
+    border-radius: 50%;
+}
+#sdv-client-chat-window.sdv-theme-modern_light .sdv-cl-action-btn:hover,
+#sdv-client-chat-window.sdv-theme-intercom_saas .sdv-cl-action-btn:hover {
+    background: #e2e8f0;
+    color: #0f172a;
+}
+#sdv-client-chat-window.sdv-theme-modern_light .sdv-cl-msg-bot,
+#sdv-client-chat-window.sdv-theme-intercom_saas .sdv-cl-msg-bot {
+    background: #f1f5f9;
+    color: #0f172a;
+    border-radius: 18px 18px 18px 4px;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+#sdv-client-chat-window.sdv-theme-modern_light .sdv-cl-msg-user,
+#sdv-client-chat-window.sdv-theme-intercom_saas .sdv-cl-msg-user {
+    background: var(--sdv-brand, #0d6efd);
+    color: #ffffff;
+    border-radius: 18px 18px 4px 18px;
+    box-shadow: 0 4px 12px rgba(13, 110, 253, 0.22);
+}
+#sdv-client-chat-window.sdv-theme-modern_light .sdv-cl-footer,
+#sdv-client-chat-window.sdv-theme-intercom_saas .sdv-cl-footer {
+    border-radius: 0 0 18px 18px;
+    background: #ffffff;
+    border-top: 1px solid #e2e8f0;
+}
+#sdv-client-chat-window.sdv-theme-modern_light #sdv-cl-input,
+#sdv-client-chat-window.sdv-theme-intercom_saas #sdv-cl-input {
+    border-radius: 24px;
+    background: #f8fafc;
+    border: 1.5px solid #e2e8f0;
+    padding: 9px 16px;
+    transition: all 0.2s ease;
+}
+#sdv-client-chat-window.sdv-theme-modern_light #sdv-cl-input:focus,
+#sdv-client-chat-window.sdv-theme-intercom_saas #sdv-cl-input:focus {
+    background: #ffffff;
+    border-color: var(--sdv-brand, #0d6efd);
+    box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.12);
+}
+#sdv-client-chat-window.sdv-theme-modern_light #sdv-cl-send,
+#sdv-client-chat-window.sdv-theme-intercom_saas #sdv-cl-send {
+    border-radius: 50%;
+}
+
+/* ── 2. Crisp Bubbly Playful (crisp_bubbly) ────────────────────────── */
+#sdv-client-chat-window.sdv-theme-crisp_bubbly {
+    border-radius: 26px;
+    box-shadow: 0 24px 50px -8px rgba(37, 99, 235, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.04);
+    background: #ffffff;
+}
+#sdv-client-chat-window.sdv-theme-crisp_bubbly .sdv-cl-header {
+    border-radius: 26px 26px 0 0;
+    background: linear-gradient(135deg, var(--sdv-brand, #2563eb) 0%, #3b82f6 100%);
+    color: #ffffff;
+    padding: 16px 18px;
+}
+#sdv-client-chat-window.sdv-theme-crisp_bubbly .sdv-cl-header .sdv-cl-title {
+    color: #ffffff;
+}
+#sdv-client-chat-window.sdv-theme-crisp_bubbly .sdv-cl-header .sdv-cl-status {
+    color: rgba(255, 255, 255, 0.85);
+}
+#sdv-client-chat-window.sdv-theme-crisp_bubbly .sdv-cl-action-btn {
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.2);
+    color: #ffffff;
+    border: none;
+    transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+#sdv-client-chat-window.sdv-theme-crisp_bubbly .sdv-cl-action-btn:hover {
+    background: rgba(255, 255, 255, 0.35);
+    transform: scale(1.1);
+}
+#sdv-client-chat-window.sdv-theme-crisp_bubbly .sdv-cl-messages {
+    background: #f8faff;
+}
+#sdv-client-chat-window.sdv-theme-crisp_bubbly .sdv-cl-msg-bot {
+    background: #ffffff;
+    color: #1e293b;
+    border-radius: 22px 22px 22px 6px;
+    border: 1.5px solid #edf2f7;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.05);
+    transition: transform 0.2s ease;
+}
+#sdv-client-chat-window.sdv-theme-crisp_bubbly .sdv-cl-msg-user {
+    background: linear-gradient(135deg, var(--sdv-brand, #2563eb) 0%, #1d4ed8 100%);
+    color: #ffffff;
+    border-radius: 22px 22px 6px 22px;
+    box-shadow: 0 6px 18px rgba(37, 99, 235, 0.32);
+    transition: transform 0.2s ease;
+}
+#sdv-client-chat-window.sdv-theme-crisp_bubbly .sdv-starter-chip {
+    border-radius: 20px;
+    border: 1.5px solid #dbeafe;
+    background: #ffffff;
+    box-shadow: 0 2px 6px rgba(37, 99, 235, 0.08);
+    transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+#sdv-client-chat-window.sdv-theme-crisp_bubbly .sdv-starter-chip:hover {
+    transform: translateY(-2px) scale(1.02);
+    border-color: var(--sdv-brand, #2563eb);
+    background: #eff6ff;
+}
+#sdv-client-chat-window.sdv-theme-crisp_bubbly .sdv-cl-footer {
+    border-radius: 0 0 26px 26px;
+    background: #ffffff;
+    border-top: 1px solid #f1f5f9;
+}
+#sdv-client-chat-window.sdv-theme-crisp_bubbly #sdv-cl-input {
+    border-radius: 24px;
+    background: #ffffff;
+    border: 2px solid #e2e8f0;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+#sdv-client-chat-window.sdv-theme-crisp_bubbly #sdv-cl-input:focus {
+    border-color: var(--sdv-brand, #2563eb);
+    box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.15);
+}
+#sdv-client-chat-window.sdv-theme-crisp_bubbly #sdv-cl-send {
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--sdv-brand, #2563eb) 0%, #1d4ed8 100%);
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35);
+    transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+#sdv-client-chat-window.sdv-theme-crisp_bubbly #sdv-cl-send:hover {
+    transform: scale(1.08);
+}
+
+/* ── 3. Drift Conversational (drift_bold) ───────────────────────────── */
+#sdv-client-chat-window.sdv-theme-drift_bold {
+    border-radius: 12px;
+    box-shadow: 0 20px 50px rgba(15, 23, 42, 0.25);
+    border: 1px solid #cbd5e1;
+    background: #ffffff;
+}
+#sdv-client-chat-window.sdv-theme-drift_bold .sdv-cl-header {
+    background: #0f172a;
+    color: #ffffff;
+    border-radius: 12px 12px 0 0;
+    border-bottom: 2px solid #1e293b;
+}
+#sdv-client-chat-window.sdv-theme-drift_bold .sdv-cl-header .sdv-cl-title {
+    color: #ffffff;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+}
+#sdv-client-chat-window.sdv-theme-drift_bold .sdv-cl-header .sdv-cl-status {
+    color: #94a3b8;
+}
+#sdv-client-chat-window.sdv-theme-drift_bold .sdv-cl-action-btn {
+    background: #1e293b;
+    border: 1px solid #334155;
+    color: #94a3b8;
+    border-radius: 6px;
+}
+#sdv-client-chat-window.sdv-theme-drift_bold .sdv-cl-action-btn:hover {
+    background: #334155;
+    color: #ffffff;
+}
+#sdv-client-chat-window.sdv-theme-drift_bold .sdv-cl-escalate-bar {
+    background: #1e293b;
     border-bottom: 1px solid #334155;
     color: #94a3b8;
 }
+#sdv-client-chat-window.sdv-theme-drift_bold .sdv-cl-escalate-btn {
+    background: #f59e0b;
+    color: #0f172a;
+    font-weight: 700;
+    border-radius: 6px;
+    padding: 3px 8px;
+}
+#sdv-client-chat-window.sdv-theme-drift_bold .sdv-cl-msg-bot {
+    background: #f8fafc;
+    color: #0f172a;
+    border-radius: 2px 14px 14px 14px;
+    border: 1.5px solid #cbd5e1;
+    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.05);
+}
+#sdv-client-chat-window.sdv-theme-drift_bold .sdv-cl-msg-user {
+    background: #0f172a;
+    color: #ffffff;
+    border-radius: 14px 2px 14px 14px;
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.3);
+}
+#sdv-client-chat-window.sdv-theme-drift_bold .sdv-cl-footer {
+    border-radius: 0 0 12px 12px;
+    background: #f8fafc;
+    border-top: 2px solid #e2e8f0;
+}
+#sdv-client-chat-window.sdv-theme-drift_bold #sdv-cl-input {
+    border-radius: 8px;
+    border: 2px solid #0f172a;
+    background: #ffffff;
+    font-weight: 500;
+}
+#sdv-client-chat-window.sdv-theme-drift_bold #sdv-cl-send {
+    border-radius: 8px;
+    background: #0f172a;
+    color: #ffffff;
+}
+
+/* ── 4. Zendesk Enterprise Support (zendesk_clean) ──────────────────── */
+#sdv-client-chat-window.sdv-theme-zendesk_clean {
+    border-radius: 8px;
+    border: 1px solid #d8dcde;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+    background: #ffffff;
+}
+#sdv-client-chat-window.sdv-theme-zendesk_clean .sdv-cl-header {
+    border-radius: 8px 8px 0 0;
+    background: #ffffff;
+    color: #2f3941;
+    border-bottom: 1px solid #d8dcde;
+}
+#sdv-client-chat-window.sdv-theme-zendesk_clean .sdv-cl-header .sdv-cl-title {
+    color: #2f3941;
+    font-weight: 700;
+}
+#sdv-client-chat-window.sdv-theme-zendesk_clean .sdv-cl-header .sdv-cl-status {
+    color: #68737d;
+}
+#sdv-client-chat-window.sdv-theme-zendesk_clean .sdv-cl-action-btn {
+    border-radius: 4px;
+    background: #f8f9f9;
+    border: 1px solid #d8dcde;
+    color: #49545c;
+}
+#sdv-client-chat-window.sdv-theme-zendesk_clean .sdv-cl-action-btn:hover {
+    background: #e9ebed;
+    color: #2f3941;
+}
+#sdv-client-chat-window.sdv-theme-zendesk_clean .sdv-cl-escalate-bar {
+    background: #f8f9f9;
+    border-bottom: 1px solid #d8dcde;
+    color: #49545c;
+}
+#sdv-client-chat-window.sdv-theme-zendesk_clean .sdv-cl-msg-bot {
+    background: #f8f9f9;
+    color: #2f3941;
+    border-radius: 6px;
+    border: 1px solid #d8dcde;
+    font-size: 13px;
+    line-height: 1.5;
+}
+#sdv-client-chat-window.sdv-theme-zendesk_clean .sdv-cl-msg-user {
+    background: #1f73b7;
+    color: #ffffff;
+    border-radius: 6px;
+}
+#sdv-client-chat-window.sdv-theme-zendesk_clean .sdv-starter-chip {
+    border-radius: 4px;
+    border: 1px solid #d8dcde;
+    background: #ffffff;
+    color: #2f3941;
+}
+#sdv-client-chat-window.sdv-theme-zendesk_clean .sdv-cl-footer {
+    border-radius: 0 0 8px 8px;
+    background: #ffffff;
+    border-top: 1px solid #d8dcde;
+}
+#sdv-client-chat-window.sdv-theme-zendesk_clean #sdv-cl-input {
+    border-radius: 4px;
+    border: 1px solid #707e86;
+    background: #ffffff;
+    color: #2f3941;
+}
+#sdv-client-chat-window.sdv-theme-zendesk_clean #sdv-cl-input:focus {
+    border-color: #1f73b7;
+    box-shadow: 0 0 0 2px rgba(31, 115, 183, 0.2);
+}
+#sdv-client-chat-window.sdv-theme-zendesk_clean #sdv-cl-send {
+    border-radius: 4px;
+    background: #1f73b7;
+}
+
+/* ── 5. Notion Editorial / Paper (notion_paper) ────────────────────── */
+#sdv-client-chat-window.sdv-theme-notion_paper {
+    background: #fbfbfa !important;
+    border: 1px solid #ebe9e4 !important;
+    border-radius: 12px !important;
+    box-shadow: 0 16px 36px rgba(15, 15, 15, 0.08) !important;
+    color: #37352f !important;
+}
+#sdv-client-chat-window.sdv-theme-notion_paper .sdv-cl-header {
+    background: #f7f6f3 !important;
+    border-bottom: 1px solid #ebe9e4 !important;
+    color: #37352f !important;
+    border-radius: 12px 12px 0 0 !important;
+}
+#sdv-client-chat-window.sdv-theme-notion_paper .sdv-cl-header .sdv-cl-title {
+    color: #37352f !important;
+    font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif !important;
+    font-weight: 600 !important;
+}
+#sdv-client-chat-window.sdv-theme-notion_paper .sdv-cl-header .sdv-cl-status {
+    color: #787774 !important;
+}
+#sdv-client-chat-window.sdv-theme-notion_paper .sdv-cl-action-btn {
+    background: transparent !important;
+    border: 1px solid #e0ded9 !important;
+    color: #787774 !important;
+    border-radius: 6px !important;
+}
+#sdv-client-chat-window.sdv-theme-notion_paper .sdv-cl-action-btn:hover {
+    background: #ebe9e4 !important;
+    color: #37352f !important;
+}
+#sdv-client-chat-window.sdv-theme-notion_paper .sdv-cl-escalate-bar {
+    background: #f7f6f3 !important;
+    border-bottom: 1px solid #ebe9e4 !important;
+    color: #787774 !important;
+}
+#sdv-client-chat-window.sdv-theme-notion_paper .sdv-cl-messages {
+    background: #fbfbfa !important;
+}
+#sdv-client-chat-window.sdv-theme-notion_paper .sdv-cl-msg-bot {
+    background: #ffffff !important;
+    border: 1px solid #ebe9e4 !important;
+    border-radius: 8px !important;
+    color: #37352f !important;
+    box-shadow: 0 1px 2px rgba(15, 15, 15, 0.04) !important;
+}
+#sdv-client-chat-window.sdv-theme-notion_paper .sdv-cl-msg-user {
+    background: #37352f !important;
+    color: #ffffff !important;
+    border-radius: 8px !important;
+    box-shadow: none !important;
+}
+#sdv-client-chat-window.sdv-theme-notion_paper .sdv-starter-chip {
+    background: #ffffff !important;
+    border: 1px solid #ebe9e4 !important;
+    color: #37352f !important;
+    border-radius: 6px !important;
+}
+#sdv-client-chat-window.sdv-theme-notion_paper .sdv-cl-footer {
+    background: #fbfbfa !important;
+    border-top: 1px solid #ebe9e4 !important;
+    border-radius: 0 0 12px 12px !important;
+}
+#sdv-client-chat-window.sdv-theme-notion_paper #sdv-cl-input {
+    background: #ffffff !important;
+    border: 1px solid #ebe9e4 !important;
+    border-radius: 6px !important;
+    color: #37352f !important;
+}
+#sdv-client-chat-window.sdv-theme-notion_paper #sdv-cl-send {
+    background: #37352f !important;
+    color: #ffffff !important;
+    border-radius: 6px !important;
+}
+#sdv-client-chat-window.sdv-theme-notion_paper .sdv-cl-disclaimer {
+    background: #f7f6f3 !important;
+    border-bottom: 1px solid #ebe9e4 !important;
+    color: #787774 !important;
+}
+#sdv-client-chat-window.sdv-theme-notion_paper .sdv-cl-branding {
+    color: #787774 !important;
+}
+
+/* ── 6. Linear / Geist Dev HUD (linear_geist) ──────────────────────── */
+#sdv-client-chat-window.sdv-theme-linear_geist {
+    background: #09090b !important;
+    border: 1px solid #27272a !important;
+    border-radius: 12px !important;
+    box-shadow: 0 20px 50px -10px rgba(0, 0, 0, 0.85), 0 0 0 1px rgba(255, 255, 255, 0.06) !important;
+    color: #fafafa !important;
+}
+#sdv-client-chat-window.sdv-theme-linear_geist .sdv-cl-header {
+    background: #121215 !important;
+    border-bottom: 1px solid #27272a !important;
+    border-radius: 12px 12px 0 0 !important;
+    color: #fafafa !important;
+}
+#sdv-client-chat-window.sdv-theme-linear_geist .sdv-cl-header .sdv-cl-title {
+    color: #fafafa !important;
+    font-weight: 600 !important;
+    letter-spacing: -0.01em !important;
+}
+#sdv-client-chat-window.sdv-theme-linear_geist .sdv-cl-header .sdv-cl-status {
+    color: #a1a1aa !important;
+}
+#sdv-client-chat-window.sdv-theme-linear_geist .sdv-cl-action-btn {
+    background: #18181b !important;
+    border: 1px solid #27272a !important;
+    color: #a1a1aa !important;
+    border-radius: 6px !important;
+}
+#sdv-client-chat-window.sdv-theme-linear_geist .sdv-cl-action-btn:hover {
+    background: #27272a !important;
+    color: #ffffff !important;
+    border-color: #3f3f46 !important;
+}
+#sdv-client-chat-window.sdv-theme-linear_geist .sdv-cl-escalate-bar {
+    background: #121215 !important;
+    border-bottom: 1px solid #27272a !important;
+    color: #a1a1aa !important;
+}
+#sdv-client-chat-window.sdv-theme-linear_geist .sdv-cl-messages {
+    background: #09090b !important;
+}
+#sdv-client-chat-window.sdv-theme-linear_geist .sdv-cl-msg-bot {
+    background: #18181b !important;
+    border: 1px solid #27272a !important;
+    border-radius: 8px !important;
+    color: #e4e4e7 !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4) !important;
+}
+#sdv-client-chat-window.sdv-theme-linear_geist .sdv-cl-msg-user {
+    background: #5e6ad2 !important;
+    color: #ffffff !important;
+    border-radius: 8px !important;
+    box-shadow: 0 4px 14px rgba(94, 106, 210, 0.35) !important;
+}
+#sdv-client-chat-window.sdv-theme-linear_geist .sdv-starter-chip {
+    background: #18181b !important;
+    border: 1px solid #27272a !important;
+    color: #a1a1aa !important;
+    border-radius: 6px !important;
+}
+#sdv-client-chat-window.sdv-theme-linear_geist .sdv-starter-chip:hover {
+    background: #27272a !important;
+    color: #ffffff !important;
+    border-color: #5e6ad2 !important;
+}
+#sdv-client-chat-window.sdv-theme-linear_geist .sdv-cl-footer {
+    background: #09090b !important;
+    border-top: 1px solid #27272a !important;
+    border-radius: 0 0 12px 12px !important;
+}
+#sdv-client-chat-window.sdv-theme-linear_geist #sdv-cl-input {
+    background: #141417 !important;
+    border: 1px solid #27272a !important;
+    border-radius: 6px !important;
+    color: #fafafa !important;
+}
+#sdv-client-chat-window.sdv-theme-linear_geist #sdv-cl-input:focus {
+    border-color: #5e6ad2 !important;
+    box-shadow: 0 0 0 2px rgba(94, 106, 210, 0.25) !important;
+}
+#sdv-client-chat-window.sdv-theme-linear_geist #sdv-cl-send {
+    background: #5e6ad2 !important;
+    border-radius: 6px !important;
+    color: #ffffff !important;
+}
+#sdv-client-chat-window.sdv-theme-linear_geist .sdv-cl-disclaimer {
+    background: #121215 !important;
+    border-bottom: 1px solid #27272a !important;
+    color: #a1a1aa !important;
+}
+#sdv-client-chat-window.sdv-theme-linear_geist .sdv-cl-branding {
+    color: #71717a !important;
+}
+
+/* ── 7. Cyber Slate OLED (cyber_dark) ──────────────────────────────── */
+#sdv-client-chat-window.sdv-theme-cyber_dark {
+    background: #0b1120 !important;
+    color: #f1f5f9 !important;
+    border: 1px solid #1e293b !important;
+    border-radius: 16px !important;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8), 0 0 15px rgba(56, 189, 248, 0.15) !important;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-cl-header {
+    background: #0f172a !important;
+    border-bottom: 1px solid #1e293b !important;
+    border-radius: 16px 16px 0 0 !important;
+    color: #f8fafc !important;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-cl-header .sdv-cl-title {
+    color: #f8fafc !important;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-cl-header .sdv-cl-status {
+    color: #94a3b8 !important;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-cl-action-btn {
+    background: #1e293b !important;
+    border: 1px solid #334155 !important;
+    color: #94a3b8 !important;
+    border-radius: 8px !important;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-cl-action-btn:hover {
+    background: #334155 !important;
+    color: #f8fafc !important;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-cl-escalate-bar {
+    background: #0f172a !important;
+    border-bottom: 1px solid #1e293b !important;
+    color: #94a3b8 !important;
+}
 #sdv-client-chat-window.sdv-theme-cyber_dark .sdv-cl-messages {
-    background: #090d16 !important;
+    background: #060911 !important;
 }
 #sdv-client-chat-window.sdv-theme-cyber_dark .sdv-cl-msg-bot {
     background: #1e293b !important;
     color: #f8fafc !important;
-    border: 1px solid #334155;
+    border: 1px solid #334155 !important;
+    border-radius: 14px 14px 14px 4px !important;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-cl-msg-user {
+    background: linear-gradient(135deg, #0284c7 0%, #2563eb 100%) !important;
+    color: #ffffff !important;
+    border-radius: 14px 14px 4px 14px !important;
+    box-shadow: 0 4px 14px rgba(2, 132, 199, 0.4) !important;
 }
 #sdv-client-chat-window.sdv-theme-cyber_dark .sdv-chat-link {
     background: rgba(59, 130, 246, 0.16) !important;
     color: #93c5fd !important;
     border-color: rgba(59, 130, 246, 0.32) !important;
 }
-#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-chat-link:hover {
-    background: #2563eb !important;
-    color: #ffffff !important;
-    border-color: #3b82f6 !important;
-}
 #sdv-client-chat-window.sdv-theme-cyber_dark .sdv-inline-code {
     background: rgba(255, 255, 255, 0.08) !important;
     color: #cbd5e1 !important;
-    border-color: rgba(255, 255, 255, 0.12) !important;
 }
-#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-msg-quote {
-    background: rgba(255, 255, 255, 0.05) !important;
-    border-left-color: #3b82f6 !important;
-    color: #94a3b8 !important;
-}
-#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-msg-h1,
-#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-msg-h2,
-#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-msg-h3 {
-    color: #f8fafc !important;
-}
-#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-table-wrap {
-    border-color: #334155 !important;
-}
-#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-msg-table th {
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-starter-chip {
     background: #1e293b !important;
+    border: 1px solid #334155 !important;
     color: #cbd5e1 !important;
-    border-bottom-color: #334155 !important;
-}
-#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-msg-table td {
-    color: #e2e8f0 !important;
-    border-bottom-color: #1e293b !important;
-}
-#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-escalate-success-card {
-    background: rgba(22, 101, 52, 0.22) !important;
-    border-color: rgba(74, 222, 128, 0.35) !important;
-    color: #86efac !important;
-}
-#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-escalate-title {
-    color: #bbf7d0 !important;
-}
-#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-escalate-sub,
-#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-escalate-desc {
-    color: #86efac !important;
-}
-#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-limit-alert-card {
-    background: rgba(146, 64, 14, 0.22) !important;
-    border-color: rgba(245, 158, 11, 0.35) !important;
-    color: #fde68a !important;
-}
-#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-limit-alert-card .sdv-escalate-title {
-    color: #fef3c7 !important;
-}
-#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-limit-alert-card .sdv-escalate-sub,
-#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-limit-alert-card .sdv-escalate-desc {
-    color: #fde68a !important;
 }
 #sdv-client-chat-window.sdv-theme-cyber_dark .sdv-cl-footer {
-    background: #0f172a !important;
-    border-top: 1px solid #334155;
+    background: #0b1120 !important;
+    border-top: 1px solid #1e293b !important;
+    border-radius: 0 0 16px 16px !important;
 }
 #sdv-client-chat-window.sdv-theme-cyber_dark #sdv-cl-input {
-    background: #1e293b !important;
+    background: #0f172a !important;
     color: #f8fafc !important;
-    border: 1px solid #475569;
+    border: 1px solid #334155 !important;
+    border-radius: 10px !important;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark #sdv-cl-input:focus {
+    border-color: #38bdf8 !important;
+    box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.25) !important;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark #sdv-cl-send {
+    background: linear-gradient(135deg, #0284c7 0%, #2563eb 100%) !important;
+    border-radius: 10px !important;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-cl-disclaimer {
+    background: #0f172a !important;
+    border-bottom: 1px solid #1e293b !important;
+    color: #94a3b8 !important;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-cl-branding {
+    color: #64748b !important;
 }
 #sdv-client-chat-window.sdv-theme-cyber_dark .sdv-cl-history-drawer {
     background: #0b1120 !important;
     color: #f1f5f9 !important;
 }
-#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-drawer-header {
-    background: #0f172a !important;
-    border-bottom-color: #1e293b !important;
-}
-#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-drawer-back-btn {
-    background: #1e293b !important;
-    color: #cbd5e1 !important;
-}
-#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-drawer-back-btn:hover {
-    background: #334155 !important;
-    color: #ffffff !important;
-}
-#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-search-box input {
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-convo-card {
     background: #1e293b !important;
     border-color: #334155 !important;
-    color: #f1f5f9 !important;
-}
-#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-convo-card {
-    background: #131d31 !important;
-    border-color: #1e293b !important;
-}
-#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-convo-card:hover {
-    background: #1a2742 !important;
-    border-color: #3b82f6 !important;
-}
-#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-convo-card.sdv-convo-current {
-    background: #1a2742 !important;
-    border-color: #3b82f6 !important;
 }
 #sdv-client-chat-window.sdv-theme-cyber_dark .sdv-convo-title {
     color: #f8fafc !important;
@@ -7160,356 +7712,375 @@ HTML;
 #sdv-client-chat-window.sdv-theme-cyber_dark .sdv-convo-snippet {
     color: #94a3b8 !important;
 }
-#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-convo-card-bottom {
-    border-top-color: #1e293b !important;
-}
-#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-guest-intro-card {
-    background: #0f172a !important;
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-kb-item {
+    background: #1e293b !important;
     border-color: #334155 !important;
 }
-#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-guest-intro-title {
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-kb-title {
     color: #f8fafc !important;
 }
-#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-guest-intro-desc {
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-kb-snippet {
     color: #94a3b8 !important;
 }
-#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-guest-label {
-    color: #cbd5e1 !important;
+
+/* ── 8. Retro Terminal CLI (terminal_cli) ──────────────────────────── */
+#sdv-client-chat-window.sdv-theme-terminal_cli {
+    background: #0c0c0c !important;
+    border: 2px solid #22c55e !important;
+    border-radius: 0px !important;
+    box-shadow: 0 0 24px rgba(34, 197, 94, 0.25), inset 0 0 10px rgba(34, 197, 94, 0.05) !important;
+    color: #4ade80 !important;
+    font-family: "Courier New", Courier, Consolas, monospace !important;
 }
-#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-guest-input {
-    background: #1e293b !important;
-    color: #f8fafc !important;
-    border-color: #475569 !important;
+#sdv-client-chat-window.sdv-theme-terminal_cli .sdv-cl-header {
+    background: #152217 !important;
+    border-bottom: 2px solid #22c55e !important;
+    border-radius: 0px !important;
+    color: #22c55e !important;
+    font-family: "Courier New", Courier, monospace !important;
+    text-transform: uppercase !important;
+    letter-spacing: 1px !important;
 }
-#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-guest-input:focus {
-    border-color: #60a5fa !important;
-    box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.25) !important;
+#sdv-client-chat-window.sdv-theme-terminal_cli .sdv-cl-header .sdv-cl-title {
+    color: #22c55e !important;
+    font-weight: 700 !important;
+    font-family: "Courier New", Courier, monospace !important;
+}
+#sdv-client-chat-window.sdv-theme-terminal_cli .sdv-cl-header .sdv-cl-status {
+    color: #86efac !important;
+    font-family: monospace !important;
+}
+#sdv-client-chat-window.sdv-theme-terminal_cli .sdv-cl-status-dot {
+    background: #22c55e !important;
+    box-shadow: 0 0 6px #22c55e !important;
+    border-radius: 0px !important;
+}
+#sdv-client-chat-window.sdv-theme-terminal_cli .sdv-cl-action-btn {
+    background: #000000 !important;
+    border: 1px solid #22c55e !important;
+    border-radius: 0px !important;
+    color: #22c55e !important;
+    font-family: monospace !important;
+}
+#sdv-client-chat-window.sdv-theme-terminal_cli .sdv-cl-action-btn:hover {
+    background: #22c55e !important;
+    color: #052e16 !important;
+}
+#sdv-client-chat-window.sdv-theme-terminal_cli .sdv-cl-escalate-bar {
+    background: #052e16 !important;
+    border-bottom: 1px solid #22c55e !important;
+    color: #86efac !important;
+    font-family: monospace !important;
+}
+#sdv-client-chat-window.sdv-theme-terminal_cli .sdv-cl-escalate-btn {
+    background: #22c55e !important;
+    color: #052e16 !important;
+    font-family: monospace !important;
+    font-weight: bold !important;
+    border-radius: 0px !important;
+}
+#sdv-client-chat-window.sdv-theme-terminal_cli .sdv-cl-messages {
+    background: #050a06 !important;
+    font-family: "Courier New", Courier, monospace !important;
+}
+#sdv-client-chat-window.sdv-theme-terminal_cli .sdv-cl-msg-bot {
+    background: #0f1c12 !important;
+    border: 1px solid #22c55e !important;
+    border-radius: 0px !important;
+    color: #4ade80 !important;
+    font-family: "Courier New", Courier, monospace !important;
+    box-shadow: inset 0 0 6px rgba(34, 197, 94, 0.12) !important;
+}
+#sdv-client-chat-window.sdv-theme-terminal_cli .sdv-cl-msg-user {
+    background: #22c55e !important;
+    border: 1px solid #22c55e !important;
+    border-radius: 0px !important;
+    color: #052e16 !important;
+    font-family: "Courier New", Courier, monospace !important;
+    font-weight: bold !important;
+}
+#sdv-client-chat-window.sdv-theme-terminal_cli .sdv-starter-chip {
+    background: #0f1c12 !important;
+    border: 1px solid #22c55e !important;
+    border-radius: 0px !important;
+    color: #4ade80 !important;
+    font-family: monospace !important;
+}
+#sdv-client-chat-window.sdv-theme-terminal_cli .sdv-starter-chip:hover {
+    background: #22c55e !important;
+    color: #052e16 !important;
+}
+#sdv-client-chat-window.sdv-theme-terminal_cli .sdv-cl-footer {
+    background: #0c0c0c !important;
+    border-top: 2px solid #22c55e !important;
+    border-radius: 0px !important;
+}
+#sdv-client-chat-window.sdv-theme-terminal_cli #sdv-cl-input {
+    background: #000000 !important;
+    border: 1px solid #22c55e !important;
+    border-radius: 0px !important;
+    color: #4ade80 !important;
+    font-family: "Courier New", Courier, monospace !important;
+}
+#sdv-client-chat-window.sdv-theme-terminal_cli #sdv-cl-send {
+    background: #22c55e !important;
+    color: #052e16 !important;
+    border-radius: 0px !important;
+}
+#sdv-client-chat-window.sdv-theme-terminal_cli .sdv-cl-disclaimer {
+    background: #152217 !important;
+    border-bottom: 1px solid #22c55e !important;
+    color: #86efac !important;
+    font-family: monospace !important;
+}
+#sdv-client-chat-window.sdv-theme-terminal_cli .sdv-cl-branding {
+    color: #22c55e !important;
+    font-family: monospace !important;
 }
 
-/* ── Glassmorphism Ultra (Frosted Glass & Translucent Blur) ────────── */
+/* ── 9. Apple Frosted Glassmorphism (glassmorphism) ────────────────── */
 #sdv-client-chat-window.sdv-theme-glassmorphism {
-    background: rgba(255, 255, 255, 0.78) !important;
-    backdrop-filter: blur(24px) saturate(190%) !important;
-    -webkit-backdrop-filter: blur(24px) saturate(190%) !important;
+    background: rgba(255, 255, 255, 0.75) !important;
+    backdrop-filter: blur(24px) saturate(180%) !important;
+    -webkit-backdrop-filter: blur(24px) saturate(180%) !important;
     border: 1px solid rgba(255, 255, 255, 0.6) !important;
-    box-shadow: 0 24px 48px -12px rgba(15, 23, 42, 0.25), 0 0 0 1px rgba(255, 255, 255, 0.4) inset !important;
+    border-radius: 22px !important;
+    box-shadow: 0 30px 60px -12px rgba(0, 0, 0, 0.22), inset 0 1px 1px rgba(255, 255, 255, 0.8) !important;
 }
 #sdv-client-chat-window.sdv-theme-glassmorphism .sdv-cl-header {
-    background: rgba(255, 255, 255, 0.65) !important;
+    background: rgba(255, 255, 255, 0.5) !important;
     backdrop-filter: blur(16px) !important;
     -webkit-backdrop-filter: blur(16px) !important;
     border-bottom: 1px solid rgba(255, 255, 255, 0.4) !important;
+    border-radius: 22px 22px 0 0 !important;
     color: #0f172a !important;
 }
-#sdv-client-chat-window.sdv-theme-glassmorphism .sdv-cl-title { color: #0f172a !important; }
-#sdv-client-chat-window.sdv-theme-glassmorphism .sdv-cl-status { color: #475569 !important; }
-#sdv-client-chat-window.sdv-theme-glassmorphism .sdv-cl-action-btn { color: #334155 !important; }
-#sdv-client-chat-window.sdv-theme-glassmorphism .sdv-cl-action-btn:hover { background: rgba(0, 0, 0, 0.08) !important; color: #0f172a !important; }
-#sdv-client-chat-window.sdv-theme-glassmorphism .sdv-cl-escalate-bar {
+#sdv-client-chat-window.sdv-theme-glassmorphism .sdv-cl-action-btn {
     background: rgba(255, 255, 255, 0.5) !important;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.35) !important;
+    border: 1px solid rgba(255, 255, 255, 0.6) !important;
+    color: #1e293b !important;
+    border-radius: 50% !important;
+    backdrop-filter: blur(8px) !important;
+}
+#sdv-client-chat-window.sdv-theme-glassmorphism .sdv-cl-action-btn:hover {
+    background: rgba(255, 255, 255, 0.85) !important;
+}
+#sdv-client-chat-window.sdv-theme-glassmorphism .sdv-cl-escalate-bar {
+    background: rgba(255, 255, 255, 0.4) !important;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.4) !important;
     color: #475569 !important;
 }
 #sdv-client-chat-window.sdv-theme-glassmorphism .sdv-cl-messages {
-    background: rgba(248, 250, 252, 0.55) !important;
+    background: rgba(248, 250, 252, 0.45) !important;
 }
 #sdv-client-chat-window.sdv-theme-glassmorphism .sdv-cl-msg-bot {
     background: rgba(255, 255, 255, 0.85) !important;
-    border: 1px solid rgba(255, 255, 255, 0.7) !important;
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.04) !important;
+    backdrop-filter: blur(12px) !important;
+    -webkit-backdrop-filter: blur(12px) !important;
+    border: 1px solid rgba(255, 255, 255, 0.9) !important;
+    border-radius: 18px 18px 18px 6px !important;
     color: #0f172a !important;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.05) !important;
+}
+#sdv-client-chat-window.sdv-theme-glassmorphism .sdv-cl-msg-user {
+    background: linear-gradient(135deg, rgba(37, 99, 235, 0.92) 0%, rgba(79, 70, 229, 0.92) 100%) !important;
+    backdrop-filter: blur(12px) !important;
+    -webkit-backdrop-filter: blur(12px) !important;
+    color: #ffffff !important;
+    border: 1px solid rgba(255, 255, 255, 0.3) !important;
+    border-radius: 18px 18px 6px 18px !important;
+    box-shadow: 0 6px 20px rgba(37, 99, 235, 0.28) !important;
+}
+#sdv-client-chat-window.sdv-theme-glassmorphism .sdv-starter-chip {
+    background: rgba(255, 255, 255, 0.75) !important;
+    backdrop-filter: blur(10px) !important;
+    border: 1px solid rgba(255, 255, 255, 0.7) !important;
+    border-radius: 16px !important;
+    color: #1e293b !important;
 }
 #sdv-client-chat-window.sdv-theme-glassmorphism .sdv-cl-footer {
-    background: rgba(255, 255, 255, 0.7) !important;
+    background: rgba(255, 255, 255, 0.5) !important;
     backdrop-filter: blur(16px) !important;
     -webkit-backdrop-filter: blur(16px) !important;
     border-top: 1px solid rgba(255, 255, 255, 0.4) !important;
+    border-radius: 0 0 22px 22px !important;
 }
 #sdv-client-chat-window.sdv-theme-glassmorphism #sdv-cl-input {
-    background: rgba(255, 255, 255, 0.9) !important;
-    border: 1px solid rgba(203, 213, 225, 0.6) !important;
+    background: rgba(255, 255, 255, 0.7) !important;
+    backdrop-filter: blur(12px) !important;
+    -webkit-backdrop-filter: blur(12px) !important;
+    border: 1px solid rgba(255, 255, 255, 0.8) !important;
+    border-radius: 20px !important;
     color: #0f172a !important;
 }
-#sdv-client-chat-window.sdv-theme-glassmorphism .sdv-cl-history-drawer {
-    background: rgba(255, 255, 255, 0.92) !important;
-    backdrop-filter: blur(20px) !important;
-    -webkit-backdrop-filter: blur(20px) !important;
+#sdv-client-chat-window.sdv-theme-glassmorphism #sdv-cl-send {
+    background: rgba(37, 99, 235, 0.92) !important;
+    backdrop-filter: blur(8px) !important;
+    border-radius: 50% !important;
+    border: 1px solid rgba(255, 255, 255, 0.4) !important;
 }
-#sdv-client-chat-window.sdv-theme-glassmorphism .sdv-convo-card {
-    background: rgba(255, 255, 255, 0.8) !important;
-    border: 1px solid rgba(226, 232, 240, 0.7) !important;
-}
-#sdv-client-chat-window.sdv-theme-glassmorphism .sdv-starter-chip {
-    background: rgba(255, 255, 255, 0.85) !important;
-    border: 1px solid rgba(255, 255, 255, 0.7) !important;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04) !important;
-}
-#sdv-client-chat-window.sdv-theme-glassmorphism .sdv-kb-item {
-    background: rgba(255, 255, 255, 0.85) !important;
-    border: 1px solid rgba(255, 255, 255, 0.7) !important;
-}
-
-/* ── Midnight Indigo Theme (Discord / Linear Dark Aesthetic) ───────── */
-#sdv-client-chat-window.sdv-theme-midnight_indigo {
-    background: #090d16 !important;
-    color: #f1f5f9 !important;
-    border: 1px solid #1e293b !important;
-    box-shadow: 0 24px 50px -12px rgba(99, 102, 241, 0.22), 0 0 0 1px rgba(99, 102, 241, 0.15) !important;
-}
-#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-cl-header {
-    background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%) !important;
-    border-bottom: 1px solid rgba(99, 102, 241, 0.3) !important;
-}
-#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-cl-escalate-bar {
-    background: #0f172a !important;
-    border-bottom: 1px solid #1e293b !important;
-    color: #94a3b8 !important;
-}
-#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-cl-messages {
-    background: #060911 !important;
-}
-#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-cl-msg-bot {
-    background: #111827 !important;
-    color: #f8fafc !important;
-    border: 1px solid #1f2937 !important;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25) !important;
-}
-#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-cl-msg-user {
-    background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%) !important;
-    color: #ffffff !important;
-    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.35) !important;
-}
-#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-chat-link {
-    background: rgba(99, 102, 241, 0.18) !important;
-    color: #a5b4fc !important;
-    border-color: rgba(99, 102, 241, 0.38) !important;
-}
-#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-chat-link:hover {
-    background: #6366f1 !important;
-    color: #ffffff !important;
-    border-color: #6366f1 !important;
-}
-#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-inline-code {
-    background: rgba(99, 102, 241, 0.12) !important;
-    color: #c7d2fe !important;
-    border-color: rgba(99, 102, 241, 0.22) !important;
-}
-#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-msg-quote {
-    background: rgba(99, 102, 241, 0.08) !important;
-    border-left-color: #6366f1 !important;
-    color: #94a3b8 !important;
-}
-#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-msg-h1,
-#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-msg-h2,
-#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-msg-h3 {
-    color: #f8fafc !important;
-}
-#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-table-wrap {
-    border-color: #1e293b !important;
-}
-#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-msg-table th {
-    background: #111827 !important;
-    color: #cbd5e1 !important;
-    border-bottom-color: #1f2937 !important;
-}
-#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-msg-table td {
-    color: #e2e8f0 !important;
-    border-bottom-color: #111827 !important;
-}
-#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-cl-footer {
-    background: #090d16 !important;
-    border-top: 1px solid #1e293b !important;
-}
-#sdv-client-chat-window.sdv-theme-midnight_indigo #sdv-cl-input {
-    background: #111827 !important;
-    color: #f8fafc !important;
-    border: 1px solid #374151 !important;
-}
-#sdv-client-chat-window.sdv-theme-midnight_indigo #sdv-cl-send {
-    background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%) !important;
-}
-#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-cl-history-drawer {
-    background: #090d16 !important;
-    color: #f1f5f9 !important;
-}
-#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-drawer-header {
-    background: #0f172a !important;
-    border-bottom-color: #1e293b !important;
-}
-#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-drawer-back-btn {
-    background: #1e293b !important;
-    color: #cbd5e1 !important;
-}
-#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-drawer-back-btn:hover {
-    background: #312e81 !important;
-    color: #ffffff !important;
-}
-#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-search-box input {
-    background: #111827 !important;
-    border-color: #1f2937 !important;
-    color: #f8fafc !important;
-}
-#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-convo-card {
-    background: #111827 !important;
-    border-color: #1f2937 !important;
-}
-#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-convo-card:hover,
-#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-convo-card.sdv-convo-current {
-    background: #172033 !important;
-    border-color: #6366f1 !important;
-}
-#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-convo-title { color: #f8fafc !important; }
-#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-convo-snippet { color: #94a3b8 !important; }
-#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-starter-chip {
-    background: #111827 !important;
-    border-color: #1f2937 !important;
-    color: #cbd5e1 !important;
-}
-#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-starter-chip:hover {
-    background: #1e1b4b !important;
-    border-color: #6366f1 !important;
-    color: #c7d2fe !important;
-}
-#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-starter-chip svg {
-    color: #818cf8 !important;
-}
-#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-msg-actions {
-    border-top-color: rgba(255, 255, 255, 0.08) !important;
-}
-#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-msg-action-btn {
+#sdv-client-chat-window.sdv-theme-glassmorphism .sdv-cl-disclaimer {
+    background: rgba(255, 255, 255, 0.45) !important;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.4) !important;
     color: #64748b !important;
 }
-#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-msg-action-btn:hover {
-    background: rgba(99, 102, 241, 0.15) !important;
-    color: #a5b4fc !important;
-}
-#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-kb-item {
-    background: #111827 !important;
-    border-color: #1f2937 !important;
-}
-#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-kb-title { color: #f8fafc !important; }
-#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-kb-snippet { color: #94a3b8 !important; }
-#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-kb-actions { border-top-color: #1f2937 !important; }
-#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-kb-ask-btn {
-    background: rgba(99, 102, 241, 0.15) !important;
-    color: #a5b4fc !important;
-    border-color: rgba(99, 102, 241, 0.3) !important;
-}
-#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-kb-ask-btn:hover {
-    background: #6366f1 !important;
-    color: #ffffff !important;
+#sdv-client-chat-window.sdv-theme-glassmorphism .sdv-cl-branding {
+    color: #64748b !important;
 }
 
-/* ── Emerald Clean Theme (Mint & Emerald SaaS) ─────────────────────── */
-#sdv-client-chat-window.sdv-theme-emerald_clean {
-    background: #ffffff !important;
-    border: 1px solid #d1fae5 !important;
-    box-shadow: 0 20px 45px -10px rgba(5, 150, 105, 0.16) !important;
+/* ── 10. Neumorphic Soft 3D (neumorphism_soft) ─────────────────────── */
+#sdv-client-chat-window.sdv-theme-neumorphism_soft {
+    background: #e0e5ec !important;
+    border: none !important;
+    border-radius: 24px !important;
+    box-shadow: 14px 14px 28px #bec3c9, -14px -14px 28px #ffffff !important;
+    color: #31456a !important;
 }
-#sdv-client-chat-window.sdv-theme-emerald_clean .sdv-cl-header {
-    background: linear-gradient(135deg, #059669 0%, #047857 100%) !important;
+#sdv-client-chat-window.sdv-theme-neumorphism_soft .sdv-cl-header {
+    background: #e0e5ec !important;
+    border-bottom: 1px solid #d1d9e6 !important;
+    border-radius: 24px 24px 0 0 !important;
+    color: #31456a !important;
+}
+#sdv-client-chat-window.sdv-theme-neumorphism_soft .sdv-cl-header .sdv-cl-title {
+    color: #31456a !important;
+}
+#sdv-client-chat-window.sdv-theme-neumorphism_soft .sdv-cl-header .sdv-cl-status {
+    color: #61738e !important;
+}
+#sdv-client-chat-window.sdv-theme-neumorphism_soft .sdv-cl-action-btn {
+    background: #e0e5ec !important;
+    border: none !important;
+    border-radius: 8px !important;
+    color: #31456a !important;
+    box-shadow: 3px 3px 6px #bec3c9, -3px -3px 6px #ffffff !important;
+}
+#sdv-client-chat-window.sdv-theme-neumorphism_soft .sdv-cl-action-btn:hover {
+    box-shadow: inset 2px 2px 4px #bec3c9, inset -2px -2px 4px #ffffff !important;
+}
+#sdv-client-chat-window.sdv-theme-neumorphism_soft .sdv-cl-escalate-bar {
+    background: #e0e5ec !important;
+    border-bottom: 1px solid #d1d9e6 !important;
+    color: #61738e !important;
+}
+#sdv-client-chat-window.sdv-theme-neumorphism_soft .sdv-cl-messages {
+    background: #e0e5ec !important;
+}
+#sdv-client-chat-window.sdv-theme-neumorphism_soft .sdv-cl-msg-bot {
+    background: #e0e5ec !important;
+    border: none !important;
+    border-radius: 18px 18px 18px 4px !important;
+    color: #31456a !important;
+    box-shadow: 5px 5px 10px #bec3c9, -5px -5px 10px #ffffff !important;
+}
+#sdv-client-chat-window.sdv-theme-neumorphism_soft .sdv-cl-msg-user {
+    background: var(--sdv-brand, #0d6efd) !important;
+    border: none !important;
+    border-radius: 18px 18px 4px 18px !important;
+    color: #ffffff !important;
+    box-shadow: 5px 5px 10px #bec3c9, -5px -5px 10px #ffffff !important;
+}
+#sdv-client-chat-window.sdv-theme-neumorphism_soft .sdv-starter-chip {
+    background: #e0e5ec !important;
+    border: none !important;
+    border-radius: 14px !important;
+    color: #31456a !important;
+    box-shadow: 4px 4px 8px #bec3c9, -4px -4px 8px #ffffff !important;
+}
+#sdv-client-chat-window.sdv-theme-neumorphism_soft .sdv-starter-chip:hover {
+    box-shadow: inset 2px 2px 4px #bec3c9, inset -2px -2px 4px #ffffff !important;
+}
+#sdv-client-chat-window.sdv-theme-neumorphism_soft .sdv-cl-footer {
+    background: #e0e5ec !important;
+    border-top: 1px solid #d1d9e6 !important;
+    border-radius: 0 0 24px 24px !important;
+}
+#sdv-client-chat-window.sdv-theme-neumorphism_soft #sdv-cl-input {
+    background: #e0e5ec !important;
+    border: none !important;
+    border-radius: 16px !important;
+    color: #31456a !important;
+    box-shadow: inset 4px 4px 8px #bec3c9, inset -4px -4px 8px #ffffff !important;
+}
+#sdv-client-chat-window.sdv-theme-neumorphism_soft #sdv-cl-send {
+    background: var(--sdv-brand, #0d6efd) !important;
+    border: none !important;
+    border-radius: 50% !important;
+    box-shadow: 4px 4px 8px #bec3c9, -4px -4px 8px #ffffff !important;
+}
+#sdv-client-chat-window.sdv-theme-neumorphism_soft #sdv-cl-send:active {
+    box-shadow: inset 2px 2px 4px rgba(0, 0, 0, 0.2) !important;
+}
+#sdv-client-chat-window.sdv-theme-neumorphism_soft .sdv-cl-disclaimer {
+    background: #e0e5ec !important;
+    border-bottom: 1px solid #d1d9e6 !important;
+    color: #61738e !important;
+}
+#sdv-client-chat-window.sdv-theme-neumorphism_soft .sdv-cl-branding {
+    color: #61738e !important;
+}
+
+/* ── Legacy Fallbacks (Compatibility) ──────────────────────────────── */
+/* Midnight Indigo */
+#sdv-client-chat-window.sdv-theme-midnight_indigo {
+    background: #0f172a !important;
+    color: #f1f5f9 !important;
+    border: 1px solid #1e1b4b !important;
+}
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-cl-header {
+    background: #1e1b4b !important;
+    border-bottom: 1px solid #312e81 !important;
+    color: #e0e7ff !important;
+}
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-cl-messages {
+    background: #080c14 !important;
+}
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-cl-msg-bot {
+    background: #1e1b4b !important;
+    color: #f8fafc !important;
+    border: 1px solid #312e81 !important;
+}
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-cl-msg-user {
+    background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%) !important;
     color: #ffffff !important;
 }
-#sdv-client-chat-window.sdv-theme-emerald_clean .sdv-cl-escalate-bar {
-    background: #f0fdf4 !important;
-    border-bottom: 1px solid #dcfce7 !important;
-    color: #065f46 !important;
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-cl-footer {
+    background: #0f172a !important;
+    border-top: 1px solid #1e1b4b !important;
 }
-#sdv-client-chat-window.sdv-theme-emerald_clean .sdv-cl-messages {
-    background: #f8fafc !important;
+#sdv-client-chat-window.sdv-theme-midnight_indigo #sdv-cl-input {
+    background: #1e293b !important;
+    color: #f8fafc !important;
+    border: 1px solid #334155 !important;
 }
-#sdv-client-chat-window.sdv-theme-emerald_clean .sdv-cl-msg-bot {
-    background: #ffffff !important;
-    border: 1px solid #e2e8f0 !important;
-    color: #0f172a !important;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03) !important;
+
+/* Emerald Clean */
+#sdv-client-chat-window.sdv-theme-emerald_clean .sdv-cl-header {
+    background: linear-gradient(135deg, #065f46 0%, #047857 100%) !important;
+    color: #ffffff !important;
 }
 #sdv-client-chat-window.sdv-theme-emerald_clean .sdv-cl-msg-user {
     background: #059669 !important;
     color: #ffffff !important;
-    box-shadow: 0 2px 8px rgba(5, 150, 105, 0.28) !important;
 }
 #sdv-client-chat-window.sdv-theme-emerald_clean #sdv-cl-send {
     background: #059669 !important;
 }
-#sdv-client-chat-window.sdv-theme-emerald_clean .sdv-chat-link {
-    background: #ecfdf5 !important;
-    color: #047857 !important;
-    border-color: #a7f3d0 !important;
-}
-#sdv-client-chat-window.sdv-theme-emerald_clean .sdv-chat-link:hover {
-    background: #059669 !important;
-    color: #ffffff !important;
-}
-#sdv-client-chat-window.sdv-theme-emerald_clean .sdv-starter-chip {
-    background: #ffffff !important;
-    border-color: #a7f3d0 !important;
-    color: #065f46 !important;
-}
-#sdv-client-chat-window.sdv-theme-emerald_clean .sdv-starter-chip:hover {
-    background: #f0fdf4 !important;
-    border-color: #059669 !important;
-    color: #047857 !important;
-}
-#sdv-client-chat-window.sdv-theme-emerald_clean .sdv-starter-chip svg {
-    color: #059669 !important;
-}
 
-/* ── Sunset Amber Theme (Warm Terracotta & Sandstone) ──────────────── */
-#sdv-client-chat-window.sdv-theme-sunset_amber {
-    background: #fafaf9 !important;
-    border: 1px solid #e7e5e4 !important;
-    box-shadow: 0 20px 45px -10px rgba(234, 88, 12, 0.16) !important;
-}
+/* Sunset Amber */
 #sdv-client-chat-window.sdv-theme-sunset_amber .sdv-cl-header {
-    background: linear-gradient(135deg, #ea580c 0%, #c2410c 100%) !important;
+    background: linear-gradient(135deg, #c2410c 0%, #ea580c 100%) !important;
     color: #ffffff !important;
-}
-#sdv-client-chat-window.sdv-theme-sunset_amber .sdv-cl-escalate-bar {
-    background: #fff7ed !important;
-    border-bottom: 1px solid #ffedd5 !important;
-    color: #9a3412 !important;
-}
-#sdv-client-chat-window.sdv-theme-sunset_amber .sdv-cl-messages {
-    background: #f5f5f4 !important;
-}
-#sdv-client-chat-window.sdv-theme-sunset_amber .sdv-cl-msg-bot {
-    background: #ffffff !important;
-    border: 1px solid #e7e5e4 !important;
-    color: #1c1917 !important;
 }
 #sdv-client-chat-window.sdv-theme-sunset_amber .sdv-cl-msg-user {
     background: linear-gradient(135deg, #ea580c 0%, #d97706 100%) !important;
     color: #ffffff !important;
-    box-shadow: 0 2px 8px rgba(234, 88, 12, 0.28) !important;
 }
 #sdv-client-chat-window.sdv-theme-sunset_amber #sdv-cl-send {
     background: #ea580c !important;
 }
-#sdv-client-chat-window.sdv-theme-sunset_amber .sdv-chat-link {
-    background: #fff7ed !important;
-    color: #c2410c !important;
-    border-color: #fed7aa !important;
-}
-#sdv-client-chat-window.sdv-theme-sunset_amber .sdv-chat-link:hover {
-    background: #ea580c !important;
-    color: #ffffff !important;
-}
-#sdv-client-chat-window.sdv-theme-sunset_amber .sdv-starter-chip {
-    background: #ffffff !important;
-    border-color: #fed7aa !important;
-    color: #9a3412 !important;
-}
-#sdv-client-chat-window.sdv-theme-sunset_amber .sdv-starter-chip:hover {
-    background: #fff7ed !important;
-    border-color: #ea580c !important;
-    color: #c2410c !important;
-}
-#sdv-client-chat-window.sdv-theme-sunset_amber .sdv-starter-chip svg {
-    color: #ea580c !important;
-}
 
-/* ── Brand Gradient Theme ──────────────────────────────────────────── */
+/* Brand Gradient */
 #sdv-client-chat-window.sdv-theme-brand_gradient .sdv-cl-header {
     background: linear-gradient(135deg, var(--sdv-brand, #0d6efd) 0%, #8b5cf6 50%, #ec4899 100%) !important;
     color: #ffffff !important;
@@ -7517,31 +8088,20 @@ HTML;
 #sdv-client-chat-window.sdv-theme-brand_gradient .sdv-cl-msg-user {
     background: linear-gradient(135deg, var(--sdv-brand, #0d6efd) 0%, #7c3aed 100%) !important;
     color: #ffffff !important;
-    box-shadow: 0 4px 12px rgba(124, 58, 237, 0.3) !important;
 }
 #sdv-client-chat-window.sdv-theme-brand_gradient #sdv-cl-send {
     background: linear-gradient(135deg, var(--sdv-brand, #0d6efd) 0%, #7c3aed 100%) !important;
 }
-#sdv-client-chat-window.sdv-theme-brand_gradient .sdv-starter-chip:hover {
-    border-color: #7c3aed !important;
-    color: #7c3aed !important;
-}
 
-/* ── High Contrast Enterprise Theme (WCAG AAA Accessibility) ───────── */
+/* High Contrast Enterprise */
 #sdv-client-chat-window.sdv-theme-high_contrast {
     background: #000000 !important;
     color: #ffffff !important;
     border: 2px solid #ffffff !important;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.9) !important;
 }
 #sdv-client-chat-window.sdv-theme-high_contrast .sdv-cl-header {
     background: #000000 !important;
     border-bottom: 2px solid #ffffff !important;
-    color: #ffffff !important;
-}
-#sdv-client-chat-window.sdv-theme-high_contrast .sdv-cl-escalate-bar {
-    background: #111111 !important;
-    border-bottom: 1px solid #444444 !important;
     color: #ffffff !important;
 }
 #sdv-client-chat-window.sdv-theme-high_contrast .sdv-cl-messages {
@@ -7556,23 +8116,7 @@ HTML;
     background: #ffffff !important;
     color: #000000 !important;
     border: 2px solid #ffffff !important;
-    font-weight: 600 !important;
-}
-#sdv-client-chat-window.sdv-theme-high_contrast .sdv-chat-link {
-    background: #ffffff !important;
-    color: #000000 !important;
-    border: 2px solid #ffffff !important;
     font-weight: 700 !important;
-}
-#sdv-client-chat-window.sdv-theme-high_contrast .sdv-chat-link:hover {
-    background: #ffff00 !important;
-    color: #000000 !important;
-    border-color: #ffff00 !important;
-}
-#sdv-client-chat-window.sdv-theme-high_contrast .sdv-inline-code {
-    background: #222222 !important;
-    color: #ffff00 !important;
-    border: 1px solid #ffffff !important;
 }
 #sdv-client-chat-window.sdv-theme-high_contrast .sdv-cl-footer {
     background: #000000 !important;
@@ -7587,32 +8131,15 @@ HTML;
     background: #ffffff !important;
     color: #000000 !important;
 }
-#sdv-client-chat-window.sdv-theme-high_contrast .sdv-starter-chip {
+#sdv-client-chat-window.sdv-theme-high_contrast .sdv-cl-disclaimer {
     background: #121212 !important;
-    border: 2px solid #ffffff !important;
-    color: #ffffff !important;
-    font-weight: 700 !important;
-}
-#sdv-client-chat-window.sdv-theme-high_contrast .sdv-starter-chip:hover {
-    background: #ffffff !important;
-    color: #000000 !important;
-}
-#sdv-client-chat-window.sdv-theme-high_contrast .sdv-cl-history-drawer {
-    background: #000000 !important;
+    border-bottom: 2px solid #ffffff !important;
     color: #ffffff !important;
 }
-#sdv-client-chat-window.sdv-theme-high_contrast .sdv-convo-card {
-    background: #121212 !important;
-    border: 2px solid #ffffff !important;
+#sdv-client-chat-window.sdv-theme-high_contrast .sdv-cl-branding {
+    color: #ffffff !important;
 }
-#sdv-client-chat-window.sdv-theme-high_contrast .sdv-convo-title { color: #ffffff !important; }
-#sdv-client-chat-window.sdv-theme-high_contrast .sdv-convo-snippet { color: #cccccc !important; }
-#sdv-client-chat-window.sdv-theme-high_contrast .sdv-kb-item {
-    background: #121212 !important;
-    border: 2px solid #ffffff !important;
-}
-#sdv-client-chat-window.sdv-theme-high_contrast .sdv-kb-title { color: #ffffff !important; }
-#sdv-client-chat-window.sdv-theme-high_contrast .sdv-kb-snippet { color: #cccccc !important; }
+
 /* Knowledge Base Drawer Styling */
 .sdv-cl-kb-drawer {
     z-index: 15;
@@ -7815,15 +8342,97 @@ HTML;
     line-height: 1.45 !important;
 }
 
-/* ── Message Actions & CSAT Rating Buttons ─────────────────────────── */
-.sdv-msg-actions {
+/* ── Font Size Modes (Aa Options) ─────────────────────────────────── */
+#sdv-client-chat-window.sdv-font-small .sdv-cl-msg {
+    font-size: 12px !important;
+    line-height: 1.4 !important;
+}
+#sdv-client-chat-window.sdv-font-small .sdv-cl-msg *:not(.sdv-msg-actions):not(.sdv-msg-actions *):not(.sdv-msg-menu):not(.sdv-msg-menu *) {
+    font-size: 12px !important;
+}
+#sdv-client-chat-window.sdv-font-large .sdv-cl-msg {
+    font-size: 15px !important;
+    line-height: 1.55 !important;
+}
+#sdv-client-chat-window.sdv-font-large .sdv-cl-msg *:not(.sdv-msg-actions):not(.sdv-msg-actions *):not(.sdv-msg-menu):not(.sdv-msg-menu *) {
+    font-size: 15px !important;
+}
+
+/* ── Reply Bar Above Input Row ─────────────────────────────────────── */
+.sdv-cl-reply-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 12px;
+    background: rgba(13, 110, 253, 0.08);
+    border-top: 1px solid rgba(13, 110, 253, 0.15);
+    font-size: 11.5px;
+    color: #475569;
+    gap: 8px;
+    animation: sdvFadeInUp 0.15s ease;
+}
+.sdv-cl-reply-info {
     display: flex;
     align-items: center;
     gap: 6px;
-    margin-top: 6px;
-    padding-top: 5px;
-    border-top: 1px solid rgba(0, 0, 0, 0.05);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+}
+.sdv-cl-reply-label {
+    font-weight: 600;
+    color: var(--sdv-brand, #0d6efd);
+    font-size: 11px;
+}
+.sdv-cl-reply-snippet {
+    color: #64748b;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 200px;
+    font-size: 11px;
+}
+.sdv-cl-reply-close {
+    background: transparent;
+    border: none;
+    font-size: 16px;
+    cursor: pointer;
+    color: #94a3b8;
+    padding: 0 4px;
+    line-height: 1;
+}
+.sdv-cl-reply-close:hover {
+    color: #ef4444;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-cl-reply-bar {
+    background: rgba(30, 41, 59, 0.85);
+    border-top-color: #334155;
+    color: #94a3b8;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-cl-reply-label {
+    color: #93c5fd;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-cl-reply-snippet {
+    color: #cbd5e1;
+}
+
+/* ── Message Actions & CSAT Rating Buttons ─────────────────────────── */
+.sdv-msg-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    margin-top: 4px;
+    padding-top: 2px;
     user-select: none;
+    opacity: 0.6;
+    transition: opacity 0.15s ease;
+    position: relative;
+}
+.sdv-cl-msg-bot:hover .sdv-msg-actions,
+.sdv-msg-actions:hover,
+.sdv-msg-actions.sdv-has-open-menu {
+    opacity: 1;
 }
 .sdv-cl-msg-user .sdv-msg-actions {
     display: none;
@@ -7832,19 +8441,21 @@ HTML;
     background: transparent;
     border: none;
     color: #94a3b8;
-    padding: 2px 5px;
+    padding: 3px 5px;
     border-radius: 4px;
     font-size: 11px;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: 3px;
     transition: all 0.15s ease;
     font-family: inherit;
+    line-height: 1;
 }
 .sdv-msg-action-btn:hover {
-    background: rgba(0, 0, 0, 0.05);
-    color: #475569;
+    background: rgba(0, 0, 0, 0.06);
+    color: #334155;
 }
 .sdv-msg-action-btn.sdv-rated-up {
     color: #059669 !important;
@@ -7857,13 +8468,20 @@ HTML;
     font-weight: 600;
 }
 .sdv-msg-actions-rated-notice {
-    font-size: 10.5px;
+    font-size: 10px;
     color: #059669;
     font-weight: 500;
-    margin-left: 2px;
+    margin-left: 3px;
 }
-#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-msg-actions {
-    border-top-color: rgba(255, 255, 255, 0.08);
+.sdv-action-more {
+    padding: 2px 4px;
+    border-radius: 4px;
+    color: #94a3b8;
+}
+.sdv-action-more:hover,
+.sdv-has-open-menu .sdv-action-more {
+    background: rgba(0, 0, 0, 0.07);
+    color: #1e293b;
 }
 #sdv-client-chat-window.sdv-theme-cyber_dark .sdv-msg-action-btn {
     color: #64748b;
@@ -7871,6 +8489,155 @@ HTML;
 #sdv-client-chat-window.sdv-theme-cyber_dark .sdv-msg-action-btn:hover {
     background: rgba(255, 255, 255, 0.08);
     color: #cbd5e1;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-action-more:hover,
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-has-open-menu .sdv-action-more {
+    background: rgba(255, 255, 255, 0.1);
+    color: #f1f5f9;
+}
+
+/* ── Short & Sweet 3-Dot Chat Bubble Menu ───────────────────────────── */
+.sdv-msg-menu {
+    position: absolute;
+    left: 0;
+    background: #ffffff;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    border-radius: 8px;
+    box-shadow: 0 4px 18px -2px rgba(0, 0, 0, 0.16), 0 1px 3px rgba(0, 0, 0, 0.06);
+    padding: 3px;
+    width: 108px;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    animation: sdvFadeInUp 0.12s ease;
+    user-select: none;
+    box-sizing: border-box;
+}
+.sdv-msg-menu.sdv-menu-down {
+    top: calc(100% + 3px);
+}
+.sdv-msg-menu.sdv-menu-up {
+    bottom: calc(100% + 3px);
+}
+.sdv-msg-menu-item {
+    background: transparent;
+    border: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 7px;
+    font-size: 11px;
+    font-weight: 500;
+    color: #334155;
+    border-radius: 5px;
+    cursor: pointer;
+    width: 100%;
+    text-align: left;
+    transition: background 0.1s ease, color 0.1s ease;
+    font-family: inherit;
+    box-sizing: border-box;
+    line-height: 1;
+}
+.sdv-msg-menu-item:hover {
+    background: #f1f5f9;
+    color: #0f172a;
+}
+.sdv-msg-menu-item svg {
+    flex-shrink: 0;
+}
+.sdv-msg-menu-divider {
+    height: 1px;
+    background: rgba(0, 0, 0, 0.06);
+    margin: 2px 0;
+}
+.sdv-msg-menu-font-row {
+    display: flex;
+    gap: 3px;
+    padding: 2px 1px;
+    box-sizing: border-box;
+}
+.sdv-font-pill {
+    flex: 1;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    background: #f8fafc;
+    color: #475569;
+    padding: 3px 0;
+    border-radius: 4px;
+    font-size: 10px;
+    cursor: pointer;
+    font-family: inherit;
+    font-weight: 500;
+    text-align: center;
+    transition: all 0.1s ease;
+    line-height: 1.2;
+}
+.sdv-font-pill:hover {
+    background: #e2e8f0;
+    color: #0f172a;
+}
+.sdv-font-pill.active {
+    background: var(--sdv-brand, #0d6efd);
+    color: #ffffff;
+    border-color: var(--sdv-brand, #0d6efd);
+    font-weight: 600;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-msg-menu,
+#sdv-client-chat-window.sdv-theme-linear_geist .sdv-msg-menu,
+#sdv-client-chat-window.sdv-theme-terminal_cli .sdv-msg-menu,
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-msg-menu,
+#sdv-client-chat-window.sdv-theme-high_contrast .sdv-msg-menu {
+    background: #18181b;
+    border-color: rgba(255, 255, 255, 0.15);
+    box-shadow: 0 8px 24px -2px rgba(0, 0, 0, 0.6);
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-msg-menu-item,
+#sdv-client-chat-window.sdv-theme-linear_geist .sdv-msg-menu-item,
+#sdv-client-chat-window.sdv-theme-terminal_cli .sdv-msg-menu-item,
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-msg-menu-item,
+#sdv-client-chat-window.sdv-theme-high_contrast .sdv-msg-menu-item {
+    color: #cbd5e1;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-msg-menu-item:hover,
+#sdv-client-chat-window.sdv-theme-linear_geist .sdv-msg-menu-item:hover,
+#sdv-client-chat-window.sdv-theme-terminal_cli .sdv-msg-menu-item:hover,
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-msg-menu-item:hover,
+#sdv-client-chat-window.sdv-theme-high_contrast .sdv-msg-menu-item:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: #f8fafc;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-msg-menu-divider,
+#sdv-client-chat-window.sdv-theme-linear_geist .sdv-msg-menu-divider,
+#sdv-client-chat-window.sdv-theme-terminal_cli .sdv-msg-menu-divider,
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-msg-menu-divider,
+#sdv-client-chat-window.sdv-theme-high_contrast .sdv-msg-menu-divider {
+    background: rgba(255, 255, 255, 0.08);
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-font-pill,
+#sdv-client-chat-window.sdv-theme-linear_geist .sdv-font-pill,
+#sdv-client-chat-window.sdv-theme-terminal_cli .sdv-font-pill,
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-font-pill,
+#sdv-client-chat-window.sdv-theme-high_contrast .sdv-font-pill {
+    background: #0f172a;
+    border-color: rgba(255, 255, 255, 0.15);
+    color: #94a3b8;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-font-pill:hover,
+#sdv-client-chat-window.sdv-theme-linear_geist .sdv-font-pill:hover,
+#sdv-client-chat-window.sdv-theme-terminal_cli .sdv-font-pill:hover,
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-font-pill:hover,
+#sdv-client-chat-window.sdv-theme-high_contrast .sdv-font-pill:hover {
+    background: #334155;
+    color: #f8fafc;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-font-pill.active,
+#sdv-client-chat-window.sdv-theme-linear_geist .sdv-font-pill.active,
+#sdv-client-chat-window.sdv-theme-terminal_cli .sdv-font-pill.active,
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-font-pill.active,
+#sdv-client-chat-window.sdv-theme-high_contrast .sdv-font-pill.active {
+    background: var(--sdv-brand, #3b82f6);
+    color: #ffffff;
+    border-color: var(--sdv-brand, #3b82f6);
 }
 
 /* ── Animated 3-Dot Typing Wave ────────────────────────────────────── */
@@ -8054,6 +8821,7 @@ HTML;
         <span>Need official staff assistance?</span>
         <a href="javascript:void(0);" class="sdv-cl-escalate-btn" id="sdv-cl-escalate" onclick="window.sdvEscalateToTicket && window.sdvEscalateToTicket();">Convert to Ticket &rarr;</a>
     </div>
+    {$disclaimerHtml}
 
     <div class="sdv-cl-messages" id="sdv-cl-msgs">
         <div class="sdv-cl-msg sdv-cl-msg-bot">{$welcomeMsg}</div>
@@ -8061,6 +8829,14 @@ HTML;
     </div>
 
     <div class="sdv-cl-footer">
+        <div id="sdv-cl-reply-bar" class="sdv-cl-reply-bar" style="display:none;">
+            <div class="sdv-cl-reply-info">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg>
+                <span class="sdv-cl-reply-label">Replying:</span>
+                <span id="sdv-cl-reply-snippet" class="sdv-cl-reply-snippet"></span>
+            </div>
+            <button type="button" class="sdv-cl-reply-close" id="sdv-cl-reply-close" title="Cancel Reply" onclick="window.sdvCancelReply && window.sdvCancelReply();">&times;</button>
+        </div>
         <div class="sdv-cl-input-row">
             <input type="text" id="sdv-cl-input" placeholder="Ask about services, invoices, domains..." autocomplete="off" {$maxMsgAttr} />
             <button type="button" id="sdv-cl-send" title="Send message">
@@ -8068,7 +8844,7 @@ HTML;
             </button>
         </div>
         <div id="sdv-cl-char-counter" class="sdv-cl-char-counter" style="display:none;"></div>
-        <div class="sdv-cl-branding">Powered by Sahdev AI</div>
+        {$poweredByHtml}
     </div>
 </div>
 
@@ -8114,6 +8890,209 @@ HTML;
     var csatEnabled = Boolean({$csatEnabledJs});
     var soundEnabled = Boolean({$soundEnabledJs});
     var starterChipsData = [];
+    var _lastToggleTime = 0;
+    var _activeReplyText = '';
+
+    // ── Emergency & Reliable Window Controls ──────────────────────────────
+    window.sdvToggleChat = function(open) {
+        var now = Date.now();
+        if (typeof open !== 'boolean' && (now - _lastToggleTime) < 80) {
+            return;
+        }
+        _lastToggleTime = now;
+
+        var win = document.getElementById('sdv-client-chat-window');
+        if (!win) return;
+
+        var isCurrentlyOpen = false;
+        try {
+            var comp = window.getComputedStyle(win);
+            isCurrentlyOpen = (comp && comp.display !== 'none' && comp.visibility !== 'hidden' && comp.opacity !== '0') && win.classList.contains('sdv-open');
+        } catch(e) {
+            isCurrentlyOpen = win.classList.contains('sdv-open') && win.style.display === 'flex';
+        }
+
+        var shouldOpen = (typeof open === 'boolean') ? open : !isCurrentlyOpen;
+
+        if (shouldOpen) {
+            win.classList.add('sdv-open');
+            win.style.setProperty('display', 'flex', 'important');
+            win.style.setProperty('visibility', 'visible', 'important');
+            win.style.setProperty('opacity', '1', 'important');
+            win.style.setProperty('pointer-events', 'auto', 'important');
+            win.style.setProperty('z-index', '2147483647', 'important');
+
+            sdvSafeSet('sdv_chat_open', '1');
+            try { if (typeof window.sdvDismissProactive === 'function') window.sdvDismissProactive(); } catch(e) {}
+
+            var input = document.getElementById('sdv-cl-input');
+            if (input) {
+                setTimeout(function() {
+                    try { input.focus(); } catch(e) {}
+                }, 120);
+            }
+            if (typeof window.sdvInitChat === 'function') {
+                try { window.sdvInitChat(); } catch(e) {}
+            }
+            try { if (typeof sdvStartLivePolling === 'function') sdvStartLivePolling(); } catch(e) {}
+        } else {
+            win.classList.remove('sdv-open');
+            win.style.setProperty('display', 'none', 'important');
+            win.style.setProperty('pointer-events', 'none', 'important');
+            sdvSafeSet('sdv_chat_open', '0');
+            try { if (typeof sdvStopLivePolling === 'function') sdvStopLivePolling(); } catch(e) {}
+            window.sdvCloseAllMsgMenus && window.sdvCloseAllMsgMenus();
+        }
+    };
+
+    // Global capture listener ensuring click always activates launcher even if theme stops propagation
+    document.addEventListener('click', function(e) {
+        var launcher = e.target && e.target.closest ? e.target.closest('#sdv-client-chat-launcher') : null;
+        if (launcher) {
+            if (e.preventDefault) e.preventDefault();
+            if (e.stopPropagation) e.stopPropagation();
+            window.sdvToggleChat();
+        }
+        if (!e.target.closest('.sdv-action-more') && !e.target.closest('.sdv-msg-menu')) {
+            window.sdvCloseAllMsgMenus && window.sdvCloseAllMsgMenus();
+        }
+    }, true);
+
+    // ── Font Size (Aa) Sizing System ──────────────────────────────────────
+    window.sdvSetFontSize = function(size) {
+        var win = document.getElementById('sdv-client-chat-window');
+        if (!win) return;
+        win.classList.remove('sdv-font-small', 'sdv-font-normal', 'sdv-font-large');
+        if (size === 'small' || size === 'large') {
+            win.classList.add('sdv-font-' + size);
+        }
+        sdvSafeSet('sdv_font_size', size);
+        window.sdvCloseAllMsgMenus && window.sdvCloseAllMsgMenus();
+    };
+
+    window.sdvCycleFontSize = function() {
+        var cur = sdvSafeGet('sdv_font_size', 'normal');
+        var next = (cur === 'normal') ? 'small' : ((cur === 'small') ? 'large' : 'normal');
+        window.sdvSetFontSize(next);
+    };
+
+    // ── Reply-To Message Context Engine ───────────────────────────────────
+    window.sdvReplyToMsg = function(btn) {
+        if (!btn) return;
+        var msgEl = btn.closest('.sdv-cl-msg');
+        if (!msgEl) return;
+
+        var clone = msgEl.cloneNode(true);
+        var actions = clone.querySelector('.sdv-msg-actions');
+        if (actions) actions.remove();
+        var menu = clone.querySelector('.sdv-msg-menu');
+        if (menu) menu.remove();
+
+        var fullText = (clone.innerText || clone.textContent || '').trim();
+        if (!fullText) return;
+
+        _activeReplyText = fullText;
+        var snippet = fullText.length > 55 ? (fullText.substring(0, 55) + '...') : fullText;
+
+        var bar = document.getElementById('sdv-cl-reply-bar');
+        var snippetEl = document.getElementById('sdv-cl-reply-snippet');
+        if (bar && snippetEl) {
+            snippetEl.textContent = snippet;
+            bar.style.display = 'flex';
+        }
+
+        window.sdvCloseAllMsgMenus && window.sdvCloseAllMsgMenus();
+
+        var input = document.getElementById('sdv-cl-input');
+        if (input) {
+            setTimeout(function() {
+                try { input.focus(); } catch(e) {}
+            }, 80);
+        }
+    };
+
+    window.sdvCancelReply = function() {
+        _activeReplyText = '';
+        var bar = document.getElementById('sdv-cl-reply-bar');
+        if (bar) bar.style.display = 'none';
+    };
+
+    // ── 3-Dot Contextual Menu Engine ──────────────────────────────────────
+    window.sdvCloseAllMsgMenus = function() {
+        var menus = document.querySelectorAll('.sdv-msg-menu');
+        menus.forEach(function(m) {
+            var parent = m.parentNode;
+            if (parent) parent.classList.remove('sdv-has-open-menu');
+            m.remove();
+        });
+    };
+
+    window.sdvToggleMsgMenu = function(btn, msgId) {
+        var parent = btn.parentNode;
+        var existing = parent.querySelector('.sdv-msg-menu');
+        if (existing) {
+            window.sdvCloseAllMsgMenus();
+            return;
+        }
+        window.sdvCloseAllMsgMenus();
+
+        var menu = document.createElement('div');
+        menu.className = 'sdv-msg-menu';
+        menu.onclick = function(e) { if (e && e.stopPropagation) e.stopPropagation(); };
+
+        // Smart positioning: open downwards unless near container bottom
+        var btnRect = btn.getBoundingClientRect();
+        var chatContainer = document.getElementById('sdv-cl-messages') || document.body;
+        var chatRect = chatContainer.getBoundingClientRect();
+        var spaceBelow = chatRect.bottom - btnRect.bottom;
+        if (spaceBelow < 95) {
+            menu.classList.add('sdv-menu-up');
+        } else {
+            menu.classList.add('sdv-menu-down');
+        }
+
+        var curFont = sdvSafeGet('sdv_font_size', 'normal');
+
+        menu.innerHTML = 
+            '<button type="button" class="sdv-msg-menu-item sdv-menu-copy">' +
+                '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>' +
+                '<span>Copy</span>' +
+            '</button>' +
+            '<button type="button" class="sdv-msg-menu-item sdv-menu-reply">' +
+                '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg>' +
+                '<span>Reply</span>' +
+            '</button>' +
+            '<div class="sdv-msg-menu-divider"></div>' +
+            '<div class="sdv-msg-menu-font-row">' +
+                '<button type="button" class="sdv-font-pill' + (curFont === 'small' ? ' active' : '') + '" data-size="small" title="Small text">Small</button>' +
+                '<button type="button" class="sdv-font-pill' + (curFont === 'normal' ? ' active' : '') + '" data-size="normal" title="Normal text (Aa)">Aa</button>' +
+            '</div>';
+
+        var copyBtn = menu.querySelector('.sdv-menu-copy');
+        copyBtn.onclick = function() {
+            window.sdvCopyMsgText(btn);
+            copyBtn.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><polyline points="20 6 9 17 4 12"/></svg><span style="color:#059669;font-weight:600;">Copied!</span>';
+            setTimeout(function() {
+                window.sdvCloseAllMsgMenus();
+            }, 380);
+        };
+
+        menu.querySelector('.sdv-menu-reply').onclick = function() {
+            window.sdvReplyToMsg(btn);
+            window.sdvCloseAllMsgMenus();
+        };
+
+        menu.querySelectorAll('.sdv-font-pill').forEach(function(fb) {
+            fb.onclick = function() {
+                var sz = this.getAttribute('data-size');
+                window.sdvSetFontSize(sz);
+                window.sdvCloseAllMsgMenus();
+            };
+        });
+
+        parent.classList.add('sdv-has-open-menu');
+        parent.appendChild(menu);
+    };
 
     // ── Web Audio API Synthetic Notification Chime ────────────────────────
     var _audioCtx = null;
@@ -8266,17 +9245,33 @@ HTML;
         var clone = msgEl.cloneNode(true);
         var actions = clone.querySelector('.sdv-msg-actions');
         if (actions) actions.remove();
+        var menu = clone.querySelector('.sdv-msg-menu');
+        if (menu) menu.remove();
         var text = (clone.innerText || clone.textContent || '').trim();
         if (!text) return;
 
         function showSuccess() {
             var orig = btn.innerHTML;
-            btn.innerHTML = '<span style="color:#059669;font-weight:600;">✓ Copied</span>';
-            setTimeout(function() { btn.innerHTML = orig; }, 1800);
+            var origTitle = btn.title;
+            btn.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><polyline points="20 6 9 17 4 12"/></svg>';
+            btn.title = 'Copied!';
+            setTimeout(function() {
+                btn.innerHTML = orig;
+                btn.title = origTitle;
+            }, 1600);
         }
 
         if (navigator.clipboard && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText(text).then(showSuccess);
+            navigator.clipboard.writeText(text).then(showSuccess).catch(function() {
+                var ta = document.createElement('textarea');
+                ta.value = text;
+                ta.style.position = 'fixed';
+                ta.style.opacity = '0';
+                document.body.appendChild(ta);
+                ta.select();
+                try { document.execCommand('copy'); showSuccess(); } catch(e) {}
+                document.body.removeChild(ta);
+            });
         } else {
             var ta = document.createElement('textarea');
             ta.value = text;
@@ -8331,24 +9326,16 @@ HTML;
         var actions = document.createElement('div');
         actions.className = 'sdv-msg-actions';
 
-        var copyBtn = document.createElement('button');
-        copyBtn.type = 'button';
-        copyBtn.className = 'sdv-msg-action-btn';
-        copyBtn.title = 'Copy response text';
-        copyBtn.setAttribute('aria-label', 'Copy response');
-        copyBtn.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span>Copy</span>';
-        copyBtn.onclick = function() { window.sdvCopyMsgText(this); };
-        actions.appendChild(copyBtn);
-
+        // 1. CSAT Rating Buttons if enabled
         if (csatEnabled && msgId) {
             var upBtn = document.createElement('button');
             upBtn.type = 'button';
             upBtn.className = 'sdv-msg-action-btn sdv-rate-up' + (rating == 1 ? ' sdv-rated-up' : '');
             upBtn.title = 'Helpful response';
             upBtn.setAttribute('aria-label', 'Helpful');
-            upBtn.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>';
+            upBtn.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>';
             if (rating) upBtn.disabled = true;
-            upBtn.onclick = function() { window.sdvRateMessage(msgId, 1, this); };
+            upBtn.onclick = function(e) { if (e && e.stopPropagation) e.stopPropagation(); window.sdvRateMessage(msgId, 1, this); };
             actions.appendChild(upBtn);
 
             var downBtn = document.createElement('button');
@@ -8356,11 +9343,21 @@ HTML;
             downBtn.className = 'sdv-msg-action-btn sdv-rate-down' + (rating == -1 ? ' sdv-rated-down' : '');
             downBtn.title = 'Not helpful';
             downBtn.setAttribute('aria-label', 'Not helpful');
-            downBtn.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h3a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-3"/></svg>';
+            downBtn.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h3a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-3"/></svg>';
             if (rating) downBtn.disabled = true;
-            downBtn.onclick = function() { window.sdvRateMessage(msgId, -1, this); };
+            downBtn.onclick = function(e) { if (e && e.stopPropagation) e.stopPropagation(); window.sdvRateMessage(msgId, -1, this); };
             actions.appendChild(downBtn);
         }
+
+        // 2. 3-dots More options micro-button
+        var moreBtn = document.createElement('button');
+        moreBtn.type = 'button';
+        moreBtn.className = 'sdv-msg-action-btn sdv-action-more';
+        moreBtn.title = 'Options';
+        moreBtn.setAttribute('aria-label', 'Options');
+        moreBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="pointer-events:none;"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>';
+        moreBtn.onclick = function(e) { if (e && e.stopPropagation) e.stopPropagation(); window.sdvToggleMsgMenu(this, msgId); };
+        actions.appendChild(moreBtn);
 
         el.appendChild(actions);
     }
@@ -8515,68 +9512,6 @@ HTML;
     }
 
     // ── Window Controls ───────────────────────────────────────────────────
-    window.sdvToggleChat = function(open) {
-        var now = Date.now();
-        if (typeof open !== 'boolean' && (now - _lastToggleTime) < 250) {
-            return;
-        }
-        _lastToggleTime = now;
-
-        var win = document.getElementById('sdv-client-chat-window');
-        if (!win) {
-            return;
-        }
-
-        var isCurrentlyOpen = win.classList.contains('sdv-open') && win.style.display !== 'none';
-        var shouldOpen = (typeof open === 'boolean') ? open : !isCurrentlyOpen;
-
-        if (shouldOpen) {
-            win.classList.add('sdv-open');
-            win.style.setProperty('display', 'flex', 'important');
-            win.style.setProperty('visibility', 'visible', 'important');
-            win.style.setProperty('opacity', '1', 'important');
-            win.style.setProperty('pointer-events', 'auto', 'important');
-            win.style.setProperty('z-index', '2147483647', 'important');
-
-            sdvSafeSet('sdv_chat_open', '1');
-            window.sdvDismissProactive();
-
-            var input = document.getElementById('sdv-cl-input');
-            if (input) {
-                setTimeout(function() {
-                    try { input.focus(); } catch(e) {}
-                }, 120);
-            }
-            if (typeof window.sdvInitChat === 'function') {
-                window.sdvInitChat();
-            }
-            sdvStartLivePolling();
-
-            var drawer = document.getElementById('sdv-cl-history-drawer');
-            if (drawer) {
-                drawer.classList.remove('sdv-drawer-open');
-            }
-            var kbDrawer = document.getElementById('sdv-cl-kb-drawer');
-            if (kbDrawer) {
-                kbDrawer.classList.remove('sdv-drawer-open');
-            }
-        } else {
-            win.classList.remove('sdv-open');
-            win.style.setProperty('display', 'none', 'important');
-            win.style.setProperty('pointer-events', 'none', 'important');
-            sdvSafeSet('sdv_chat_open', '0');
-            sdvStopLivePolling();
-
-            var drawer = document.getElementById('sdv-cl-history-drawer');
-            if (drawer) {
-                drawer.classList.remove('sdv-drawer-open');
-            }
-            var kbDrawer = document.getElementById('sdv-cl-kb-drawer');
-            if (kbDrawer) {
-                kbDrawer.classList.remove('sdv-drawer-open');
-            }
-        }
-    };
 
     window.sdvToggleExpand = function(e) {
         if (e && e.preventDefault) e.preventDefault();
@@ -9353,6 +10288,14 @@ HTML;
         var chipsEl = document.getElementById('sdv-starter-chips');
         if (chipsEl) chipsEl.style.display = 'none';
 
+        var textToSend = text;
+        if (_activeReplyText) {
+            var snippet = _activeReplyText.replace(/\s+/g, ' ').trim();
+            if (snippet.length > 75) snippet = snippet.substring(0, 75) + '...';
+            textToSend = '[Replying to: "' + snippet + '"]' + String.fromCharCode(10) + text;
+            window.sdvCancelReply();
+        }
+
         appendClMsg('user', text, false);
         inputEl.value = '';
         sdvUpdateCharCounter();
@@ -9372,7 +10315,7 @@ HTML;
         form.append('action', 'client_chat_message');
         form.append('visitor_token', visitorToken);
         if (sessionUuid) form.append('session_uuid', sessionUuid);
-        form.append('message', text);
+        form.append('message', textToSend);
 
         postAjaxWithFallback(form, function(err, data) {
             isSendingMessage = false;
@@ -9978,11 +10921,26 @@ HTML;
         attachListeners();
         initProactiveTrigger();
 
+        // Restore font size preference
+        var savedFontSize = sdvSafeGet('sdv_font_size', 'normal');
+        if (savedFontSize === 'small' || savedFontSize === 'large') {
+            var chatWin = document.getElementById('sdv-client-chat-window');
+            if (chatWin) chatWin.classList.add('sdv-font-' + savedFontSize);
+        }
+
         // Restore sound state icon
         if (soundEnabled) {
             var isMuted = sdvSafeGet('sdv_sound_muted', '0') === '1';
             sdvUpdateSoundIcon(isMuted);
         }
+
+        // Restore AI Disclaimer dismissed state
+        try {
+            if (sessionStorage.getItem('sdv_dismiss_disclaimer') === '1') {
+                var disEl = document.getElementById('sdv-cl-disclaimer');
+                if (disEl) disEl.style.display = 'none';
+            }
+        } catch(e) {}
 
         // Attach action toolbar to initial static welcome message if present
         var initialBot = document.querySelector('#sdv-cl-msgs .sdv-cl-msg-bot');

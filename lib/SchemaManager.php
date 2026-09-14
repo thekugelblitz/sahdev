@@ -119,6 +119,13 @@ class SchemaManager
                 'client_chat_launcher_text'     => ['type' => 'string', 'length' => 64, 'default' => 'Chat with Us'],
                 'client_chat_history_enabled'   => ['type' => 'boolean', 'default' => 1],
 
+                // Client Live Chat Branding & AI Compliance
+                'client_chat_powered_by_show'    => ['type' => 'boolean', 'default' => 1],
+                'client_chat_powered_by_text'    => ['type' => 'string', 'length' => 128, 'default' => 'Powered by Sahdev AI'],
+                'client_chat_powered_by_url'     => ['type' => 'string', 'length' => 255, 'default' => ''],
+                'client_chat_disclaimer_enabled' => ['type' => 'boolean', 'default' => 1],
+                'client_chat_disclaimer_text'    => ['type' => 'text'],
+
                 // Client Live Chat Quotas, Rate Limits & Token Protection
                 'client_chat_auth_limit_count'   => ['type' => 'integer', 'default' => 30],
                 'client_chat_auth_limit_window'  => ['type' => 'string', 'length' => 16, 'default' => 'daily'],
