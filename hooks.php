@@ -10541,21 +10541,29 @@ DISC;
             // Safety: Skip any chip that has no readable text
             if (!rawText) return;
 
-            var iconHtml = '';
-            if (customIcon) {
-                iconHtml = '<span class="sdv-starter-chip-icon" style="font-size:12.5px;line-height:1;display:inline-flex;align-items:center;">' + sdvEscapeHtml(customIcon) + '</span>';
-            } else {
-                // If text starts with an emoji, the emoji is part of the text - don't prepend extra svg
-                var hasLeadingEmoji = /^(\u00a9|\u00ae|[\u2000-\u3300]|\ud83c[\ud000-\udfff]|\ud83d[\ud000-\udfff]|\ud83e[\ud000-\udfff])/i.test(rawText);
-                if (!hasLeadingEmoji) {
-                    iconHtml = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="flex-shrink:0;opacity:0.8;"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>';
+            // Extract leading decorative emoji if present
+            var leadingEmojiMatch = rawText.match(/^([\uD800-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF]|[\u2300-\u23FF]|[\u2B50-\u2B55]|[\u203C-\u3299]|\u00a9|\u00ae)\s*/);
+            var cleanText = rawText;
+            var chipIcon = customIcon;
+            if (leadingEmojiMatch) {
+                if (!chipIcon) {
+                    chipIcon = leadingEmojiMatch[1];
                 }
+                cleanText = rawText.substring(leadingEmojiMatch[0].length).trim();
+                promptText = promptText.replace(/^([\uD800-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF]|[\u2300-\u23FF]|[\u2B50-\u2B55]|[\u203C-\u3299]|\u00a9|\u00ae)\s*/, '').trim();
             }
 
-            var safePromptAttr = encodeURIComponent(promptText);
+            var iconHtml = '';
+            if (chipIcon) {
+                iconHtml = '<span class="sdv-starter-chip-icon" style="font-size:12.5px;line-height:1;display:inline-flex;align-items:center;">' + sdvEscapeHtml(chipIcon) + '</span>';
+            } else {
+                iconHtml = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="flex-shrink:0;opacity:0.8;"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>';
+            }
+
+            var safePromptAttr = encodeURIComponent(promptText || cleanText);
             html += '<button type="button" class="sdv-starter-chip" onclick="window.sdvSendPromptChip && window.sdvSendPromptChip(decodeURIComponent(\'' + safePromptAttr + '\'));">' +
                 iconHtml +
-                '<span>' + sdvEscapeHtml(rawText) + '</span>' +
+                '<span>' + sdvEscapeHtml(cleanText || rawText) + '</span>' +
             '</button>';
         });
 
@@ -10666,12 +10674,22 @@ DISC;
             if (data.msg_id && document.getElementById('sdv-msg-' + data.msg_id)) {
                 return;
             }
-            // Message-level deduplication: If identical message was just rendered in this tab, skip
+            var incomingText = String(data.text || '').trim();
+            if (!incomingText) return;
+
+            // Message-level deduplication: check recent bubbles of this role
             var msgsEl = document.getElementById('sdv-cl-msgs');
-            if (msgsEl && msgsEl.lastElementChild) {
-                var lastText = (msgsEl.lastElementChild.textContent || '').trim();
-                if (lastText === (data.text || '').trim()) {
-                    return;
+            if (msgsEl) {
+                var bubbles = msgsEl.querySelectorAll('.sdv-cl-msg-' + (data.role === 'user' ? 'user' : 'bot'));
+                for (var b = bubbles.length - 1; b >= 0 && b >= bubbles.length - 5; b--) {
+                    var bText = (bubbles[b].getAttribute('data-msg-text') || bubbles[b].innerText || bubbles[b].textContent || '').trim();
+                    if (bText === incomingText) {
+                        if (data.msg_id && !bubbles[b].id) {
+                            bubbles[b].id = 'sdv-msg-' + data.msg_id;
+                            bubbles[b].removeAttribute('data-pending-user');
+                        }
+                        return;
+                    }
                 }
             }
             appendClMsg(data.role, data.text, false, data.msg_id);
@@ -11049,6 +11067,8 @@ DISC;
             if (st === 'paid' || st === 'active' || st === 'completed') cls = 'sdv-badge-success';
             else if (st === 'overdue' || st === 'cancelled' || st === 'suspended') cls = 'sdv-badge-danger';
             return prefix + ' <span class="sdv-badge-pill ' + cls + '"><span class="sdv-badge-dot"></span>' + status + '</span>';
+        });
+
         // File badge card syntax: [file:filename.csv] or [file:report.pdf]
         s = s.replace(/\[file:([^\]]+)\]/gi, function(_, fname) {
             var ext = (fname.split('.').pop() || 'FILE').toUpperCase();
@@ -11184,6 +11204,9 @@ DISC;
     }
 
     function appendClMsg(role, text, isHtml, msgId, rating) {
+        if (!text && !isHtml) return null;
+        if (typeof text === 'string' && !text.trim() && !isHtml) return null;
+
         var msgsEl = document.getElementById('sdv-cl-msgs');
         if (!msgsEl) return null;
         var d = document.createElement('div');
@@ -11191,6 +11214,9 @@ DISC;
         if (msgId) {
             d.id = 'sdv-msg-' + msgId;
             if (msgId > highestMsgId) highestMsgId = msgId;
+        } else if (role === 'user') {
+            d.setAttribute('data-pending-user', '1');
+            d.setAttribute('data-msg-text', String(text).trim());
         }
         if (isHtml) {
             d.innerHTML = text;
@@ -11336,8 +11362,28 @@ DISC;
 
     function renderSingleMessage(m) {
         if (!m) return;
+        var textContent = (typeof m.message_text === 'string') ? m.message_text.trim() : '';
+        if (!textContent && !m.action_card) {
+            return;
+        }
+
         if (m.id && document.getElementById('sdv-msg-' + m.id)) {
             return;
+        }
+
+        // Deduplication: Correlate pending optimistic user message instead of appending a duplicate
+        if (m.sender_type === 'user' && m.id) {
+            var pendingEls = document.querySelectorAll('.sdv-cl-msg-user[data-pending-user="1"], .sdv-cl-msg-user:not([id])');
+            for (var p = 0; p < pendingEls.length; p++) {
+                var pEl = pendingEls[p];
+                var pText = (pEl.getAttribute('data-msg-text') || pEl.innerText || pEl.textContent || '').trim();
+                if (pText === textContent || pText.replace(/^([\uD800-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF]|\S)\s*/, '') === textContent) {
+                    pEl.id = 'sdv-msg-' + m.id;
+                    pEl.removeAttribute('data-pending-user');
+                    if (m.id > highestMsgId) highestMsgId = m.id;
+                    return;
+                }
+            }
         }
 
         // Check if message is an escalation confirmation card
@@ -11486,7 +11532,7 @@ DISC;
             window.sdvCancelReply();
         }
 
-        appendClMsg('user', text, false);
+        var userMsgEl = appendClMsg('user', text, false);
         inputEl.value = '';
         sdvUpdateCharCounter();
         inputEl.disabled = true;
@@ -11519,6 +11565,13 @@ DISC;
             }
 
             if (data.limit_reached) {
+                if (data.user_message_id) {
+                    if (userMsgEl) {
+                        userMsgEl.id = 'sdv-msg-' + data.user_message_id;
+                        userMsgEl.removeAttribute('data-pending-user');
+                    }
+                    if (data.user_message_id > highestMsgId) highestMsgId = data.user_message_id;
+                }
                 var limitNoticeText = data.reply || data.message || 'Inquiry limit reached. Please convert this discussion to a support ticket.';
                 if (tempBot) {
                     tempBot.innerHTML = renderLimitNoticeCardHtml(limitNoticeText);
@@ -11543,6 +11596,13 @@ DISC;
             try { inputEl.focus(); } catch(e) {}
 
             if (data.status === 'success' || data.success) {
+                if (data.user_message_id) {
+                    if (userMsgEl) {
+                        userMsgEl.id = 'sdv-msg-' + data.user_message_id;
+                        userMsgEl.removeAttribute('data-pending-user');
+                    }
+                    if (data.user_message_id > highestMsgId) highestMsgId = data.user_message_id;
+                }
                 var replyText = data.reply || 'Message received.';
                 if (tempBot) {
                     tempBot.innerHTML = parseSimpleMarkdown(replyText);
@@ -11585,7 +11645,7 @@ DISC;
     }
 
     function sdvPollMessages() {
-        if (!sessionUuid || isPolling) return;
+        if (!sessionUuid || isPolling || isSendingMessage) return;
         var win = document.getElementById('sdv-client-chat-window');
         if (!win || !win.classList.contains('sdv-open') || win.style.display === 'none') {
             return;

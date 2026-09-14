@@ -233,6 +233,11 @@ class SchemaManager
                     $table->timestamps();
                 });
             }
+
+            // Ensure utf8mb4 collation for full emoji and multilingual support
+            try {
+                Capsule::statement("ALTER TABLE tblsahdev_chat_sessions CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+            } catch (\Throwable $e) {}
         } catch (\Throwable $e) {
             // Benign table creation
         }
@@ -272,6 +277,11 @@ class SchemaManager
                     });
                 }
             }
+
+            // Ensure utf8mb4 collation for full emoji and multilingual support
+            try {
+                Capsule::statement("ALTER TABLE tblsahdev_chat_messages CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+            } catch (\Throwable $e) {}
         } catch (\Throwable $e) {
             // Benign table creation
         }

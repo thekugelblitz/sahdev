@@ -17,10 +17,47 @@ require_once __DIR__ . '/ModuleLogger.php';
 class ChatService
 {
     /**
+     * Ensure database connection uses utf8mb4 for full emoji and multilingual support.
+     */
+    public static function ensureUtf8mb4Connection(): void
+    {
+        try {
+            Capsule::connection()->statement("SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_ci'");
+        } catch (\Throwable $e) {
+            // Silently continue if MySQL server or connection doesn't support
+        }
+    }
+
+    /**
+     * Safely encode 4-byte UTF-8 emojis for storage in databases that may be using 3-byte utf8.
+     */
+    public static function safeStorageText(string $text): string
+    {
+        if (empty($text)) {
+            return '';
+        }
+        return preg_replace_callback('/[\x{10000}-\x{10FFFF}]/u', function ($match) {
+            return '&#' . mb_ord($match[0], 'UTF-8') . ';';
+        }, $text);
+    }
+
+    /**
+     * Safely decode text with emoji entities back to full UTF-8 for LLM processing or presentation.
+     */
+    public static function safeDisplayText(string $text): string
+    {
+        if (empty($text)) {
+            return '';
+        }
+        return html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+    }
+
+    /**
      * Get or create active Admin Copilot session.
      */
     public static function getOrCreateAdminSession(int $adminId, ?string $sessionUuid = null): array
     {
+        self::ensureUtf8mb4Connection();
         SchemaManager::ensureChatSessionsTable();
         SchemaManager::ensureChatMessagesTable();
 
@@ -139,7 +176,7 @@ class ChatService
             'sender_type'  => 'user',
             'sender_id'    => $adminId,
             'sender_name'  => $adminName,
-            'message_text' => $userMessageText,
+            'message_text' => self::safeStorageText($userMessageText),
             'created_at'   => Carbon::now(),
         ]);
 
@@ -459,11 +496,13 @@ class ChatService
      */
     public static function handleClientMessage(string $visitorToken, string $messageText, ?int $clientId = null, ?string $sessionUuid = null): array
     {
+        self::ensureUtf8mb4Connection();
+
         // Active Input Sanitization & Dynamic Payload Bounding
         $maxMsgChars = (int) self::getChatSetting('client_chat_max_msg_chars', 1000);
         $sanitizeMax = $maxMsgChars > 0 ? max(2000, $maxMsgChars * 2) : 2000;
         $messageText = self::sanitizeClientInput($messageText, $sanitizeMax);
-        if (empty($messageText)) {
+        if (empty(trim($messageText))) {
             return ['success' => false, 'error' => 'Message cannot be empty.'];
         }
 
@@ -514,7 +553,7 @@ class ChatService
                 'sender_type'  => 'user',
                 'sender_id'    => $clientId ?: 0,
                 'sender_name'  => $senderName,
-                'message_text' => $messageText,
+                'message_text' => self::safeStorageText($messageText),
                 'created_at'   => Carbon::now(),
             ]);
 
@@ -555,12 +594,12 @@ class ChatService
             : 'Visitor';
 
         // 1. Record visitor message
-        Capsule::table('tblsahdev_chat_messages')->insert([
+        $userMsgId = Capsule::table('tblsahdev_chat_messages')->insertGetId([
             'session_id'   => $sessionId,
             'sender_type'  => 'user',
             'sender_id'    => $clientId ?: 0,
             'sender_name'  => $senderName,
-            'message_text' => $messageText,
+            'message_text' => self::safeStorageText($messageText),
             'created_at'   => Carbon::now(),
         ]);
 
@@ -683,10 +722,11 @@ class ChatService
             ModuleLogger::info('client_chat', "Live chat response generated successfully for session {$sessionId} (length: " . strlen($reply) . " chars)");
 
             return [
-                'success'      => true,
-                'message_id'   => $msgId,
-                'reply'        => $reply,
-                'can_escalate' => true,
+                'success'         => true,
+                'message_id'      => $msgId,
+                'user_message_id' => $userMsgId ?? null,
+                'reply'           => $reply,
+                'can_escalate'    => true,
             ];
         } catch (\Throwable $e) {
             $pName = $pRecord->name ?? 'AI Provider';
@@ -1151,8 +1191,9 @@ class ChatService
 
         foreach ($rows as $r) {
             $role = ($r->sender_type === 'user') ? 'user' : 'assistant';
-            if (!empty($r->message_text)) {
-                $out[] = ['role' => $role, 'content' => $r->message_text];
+            $decodedText = self::safeDisplayText((string) ($r->message_text ?? ''));
+            if (!empty(trim($decodedText))) {
+                $out[] = ['role' => $role, 'content' => $decodedText];
             }
         }
 
@@ -1161,12 +1202,13 @@ class ChatService
 
     private static function recordAssistantMessage(int $sessionId, string $text, array $actionCards = [], array $toolCalls = []): int
     {
+        self::ensureUtf8mb4Connection();
         return Capsule::table('tblsahdev_chat_messages')->insertGetId([
             'session_id'        => $sessionId,
             'sender_type'       => 'assistant',
             'sender_id'         => 0,
             'sender_name'       => 'Sahdev AI',
-            'message_text'      => $text,
+            'message_text'      => self::safeStorageText($text),
             'action_card_json'  => !empty($actionCards) ? json_encode($actionCards) : null,
             'tool_calls_json'   => !empty($toolCalls) ? json_encode($toolCalls) : null,
             'created_at'        => Carbon::now(),

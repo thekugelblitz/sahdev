@@ -49,6 +49,7 @@ if ($isClientChatAction) {
 
         \Sahdev\Lib\SchemaManager::ensureChatSessionsTable();
         \Sahdev\Lib\SchemaManager::ensureChatMessagesTable();
+        \Sahdev\Lib\ChatService::ensureUtf8mb4Connection();
 
         $settings = Capsule::table('tblsahdev_settings')->first();
         if (!$settings || empty($settings->client_chat_enabled)) {
