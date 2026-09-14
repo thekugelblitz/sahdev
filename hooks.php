@@ -6108,9 +6108,23 @@ HTML;
         '</div>' .
     '</div>';
 
-    $avatarHtml = !empty($chatLogo)
-        ? '<img src="' . $chatLogo . '" alt="Logo" class="sdv-cl-avatar-img">'
-        : (($siriOrbEnabled || $chatTheme === 'apple_siri') ? $siriOrbHtml : 'AI');
+    // In apple_siri theme, the glowing animated Siri Orb is the signature avatar.
+    // If a custom logo image URL is configured, render it with an automatic fallback to the Siri Orb on error.
+    if ($chatTheme === 'apple_siri' || $siriOrbEnabled) {
+        if (!empty($chatLogo)) {
+            $avatarHtml = '<img src="' . $chatLogo . '" alt="Logo" class="sdv-cl-avatar-img" onerror="this.style.display=\'none\'; if(this.nextElementSibling){this.nextElementSibling.style.display=\'inline-flex\';}">' .
+                '<div class="sdv-siri-fallback-wrap" style="display:none;">' . $siriOrbHtml . '</div>';
+        } else {
+            $avatarHtml = $siriOrbHtml;
+        }
+    } else {
+        if (!empty($chatLogo)) {
+            $avatarHtml = '<img src="' . $chatLogo . '" alt="Logo" class="sdv-cl-avatar-img" onerror="this.style.display=\'none\'; if(this.nextElementSibling){this.nextElementSibling.style.display=\'inline-flex\';}">' .
+                '<span class="sdv-cl-avatar-text-fallback" style="display:none;">AI</span>';
+        } else {
+            $avatarHtml = '<span class="sdv-cl-avatar-text-fallback">AI</span>';
+        }
+    }
 
     // WhatsApp Multi-Department Configuration & Clean URLs
     $whatsappDepartments = [];
@@ -8304,20 +8318,36 @@ DISC;
 #sdv-client-chat-window.sdv-theme-apple_siri .sdv-cl-avatar {
     width: 44px !important;
     height: 44px !important;
+    min-width: 44px !important;
+    min-height: 44px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
     background: transparent !important;
+    border: none !important;
     box-shadow: none !important;
+    overflow: visible !important;
     flex-shrink: 0 !important;
 }
 #sdv-client-chat-window.sdv-theme-apple_siri .sdv-siri-orb-wrap {
-    width: 44px !important;
-    height: 44px !important;
-    filter: drop-shadow(0 4px 14px rgba(244, 63, 94, 0.45)) drop-shadow(0 2px 8px rgba(168, 85, 247, 0.4)) !important;
+    width: 42px !important;
+    height: 42px !important;
+    position: relative !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border-radius: 50% !important;
+    filter: drop-shadow(0 4px 14px rgba(236, 72, 153, 0.55)) drop-shadow(0 2px 8px rgba(168, 85, 247, 0.5)) !important;
+    overflow: visible !important;
 }
 #sdv-client-chat-window.sdv-theme-apple_siri .sdv-siri-orb {
-    width: 40px !important;
-    height: 40px !important;
-    background: radial-gradient(circle at 35% 30%, #ff5e7e 0%, #f97316 28%, #a855f7 65%, #38bdf8 100%) !important;
-    box-shadow: inset 0 2px 4px rgba(255, 255, 255, 0.8), 0 0 16px rgba(244, 63, 94, 0.5) !important;
+    width: 38px !important;
+    height: 38px !important;
+    border-radius: 50% !important;
+    position: relative !important;
+    overflow: hidden !important;
+    background: radial-gradient(circle at 32% 28%, #ff3366 0%, #ff6b4a 24%, #a855f7 55%, #3b82f6 82%, #06b6d4 100%) !important;
+    box-shadow: inset 0 2px 4px rgba(255, 255, 255, 0.7), 0 0 16px rgba(168, 85, 247, 0.45) !important;
 }
 #sdv-client-chat-window.sdv-theme-apple_siri .sdv-cl-title-block {
     display: flex !important;
@@ -8742,52 +8772,59 @@ DISC;
 
 /* ── macOS / Apple Siri Fluid Glowing Orb ────────────────────────── */
 .sdv-siri-orb-wrap {
-    width: 34px;
-    height: 34px;
+    width: 42px;
+    height: 42px;
     position: relative;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     border-radius: 50%;
-    filter: drop-shadow(0 2px 10px rgba(168, 85, 247, 0.5));
+    filter: drop-shadow(0 4px 14px rgba(236, 72, 153, 0.55)) drop-shadow(0 2px 8px rgba(168, 85, 247, 0.5));
     cursor: default;
     user-select: none;
+    overflow: visible;
+    flex-shrink: 0;
 }
 .sdv-siri-orb {
-    width: 32px;
-    height: 32px;
+    width: 38px;
+    height: 38px;
     border-radius: 50%;
     position: relative;
     overflow: hidden;
-    background: radial-gradient(circle at 35% 35%, #ff5277 0%, #a855f7 38%, #3b82f6 72%, #06b6d4 100%);
-    box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.7), 0 0 14px rgba(168, 85, 247, 0.55);
+    background: radial-gradient(circle at 32% 28%, #ff3366 0%, #ff6b4a 24%, #a855f7 55%, #3b82f6 82%, #06b6d4 100%);
+    box-shadow: inset 0 2px 4px rgba(255, 255, 255, 0.7), 0 0 16px rgba(168, 85, 247, 0.45);
     animation: sdvSiriBreathing 3.6s ease-in-out infinite alternate;
 }
 .sdv-siri-orb-core {
     position: absolute;
     inset: -35%;
     background: conic-gradient(from 0deg at 50% 50%, #f43f5e 0deg, #ec4899 65deg, #8b5cf6 130deg, #3b82f6 200deg, #06b6d4 270deg, #fb923c 330deg, #f43f5e 360deg);
-    filter: blur(5px);
+    filter: blur(4px);
     border-radius: 50%;
     animation: sdvSiriRotate 5.5s linear infinite;
-    mix-blend-mode: screen;
-    opacity: 0.88;
+    opacity: 0.85;
+    mix-blend-mode: overlay;
 }
 .sdv-siri-orb-glow {
     position: absolute;
-    inset: 6%;
-    background: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.2) 45%, transparent 75%);
+    inset: 5%;
+    background: radial-gradient(circle at 32% 25%, rgba(255, 255, 255, 0.75) 0%, rgba(255, 255, 255, 0.15) 35%, transparent 65%);
     border-radius: 50%;
     animation: sdvSiriMorph 4.2s ease-in-out infinite alternate;
     pointer-events: none;
 }
 .sdv-siri-orb-aura {
     position: absolute;
-    inset: -2px;
+    inset: -1px;
     border-radius: 50%;
-    border: 1px solid rgba(255, 255, 255, 0.45);
-    box-shadow: 0 0 10px rgba(147, 51, 234, 0.45);
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    box-shadow: 0 0 12px rgba(147, 51, 234, 0.4);
     pointer-events: none;
+}
+.sdv-siri-fallback-wrap {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 @keyframes sdvSiriRotate {
     0%   { transform: rotate(0deg) scale(1); }

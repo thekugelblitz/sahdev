@@ -1942,6 +1942,12 @@ class AdminController
             if (isset($_POST['client_chat_siri_orb_enabled'])) {
                 $updatePayload['client_chat_siri_orb_enabled'] = !empty($_POST['client_chat_siri_orb_enabled']) ? 1 : 0;
             }
+            if (isset($_POST['client_chat_theme'])) {
+                $updatePayload['client_chat_theme'] = trim($_POST['client_chat_theme']);
+            }
+            if (isset($_POST['client_chat_logo'])) {
+                $updatePayload['client_chat_logo'] = trim($_POST['client_chat_logo']) ?: null;
+            }
             if (isset($_POST['copilot_fallback_provider_id'])) {
                 $updatePayload['copilot_fallback_provider_id'] = $copilotFallbackProviderId ?: null;
             }
