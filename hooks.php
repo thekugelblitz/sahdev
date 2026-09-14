@@ -8354,6 +8354,13 @@ DISC;
     transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
     user-select: none;
     font-family: inherit;
+    text-align: left;
+    line-height: 1.35;
+    max-width: 100%;
+}
+.sdv-starter-chip span {
+    white-space: normal;
+    word-break: break-word;
 }
 .sdv-starter-chip:hover {
     background: #f8fafc;
@@ -8369,15 +8376,27 @@ DISC;
     flex-shrink: 0;
     color: var(--sdv-brand, {$brandColor});
 }
-#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-starter-chip {
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-starter-chip,
+#sdv-client-chat-window.sdv-theme-linear_geist .sdv-starter-chip,
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-starter-chip,
+#sdv-client-chat-window.sdv-theme-high_contrast .sdv-starter-chip {
     background: #1e293b !important;
     border-color: #334155 !important;
     color: #cbd5e1 !important;
 }
-#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-starter-chip:hover {
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-starter-chip:hover,
+#sdv-client-chat-window.sdv-theme-linear_geist .sdv-starter-chip:hover,
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-starter-chip:hover,
+#sdv-client-chat-window.sdv-theme-high_contrast .sdv-starter-chip:hover {
     background: #25334d !important;
     border-color: #60a5fa !important;
     color: #93c5fd !important;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-starter-chip svg,
+#sdv-client-chat-window.sdv-theme-linear_geist .sdv-starter-chip svg,
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-starter-chip svg,
+#sdv-client-chat-window.sdv-theme-high_contrast .sdv-starter-chip svg {
+    color: #60a5fa !important;
 }
 
 /* ── Rich Code Blocks with Header & 1-Click Copy ────────────────────── */
@@ -9533,14 +9552,47 @@ DISC;
         starterChipsData = chips;
         var html = '';
         chips.forEach(function(chip) {
-            var label = sdvEscapeHtml(chip.label || chip.prompt || '');
-            var icon = chip.icon ? '<span style="font-size:12.5px;">' + sdvEscapeHtml(chip.icon) + '</span>' : '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>';
-            var safePromptAttr = encodeURIComponent(chip.prompt || chip.label || '');
+            var rawText = '';
+            var promptText = '';
+            var customIcon = '';
+
+            if (typeof chip === 'string') {
+                rawText = chip.trim();
+                promptText = rawText;
+            } else if (chip && typeof chip === 'object') {
+                rawText = String(chip.label || chip.prompt || chip.text || chip.title || '').trim();
+                promptText = String(chip.prompt || chip.label || chip.text || chip.title || '').trim();
+                if (chip.icon) {
+                    customIcon = String(chip.icon).trim();
+                }
+            }
+
+            // Safety: Skip any chip that has no readable text
+            if (!rawText) return;
+
+            var iconHtml = '';
+            if (customIcon) {
+                iconHtml = '<span class="sdv-starter-chip-icon" style="font-size:12.5px;line-height:1;display:inline-flex;align-items:center;">' + sdvEscapeHtml(customIcon) + '</span>';
+            } else {
+                // If text starts with an emoji, the emoji is part of the text - don't prepend extra svg
+                var hasLeadingEmoji = /^(\u00a9|\u00ae|[\u2000-\u3300]|\ud83c[\ud000-\udfff]|\ud83d[\ud000-\udfff]|\ud83e[\ud000-\udfff])/i.test(rawText);
+                if (!hasLeadingEmoji) {
+                    iconHtml = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="flex-shrink:0;opacity:0.8;"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>';
+                }
+            }
+
+            var safePromptAttr = encodeURIComponent(promptText);
             html += '<button type="button" class="sdv-starter-chip" onclick="window.sdvSendPromptChip && window.sdvSendPromptChip(decodeURIComponent(\'' + safePromptAttr + '\'));">' +
-                icon +
-                '<span>' + label + '</span>' +
+                iconHtml +
+                '<span>' + sdvEscapeHtml(rawText) + '</span>' +
             '</button>';
         });
+
+        if (!html) {
+            container.style.display = 'none';
+            container.innerHTML = '';
+            return;
+        }
 
         container.innerHTML = html;
         container.style.display = 'flex';

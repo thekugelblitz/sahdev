@@ -2126,6 +2126,9 @@ class ChatService
             // Check if admin has configured custom starter chips in settings
             $customChips = trim((string) self::getChatSetting('client_chat_starter_chips', ''));
             if (!empty($customChips)) {
+                if (in_array(strtolower($customChips), ['none', 'disabled', 'off', '0', 'false', 'hide'], true)) {
+                    return [];
+                }
                 $lines = array_filter(array_map('trim', explode("\n", str_replace("\r", "", $customChips))));
                 if (!empty($lines)) {
                     return array_values($lines);

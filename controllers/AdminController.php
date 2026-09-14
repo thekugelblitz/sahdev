@@ -9592,9 +9592,9 @@ class AdminController
 
                                     <div class="form-group" style="margin-bottom: 22px;">
                                         <label style="font-weight: 700;"><i class="fas fa-magic text-primary"></i> Interactive Conversation Starter Chips</label>
-                                        <textarea name="client_chat_starter_chips" class="form-control" rows="4" placeholder="⚡ Check Server Status &amp; Outages&#10;📧 Email &amp; Webmail Setup Guide&#10;🌐 Domain &amp; DNS Management&#10;🎫 Open Support Ticket"><?php echo htmlspecialchars($settings->client_chat_starter_chips ?? ''); ?></textarea>
+                                        <textarea name="client_chat_starter_chips" class="form-control" rows="4" placeholder="⚡ Check Server Status &amp; Outages&#10;📧 Email &amp; Webmail Setup Guide&#10;🌐 Domain &amp; DNS Management&#10;🎫 Open Support Ticket (or enter 'none' to disable)"><?php echo htmlspecialchars($settings->client_chat_starter_chips ?? ''); ?></textarea>
                                         <span class="help-block" style="font-size: 11.5px; margin-top: 4px;">
-                                            Enter custom starter prompts (one per line). These are shown as 1-click clickable chips when a user opens the chat or starts a new thread. Leave empty to automatically use dynamic client-aware starters (unpaid invoices, open tickets, server status).
+                                            Enter custom starter prompts (one per line). These are shown as 1-click clickable chips when a user opens the chat or starts a new thread. Leave empty to automatically use dynamic client-aware starters (unpaid invoices, open tickets, server status), or enter <code>none</code> to completely disable chips.
                                         </span>
                                     </div>
 
