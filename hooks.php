@@ -6187,38 +6187,87 @@ HTML;
         $whatsappTabBtn .
     '</div>';
 
-    // WhatsApp Panel View
+    // WhatsApp Panel View (Ultra-Modern, Sleek Hub)
     $whatsappPanelHtml = '';
     if ($whatsappEnabled && !empty($whatsappDepartments)) {
         if (count($whatsappDepartments) > 1) {
             $deptCardsHtml = '';
             foreach ($whatsappDepartments as $dept) {
-                $deptCardsHtml .= '<div class="sdv-wa-dept-card">' .
-                    '<div class="sdv-wa-dept-info">' .
-                        '<div class="sdv-wa-dept-label">' . $dept['label'] . '</div>' .
-                        '<div class="sdv-wa-dept-status"><span class="sdv-wa-dot"></span> Online &bull; Direct WhatsApp</div>' .
-                        '<div class="sdv-wa-dept-phone">' . $dept['number'] . '</div>' .
+                $lowerLabel = strtolower($dept['label']);
+                if (strpos($lowerLabel, 'international') !== false || strpos($lowerLabel, 'global') !== false || strpos($lowerLabel, 'world') !== false) {
+                    $iconSvg = '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>';
+                    $metaBadge = 'Global Desk &bull; 24/7 Available';
+                } elseif (strpos($lowerLabel, 'india') !== false || strpos($lowerLabel, 'regional') !== false || strpos($lowerLabel, 'domestic') !== false) {
+                    $iconSvg = '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>';
+                    $metaBadge = 'Regional Desk &bull; Direct WhatsApp';
+                } elseif (strpos($lowerLabel, 'tech') !== false || strpos($lowerLabel, 'support') !== false || strpos($lowerLabel, 'engineer') !== false) {
+                    $iconSvg = '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg>';
+                    $metaBadge = 'Technical Engineers &bull; Instant Help';
+                } elseif (strpos($lowerLabel, 'bill') !== false || strpos($lowerLabel, 'sale') !== false || strpos($lowerLabel, 'account') !== false) {
+                    $iconSvg = '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>';
+                    $metaBadge = 'Sales &amp; Accounts &bull; Priority Routing';
+                } else {
+                    $iconSvg = '<svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor"><path d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.816 9.816 0 0 0 12.04 2m.01 1.67c2.2 0 4.26.86 5.82 2.42a8.225 8.225 0 0 1 2.41 5.83c0 4.54-3.7 8.24-8.24 8.24-1.48 0-2.93-.4-4.2-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.19 8.19 0 0 1-1.26-4.38c0-4.54 3.7-8.24 8.24-8.24m4.52 11.66c-.25-.13-1.47-.72-1.7-.81-.23-.08-.39-.13-.56.13-.17.25-.64.81-.79.97-.14.17-.29.19-.54.06-.25-.13-1.06-.39-2.02-1.24-.75-.67-1.26-1.49-1.41-1.74-.14-.25-.02-.39.11-.51.11-.11.25-.29.37-.44.13-.14.17-.25.25-.42.08-.17.04-.31-.02-.44-.06-.13-.56-1.35-.77-1.85-.2-.49-.41-.42-.56-.43h-.48c-.17 0-.44.06-.67.31-.23.25-.88.86-.88 2.1 0 1.24.9 2.44 1.03 2.61.13.17 1.78 2.72 4.31 3.81.6.26 1.07.42 1.44.54.61.19 1.16.17 1.6.1.49-.07 1.47-.6 1.68-1.18.21-.58.21-1.07.15-1.18-.06-.11-.22-.18-.47-.31"/></svg>';
+                    $metaBadge = 'Online &bull; Direct WhatsApp';
+                }
+
+                $deptCardsHtml .= '<a href="' . $dept['url'] . '" target="_blank" rel="noopener noreferrer" class="sdv-wa-dept-card">' .
+                    '<div class="sdv-wa-dept-left">' .
+                        '<div class="sdv-wa-avatar-box">' . $iconSvg . '</div>' .
+                        '<div class="sdv-wa-dept-details">' .
+                            '<div class="sdv-wa-dept-name">' . $dept['label'] . '</div>' .
+                            '<div class="sdv-wa-dept-phone-row">' .
+                                '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>' .
+                                '<span>' . $dept['number'] . '</span>' .
+                            '</div>' .
+                            '<div class="sdv-wa-dept-meta">' .
+                                '<span class="sdv-wa-meta-dot"></span>' .
+                                '<span>' . $metaBadge . '</span>' .
+                            '</div>' .
+                        '</div>' .
                     '</div>' .
-                    '<a href="' . $dept['url'] . '" target="_blank" rel="noopener noreferrer" class="sdv-wa-dept-btn">' .
-                        '<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.816 9.816 0 0 0 12.04 2m.01 1.67c2.2 0 4.26.86 5.82 2.42a8.225 8.225 0 0 1 2.41 5.83c0 4.54-3.7 8.24-8.24 8.24-1.48 0-2.93-.4-4.2-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.19 8.19 0 0 1-1.26-4.38c0-4.54 3.7-8.24 8.24-8.24m4.52 11.66c-.25-.13-1.47-.72-1.7-.81-.23-.08-.39-.13-.56.13-.17.25-.64.81-.79.97-.14.17-.29.19-.54.06-.25-.13-1.06-.39-2.02-1.24-.75-.67-1.26-1.49-1.41-1.74-.14-.25-.02-.39.11-.51.11-.11.25-.29.37-.44.13-.14.17-.25.25-.42.08-.17.04-.31-.02-.44-.06-.13-.56-1.35-.77-1.85-.2-.49-.41-.42-.56-.43h-.48c-.17 0-.44.06-.67.31-.23.25-.88.86-.88 2.1 0 1.24.9 2.44 1.03 2.61.13.17 1.78 2.72 4.31 3.81.6.26 1.07.42 1.44.54.61.19 1.16.17 1.6.1.49-.07 1.47-.6 1.68-1.18.21-.58.21-1.07.15-1.18-.06-.11-.22-.18-.47-.31"/></svg>' .
-                        '<span>Chat &rarr;</span>' .
-                    '</a>' .
-                '</div>';
+                    '<div class="sdv-wa-dept-action">' .
+                        '<span>Chat</span>' .
+                        '<svg class="sdv-wa-arrow-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>' .
+                    '</div>' .
+                '</a>';
             }
+
             $whatsappPanelHtml = <<<WAHTML
             <div class="sdv-tab-panel sdv-tab-panel-whatsapp" id="sdv-panel-whatsapp" style="display:none;">
-                <div class="sdv-wa-multi-wrap">
-                    <div class="sdv-wa-multi-header">
-                        <div class="sdv-wa-multi-icon">
-                            <svg width="28" height="28" viewBox="0 0 24 24" fill="#25D366"><path d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.816 9.816 0 0 0 12.04 2m.01 1.67c2.2 0 4.26.86 5.82 2.42a8.225 8.225 0 0 1 2.41 5.83c0 4.54-3.7 8.24-8.24 8.24-1.48 0-2.93-.4-4.2-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.19 8.19 0 0 1-1.26-4.38c0-4.54 3.7-8.24 8.24-8.24m4.52 11.66c-.25-.13-1.47-.72-1.7-.81-.23-.08-.39-.13-.56.13-.17.25-.64.81-.79.97-.14.17-.29.19-.54.06-.25-.13-1.06-.39-2.02-1.24-.75-.67-1.26-1.49-1.41-1.74-.14-.25-.02-.39.11-.51.11-.11.25-.29.37-.44.13-.14.17-.25.25-.42.08-.17.04-.31-.02-.44-.06-.13-.56-1.35-.77-1.85-.2-.49-.41-.42-.56-.43h-.48c-.17 0-.44.06-.67.31-.23.25-.88.86-.88 2.1 0 1.24.9 2.44 1.03 2.61.13.17 1.78 2.72 4.31 3.81.6.26 1.07.42 1.44.54.61.19 1.16.17 1.6.1.49-.07 1.47-.6 1.68-1.18.21-.58.21-1.07.15-1.18-.06-.11-.22-.18-.47-.31"/></svg>
+                <div class="sdv-wa-panel-body">
+                    <div class="sdv-wa-hero">
+                        <div class="sdv-wa-badge-row">
+                            <span class="sdv-wa-verified-badge">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
+                                Verified Business
+                            </span>
+                            <span class="sdv-wa-speed-pill">
+                                <span class="sdv-wa-pulse-dot"></span>
+                                <span>Live Team Online</span>
+                            </span>
                         </div>
-                        <div>
-                            <div class="sdv-wa-multi-title">Choose WhatsApp Department</div>
-                            <div class="sdv-wa-multi-desc">Select a department below to start a direct chat with our staff:</div>
-                        </div>
+                        <div class="sdv-wa-hero-title">Direct WhatsApp Support</div>
+                        <div class="sdv-wa-hero-subtitle">Connect instantly with our dedicated support engineers on WhatsApp. Average response time is under 5 minutes.</div>
                     </div>
+
+                    <div class="sdv-wa-section-title">
+                        <span>Select Your Department</span>
+                        <span class="sdv-wa-reply-speed">⚡ Under 5 min reply</span>
+                    </div>
+
                     <div class="sdv-wa-dept-list">
                         {$deptCardsHtml}
+                    </div>
+
+                    <div class="sdv-wa-trust-card">
+                        <div class="sdv-wa-trust-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                        </div>
+                        <div>
+                            <div class="sdv-wa-trust-title">Secure &amp; Encrypted Channel</div>
+                            <div class="sdv-wa-trust-desc">All conversations are encrypted and handled directly by verified staff. Need a formal ticket? <a href="javascript:void(0);" onclick="window.sdvEscalateToTicket&&window.sdvEscalateToTicket();" class="sdv-wa-ticket-link">Open a ticket &rarr;</a></div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -6231,25 +6280,55 @@ WAHTML;
             $deptTitle = $primaryDept['label'];
             $whatsappPanelHtml = <<<WAHTML
             <div class="sdv-tab-panel sdv-tab-panel-whatsapp" id="sdv-panel-whatsapp" style="display:none;">
-                <div class="sdv-wa-card">
-                    <div class="sdv-wa-icon-glow">
-                        <svg width="42" height="42" viewBox="0 0 24 24" fill="#25D366"><path d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.816 9.816 0 0 0 12.04 2m.01 1.67c2.2 0 4.26.86 5.82 2.42a8.225 8.225 0 0 1 2.41 5.83c0 4.54-3.7 8.24-8.24 8.24-1.48 0-2.93-.4-4.2-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.19 8.19 0 0 1-1.26-4.38c0-4.54 3.7-8.24 8.24-8.24m4.52 11.66c-.25-.13-1.47-.72-1.7-.81-.23-.08-.39-.13-.56.13-.17.25-.64.81-.79.97-.14.17-.29.19-.54.06-.25-.13-1.06-.39-2.02-1.24-.75-.67-1.26-1.49-1.41-1.74-.14-.25-.02-.39.11-.51.11-.11.25-.29.37-.44.13-.14.17-.25.25-.42.08-.17.04-.31-.02-.44-.06-.13-.56-1.35-.77-1.85-.2-.49-.41-.42-.56-.43h-.48c-.17 0-.44.06-.67.31-.23.25-.88.86-.88 2.1 0 1.24.9 2.44 1.03 2.61.13.17 1.78 2.72 4.31 3.81.6.26 1.07.42 1.44.54.61.19 1.16.17 1.6.1.49-.07 1.47-.6 1.68-1.18.21-.58.21-1.07.15-1.18-.06-.11-.22-.18-.47-.31"/></svg>
+                <div class="sdv-wa-panel-body">
+                    <div class="sdv-wa-hero">
+                        <div class="sdv-wa-badge-row">
+                            <span class="sdv-wa-verified-badge">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
+                                Verified Business
+                            </span>
+                            <span class="sdv-wa-speed-pill">
+                                <span class="sdv-wa-pulse-dot"></span>
+                                <span>Live Team Online</span>
+                            </span>
+                        </div>
+                        <div class="sdv-wa-hero-title">Official WhatsApp Channel</div>
+                        <div class="sdv-wa-hero-subtitle">Connect directly with our dedicated staff on WhatsApp for immediate priority support.</div>
                     </div>
-                    <div class="sdv-wa-title">{$deptTitle}</div>
-                    <div class="sdv-wa-status"><span class="sdv-wa-dot"></span> Online &bull; Direct Human &amp; Staff Support</div>
-                    <p class="sdv-wa-desc">Connect directly with our support team on WhatsApp for immediate assistance, billing questions, or urgent hosting inquiries.</p>
-                    <div class="sdv-wa-num-badge">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
-                        <span>{$deptNum}</span>
+
+                    <div class="sdv-wa-single-card">
+                        <div class="sdv-wa-single-top">
+                            <div class="sdv-wa-single-avatar">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="#25D366"><path d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.816 9.816 0 0 0 12.04 2m.01 1.67c2.2 0 4.26.86 5.82 2.42a8.225 8.225 0 0 1 2.41 5.83c0 4.54-3.7 8.24-8.24 8.24-1.48 0-2.93-.4-4.2-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.19 8.19 0 0 1-1.26-4.38c0-4.54 3.7-8.24 8.24-8.24m4.52 11.66c-.25-.13-1.47-.72-1.7-.81-.23-.08-.39-.13-.56.13-.17.25-.64.81-.79.97-.14.17-.29.19-.54.06-.25-.13-1.06-.39-2.02-1.24-.75-.67-1.26-1.49-1.41-1.74-.14-.25-.02-.39.11-.51.11-.11.25-.29.37-.44.13-.14.17-.25.25-.42.08-.17.04-.31-.02-.44-.06-.13-.56-1.35-.77-1.85-.2-.49-.41-.42-.56-.43h-.48c-.17 0-.44.06-.67.31-.23.25-.88.86-.88 2.1 0 1.24.9 2.44 1.03 2.61.13.17 1.78 2.72 4.31 3.81.6.26 1.07.42 1.44.54.61.19 1.16.17 1.6.1.49-.07 1.47-.6 1.68-1.18.21-.58.21-1.07.15-1.18-.06-.11-.22-.18-.47-.31"/></svg>
+                            </div>
+                            <div>
+                                <div class="sdv-wa-single-name">{$deptTitle}</div>
+                                <div class="sdv-wa-single-status"><span class="sdv-wa-meta-dot"></span> Online &bull; Direct Human Support</div>
+                            </div>
+                        </div>
+                        <div class="sdv-wa-single-badge">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+                            <span>{$deptNum}</span>
+                        </div>
+                        <div class="sdv-wa-preview-box">
+                            <span class="sdv-wa-preview-label">Pre-filled starter message:</span>
+                            <span class="sdv-wa-preview-text">"{$deptMsg}"</span>
+                        </div>
+                        <a href="{$whatsappUrl}" target="_blank" rel="noopener noreferrer" class="sdv-wa-single-btn">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.816 9.816 0 0 0 12.04 2m.01 1.67c2.2 0 4.26.86 5.82 2.42a8.225 8.225 0 0 1 2.41 5.83c0 4.54-3.7 8.24-8.24 8.24-1.48 0-2.93-.4-4.2-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.19 8.19 0 0 1-1.26-4.38c0-4.54 3.7-8.24 8.24-8.24m4.52 11.66c-.25-.13-1.47-.72-1.7-.81-.23-.08-.39-.13-.56.13-.17.25-.64.81-.79.97-.14.17-.29.19-.54.06-.25-.13-1.06-.39-2.02-1.24-.75-.67-1.26-1.49-1.41-1.74-.14-.25-.02-.39.11-.51.11-.11.25-.29.37-.44.13-.14.17-.25.25-.42.08-.17.04-.31-.02-.44-.06-.13-.56-1.35-.77-1.85-.2-.49-.41-.42-.56-.43h-.48c-.17 0-.44.06-.67.31-.23.25-.88.86-.88 2.1 0 1.24.9 2.44 1.03 2.61.13.17 1.78 2.72 4.31 3.81.6.26 1.07.42 1.44.54.61.19 1.16.17 1.6.1.49-.07 1.47-.6 1.68-1.18.21-.58.21-1.07.15-1.18-.06-.11-.22-.18-.47-.31"/></svg>
+                            <span>Start Direct WhatsApp Chat &rarr;</span>
+                        </a>
                     </div>
-                    <div class="sdv-wa-preview-box">
-                        <span class="sdv-wa-preview-label">Pre-filled message:</span>
-                        <span class="sdv-wa-preview-text">"{$deptMsg}"</span>
+
+                    <div class="sdv-wa-trust-card">
+                        <div class="sdv-wa-trust-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                        </div>
+                        <div>
+                            <div class="sdv-wa-trust-title">Secure &amp; Encrypted Channel</div>
+                            <div class="sdv-wa-trust-desc">All conversations are encrypted and handled directly by verified staff. Need a formal ticket? <a href="javascript:void(0);" onclick="window.sdvEscalateToTicket&&window.sdvEscalateToTicket();" class="sdv-wa-ticket-link">Open a ticket &rarr;</a></div>
+                        </div>
                     </div>
-                    <a href="{$whatsappUrl}" target="_blank" rel="noopener noreferrer" class="sdv-wa-launch-btn">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.816 9.816 0 0 0 12.04 2m.01 1.67c2.2 0 4.26.86 5.82 2.42a8.225 8.225 0 0 1 2.41 5.83c0 4.54-3.7 8.24-8.24 8.24-1.48 0-2.93-.4-4.2-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.19 8.19 0 0 1-1.26-4.38c0-4.54 3.7-8.24 8.24-8.24m4.52 11.66c-.25-.13-1.47-.72-1.7-.81-.23-.08-.39-.13-.56.13-.17.25-.64.81-.79.97-.14.17-.29.19-.54.06-.25-.13-1.06-.39-2.02-1.24-.75-.67-1.26-1.49-1.41-1.74-.14-.25-.02-.39.11-.51.11-.11.25-.29.37-.44.13-.14.17-.25.25-.42.08-.17.04-.31-.02-.44-.06-.13-.56-1.35-.77-1.85-.2-.49-.41-.42-.56-.43h-.48c-.17 0-.44.06-.67.31-.23.25-.88.86-.88 2.1 0 1.24.9 2.44 1.03 2.61.13.17 1.78 2.72 4.31 3.81.6.26 1.07.42 1.44.54.61.19 1.16.17 1.6.1.49-.07 1.47-.6 1.68-1.18.21-.58.21-1.07.15-1.18-.06-.11-.22-.18-.47-.31"/></svg>
-                        <span>Open WhatsApp Chat &rarr;</span>
-                    </a>
                 </div>
             </div>
 WAHTML;
@@ -8337,7 +8416,7 @@ DISC;
     align-items: center !important;
     justify-content: center !important;
     border-radius: 50% !important;
-    filter: drop-shadow(0 4px 14px rgba(236, 72, 153, 0.55)) drop-shadow(0 2px 8px rgba(168, 85, 247, 0.5)) !important;
+    filter: none !important;
     overflow: visible !important;
 }
 #sdv-client-chat-window.sdv-theme-apple_siri .sdv-siri-orb {
@@ -8347,7 +8426,7 @@ DISC;
     position: relative !important;
     overflow: hidden !important;
     background: radial-gradient(circle at 32% 28%, #ff3366 0%, #ff6b4a 24%, #a855f7 55%, #3b82f6 82%, #06b6d4 100%) !important;
-    box-shadow: inset 0 2px 4px rgba(255, 255, 255, 0.7), 0 0 16px rgba(168, 85, 247, 0.45) !important;
+    box-shadow: inset 0 2px 5px rgba(255, 255, 255, 0.75), 0 2px 5px rgba(0, 0, 0, 0.12) !important;
 }
 #sdv-client-chat-window.sdv-theme-apple_siri .sdv-cl-title-block {
     display: flex !important;
@@ -8674,103 +8753,350 @@ DISC;
     transform: scale(1.1);
 }
 
-/* WhatsApp Multi-Department Layout */
-.sdv-wa-multi-wrap {
-    padding: 16px 14px;
+/* ── Revamped WhatsApp Hub Layout ──────────────────────────────────── */
+.sdv-wa-panel-body {
+    padding: 18px 16px;
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 14px;
     overflow-y: auto;
     height: 100%;
+    box-sizing: border-box;
 }
-.sdv-wa-multi-header {
+.sdv-wa-hero {
+    background: linear-gradient(135deg, rgba(37, 211, 102, 0.08) 0%, rgba(16, 185, 129, 0.03) 100%);
+    border: 1px solid rgba(37, 211, 102, 0.22);
+    border-radius: 12px;
+    padding: 15px 16px 13px 16px;
+    position: relative;
+    overflow: hidden;
+}
+.sdv-wa-hero::before {
+    content: "";
+    position: absolute;
+    top: -25px;
+    right: -25px;
+    width: 80px;
+    height: 80px;
+    background: radial-gradient(circle, rgba(37, 211, 102, 0.14) 0%, transparent 70%);
+    border-radius: 50%;
+    pointer-events: none;
+}
+.sdv-wa-badge-row {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 12px 14px;
-    background: #f0fdf4;
-    border: 1px solid #bbf7d0;
-    border-radius: 12px;
+    justify-content: space-between;
+    margin-bottom: 7px;
 }
-.sdv-wa-multi-icon {
-    flex-shrink: 0;
-}
-.sdv-wa-multi-title {
-    font-size: 13.5px;
-    font-weight: 700;
-    color: #166534;
-}
-.sdv-wa-multi-desc {
-    font-size: 11px;
+.sdv-wa-verified-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: rgba(37, 211, 102, 0.16);
     color: #15803d;
-    margin-top: 2px;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    padding: 3px 8px;
+    border-radius: 20px;
+    text-transform: uppercase;
+}
+.sdv-wa-speed-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: #16a34a;
+    font-weight: 600;
+}
+.sdv-wa-pulse-dot {
+    width: 6px;
+    height: 6px;
+    background: #22c55e;
+    border-radius: 50%;
+    box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.25);
+    animation: sdvPulse 2s infinite;
+}
+@keyframes sdvPulse {
+    0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.5); }
+    70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(34, 197, 94, 0); }
+    100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+}
+.sdv-wa-hero-title {
+    font-size: 14.5px;
+    font-weight: 700;
+    color: #0f172a;
+    margin: 0 0 3px 0;
+    letter-spacing: -0.01em;
+}
+.sdv-wa-hero-subtitle {
+    font-size: 12px;
+    color: #475569;
+    margin: 0;
+    line-height: 1.45;
+}
+.sdv-wa-section-title {
+    font-size: 11.5px;
+    font-weight: 700;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: 2px 0 -4px 0;
+}
+.sdv-wa-reply-speed {
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: none;
+    color: #10b981;
 }
 .sdv-wa-dept-list {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 9px;
 }
 .sdv-wa-dept-card {
     background: #ffffff;
-    border: 1px solid #e5e7eb;
+    border: 1px solid #e2e8f0;
     border-radius: 12px;
     padding: 12px 14px;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
-    transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+    text-decoration: none !important;
+    position: relative;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+    cursor: pointer !important;
 }
 .sdv-wa-dept-card:hover {
-    transform: translateY(-1px);
-    border-color: #22c55e;
-    box-shadow: 0 4px 12px rgba(34, 197, 94, 0.12);
+    transform: translateY(-2px);
+    border-color: #10b981;
+    background: #fafdfc;
+    box-shadow: 0 8px 20px -4px rgba(16, 185, 129, 0.15), 0 0 0 1px rgba(16, 185, 129, 0.2);
 }
-.sdv-wa-dept-info {
+.sdv-wa-dept-card:active {
+    transform: translateY(0);
+}
+.sdv-wa-dept-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+.sdv-wa-avatar-box {
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+    border: 1px solid rgba(34, 197, 94, 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    color: #16a34a;
+    transition: transform 0.2s ease, background 0.2s ease;
+}
+.sdv-wa-dept-card:hover .sdv-wa-avatar-box {
+    transform: scale(1.05);
+    background: #25d366;
+    color: #ffffff;
+    border-color: #25d366;
+}
+.sdv-wa-dept-details {
     display: flex;
     flex-direction: column;
     gap: 2px;
 }
-.sdv-wa-dept-label {
+.sdv-wa-dept-name {
     font-size: 13px;
     font-weight: 700;
-    color: #1e293b;
+    color: #0f172a;
+    line-height: 1.25;
 }
-.sdv-wa-dept-status {
-    font-size: 10.5px;
-    color: #16a34a;
+.sdv-wa-dept-phone-row {
     display: flex;
     align-items: center;
     gap: 5px;
-}
-.sdv-wa-dept-phone {
-    font-size: 11px;
+    font-size: 11.5px;
     color: #64748b;
-    font-family: monospace;
 }
-.sdv-wa-dept-btn {
-    background: #25d366;
-    color: #ffffff !important;
-    text-decoration: none !important;
-    font-size: 12px;
-    font-weight: 600;
-    padding: 7px 14px;
-    border-radius: 18px;
+.sdv-wa-dept-meta {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    color: #15803d;
+    font-weight: 500;
+}
+.sdv-wa-meta-dot {
+    width: 5px;
+    height: 5px;
+    background: #22c55e;
+    border-radius: 50%;
+    display: inline-block;
+}
+.sdv-wa-dept-action {
     display: inline-flex;
     align-items: center;
     gap: 6px;
+    background: #f1f5f9;
+    color: #0f172a;
+    padding: 7px 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    border: 1px solid #e2e8f0;
+    transition: all 0.18s ease;
     white-space: nowrap;
-    transition: background 0.15s ease, transform 0.15s ease;
-    box-shadow: 0 2px 6px rgba(37, 211, 102, 0.28);
-    cursor: pointer !important;
+    flex-shrink: 0;
 }
-.sdv-wa-dept-btn:hover {
-    background: #1eb954;
-    transform: scale(1.03);
-    color: #ffffff !important;
+.sdv-wa-dept-card:hover .sdv-wa-dept-action {
+    background: #25d366;
+    color: #ffffff;
+    border-color: #25d366;
+    box-shadow: 0 4px 12px rgba(37, 211, 102, 0.35);
+}
+.sdv-wa-arrow-icon {
+    transition: transform 0.18s ease;
+}
+.sdv-wa-dept-card:hover .sdv-wa-arrow-icon {
+    transform: translateX(3px);
+}
+.sdv-wa-trust-card {
+    background: #f8fafc;
+    border: 1px dashed #cbd5e1;
+    border-radius: 12px;
+    padding: 12px 14px;
+    margin-top: auto;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+}
+.sdv-wa-trust-icon {
+    color: #64748b;
+    flex-shrink: 0;
+    margin-top: 1px;
+}
+.sdv-wa-trust-title {
+    font-size: 11.5px;
+    font-weight: 700;
+    color: #334155;
+    margin-bottom: 2px;
+}
+.sdv-wa-trust-desc {
+    font-size: 11px;
+    color: #64748b;
+    line-height: 1.4;
+    margin: 0;
+}
+.sdv-wa-ticket-link {
+    color: #2563eb;
+    text-decoration: none;
+    font-weight: 600;
+    cursor: pointer;
+}
+.sdv-wa-ticket-link:hover {
+    text-decoration: underline;
 }
 
-/* ── macOS / Apple Siri Fluid Glowing Orb ────────────────────────── */
+/* Single department card */
+.sdv-wa-single-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 18px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.04);
+}
+.sdv-wa-single-top {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+.sdv-wa-single-avatar {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+.sdv-wa-single-name {
+    font-size: 14.5px;
+    font-weight: 700;
+    color: #0f172a;
+}
+.sdv-wa-single-status {
+    font-size: 11.5px;
+    color: #15803d;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 2px;
+}
+.sdv-wa-single-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: #f1f5f9;
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #334155;
+    align-self: flex-start;
+}
+.sdv-wa-preview-box {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 11px;
+    color: #64748b;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.sdv-wa-preview-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    font-weight: 700;
+    color: #94a3b8;
+    letter-spacing: 0.3px;
+}
+.sdv-wa-preview-text {
+    color: #334155;
+    font-style: italic;
+}
+.sdv-wa-single-btn {
+    background: #25d366;
+    color: #ffffff !important;
+    text-decoration: none !important;
+    padding: 11px 16px;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: all 0.18s ease;
+    box-shadow: 0 4px 14px rgba(37, 211, 102, 0.35);
+}
+.sdv-wa-single-btn:hover {
+    background: #1eb954;
+    transform: translateY(-1px);
+    box-shadow: 0 6px 18px rgba(37, 211, 102, 0.45);
+}
+
+/* ── macOS / Apple Siri Fluid Glowing Orb (Crisp, No Background Blur/Haze) ── */
 .sdv-siri-orb-wrap {
     width: 42px;
     height: 42px;
@@ -8779,7 +9105,7 @@ DISC;
     align-items: center;
     justify-content: center;
     border-radius: 50%;
-    filter: drop-shadow(0 4px 14px rgba(236, 72, 153, 0.55)) drop-shadow(0 2px 8px rgba(168, 85, 247, 0.5));
+    filter: none !important;
     cursor: default;
     user-select: none;
     overflow: visible;
@@ -8792,7 +9118,7 @@ DISC;
     position: relative;
     overflow: hidden;
     background: radial-gradient(circle at 32% 28%, #ff3366 0%, #ff6b4a 24%, #a855f7 55%, #3b82f6 82%, #06b6d4 100%);
-    box-shadow: inset 0 2px 4px rgba(255, 255, 255, 0.7), 0 0 16px rgba(168, 85, 247, 0.45);
+    box-shadow: inset 0 2px 5px rgba(255, 255, 255, 0.75), 0 2px 5px rgba(0, 0, 0, 0.12);
     animation: sdvSiriBreathing 3.6s ease-in-out infinite alternate;
 }
 .sdv-siri-orb-core {
@@ -8817,8 +9143,8 @@ DISC;
     position: absolute;
     inset: -1px;
     border-radius: 50%;
-    border: 1px solid rgba(255, 255, 255, 0.5);
-    box-shadow: 0 0 12px rgba(147, 51, 234, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    box-shadow: none;
     pointer-events: none;
 }
 .sdv-siri-fallback-wrap {
