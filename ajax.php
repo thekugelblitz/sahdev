@@ -2,6 +2,8 @@
 
 use WHMCS\Database\Capsule;
 
+require_once __DIR__ . '/autoload.php';
+
 /**
  * Sahdev AI - AJAX Endpoint
  * Secured entry point for analyzing tickets.

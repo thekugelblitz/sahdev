@@ -2,6 +2,8 @@
 
 use WHMCS\Database\Capsule;
 
+require_once __DIR__ . '/autoload.php';
+
 function sahdev_inject_ticket_panel($vars)
 {
     $ticketId = (int) ($vars['ticketid'] ?? 0);
@@ -7925,7 +7927,7 @@ HTML;
 
         <!-- Hero New Conversation Card -->
         <div class="sdv-drawer-hero-action">
-            <button type="button" class="sdv-hero-new-btn" id="sdv-btn-new-chat" onclick="window.sdvStartNewChat && window.sdvStartNewChat();">
+            <button type="button" class="sdv-hero-new-btn" id="sdv-btn-new-chat">
                 <div class="sdv-hero-new-icon">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                 </div>
@@ -8061,7 +8063,7 @@ HTML;
     <div class="sdv-cl-footer">
         <div class="sdv-cl-input-row">
             <input type="text" id="sdv-cl-input" placeholder="Ask about services, invoices, domains..." autocomplete="off" {$maxMsgAttr} />
-            <button type="button" id="sdv-cl-send" title="Send message" onclick="window.sdvSendMessage && window.sdvSendMessage();">
+            <button type="button" id="sdv-cl-send" title="Send message">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" style="pointer-events:none;"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
             </button>
         </div>
@@ -8443,6 +8445,7 @@ HTML;
     }
 
     // ── Cross-Window Live Broadcast Engine ────────────────────────────────
+    var currentTabId = 'tab_' + Math.random().toString(36).substring(2, 9) + Date.now().toString(36);
     var syncChannel = null;
     try {
         if (typeof window.BroadcastChannel !== 'undefined') {
@@ -8463,7 +8466,7 @@ HTML;
     });
 
     function broadcastLiveSync(action, payload) {
-        var data = Object.assign({ action: action, client_id: currentClientId, ts: Date.now() }, payload);
+        var data = Object.assign({ action: action, client_id: currentClientId, sender_tab: currentTabId, ts: Date.now() }, payload);
         if (syncChannel) {
             try { syncChannel.postMessage(data); } catch(e) {}
         }
@@ -8472,6 +8475,10 @@ HTML;
 
     function handleLiveSync(data) {
         if (!data || !data.action) return;
+        // Never process events broadcast by THIS tab itself
+        if (data.sender_tab && data.sender_tab === currentTabId) {
+            return;
+        }
         // Strict Tenant Boundary: Ignore events belonging to a different client account
         if (typeof data.client_id !== 'undefined' && data.client_id !== currentClientId) {
             return;
@@ -8479,6 +8486,14 @@ HTML;
         if (data.action === 'new_message' && data.session_uuid === sessionUuid) {
             if (data.msg_id && document.getElementById('sdv-msg-' + data.msg_id)) {
                 return;
+            }
+            // Message-level deduplication: If identical message was just rendered in this tab, skip
+            var msgsEl = document.getElementById('sdv-cl-msgs');
+            if (msgsEl && msgsEl.lastElementChild) {
+                var lastText = (msgsEl.lastElementChild.textContent || '').trim();
+                if (lastText === (data.text || '').trim()) {
+                    return;
+                }
             }
             appendClMsg(data.role, data.text, false, data.msg_id);
             if (data.msg_id && data.msg_id > highestMsgId) {
@@ -8726,9 +8741,10 @@ HTML;
     function postAjaxWithFallback(form, callback, candidateIdx) {
         candidateIdx = candidateIdx || 0;
         var targetUrl = uniqueEndpoints[candidateIdx];
+        var actionName = (form && typeof form.get === 'function') ? form.get('action') : '';
 
         if (!targetUrl) {
-            callback(new Error('No reachable chat endpoint found.'));
+            try { callback(new Error('No reachable chat endpoint found.')); } catch(e) {}
             return;
         }
 
@@ -8736,10 +8752,13 @@ HTML;
             console.log('[Sahdev LiveChat] Attempting endpoint (' + (candidateIdx + 1) + '/' + uniqueEndpoints.length + '): ' + targetUrl);
         }
 
+        var isMutating = (actionName === 'client_chat_message' || actionName === 'client_chat_new_session' || actionName === 'client_chat_escalate');
+
         fetch(targetUrl, { method: 'POST', body: form })
         .then(function(r) {
             if (!r.ok) {
-                if (candidateIdx + 1 < uniqueEndpoints.length) {
+                // If it's a 4xx client/auth error or if mutating action already hit server, don't cascade fallback
+                if (!isMutating && (candidateIdx + 1 < uniqueEndpoints.length)) {
                     return postAjaxWithFallback(form, callback, candidateIdx + 1);
                 }
                 throw new Error('Server returned HTTP ' + r.status);
@@ -8750,21 +8769,29 @@ HTML;
                 try {
                     data = JSON.parse(rawText);
                 } catch (jsonErr) {
-                    if (candidateIdx + 1 < uniqueEndpoints.length) {
+                    if (!isMutating && (candidateIdx + 1 < uniqueEndpoints.length)) {
                         return postAjaxWithFallback(form, callback, candidateIdx + 1);
                     }
                     throw new Error('Invalid JSON response');
                 }
 
                 sdvSafeSet('sdv_active_endpoint', targetUrl);
-                callback(null, data);
+                try {
+                    callback(null, data);
+                } catch (cbErr) {
+                    console.error('[Sahdev LiveChat] Callback exception:', cbErr);
+                }
             });
         })
         .catch(function(err) {
-            if (candidateIdx + 1 < uniqueEndpoints.length) {
+            if (!isMutating && (candidateIdx + 1 < uniqueEndpoints.length)) {
                 return postAjaxWithFallback(form, callback, candidateIdx + 1);
             }
-            callback(err);
+            try {
+                callback(err);
+            } catch (cbErr) {
+                console.error('[Sahdev LiveChat] Error callback exception:', cbErr);
+            }
         });
     }
 
@@ -9293,17 +9320,34 @@ HTML;
         });
     };
 
+    var isSendingMessage = false;
+    var lastSentMessageText = '';
+    var lastSentMessageTime = 0;
+
     window.sdvSendMessage = function() {
+        if (isSendingMessage) {
+            return;
+        }
+
         var inputEl = document.getElementById('sdv-cl-input');
         var sendBtn = document.getElementById('sdv-cl-send');
         if (!inputEl) return;
         var text = (inputEl.value || '').trim();
         if (!text) return;
 
+        var now = Date.now();
+        if (text === lastSentMessageText && (now - lastSentMessageTime) < 1200) {
+            return;
+        }
+
         if (configuredMaxChars > 0 && text.length > configuredMaxChars) {
             alert('Your message exceeds the limit of ' + configuredMaxChars + ' characters. Please shorten your message or submit a support ticket.');
             return;
         }
+
+        isSendingMessage = true;
+        lastSentMessageText = text;
+        lastSentMessageTime = now;
 
         var chipsEl = document.getElementById('sdv-starter-chips');
         if (chipsEl) chipsEl.style.display = 'none';
@@ -9330,6 +9374,8 @@ HTML;
         form.append('message', text);
 
         postAjaxWithFallback(form, function(err, data) {
+            isSendingMessage = false;
+
             if (err) {
                 inputEl.disabled = false;
                 if (sendBtn) sendBtn.disabled = false;
@@ -9703,15 +9749,29 @@ HTML;
         });
     }
 
+    var isStartingNewChat = false;
+
     window.sdvStartNewChat = function() {
+        if (isStartingNewChat) return;
+        isStartingNewChat = true;
+
+        window.sdvCloseHistory();
+        window.sdvCloseKb();
+
         var form = new FormData();
         form.append('action', 'client_chat_new_session');
         form.append('visitor_token', visitorToken);
         form.append('page_url', window.location.href);
 
         postAjaxWithFallback(form, function(err, data) {
-            if (err || !data || data.status !== 'success') {
-                alert('Could not start new chat.');
+            isStartingNewChat = false;
+
+            if (err || !data || (data.status !== 'success' && !data.success && !data.session_uuid)) {
+                console.warn('[Sahdev LiveChat] Could not start new chat session:', err || data);
+                // If a session is already active, don't break the user's flow with an alert
+                if (!sessionUuid) {
+                    alert('Could not start new chat.');
+                }
                 return;
             }
             sessionUuid = data.session_uuid;
@@ -9739,8 +9799,6 @@ HTML;
                 escalateBtn.textContent = 'Convert to Ticket →';
                 escalateBtn.style.display = 'inline';
             }
-            window.sdvCloseHistory();
-            window.sdvCloseKb();
 
             var inputEl = document.getElementById('sdv-cl-input');
             var sendBtn = document.getElementById('sdv-cl-send');
@@ -9884,7 +9942,21 @@ HTML;
         var sendBtn = document.getElementById('sdv-cl-send');
         if (sendBtn && !sendBtn._sdvBound) {
             sendBtn._sdvBound = true;
-            sendBtn.addEventListener('click', window.sdvSendMessage);
+            sendBtn.removeAttribute('onclick');
+            sendBtn.addEventListener('click', function(e) {
+                if (e && e.preventDefault) e.preventDefault();
+                window.sdvSendMessage();
+            });
+        }
+
+        var newChatBtn = document.getElementById('sdv-btn-new-chat');
+        if (newChatBtn && !newChatBtn._sdvBound) {
+            newChatBtn._sdvBound = true;
+            newChatBtn.removeAttribute('onclick');
+            newChatBtn.addEventListener('click', function(e) {
+                if (e && e.preventDefault) e.preventDefault();
+                window.sdvStartNewChat();
+            });
         }
 
         var inputEl = document.getElementById('sdv-cl-input');

@@ -20,6 +20,7 @@ if (!is_file($rootInit)) {
 }
 
 require_once $rootInit;
+require_once dirname(__DIR__) . '/autoload.php';
 require_once dirname(__DIR__) . '/lib/AIProviderInterface.php';
 require_once dirname(__DIR__) . '/lib/GoogleAIProvider.php';
 require_once dirname(__DIR__) . '/lib/LMStudioAIProvider.php';

@@ -15,6 +15,8 @@ if (!defined("WHMCS")) {
 
 use WHMCS\Database\Capsule;
 
+require_once __DIR__ . '/autoload.php';
+
 /**
  * Define addon module configuration parameters.
  *

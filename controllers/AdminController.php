@@ -5,8 +5,7 @@ namespace Sahdev\Controllers;
 use WHMCS\Database\Capsule;
 use Sahdev\Lib\TaskProviderResolver;
 
-require_once dirname(__DIR__) . '/lib/TaskProviderResolver.php';
-require_once dirname(__DIR__) . '/lib/AdminPreferences.php';
+require_once dirname(__DIR__) . '/autoload.php';
 
 class AdminController
 {
