@@ -9871,7 +9871,8 @@ class AdminController
                     </div>
                     <div class="panel-body" style="padding: 24px;">
                         <form method="post" action="<?php echo $baseActionUrl; ?>&tab=limits">
-                            <input type="hidden" name="token" value="<?php echo $csrfToken; ?>">
+                            <?php echo $csrfToken; ?>
+                            <input type="hidden" name="save_client_chat_limits" value="1">
 
                             <!-- Authenticated Clients Section -->
                             <div style="border-bottom: 1px solid #edf2f7; padding-bottom: 22px; margin-bottom: 22px;">

@@ -6012,7 +6012,7 @@ function sahdev_render_client_livechat_widget(array $vars): string
     $launcherHtml = '';
     if ($launcherStyle === 'pill') {
         $launcherHtml = <<<HTML
-<div id="sdv-client-chat-launcher" class="sdv-launcher-pill" role="button" tabindex="0" title="{$launcherText}" onclick="window.sdvToggleChat && window.sdvToggleChat(event);" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.sdvToggleChat&&window.sdvToggleChat(event);}">
+<div id="sdv-client-chat-launcher" class="sdv-launcher-pill" role="button" tabindex="0" title="{$launcherText}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.sdvToggleChat&&window.sdvToggleChat(event);}">
     <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style="pointer-events: none; flex-shrink: 0; display: block;">
         <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z" style="pointer-events: none;"/>
     </svg>
@@ -6021,7 +6021,7 @@ function sahdev_render_client_livechat_widget(array $vars): string
 HTML;
     } else {
         $launcherHtml = <<<HTML
-<div id="sdv-client-chat-launcher" class="sdv-launcher-circle" role="button" tabindex="0" title="Support Chat" onclick="window.sdvToggleChat && window.sdvToggleChat(event);" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.sdvToggleChat&&window.sdvToggleChat(event);}">
+<div id="sdv-client-chat-launcher" class="sdv-launcher-circle" role="button" tabindex="0" title="Support Chat" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.sdvToggleChat&&window.sdvToggleChat(event);}">
     <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" style="pointer-events: none; flex-shrink: 0; display: block;">
         <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z" style="pointer-events: none;"/>
     </svg>
@@ -8194,12 +8194,13 @@ HTML;
             return;
         }
 
-        var header = '==================================================\r\n' +
-                     '       SAHDEV AI SUPPORT CONVERSATION TRANSCRIPT\r\n' +
-                     '==================================================\r\n' +
-                     'Session ID : ' + (sessionUuid || 'Current Session') + '\r\n' +
-                     'Export Date: ' + new Date().toLocaleString() + '\r\n' +
-                     '==================================================\r\n\r\n';
+        var nl = String.fromCharCode(13, 10);
+        var header = '==================================================' + nl +
+                     '       SAHDEV AI SUPPORT CONVERSATION TRANSCRIPT' + nl +
+                     '==================================================' + nl +
+                     'Session ID : ' + (sessionUuid || 'Current Session') + nl +
+                     'Export Date: ' + new Date().toLocaleString() + nl +
+                     '==================================================' + nl + nl;
 
         var body = '';
         messageNodes.forEach(function(node) {
@@ -8212,7 +8213,7 @@ HTML;
 
             var text = (clone.innerText || clone.textContent || '').trim();
             if (text) {
-                body += '[' + sender + ']:\r\n' + text + '\r\n\r\n' + '--------------------------------------------------\r\n\r\n';
+                body += '[' + sender + ']:' + nl + text + nl + nl + '--------------------------------------------------' + nl + nl;
             }
         });
 
@@ -8869,9 +8870,9 @@ HTML;
             .replace(/</g, '&lt;')
             .replace(/>/g, '&gt;');
 
-        // Rich Code blocks ```lang\ncode```
+        // Rich Code blocks
         var codeBlocks = [];
-        s = s.replace(/```([a-zA-Z0-9_-]*)\r?\n?([\s\S]*?)```/g, function(_, lang, c) {
+        s = s.replace(/```([a-zA-Z0-9_-]*)\\r?\\n?([\\s\\S]*?)```/g, function(_, lang, c) {
             var idx = codeBlocks.length;
             var cleanLang = (lang || '').trim().toLowerCase() || 'code';
             var trimmedCode = (c || '').trim();
@@ -9933,6 +9934,7 @@ HTML;
         var launcher = document.getElementById('sdv-client-chat-launcher');
         if (launcher && !launcher._sdvBound) {
             launcher._sdvBound = true;
+            launcher.removeAttribute('onclick');
             launcher.addEventListener('click', function(e) {
                 if (e && e.preventDefault) e.preventDefault();
                 window.sdvToggleChat();
