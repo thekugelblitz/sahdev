@@ -6055,13 +6055,44 @@ HTML;
 HTML;
     }
 
-    $historyBtnHtml = $historyEnabled ? '<button type="button" class="sdv-cl-action-btn" id="sdv-cl-history-btn" title="Conversation History" onclick="window.sdvToggleHistory && window.sdvToggleHistory();"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></button>' : '';
+    // Build header 3-dot menu items based on enabled features
+    $_hdrKbItem = $kbEnabled
+        ? '<button type="button" class="sdv-hdr-menu-item" id="sdv-hmenu-kb" onclick="window.sdvToggleKb&&window.sdvToggleKb();window.sdvCloseHdrMenu();">' .
+          '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><line x1="9" y1="7" x2="15" y2="7"/><line x1="9" y1="11" x2="13" y2="11"/></svg>' .
+          '<span>Help &amp; KB</span></button>'
+        : '';
+    $_hdrHistItem = $historyEnabled
+        ? '<button type="button" class="sdv-hdr-menu-item" id="sdv-hmenu-history" onclick="window.sdvToggleHistory&&window.sdvToggleHistory();window.sdvCloseHdrMenu();">' .
+          '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>' .
+          '<span>Chat History</span></button>'
+        : '';
+    $_hdrExportItem = '<button type="button" class="sdv-hdr-menu-item" id="sdv-hmenu-export" onclick="window.sdvExportTranscript&&window.sdvExportTranscript();window.sdvCloseHdrMenu();">' .
+        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>' .
+        '<span>Export Transcript</span></button>';
+    $_hdrSoundItem = $soundEnabled
+        ? '<button type="button" class="sdv-hdr-menu-item" id="sdv-hmenu-sound" onclick="window.sdvToggleSound&&window.sdvToggleSound();">' .
+          '<svg id="sdv-sound-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>' .
+          '<span id="sdv-sound-label">Sound On</span></button>'
+        : '';
 
-    $kbBtnHtml = $kbEnabled ? '<button type="button" class="sdv-cl-action-btn" id="sdv-cl-kb-btn" title="Help & Knowledge Base" aria-label="Knowledge Base" onclick="window.sdvToggleKb && window.sdvToggleKb();"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><line x1="9" y1="7" x2="15" y2="7"/><line x1="9" y1="11" x2="13" y2="11"/></svg></button>' : '';
+    $hdrMenuHtml = '<div class="sdv-hdr-menu-wrap" id="sdv-hdr-menu-wrap">' .
+        '<button type="button" class="sdv-cl-action-btn sdv-hdr-dots-btn" id="sdv-hdr-dots" title="More options" aria-label="More options" onclick="window.sdvToggleHdrMenu&&window.sdvToggleHdrMenu(event);">' .
+        '<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" style="pointer-events:none;"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>' .
+        '</button>' .
+        '<div class="sdv-hdr-menu" id="sdv-hdr-menu" style="display:none;">' .
+            $_hdrKbItem .
+            $_hdrHistItem .
+            $_hdrExportItem .
+            (($_hdrKbItem || $_hdrHistItem || $_hdrExportItem) && $_hdrSoundItem ? '<div class="sdv-hdr-menu-divider"></div>' : '') .
+            $_hdrSoundItem .
+        '</div>' .
+        '</div>';
 
-    $exportBtnHtml = '<button type="button" class="sdv-cl-action-btn" id="sdv-cl-export-btn" title="Export Chat Transcript" aria-label="Export" onclick="window.sdvExportTranscript && window.sdvExportTranscript();"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg></button>';
-
-    $soundBtnHtml = $soundEnabled ? '<button type="button" class="sdv-cl-action-btn" id="sdv-cl-sound-btn" title="Toggle Sound Notifications" aria-label="Sound" onclick="window.sdvToggleSound && window.sdvToggleSound();"><svg id="sdv-sound-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg></button>' : '';
+    // Keep legacy vars empty (used nowhere else now)
+    $historyBtnHtml = '';
+    $kbBtnHtml = '';
+    $exportBtnHtml = '';
+    $soundBtnHtml = '';
 
     $avatarHtml = !empty($chatLogo)
         ? '<img src="' . $chatLogo . '" alt="Logo" class="sdv-cl-avatar-img">'
@@ -6354,6 +6385,67 @@ DISC;
 }
 .sdv-cl-action-btn:hover { color: #ffffff; background: rgba(255, 255, 255, 0.2); }
 .sdv-cl-action-btn:active { transform: scale(0.92); }
+
+/* ── Header 3-Dot Menu Dropdown ──────────────────────────────────── */
+.sdv-hdr-menu-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+}
+.sdv-hdr-dots-btn {
+    color: rgba(255, 255, 255, 0.88) !important;
+}
+.sdv-hdr-menu {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.04);
+    min-width: 180px;
+    padding: 5px;
+    z-index: 999;
+    animation: sdvHdrMenuIn 0.14s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+@keyframes sdvHdrMenuIn {
+    from { opacity: 0; transform: translateY(-6px) scale(0.96); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.sdv-hdr-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    width: 100%;
+    padding: 8px 10px;
+    border: none;
+    background: transparent;
+    border-radius: 7px;
+    cursor: pointer;
+    color: #374151;
+    font-size: 12.5px;
+    font-weight: 500;
+    line-height: 1;
+    text-align: left;
+    transition: background 0.12s ease, color 0.12s ease;
+    white-space: nowrap;
+}
+.sdv-hdr-menu-item:hover {
+    background: #f1f5f9;
+    color: #0f172a;
+}
+.sdv-hdr-menu-item svg {
+    flex-shrink: 0;
+    opacity: 0.7;
+}
+.sdv-hdr-menu-item:hover svg {
+    opacity: 1;
+}
+.sdv-hdr-menu-divider {
+    height: 1px;
+    background: #e2e8f0;
+    margin: 4px 0;
+}
 
 /* Escalation Bar */
 .sdv-cl-escalate-bar {
@@ -8582,6 +8674,39 @@ DISC;
     border-color: var(--sdv-brand, #0d6efd);
     font-weight: 600;
 }
+/* ── Dark Theme overrides for header 3-dot dropdown ─────────────── */
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-hdr-menu,
+#sdv-client-chat-window.sdv-theme-linear_geist .sdv-hdr-menu,
+#sdv-client-chat-window.sdv-theme-terminal_cli .sdv-hdr-menu,
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-hdr-menu,
+#sdv-client-chat-window.sdv-theme-high_contrast .sdv-hdr-menu,
+#sdv-client-chat-window.sdv-theme-drift_bold .sdv-hdr-menu {
+    background: #1e293b;
+    border-color: #334155;
+    box-shadow: 0 8px 24px -4px rgba(0,0,0,0.6);
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-hdr-menu-item,
+#sdv-client-chat-window.sdv-theme-linear_geist .sdv-hdr-menu-item,
+#sdv-client-chat-window.sdv-theme-terminal_cli .sdv-hdr-menu-item,
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-hdr-menu-item,
+#sdv-client-chat-window.sdv-theme-high_contrast .sdv-hdr-menu-item,
+#sdv-client-chat-window.sdv-theme-drift_bold .sdv-hdr-menu-item { color: #cbd5e1; }
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-hdr-menu-item:hover,
+#sdv-client-chat-window.sdv-theme-linear_geist .sdv-hdr-menu-item:hover,
+#sdv-client-chat-window.sdv-theme-terminal_cli .sdv-hdr-menu-item:hover,
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-hdr-menu-item:hover,
+#sdv-client-chat-window.sdv-theme-high_contrast .sdv-hdr-menu-item:hover,
+#sdv-client-chat-window.sdv-theme-drift_bold .sdv-hdr-menu-item:hover { background: rgba(255,255,255,0.08); color: #f8fafc; }
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-hdr-menu-divider,
+#sdv-client-chat-window.sdv-theme-linear_geist .sdv-hdr-menu-divider,
+#sdv-client-chat-window.sdv-theme-terminal_cli .sdv-hdr-menu-divider,
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-hdr-menu-divider,
+#sdv-client-chat-window.sdv-theme-high_contrast .sdv-hdr-menu-divider,
+#sdv-client-chat-window.sdv-theme-drift_bold .sdv-hdr-menu-divider { background: rgba(255,255,255,0.1); }
+#sdv-client-chat-window.sdv-theme-terminal_cli .sdv-hdr-menu { background: #0f1c12; border-color: #22c55e; border-radius: 0; }
+#sdv-client-chat-window.sdv-theme-terminal_cli .sdv-hdr-menu-item { color: #4ade80; font-family: "Courier New",Courier,monospace; border-radius: 0; }
+#sdv-client-chat-window.sdv-theme-terminal_cli .sdv-hdr-menu-item:hover { background: #22c55e; color: #052e16; }
+
 #sdv-client-chat-window.sdv-theme-cyber_dark .sdv-msg-menu,
 #sdv-client-chat-window.sdv-theme-linear_geist .sdv-msg-menu,
 #sdv-client-chat-window.sdv-theme-terminal_cli .sdv-msg-menu,
@@ -8806,10 +8931,7 @@ DISC;
             </div>
         </div>
         <div class="sdv-cl-controls">
-            {$kbBtnHtml}
-            {$historyBtnHtml}
-            {$exportBtnHtml}
-            {$soundBtnHtml}
+            {$hdrMenuHtml}
             <button type="button" class="sdv-cl-action-btn" id="sdv-cl-expand-btn" title="Expand / Minimize Window" aria-label="Expand" onclick="window.sdvToggleExpand && window.sdvToggleExpand(event);">
                 <svg id="sdv-expand-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
             </button>
@@ -9027,6 +9149,39 @@ DISC;
         });
     };
 
+    // ── Header ⋯ Dropdown Menu ────────────────────────────────────────────
+    window.sdvCloseHdrMenu = function() {
+        var menu = document.getElementById('sdv-hdr-menu');
+        var dotsBtn = document.getElementById('sdv-hdr-dots');
+        if (menu) menu.style.display = 'none';
+        if (dotsBtn) dotsBtn.style.background = '';
+    };
+
+    window.sdvToggleHdrMenu = function(e) {
+        if (e && e.stopPropagation) e.stopPropagation();
+        var menu = document.getElementById('sdv-hdr-menu');
+        var dotsBtn = document.getElementById('sdv-hdr-dots');
+        if (!menu) return;
+        var isOpen = menu.style.display !== 'none';
+        if (isOpen) {
+            menu.style.display = 'none';
+            if (dotsBtn) dotsBtn.style.background = '';
+        } else {
+            // Close any per-message menus first
+            window.sdvCloseAllMsgMenus && window.sdvCloseAllMsgMenus();
+            menu.style.display = 'block';
+            if (dotsBtn) dotsBtn.style.background = 'rgba(255,255,255,0.2)';
+        }
+    };
+
+    // Close header menu when clicking outside
+    document.addEventListener('click', function(e) {
+        var wrap = document.getElementById('sdv-hdr-menu-wrap');
+        if (wrap && !wrap.contains(e.target)) {
+            window.sdvCloseHdrMenu();
+        }
+    }, true);
+
     window.sdvToggleMsgMenu = function(btn, msgId) {
         var parent = btn.parentNode;
         var existing = parent.querySelector('.sdv-msg-menu');
@@ -9139,17 +9294,19 @@ DISC;
     }
 
     function sdvUpdateSoundIcon(isMuted) {
-        var btn = document.getElementById('sdv-cl-sound-btn');
-        if (!btn) return;
-        if (isMuted) {
-            btn.title = 'Sound Muted (Click to Unmute)';
-            btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>';
-            btn.style.opacity = '0.6';
-        } else {
-            btn.title = 'Sound Enabled (Click to Mute)';
-            btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>';
-            btn.style.opacity = '1';
+        // Update icon in the header 3-dot menu item
+        var icon = document.getElementById('sdv-sound-icon');
+        var label = document.getElementById('sdv-sound-label');
+        var menuItem = document.getElementById('sdv-hmenu-sound');
+        if (icon) {
+            if (isMuted) {
+                icon.innerHTML = '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/>';
+            } else {
+                icon.innerHTML = '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>';
+            }
         }
+        if (label) label.textContent = isMuted ? 'Sound Off' : 'Sound On';
+        if (menuItem) menuItem.style.opacity = isMuted ? '0.65' : '1';
     }
 
     window.sdvToggleSound = function() {
@@ -9160,6 +9317,7 @@ DISC;
         if (!nextMuted) {
             sdvPlayNotificationChime();
         }
+        // Keep the menu open so user sees the toggle state change
     };
 
     // ── 1-Click Conversation Transcript Export ────────────────────────────
