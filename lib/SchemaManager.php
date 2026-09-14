@@ -119,6 +119,21 @@ class SchemaManager
                 'client_chat_launcher_text'     => ['type' => 'string', 'length' => 64, 'default' => 'Chat with Us'],
                 'client_chat_history_enabled'   => ['type' => 'boolean', 'default' => 1],
 
+                // Client Live Chat Quotas, Rate Limits & Token Protection
+                'client_chat_auth_limit_count'   => ['type' => 'integer', 'default' => 30],
+                'client_chat_auth_limit_window'  => ['type' => 'string', 'length' => 16, 'default' => 'daily'],
+                'client_chat_guest_limit_count'  => ['type' => 'integer', 'default' => 5],
+                'client_chat_max_msg_chars'      => ['type' => 'integer', 'default' => 1000],
+                'client_chat_max_session_chars'  => ['type' => 'integer', 'default' => 10000],
+                'client_chat_limit_message'      => ['type' => 'text'],
+                'client_chat_guest_limit_message'=> ['type' => 'text'],
+
+                // Enterprise AI Features: PII Redaction, CSAT, Audio Chimes & Starter Prompts
+                'client_chat_pii_masking'        => ['type' => 'boolean', 'default' => 1],
+                'client_chat_csat_enabled'       => ['type' => 'boolean', 'default' => 1],
+                'client_chat_sound_enabled'      => ['type' => 'boolean', 'default' => 1],
+                'client_chat_starter_chips'      => ['type' => 'text'],
+
                 // Safe Ops & Rollback Governance
                 'ops_journal_retention_days'   => ['type' => 'integer', 'default' => 90],
                 'ops_require_password_tier3'   => ['type' => 'boolean', 'default' => 1],
@@ -229,8 +244,22 @@ class SchemaManager
                     $table->longText('action_card_json')->nullable();
                     $table->longText('tool_calls_json')->nullable();
                     $table->integer('tokens_used')->default(0);
+                    $table->tinyInteger('rating')->nullable()->index(); // 1 = up, -1 = down
+                    $table->text('rating_feedback')->nullable();
                     $table->timestamp('created_at')->useCurrent()->index();
                 });
+            } else {
+                // Migrate existing tables
+                if (!Capsule::schema()->hasColumn('tblsahdev_chat_messages', 'rating')) {
+                    Capsule::schema()->table('tblsahdev_chat_messages', function ($table) {
+                        $table->tinyInteger('rating')->nullable()->index();
+                    });
+                }
+                if (!Capsule::schema()->hasColumn('tblsahdev_chat_messages', 'rating_feedback')) {
+                    Capsule::schema()->table('tblsahdev_chat_messages', function ($table) {
+                        $table->text('rating_feedback')->nullable();
+                    });
+                }
             }
         } catch (\Throwable $e) {
             // Benign table creation

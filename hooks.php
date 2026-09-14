@@ -5883,6 +5883,10 @@ function sahdev_render_client_livechat_widget(array $vars): string
             ? htmlspecialchars(trim($settings->client_chat_logo), ENT_QUOTES, 'UTF-8')
             : '';
         $kbEnabled = isset($settings->client_chat_kb_enabled) ? (bool)$settings->client_chat_kb_enabled : true;
+        $maxMsgChars = isset($settings->client_chat_max_msg_chars) ? (int)$settings->client_chat_max_msg_chars : 1000;
+        $maxSessionChars = isset($settings->client_chat_max_session_chars) ? (int)$settings->client_chat_max_session_chars : 10000;
+        $csatEnabled = !isset($settings->client_chat_csat_enabled) || !empty($settings->client_chat_csat_enabled);
+        $soundEnabled = !isset($settings->client_chat_sound_enabled) || !empty($settings->client_chat_sound_enabled);
 
         $welcomeMsgRaw = !empty($settings->client_chat_welcome_message)
             ? $settings->client_chat_welcome_message
@@ -5996,6 +6000,11 @@ function sahdev_render_client_livechat_widget(array $vars): string
     $chatHeightJs = json_encode($chatHeight);
     $expandWidthJs = json_encode($expandWidth);
     $expandHeightJs = json_encode($expandHeight);
+    $maxMsgCharsJs = json_encode($maxMsgChars);
+    $maxSessionCharsJs = json_encode($maxSessionChars);
+    $csatEnabledJs = json_encode($csatEnabled);
+    $soundEnabledJs = json_encode($soundEnabled);
+    $maxMsgAttr = $maxMsgChars > 0 ? 'maxlength="' . (int)$maxMsgChars . '"' : '';
 
     // Launcher markup based on style with robust inline onclick and keyboard handlers
     $launcherHtml = '';
@@ -6042,6 +6051,10 @@ HTML;
     $historyBtnHtml = $historyEnabled ? '<button type="button" class="sdv-cl-action-btn" id="sdv-cl-history-btn" title="Conversation History" onclick="window.sdvToggleHistory && window.sdvToggleHistory();"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></button>' : '';
 
     $kbBtnHtml = $kbEnabled ? '<button type="button" class="sdv-cl-action-btn" id="sdv-cl-kb-btn" title="Help & Knowledge Base" aria-label="Knowledge Base" onclick="window.sdvToggleKb && window.sdvToggleKb();"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><line x1="9" y1="7" x2="15" y2="7"/><line x1="9" y1="11" x2="13" y2="11"/></svg></button>' : '';
+
+    $exportBtnHtml = '<button type="button" class="sdv-cl-action-btn" id="sdv-cl-export-btn" title="Export Chat Transcript" aria-label="Export" onclick="window.sdvExportTranscript && window.sdvExportTranscript();"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg></button>';
+
+    $soundBtnHtml = $soundEnabled ? '<button type="button" class="sdv-cl-action-btn" id="sdv-cl-sound-btn" title="Toggle Sound Notifications" aria-label="Sound" onclick="window.sdvToggleSound && window.sdvToggleSound();"><svg id="sdv-sound-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg></button>' : '';
 
     $avatarHtml = !empty($chatLogo)
         ? '<img src="' . $chatLogo . '" alt="Logo" class="sdv-cl-avatar-img">'
@@ -6594,6 +6607,39 @@ HTML;
     background: #15803d !important;
     color: #ffffff !important;
 }
+.sdv-limit-alert-card {
+    background: #fffbeb !important;
+    border: 1px solid #fde68a !important;
+    border-radius: 12px !important;
+    padding: 13px !important;
+    color: #92400e !important;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04) !important;
+}
+.sdv-limit-alert-card .sdv-escalate-title {
+    color: #78350f !important;
+}
+.sdv-limit-alert-card .sdv-escalate-sub {
+    color: #b45309 !important;
+}
+.sdv-limit-alert-card .sdv-escalate-desc {
+    color: #92400e !important;
+}
+.sdv-limit-alert-card .sdv-escalate-link {
+    background: #d97706 !important;
+    border-color: #b45309 !important;
+    color: #ffffff !important;
+}
+.sdv-limit-alert-card .sdv-escalate-link:hover {
+    background: #b45309 !important;
+}
+.sdv-cl-char-counter {
+    font-size: 11px !important;
+    color: #94a3b8 !important;
+    text-align: right !important;
+    padding: 0 4px !important;
+    line-height: 1.2 !important;
+    transition: color 0.15s ease !important;
+}
 
 /* Footer & Input */
 .sdv-cl-footer {
@@ -7052,6 +7098,18 @@ HTML;
 #sdv-client-chat-window.sdv-theme-cyber_dark .sdv-escalate-desc {
     color: #86efac !important;
 }
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-limit-alert-card {
+    background: rgba(146, 64, 14, 0.22) !important;
+    border-color: rgba(245, 158, 11, 0.35) !important;
+    color: #fde68a !important;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-limit-alert-card .sdv-escalate-title {
+    color: #fef3c7 !important;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-limit-alert-card .sdv-escalate-sub,
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-limit-alert-card .sdv-escalate-desc {
+    color: #fde68a !important;
+}
 #sdv-client-chat-window.sdv-theme-cyber_dark .sdv-cl-footer {
     background: #0f172a !important;
     border-top: 1px solid #334155;
@@ -7126,24 +7184,433 @@ HTML;
     box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.25) !important;
 }
 
-/* Glassmorphism Theme */
+/* ── Glassmorphism Ultra (Frosted Glass & Translucent Blur) ────────── */
 #sdv-client-chat-window.sdv-theme-glassmorphism {
-    background: rgba(255, 255, 255, 0.88) !important;
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid rgba(255, 255, 255, 0.5);
+    background: rgba(255, 255, 255, 0.78) !important;
+    backdrop-filter: blur(24px) saturate(190%) !important;
+    -webkit-backdrop-filter: blur(24px) saturate(190%) !important;
+    border: 1px solid rgba(255, 255, 255, 0.6) !important;
+    box-shadow: 0 24px 48px -12px rgba(15, 23, 42, 0.25), 0 0 0 1px rgba(255, 255, 255, 0.4) inset !important;
+}
+#sdv-client-chat-window.sdv-theme-glassmorphism .sdv-cl-header {
+    background: rgba(255, 255, 255, 0.65) !important;
+    backdrop-filter: blur(16px) !important;
+    -webkit-backdrop-filter: blur(16px) !important;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.4) !important;
+    color: #0f172a !important;
+}
+#sdv-client-chat-window.sdv-theme-glassmorphism .sdv-cl-title { color: #0f172a !important; }
+#sdv-client-chat-window.sdv-theme-glassmorphism .sdv-cl-status { color: #475569 !important; }
+#sdv-client-chat-window.sdv-theme-glassmorphism .sdv-cl-action-btn { color: #334155 !important; }
+#sdv-client-chat-window.sdv-theme-glassmorphism .sdv-cl-action-btn:hover { background: rgba(0, 0, 0, 0.08) !important; color: #0f172a !important; }
+#sdv-client-chat-window.sdv-theme-glassmorphism .sdv-cl-escalate-bar {
+    background: rgba(255, 255, 255, 0.5) !important;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.35) !important;
+    color: #475569 !important;
 }
 #sdv-client-chat-window.sdv-theme-glassmorphism .sdv-cl-messages {
-    background: rgba(248, 250, 252, 0.65) !important;
+    background: rgba(248, 250, 252, 0.55) !important;
+}
+#sdv-client-chat-window.sdv-theme-glassmorphism .sdv-cl-msg-bot {
+    background: rgba(255, 255, 255, 0.85) !important;
+    border: 1px solid rgba(255, 255, 255, 0.7) !important;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.04) !important;
+    color: #0f172a !important;
 }
 #sdv-client-chat-window.sdv-theme-glassmorphism .sdv-cl-footer {
+    background: rgba(255, 255, 255, 0.7) !important;
+    backdrop-filter: blur(16px) !important;
+    -webkit-backdrop-filter: blur(16px) !important;
+    border-top: 1px solid rgba(255, 255, 255, 0.4) !important;
+}
+#sdv-client-chat-window.sdv-theme-glassmorphism #sdv-cl-input {
+    background: rgba(255, 255, 255, 0.9) !important;
+    border: 1px solid rgba(203, 213, 225, 0.6) !important;
+    color: #0f172a !important;
+}
+#sdv-client-chat-window.sdv-theme-glassmorphism .sdv-cl-history-drawer {
+    background: rgba(255, 255, 255, 0.92) !important;
+    backdrop-filter: blur(20px) !important;
+    -webkit-backdrop-filter: blur(20px) !important;
+}
+#sdv-client-chat-window.sdv-theme-glassmorphism .sdv-convo-card {
     background: rgba(255, 255, 255, 0.8) !important;
+    border: 1px solid rgba(226, 232, 240, 0.7) !important;
+}
+#sdv-client-chat-window.sdv-theme-glassmorphism .sdv-starter-chip {
+    background: rgba(255, 255, 255, 0.85) !important;
+    border: 1px solid rgba(255, 255, 255, 0.7) !important;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04) !important;
+}
+#sdv-client-chat-window.sdv-theme-glassmorphism .sdv-kb-item {
+    background: rgba(255, 255, 255, 0.85) !important;
+    border: 1px solid rgba(255, 255, 255, 0.7) !important;
 }
 
-/* Brand Gradient Theme */
-#sdv-client-chat-window.sdv-theme-brand_gradient .sdv-cl-header {
-    background: linear-gradient(135deg, var(--sdv-brand) 0%, #4f46e5 100%) !important;
+/* ── Midnight Indigo Theme (Discord / Linear Dark Aesthetic) ───────── */
+#sdv-client-chat-window.sdv-theme-midnight_indigo {
+    background: #090d16 !important;
+    color: #f1f5f9 !important;
+    border: 1px solid #1e293b !important;
+    box-shadow: 0 24px 50px -12px rgba(99, 102, 241, 0.22), 0 0 0 1px rgba(99, 102, 241, 0.15) !important;
 }
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-cl-header {
+    background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%) !important;
+    border-bottom: 1px solid rgba(99, 102, 241, 0.3) !important;
+}
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-cl-escalate-bar {
+    background: #0f172a !important;
+    border-bottom: 1px solid #1e293b !important;
+    color: #94a3b8 !important;
+}
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-cl-messages {
+    background: #060911 !important;
+}
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-cl-msg-bot {
+    background: #111827 !important;
+    color: #f8fafc !important;
+    border: 1px solid #1f2937 !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25) !important;
+}
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-cl-msg-user {
+    background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%) !important;
+    color: #ffffff !important;
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.35) !important;
+}
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-chat-link {
+    background: rgba(99, 102, 241, 0.18) !important;
+    color: #a5b4fc !important;
+    border-color: rgba(99, 102, 241, 0.38) !important;
+}
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-chat-link:hover {
+    background: #6366f1 !important;
+    color: #ffffff !important;
+    border-color: #6366f1 !important;
+}
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-inline-code {
+    background: rgba(99, 102, 241, 0.12) !important;
+    color: #c7d2fe !important;
+    border-color: rgba(99, 102, 241, 0.22) !important;
+}
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-msg-quote {
+    background: rgba(99, 102, 241, 0.08) !important;
+    border-left-color: #6366f1 !important;
+    color: #94a3b8 !important;
+}
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-msg-h1,
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-msg-h2,
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-msg-h3 {
+    color: #f8fafc !important;
+}
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-table-wrap {
+    border-color: #1e293b !important;
+}
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-msg-table th {
+    background: #111827 !important;
+    color: #cbd5e1 !important;
+    border-bottom-color: #1f2937 !important;
+}
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-msg-table td {
+    color: #e2e8f0 !important;
+    border-bottom-color: #111827 !important;
+}
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-cl-footer {
+    background: #090d16 !important;
+    border-top: 1px solid #1e293b !important;
+}
+#sdv-client-chat-window.sdv-theme-midnight_indigo #sdv-cl-input {
+    background: #111827 !important;
+    color: #f8fafc !important;
+    border: 1px solid #374151 !important;
+}
+#sdv-client-chat-window.sdv-theme-midnight_indigo #sdv-cl-send {
+    background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%) !important;
+}
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-cl-history-drawer {
+    background: #090d16 !important;
+    color: #f1f5f9 !important;
+}
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-drawer-header {
+    background: #0f172a !important;
+    border-bottom-color: #1e293b !important;
+}
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-drawer-back-btn {
+    background: #1e293b !important;
+    color: #cbd5e1 !important;
+}
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-drawer-back-btn:hover {
+    background: #312e81 !important;
+    color: #ffffff !important;
+}
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-search-box input {
+    background: #111827 !important;
+    border-color: #1f2937 !important;
+    color: #f8fafc !important;
+}
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-convo-card {
+    background: #111827 !important;
+    border-color: #1f2937 !important;
+}
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-convo-card:hover,
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-convo-card.sdv-convo-current {
+    background: #172033 !important;
+    border-color: #6366f1 !important;
+}
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-convo-title { color: #f8fafc !important; }
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-convo-snippet { color: #94a3b8 !important; }
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-starter-chip {
+    background: #111827 !important;
+    border-color: #1f2937 !important;
+    color: #cbd5e1 !important;
+}
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-starter-chip:hover {
+    background: #1e1b4b !important;
+    border-color: #6366f1 !important;
+    color: #c7d2fe !important;
+}
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-starter-chip svg {
+    color: #818cf8 !important;
+}
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-msg-actions {
+    border-top-color: rgba(255, 255, 255, 0.08) !important;
+}
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-msg-action-btn {
+    color: #64748b !important;
+}
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-msg-action-btn:hover {
+    background: rgba(99, 102, 241, 0.15) !important;
+    color: #a5b4fc !important;
+}
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-kb-item {
+    background: #111827 !important;
+    border-color: #1f2937 !important;
+}
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-kb-title { color: #f8fafc !important; }
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-kb-snippet { color: #94a3b8 !important; }
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-kb-actions { border-top-color: #1f2937 !important; }
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-kb-ask-btn {
+    background: rgba(99, 102, 241, 0.15) !important;
+    color: #a5b4fc !important;
+    border-color: rgba(99, 102, 241, 0.3) !important;
+}
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-kb-ask-btn:hover {
+    background: #6366f1 !important;
+    color: #ffffff !important;
+}
+
+/* ── Emerald Clean Theme (Mint & Emerald SaaS) ─────────────────────── */
+#sdv-client-chat-window.sdv-theme-emerald_clean {
+    background: #ffffff !important;
+    border: 1px solid #d1fae5 !important;
+    box-shadow: 0 20px 45px -10px rgba(5, 150, 105, 0.16) !important;
+}
+#sdv-client-chat-window.sdv-theme-emerald_clean .sdv-cl-header {
+    background: linear-gradient(135deg, #059669 0%, #047857 100%) !important;
+    color: #ffffff !important;
+}
+#sdv-client-chat-window.sdv-theme-emerald_clean .sdv-cl-escalate-bar {
+    background: #f0fdf4 !important;
+    border-bottom: 1px solid #dcfce7 !important;
+    color: #065f46 !important;
+}
+#sdv-client-chat-window.sdv-theme-emerald_clean .sdv-cl-messages {
+    background: #f8fafc !important;
+}
+#sdv-client-chat-window.sdv-theme-emerald_clean .sdv-cl-msg-bot {
+    background: #ffffff !important;
+    border: 1px solid #e2e8f0 !important;
+    color: #0f172a !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03) !important;
+}
+#sdv-client-chat-window.sdv-theme-emerald_clean .sdv-cl-msg-user {
+    background: #059669 !important;
+    color: #ffffff !important;
+    box-shadow: 0 2px 8px rgba(5, 150, 105, 0.28) !important;
+}
+#sdv-client-chat-window.sdv-theme-emerald_clean #sdv-cl-send {
+    background: #059669 !important;
+}
+#sdv-client-chat-window.sdv-theme-emerald_clean .sdv-chat-link {
+    background: #ecfdf5 !important;
+    color: #047857 !important;
+    border-color: #a7f3d0 !important;
+}
+#sdv-client-chat-window.sdv-theme-emerald_clean .sdv-chat-link:hover {
+    background: #059669 !important;
+    color: #ffffff !important;
+}
+#sdv-client-chat-window.sdv-theme-emerald_clean .sdv-starter-chip {
+    background: #ffffff !important;
+    border-color: #a7f3d0 !important;
+    color: #065f46 !important;
+}
+#sdv-client-chat-window.sdv-theme-emerald_clean .sdv-starter-chip:hover {
+    background: #f0fdf4 !important;
+    border-color: #059669 !important;
+    color: #047857 !important;
+}
+#sdv-client-chat-window.sdv-theme-emerald_clean .sdv-starter-chip svg {
+    color: #059669 !important;
+}
+
+/* ── Sunset Amber Theme (Warm Terracotta & Sandstone) ──────────────── */
+#sdv-client-chat-window.sdv-theme-sunset_amber {
+    background: #fafaf9 !important;
+    border: 1px solid #e7e5e4 !important;
+    box-shadow: 0 20px 45px -10px rgba(234, 88, 12, 0.16) !important;
+}
+#sdv-client-chat-window.sdv-theme-sunset_amber .sdv-cl-header {
+    background: linear-gradient(135deg, #ea580c 0%, #c2410c 100%) !important;
+    color: #ffffff !important;
+}
+#sdv-client-chat-window.sdv-theme-sunset_amber .sdv-cl-escalate-bar {
+    background: #fff7ed !important;
+    border-bottom: 1px solid #ffedd5 !important;
+    color: #9a3412 !important;
+}
+#sdv-client-chat-window.sdv-theme-sunset_amber .sdv-cl-messages {
+    background: #f5f5f4 !important;
+}
+#sdv-client-chat-window.sdv-theme-sunset_amber .sdv-cl-msg-bot {
+    background: #ffffff !important;
+    border: 1px solid #e7e5e4 !important;
+    color: #1c1917 !important;
+}
+#sdv-client-chat-window.sdv-theme-sunset_amber .sdv-cl-msg-user {
+    background: linear-gradient(135deg, #ea580c 0%, #d97706 100%) !important;
+    color: #ffffff !important;
+    box-shadow: 0 2px 8px rgba(234, 88, 12, 0.28) !important;
+}
+#sdv-client-chat-window.sdv-theme-sunset_amber #sdv-cl-send {
+    background: #ea580c !important;
+}
+#sdv-client-chat-window.sdv-theme-sunset_amber .sdv-chat-link {
+    background: #fff7ed !important;
+    color: #c2410c !important;
+    border-color: #fed7aa !important;
+}
+#sdv-client-chat-window.sdv-theme-sunset_amber .sdv-chat-link:hover {
+    background: #ea580c !important;
+    color: #ffffff !important;
+}
+#sdv-client-chat-window.sdv-theme-sunset_amber .sdv-starter-chip {
+    background: #ffffff !important;
+    border-color: #fed7aa !important;
+    color: #9a3412 !important;
+}
+#sdv-client-chat-window.sdv-theme-sunset_amber .sdv-starter-chip:hover {
+    background: #fff7ed !important;
+    border-color: #ea580c !important;
+    color: #c2410c !important;
+}
+#sdv-client-chat-window.sdv-theme-sunset_amber .sdv-starter-chip svg {
+    color: #ea580c !important;
+}
+
+/* ── Brand Gradient Theme ──────────────────────────────────────────── */
+#sdv-client-chat-window.sdv-theme-brand_gradient .sdv-cl-header {
+    background: linear-gradient(135deg, var(--sdv-brand, #0d6efd) 0%, #8b5cf6 50%, #ec4899 100%) !important;
+    color: #ffffff !important;
+}
+#sdv-client-chat-window.sdv-theme-brand_gradient .sdv-cl-msg-user {
+    background: linear-gradient(135deg, var(--sdv-brand, #0d6efd) 0%, #7c3aed 100%) !important;
+    color: #ffffff !important;
+    box-shadow: 0 4px 12px rgba(124, 58, 237, 0.3) !important;
+}
+#sdv-client-chat-window.sdv-theme-brand_gradient #sdv-cl-send {
+    background: linear-gradient(135deg, var(--sdv-brand, #0d6efd) 0%, #7c3aed 100%) !important;
+}
+#sdv-client-chat-window.sdv-theme-brand_gradient .sdv-starter-chip:hover {
+    border-color: #7c3aed !important;
+    color: #7c3aed !important;
+}
+
+/* ── High Contrast Enterprise Theme (WCAG AAA Accessibility) ───────── */
+#sdv-client-chat-window.sdv-theme-high_contrast {
+    background: #000000 !important;
+    color: #ffffff !important;
+    border: 2px solid #ffffff !important;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.9) !important;
+}
+#sdv-client-chat-window.sdv-theme-high_contrast .sdv-cl-header {
+    background: #000000 !important;
+    border-bottom: 2px solid #ffffff !important;
+    color: #ffffff !important;
+}
+#sdv-client-chat-window.sdv-theme-high_contrast .sdv-cl-escalate-bar {
+    background: #111111 !important;
+    border-bottom: 1px solid #444444 !important;
+    color: #ffffff !important;
+}
+#sdv-client-chat-window.sdv-theme-high_contrast .sdv-cl-messages {
+    background: #000000 !important;
+}
+#sdv-client-chat-window.sdv-theme-high_contrast .sdv-cl-msg-bot {
+    background: #121212 !important;
+    color: #ffffff !important;
+    border: 2px solid #ffffff !important;
+}
+#sdv-client-chat-window.sdv-theme-high_contrast .sdv-cl-msg-user {
+    background: #ffffff !important;
+    color: #000000 !important;
+    border: 2px solid #ffffff !important;
+    font-weight: 600 !important;
+}
+#sdv-client-chat-window.sdv-theme-high_contrast .sdv-chat-link {
+    background: #ffffff !important;
+    color: #000000 !important;
+    border: 2px solid #ffffff !important;
+    font-weight: 700 !important;
+}
+#sdv-client-chat-window.sdv-theme-high_contrast .sdv-chat-link:hover {
+    background: #ffff00 !important;
+    color: #000000 !important;
+    border-color: #ffff00 !important;
+}
+#sdv-client-chat-window.sdv-theme-high_contrast .sdv-inline-code {
+    background: #222222 !important;
+    color: #ffff00 !important;
+    border: 1px solid #ffffff !important;
+}
+#sdv-client-chat-window.sdv-theme-high_contrast .sdv-cl-footer {
+    background: #000000 !important;
+    border-top: 2px solid #ffffff !important;
+}
+#sdv-client-chat-window.sdv-theme-high_contrast #sdv-cl-input {
+    background: #121212 !important;
+    color: #ffffff !important;
+    border: 2px solid #ffffff !important;
+}
+#sdv-client-chat-window.sdv-theme-high_contrast #sdv-cl-send {
+    background: #ffffff !important;
+    color: #000000 !important;
+}
+#sdv-client-chat-window.sdv-theme-high_contrast .sdv-starter-chip {
+    background: #121212 !important;
+    border: 2px solid #ffffff !important;
+    color: #ffffff !important;
+    font-weight: 700 !important;
+}
+#sdv-client-chat-window.sdv-theme-high_contrast .sdv-starter-chip:hover {
+    background: #ffffff !important;
+    color: #000000 !important;
+}
+#sdv-client-chat-window.sdv-theme-high_contrast .sdv-cl-history-drawer {
+    background: #000000 !important;
+    color: #ffffff !important;
+}
+#sdv-client-chat-window.sdv-theme-high_contrast .sdv-convo-card {
+    background: #121212 !important;
+    border: 2px solid #ffffff !important;
+}
+#sdv-client-chat-window.sdv-theme-high_contrast .sdv-convo-title { color: #ffffff !important; }
+#sdv-client-chat-window.sdv-theme-high_contrast .sdv-convo-snippet { color: #cccccc !important; }
+#sdv-client-chat-window.sdv-theme-high_contrast .sdv-kb-item {
+    background: #121212 !important;
+    border: 2px solid #ffffff !important;
+}
+#sdv-client-chat-window.sdv-theme-high_contrast .sdv-kb-title { color: #ffffff !important; }
+#sdv-client-chat-window.sdv-theme-high_contrast .sdv-kb-snippet { color: #cccccc !important; }
 /* Knowledge Base Drawer Styling */
 .sdv-cl-kb-drawer {
     z-index: 15;
@@ -7240,6 +7707,198 @@ HTML;
 #sdv-client-chat-window.sdv-theme-cyber_dark .sdv-kb-ask-btn:hover {
     background: #6366f1 !important;
     color: #ffffff !important;
+}
+
+/* ── Interactive Prompt Starter Chips ──────────────────────────────── */
+.sdv-starter-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    margin-top: 8px;
+    padding: 2px 2px 6px 2px;
+}
+.sdv-starter-chip {
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 18px;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 500;
+    color: #334155;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+    user-select: none;
+    font-family: inherit;
+}
+.sdv-starter-chip:hover {
+    background: #f8fafc;
+    border-color: var(--sdv-brand, {$brandColor});
+    color: var(--sdv-brand, {$brandColor});
+    transform: translateY(-1px);
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.08);
+}
+.sdv-starter-chip:active {
+    transform: translateY(0);
+}
+.sdv-starter-chip svg {
+    flex-shrink: 0;
+    color: var(--sdv-brand, {$brandColor});
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-starter-chip {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+    color: #cbd5e1 !important;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-starter-chip:hover {
+    background: #25334d !important;
+    border-color: #60a5fa !important;
+    color: #93c5fd !important;
+}
+
+/* ── Rich Code Blocks with Header & 1-Click Copy ────────────────────── */
+.sdv-code-container {
+    margin: 9px 0;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid #334155;
+    background: #0f172a;
+    box-shadow: 0 3px 8px rgba(0,0,0,0.15);
+}
+.sdv-code-header {
+    background: #1e293b;
+    padding: 5px 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid #334155;
+    user-select: none;
+}
+.sdv-code-lang {
+    font-size: 11px;
+    font-family: ui-monospace, monospace;
+    color: #94a3b8;
+    text-transform: uppercase;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+}
+.sdv-code-copy-btn {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: #cbd5e1;
+    font-size: 11px;
+    padding: 2px 7px;
+    border-radius: 4px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    transition: all 0.15s ease;
+    font-family: inherit;
+}
+.sdv-code-copy-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+    color: #ffffff;
+}
+.sdv-code-container .sdv-code-block {
+    margin: 0 !important;
+    border: none !important;
+    border-radius: 0 !important;
+    padding: 10px 12px !important;
+    background: #0f172a !important;
+    font-size: 12px !important;
+    line-height: 1.45 !important;
+}
+
+/* ── Message Actions & CSAT Rating Buttons ─────────────────────────── */
+.sdv-msg-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 6px;
+    padding-top: 5px;
+    border-top: 1px solid rgba(0, 0, 0, 0.05);
+    user-select: none;
+}
+.sdv-cl-msg-user .sdv-msg-actions {
+    display: none;
+}
+.sdv-msg-action-btn {
+    background: transparent;
+    border: none;
+    color: #94a3b8;
+    padding: 2px 5px;
+    border-radius: 4px;
+    font-size: 11px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    transition: all 0.15s ease;
+    font-family: inherit;
+}
+.sdv-msg-action-btn:hover {
+    background: rgba(0, 0, 0, 0.05);
+    color: #475569;
+}
+.sdv-msg-action-btn.sdv-rated-up {
+    color: #059669 !important;
+    background: rgba(5, 150, 105, 0.12) !important;
+    font-weight: 600;
+}
+.sdv-msg-action-btn.sdv-rated-down {
+    color: #dc2626 !important;
+    background: rgba(220, 38, 38, 0.12) !important;
+    font-weight: 600;
+}
+.sdv-msg-actions-rated-notice {
+    font-size: 10.5px;
+    color: #059669;
+    font-weight: 500;
+    margin-left: 2px;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-msg-actions {
+    border-top-color: rgba(255, 255, 255, 0.08);
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-msg-action-btn {
+    color: #64748b;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-msg-action-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: #cbd5e1;
+}
+
+/* ── Animated 3-Dot Typing Wave ────────────────────────────────────── */
+.sdv-typing-wave {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 6px;
+}
+.sdv-typing-dot {
+    width: 6.5px;
+    height: 6.5px;
+    background: #94a3b8;
+    border-radius: 50%;
+    display: inline-block;
+    animation: sdvWaveBounce 1.3s infinite ease-in-out both;
+}
+.sdv-typing-dot:nth-child(1) { animation-delay: -0.32s; }
+.sdv-typing-dot:nth-child(2) { animation-delay: -0.16s; }
+.sdv-typing-dot:nth-child(3) { animation-delay: 0s; }
+@keyframes sdvWaveBounce {
+    0%, 80%, 100% {
+        transform: scale(0.6);
+        opacity: 0.45;
+    }
+    40% {
+        transform: scale(1.1);
+        opacity: 1;
+        background: var(--sdv-brand, {$brandColor});
+    }
 }
 </style>
 
@@ -7380,6 +8039,8 @@ HTML;
         <div class="sdv-cl-controls">
             {$kbBtnHtml}
             {$historyBtnHtml}
+            {$exportBtnHtml}
+            {$soundBtnHtml}
             <button type="button" class="sdv-cl-action-btn" id="sdv-cl-expand-btn" title="Expand / Minimize Window" aria-label="Expand" onclick="window.sdvToggleExpand && window.sdvToggleExpand(event);">
                 <svg id="sdv-expand-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
             </button>
@@ -7394,15 +8055,17 @@ HTML;
 
     <div class="sdv-cl-messages" id="sdv-cl-msgs">
         <div class="sdv-cl-msg sdv-cl-msg-bot">{$welcomeMsg}</div>
+        <div id="sdv-starter-chips" class="sdv-starter-chips" style="display:none;"></div>
     </div>
 
     <div class="sdv-cl-footer">
         <div class="sdv-cl-input-row">
-            <input type="text" id="sdv-cl-input" placeholder="Ask about services, invoices, domains..." autocomplete="off" />
+            <input type="text" id="sdv-cl-input" placeholder="Ask about services, invoices, domains..." autocomplete="off" {$maxMsgAttr} />
             <button type="button" id="sdv-cl-send" title="Send message" onclick="window.sdvSendMessage && window.sdvSendMessage();">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" style="pointer-events:none;"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
             </button>
         </div>
+        <div id="sdv-cl-char-counter" class="sdv-cl-char-counter" style="display:none;"></div>
         <div class="sdv-cl-branding">Powered by Sahdev AI</div>
     </div>
 </div>
@@ -7444,6 +8107,298 @@ HTML;
     var currentClientId = {$currentClientIdJs};
     var clientNamePrefill = {$clientNameJs};
     var clientEmailPrefill = {$clientEmailJs};
+    var configuredMaxChars = Number({$maxMsgCharsJs}) || 0;
+    var configuredMaxSessionChars = Number({$maxSessionCharsJs}) || 0;
+    var csatEnabled = Boolean({$csatEnabledJs});
+    var soundEnabled = Boolean({$soundEnabledJs});
+    var starterChipsData = [];
+
+    // ── Web Audio API Synthetic Notification Chime ────────────────────────
+    var _audioCtx = null;
+    function sdvPlayNotificationChime() {
+        if (!soundEnabled) return;
+        if (sdvSafeGet('sdv_sound_muted', '0') === '1') return;
+
+        try {
+            var AudioContext = window.AudioContext || window.webkitAudioContext;
+            if (!AudioContext) return;
+            if (!_audioCtx) {
+                _audioCtx = new AudioContext();
+            }
+            if (_audioCtx.state === 'suspended') {
+                _audioCtx.resume();
+            }
+
+            var now = _audioCtx.currentTime;
+
+            // Note 1 (D5 ~ 587.33Hz)
+            var osc1 = _audioCtx.createOscillator();
+            var gain1 = _audioCtx.createGain();
+            osc1.type = 'sine';
+            osc1.frequency.setValueAtTime(587.33, now);
+            gain1.gain.setValueAtTime(0.08, now);
+            gain1.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
+            osc1.connect(gain1);
+            gain1.connect(_audioCtx.destination);
+            osc1.start(now);
+            osc1.stop(now + 0.19);
+
+            // Note 2 (A5 ~ 880.00Hz)
+            var osc2 = _audioCtx.createOscillator();
+            var gain2 = _audioCtx.createGain();
+            osc2.type = 'sine';
+            osc2.frequency.setValueAtTime(880.0, now + 0.09);
+            gain2.gain.setValueAtTime(0.09, now + 0.09);
+            gain2.gain.exponentialRampToValueAtTime(0.0001, now + 0.35);
+            osc2.connect(gain2);
+            gain2.connect(_audioCtx.destination);
+            osc2.start(now + 0.09);
+            osc2.stop(now + 0.36);
+        } catch(e) {}
+    }
+
+    function sdvUpdateSoundIcon(isMuted) {
+        var btn = document.getElementById('sdv-cl-sound-btn');
+        if (!btn) return;
+        if (isMuted) {
+            btn.title = 'Sound Muted (Click to Unmute)';
+            btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>';
+            btn.style.opacity = '0.6';
+        } else {
+            btn.title = 'Sound Enabled (Click to Mute)';
+            btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>';
+            btn.style.opacity = '1';
+        }
+    }
+
+    window.sdvToggleSound = function() {
+        var currentlyMuted = sdvSafeGet('sdv_sound_muted', '0') === '1';
+        var nextMuted = !currentlyMuted;
+        sdvSafeSet('sdv_sound_muted', nextMuted ? '1' : '0');
+        sdvUpdateSoundIcon(nextMuted);
+        if (!nextMuted) {
+            sdvPlayNotificationChime();
+        }
+    };
+
+    // ── 1-Click Conversation Transcript Export ────────────────────────────
+    window.sdvExportTranscript = function() {
+        var msgsEl = document.getElementById('sdv-cl-msgs');
+        if (!msgsEl) return;
+
+        var messageNodes = msgsEl.querySelectorAll('.sdv-cl-msg');
+        if (!messageNodes || messageNodes.length === 0) {
+            alert('No messages in the current conversation to export.');
+            return;
+        }
+
+        var header = '==================================================\r\n' +
+                     '       SAHDEV AI SUPPORT CONVERSATION TRANSCRIPT\r\n' +
+                     '==================================================\r\n' +
+                     'Session ID : ' + (sessionUuid || 'Current Session') + '\r\n' +
+                     'Export Date: ' + new Date().toLocaleString() + '\r\n' +
+                     '==================================================\r\n\r\n';
+
+        var body = '';
+        messageNodes.forEach(function(node) {
+            var isUser = node.classList.contains('sdv-cl-msg-user');
+            var sender = isUser ? 'CLIENT / USER' : 'SAHDEV AI ASSISTANT';
+
+            var clone = node.cloneNode(true);
+            var actions = clone.querySelector('.sdv-msg-actions');
+            if (actions) actions.remove();
+
+            var text = (clone.innerText || clone.textContent || '').trim();
+            if (text) {
+                body += '[' + sender + ']:\r\n' + text + '\r\n\r\n' + '--------------------------------------------------\r\n\r\n';
+            }
+        });
+
+        var fullText = header + body;
+        var blob = new Blob([fullText], { type: 'text/plain;charset=utf-8' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        var dateStr = new Date().toISOString().slice(0, 10);
+        a.download = 'Sahdev_Support_Transcript_' + dateStr + '.txt';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(function() { URL.revokeObjectURL(url); }, 500);
+    };
+
+    // ── Code & Message Copy Helpers ───────────────────────────────────────
+    window.sdvCopyCode = function(btn) {
+        if (!btn) return;
+        var container = btn.closest('.sdv-code-container');
+        var codeEl = container ? container.querySelector('code') : null;
+        var text = codeEl ? (codeEl.innerText || codeEl.textContent || '') : '';
+        if (!text) return;
+
+        function showSuccess() {
+            var orig = btn.innerHTML;
+            btn.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg><span>Copied!</span>';
+            setTimeout(function() { btn.innerHTML = orig; }, 2000);
+        }
+
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(showSuccess);
+        } else {
+            var ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            try { document.execCommand('copy'); showSuccess(); } catch(e) {}
+            document.body.removeChild(ta);
+        }
+    };
+
+    window.sdvCopyMsgText = function(btn) {
+        if (!btn) return;
+        var msgEl = btn.closest('.sdv-cl-msg');
+        if (!msgEl) return;
+
+        var clone = msgEl.cloneNode(true);
+        var actions = clone.querySelector('.sdv-msg-actions');
+        if (actions) actions.remove();
+        var text = (clone.innerText || clone.textContent || '').trim();
+        if (!text) return;
+
+        function showSuccess() {
+            var orig = btn.innerHTML;
+            btn.innerHTML = '<span style="color:#059669;font-weight:600;">✓ Copied</span>';
+            setTimeout(function() { btn.innerHTML = orig; }, 1800);
+        }
+
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(showSuccess);
+        } else {
+            var ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            try { document.execCommand('copy'); showSuccess(); } catch(e) {}
+            document.body.removeChild(ta);
+        }
+    };
+
+    // ── CSAT Rating Engine ────────────────────────────────────────────────
+    window.sdvRateMessage = function(msgId, rating, btn) {
+        if (!msgId || !btn) return;
+        var actionsBar = btn.closest('.sdv-msg-actions');
+        if (!actionsBar) return;
+
+        var upBtn = actionsBar.querySelector('.sdv-rate-up');
+        var downBtn = actionsBar.querySelector('.sdv-rate-down');
+        if (upBtn) upBtn.disabled = true;
+        if (downBtn) downBtn.disabled = true;
+
+        if (rating === 1 && upBtn) {
+            upBtn.classList.add('sdv-rated-up');
+        } else if (rating === -1 && downBtn) {
+            downBtn.classList.add('sdv-rated-down');
+        }
+
+        var form = new FormData();
+        form.append('action', 'client_chat_rate_message');
+        form.append('message_id', msgId);
+        form.append('rating', rating);
+        form.append('session_uuid', sessionUuid || '');
+        form.append('visitor_token', visitorToken);
+
+        postAjaxWithFallback(form, function(err, data) {
+            if (!err && data && data.success) {
+                var notice = document.createElement('span');
+                notice.className = 'sdv-msg-actions-rated-notice';
+                notice.textContent = rating === 1 ? 'Thanks for the feedback!' : 'Feedback recorded.';
+                actionsBar.appendChild(notice);
+                setTimeout(function() {
+                    if (notice && notice.parentNode) notice.remove();
+                }, 3000);
+            }
+        });
+    };
+
+    function attachMsgActions(el, msgId, rating) {
+        if (!el || el.querySelector('.sdv-msg-actions')) return;
+        var actions = document.createElement('div');
+        actions.className = 'sdv-msg-actions';
+
+        var copyBtn = document.createElement('button');
+        copyBtn.type = 'button';
+        copyBtn.className = 'sdv-msg-action-btn';
+        copyBtn.title = 'Copy response text';
+        copyBtn.setAttribute('aria-label', 'Copy response');
+        copyBtn.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span>Copy</span>';
+        copyBtn.onclick = function() { window.sdvCopyMsgText(this); };
+        actions.appendChild(copyBtn);
+
+        if (csatEnabled && msgId) {
+            var upBtn = document.createElement('button');
+            upBtn.type = 'button';
+            upBtn.className = 'sdv-msg-action-btn sdv-rate-up' + (rating == 1 ? ' sdv-rated-up' : '');
+            upBtn.title = 'Helpful response';
+            upBtn.setAttribute('aria-label', 'Helpful');
+            upBtn.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>';
+            if (rating) upBtn.disabled = true;
+            upBtn.onclick = function() { window.sdvRateMessage(msgId, 1, this); };
+            actions.appendChild(upBtn);
+
+            var downBtn = document.createElement('button');
+            downBtn.type = 'button';
+            downBtn.className = 'sdv-msg-action-btn sdv-rate-down' + (rating == -1 ? ' sdv-rated-down' : '');
+            downBtn.title = 'Not helpful';
+            downBtn.setAttribute('aria-label', 'Not helpful');
+            downBtn.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h3a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-3"/></svg>';
+            if (rating) downBtn.disabled = true;
+            downBtn.onclick = function() { window.sdvRateMessage(msgId, -1, this); };
+            actions.appendChild(downBtn);
+        }
+
+        el.appendChild(actions);
+    }
+
+    // ── Conversation Starter Chips Engine ─────────────────────────────────
+    function renderStarterChips(chips) {
+        var container = document.getElementById('sdv-starter-chips');
+        if (!container) return;
+        if (!chips || !chips.length) {
+            container.style.display = 'none';
+            container.innerHTML = '';
+            return;
+        }
+
+        starterChipsData = chips;
+        var html = '';
+        chips.forEach(function(chip) {
+            var label = sdvEscapeHtml(chip.label || chip.prompt || '');
+            var icon = chip.icon ? '<span style="font-size:12.5px;">' + sdvEscapeHtml(chip.icon) + '</span>' : '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>';
+            var safePromptAttr = encodeURIComponent(chip.prompt || chip.label || '');
+            html += '<button type="button" class="sdv-starter-chip" onclick="window.sdvSendPromptChip && window.sdvSendPromptChip(decodeURIComponent(\'' + safePromptAttr + '\'));">' +
+                icon +
+                '<span>' + label + '</span>' +
+            '</button>';
+        });
+
+        container.innerHTML = html;
+        container.style.display = 'flex';
+        var msgsEl = document.getElementById('sdv-cl-msgs');
+        if (msgsEl) msgsEl.scrollTop = msgsEl.scrollHeight;
+    }
+
+    window.sdvSendPromptChip = function(promptText) {
+        if (!promptText) return;
+        var inputEl = document.getElementById('sdv-cl-input');
+        if (!inputEl) return;
+        inputEl.value = promptText;
+        var container = document.getElementById('sdv-starter-chips');
+        if (container) container.style.display = 'none';
+        window.sdvSendMessage();
+    };
 
     function resolveChatUrl(href) {
         if (!href) return '#';
@@ -7528,6 +8483,9 @@ HTML;
             appendClMsg(data.role, data.text, false, data.msg_id);
             if (data.msg_id && data.msg_id > highestMsgId) {
                 highestMsgId = data.msg_id;
+            }
+            if (data.role === 'bot') {
+                sdvPlayNotificationChime();
             }
         } else if (data.action === 'ticket_escalated' && data.session_uuid === sessionUuid) {
             renderTicketCreatedCard(data.action_card || {});
@@ -7644,6 +8602,30 @@ HTML;
     window.sdvCloseHistory = function() {
         var drawer = document.getElementById('sdv-cl-history-drawer');
         if (drawer) drawer.classList.remove('sdv-drawer-open');
+    };
+
+    window.sdvToggleKb = function() {
+        var kbDrawer = document.getElementById('sdv-cl-kb-drawer');
+        var histDrawer = document.getElementById('sdv-cl-history-drawer');
+        var guestDrawer = document.getElementById('sdv-cl-guest-drawer');
+        if (histDrawer) histDrawer.classList.remove('sdv-drawer-open');
+        if (guestDrawer) guestDrawer.classList.remove('sdv-drawer-open');
+        if (kbDrawer) {
+            var isOpen = kbDrawer.classList.toggle('sdv-drawer-open');
+            if (isOpen && typeof loadKbArticles === 'function') {
+                var searchInput = document.getElementById('sdv-kb-search');
+                var q = searchInput ? (searchInput.value || '').trim() : '';
+                loadKbArticles(q);
+                if (searchInput) {
+                    setTimeout(function() { try { searchInput.focus(); } catch(e) {} }, 100);
+                }
+            }
+        }
+    };
+
+    window.sdvCloseKb = function() {
+        var kbDrawer = document.getElementById('sdv-cl-kb-drawer');
+        if (kbDrawer) kbDrawer.classList.remove('sdv-drawer-open');
     };
 
     // ── Proactive Message Trigger Engine ─────────────────────────────────
@@ -7860,11 +8842,23 @@ HTML;
             .replace(/</g, '&lt;')
             .replace(/>/g, '&gt;');
 
-        // Code blocks ```code```
+        // Rich Code blocks ```lang\ncode```
         var codeBlocks = [];
-        s = s.replace(/```([\s\S]*?)```/g, function(_, c) {
+        s = s.replace(/```([a-zA-Z0-9_-]*)\r?\n?([\s\S]*?)```/g, function(_, lang, c) {
             var idx = codeBlocks.length;
-            codeBlocks.push('<pre class="sdv-code-block"><code>' + c.trim() + '</code></pre>');
+            var cleanLang = (lang || '').trim().toLowerCase() || 'code';
+            var trimmedCode = (c || '').trim();
+            var blockHtml = '<div class="sdv-code-container">' +
+                '<div class="sdv-code-header">' +
+                    '<span class="sdv-code-lang">' + sdvEscapeHtml(cleanLang) + '</span>' +
+                    '<button type="button" class="sdv-code-copy-btn" title="Copy code" onclick="window.sdvCopyCode && window.sdvCopyCode(this);">' +
+                        '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>' +
+                        '<span>Copy Code</span>' +
+                    '</button>' +
+                '</div>' +
+                '<pre class="sdv-code-block"><code>' + trimmedCode + '</code></pre>' +
+            '</div>';
+            codeBlocks.push(blockHtml);
             return '@@@CB' + idx + '@@@';
         });
 
@@ -8036,7 +9030,7 @@ HTML;
         return res;
     }
 
-    function appendClMsg(role, text, isHtml, msgId) {
+    function appendClMsg(role, text, isHtml, msgId, rating) {
         var msgsEl = document.getElementById('sdv-cl-msgs');
         if (!msgsEl) return null;
         var d = document.createElement('div');
@@ -8049,6 +9043,9 @@ HTML;
             d.innerHTML = text;
         } else {
             d.innerHTML = parseSimpleMarkdown(text);
+        }
+        if (role === 'bot' && !isHtml) {
+            attachMsgActions(d, msgId, rating);
         }
         msgsEl.appendChild(d);
         msgsEl.scrollTop = msgsEl.scrollHeight;
@@ -8101,6 +9098,89 @@ HTML;
         });
     }
 
+    function renderLimitNoticeCardHtml(messageText) {
+        return '<div class="sdv-limit-alert-card">' +
+            '<div class="sdv-escalate-header">' +
+                '<span class="sdv-escalate-icon">🛡️</span>' +
+                '<div>' +
+                    '<div class="sdv-escalate-title">Inquiry Limit Reached</div>' +
+                    '<div class="sdv-escalate-sub">Staff support ticket assistance available</div>' +
+                '</div>' +
+            '</div>' +
+            '<div class="sdv-escalate-desc">' +
+                parseSimpleMarkdown(messageText) +
+            '</div>' +
+            '<a href="javascript:void(0);" onclick="window.sdvEscalateToTicket && window.sdvEscalateToTicket();" class="sdv-chat-link sdv-escalate-link">' +
+                '<span>Convert Conversation to Support Ticket &rarr;</span>' +
+                '<svg class="sdv-chat-link-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>' +
+            '</a>' +
+        '</div>';
+    }
+
+    function sdvApplyLimitState(limitInfo) {
+        var inputEl = document.getElementById('sdv-cl-input');
+        var sendBtn = document.getElementById('sdv-cl-send');
+        var counterEl = document.getElementById('sdv-cl-char-counter');
+        var escalateBar = document.querySelector('.sdv-cl-escalate-bar');
+        var escalateBtn = document.getElementById('sdv-cl-escalate');
+
+        if (inputEl) {
+            inputEl.disabled = true;
+            inputEl.placeholder = 'Inquiry limit reached. Please convert to a ticket.';
+            inputEl.style.background = '#f8fafc';
+            inputEl.style.color = '#94a3b8';
+            inputEl.style.cursor = 'not-allowed';
+        }
+        if (sendBtn) {
+            sendBtn.disabled = true;
+            sendBtn.style.opacity = '0.45';
+            sendBtn.style.cursor = 'not-allowed';
+        }
+        if (counterEl) {
+            counterEl.style.display = 'none';
+        }
+        if (escalateBar) {
+            escalateBar.style.display = 'flex';
+            escalateBar.style.background = '#fffbeb';
+            escalateBar.style.borderBottomColor = '#fde68a';
+            escalateBar.style.color = '#92400e';
+        }
+        if (escalateBtn) {
+            escalateBtn.style.background = 'var(--sdv-brand, #0d6efd)';
+            escalateBtn.style.color = '#ffffff';
+            escalateBtn.style.padding = '3px 10px';
+            escalateBtn.style.borderRadius = '12px';
+            escalateBtn.style.textDecoration = 'none';
+        }
+    }
+
+    function sdvUpdateCharCounter() {
+        var inputEl = document.getElementById('sdv-cl-input');
+        var counterEl = document.getElementById('sdv-cl-char-counter');
+        if (!inputEl || !counterEl || configuredMaxChars <= 0) return;
+
+        var len = (inputEl.value || '').length;
+        if (len === 0) {
+            counterEl.style.display = 'none';
+            return;
+        }
+
+        counterEl.style.display = 'block';
+        counterEl.textContent = len + ' / ' + configuredMaxChars;
+
+        var ratio = len / configuredMaxChars;
+        if (ratio >= 1) {
+            counterEl.style.color = '#ef4444';
+            counterEl.style.fontWeight = '700';
+        } else if (ratio >= 0.85) {
+            counterEl.style.color = '#f59e0b';
+            counterEl.style.fontWeight = '600';
+        } else {
+            counterEl.style.color = '#94a3b8';
+            counterEl.style.fontWeight = 'normal';
+        }
+    }
+
     function renderSingleMessage(m) {
         if (!m) return;
         if (m.id && document.getElementById('sdv-msg-' + m.id)) {
@@ -8127,8 +9207,21 @@ HTML;
             return;
         }
 
+        // Detect if message is a quota / limit notice
+        if (m.sender_type !== 'user' && m.message_text && (
+            m.message_text.indexOf('inquiry limit') > -1 ||
+            m.message_text.indexOf('cumulative discussion limit') > -1 ||
+            m.message_text.indexOf('guest inquiry limit') > -1 ||
+            m.message_text.indexOf('exceeds the maximum allowed limit') > -1
+        )) {
+            var cardHtml = renderLimitNoticeCardHtml(m.message_text);
+            appendClMsg('bot', cardHtml, true, m.id);
+            sdvApplyLimitState();
+            return;
+        }
+
         var role = (m.sender_type === 'user') ? 'user' : 'bot';
-        appendClMsg(role, m.message_text, false, m.id);
+        appendClMsg(role, m.message_text, false, m.id, m.rating);
     }
 
     window.sdvInitChat = function() {
@@ -8150,6 +9243,14 @@ HTML;
                 sessionUuid = data.session_uuid;
                 sdvSafeSet(activeSessionKey, sessionUuid);
 
+                if (data.max_msg_chars) {
+                    configuredMaxChars = parseInt(data.max_msg_chars, 10) || configuredMaxChars;
+                    var inp = document.getElementById('sdv-cl-input');
+                    if (inp && configuredMaxChars > 0) {
+                        inp.setAttribute('maxlength', String(configuredMaxChars));
+                    }
+                }
+
                 if (data.status_chat === 'escalated_ticket' || data.status === 'escalated_ticket') {
                     var escalateBar = document.querySelector('.sdv-cl-escalate-bar');
                     if (escalateBar) escalateBar.style.display = 'none';
@@ -8164,6 +9265,29 @@ HTML;
                         });
                     }
                 }
+
+                if (data.limit_status && data.limit_status.limit_reached) {
+                    sdvApplyLimitState(data.limit_status);
+                    var msgsEl = document.getElementById('sdv-cl-msgs');
+                    if (msgsEl && (!data.messages || data.messages.length === 0)) {
+                        var cardHtml = renderLimitNoticeCardHtml(data.limit_status.message);
+                        appendClMsg('bot', cardHtml, true);
+                    }
+                }
+
+                if (data.starter_chips && Array.isArray(data.starter_chips)) {
+                    starterChipsData = data.starter_chips;
+                    if (!data.messages || data.messages.length <= 1) {
+                        renderStarterChips(data.starter_chips);
+                    }
+                }
+                if (typeof data.csat_enabled !== 'undefined') {
+                    csatEnabled = Boolean(data.csat_enabled);
+                }
+                if (typeof data.sound_enabled !== 'undefined') {
+                    soundEnabled = Boolean(data.sound_enabled);
+                }
+
                 sdvStartLivePolling();
             }
         });
@@ -8176,12 +9300,22 @@ HTML;
         var text = (inputEl.value || '').trim();
         if (!text) return;
 
+        if (configuredMaxChars > 0 && text.length > configuredMaxChars) {
+            alert('Your message exceeds the limit of ' + configuredMaxChars + ' characters. Please shorten your message or submit a support ticket.');
+            return;
+        }
+
+        var chipsEl = document.getElementById('sdv-starter-chips');
+        if (chipsEl) chipsEl.style.display = 'none';
+
         appendClMsg('user', text, false);
         inputEl.value = '';
+        sdvUpdateCharCounter();
         inputEl.disabled = true;
         if (sendBtn) sendBtn.disabled = true;
 
-        var tempBot = appendClMsg('bot', 'Typing...', false);
+        var waveHtml = '<div class="sdv-typing-wave"><span class="sdv-typing-dot"></span><span class="sdv-typing-dot"></span><span class="sdv-typing-dot"></span></div>';
+        var tempBot = appendClMsg('bot', waveHtml, true);
 
         broadcastLiveSync('new_message', {
             session_uuid: sessionUuid,
@@ -8196,18 +9330,22 @@ HTML;
         form.append('message', text);
 
         postAjaxWithFallback(form, function(err, data) {
-            inputEl.disabled = false;
-            if (sendBtn) sendBtn.disabled = false;
-            try { inputEl.focus(); } catch(e) {}
-
             if (err) {
+                inputEl.disabled = false;
+                if (sendBtn) sendBtn.disabled = false;
+                try { inputEl.focus(); } catch(e) {}
                 if (tempBot) tempBot.innerHTML = '⚠️ ' + (err.message || 'Connection error. Please try again.');
                 return;
             }
 
-            if (data.status === 'success' || data.success) {
-                var replyText = data.reply || 'Message received.';
-                if (tempBot) tempBot.innerHTML = parseSimpleMarkdown(replyText);
+            if (data.limit_reached) {
+                var limitNoticeText = data.reply || data.message || 'Inquiry limit reached. Please convert this discussion to a support ticket.';
+                if (tempBot) {
+                    tempBot.innerHTML = renderLimitNoticeCardHtml(limitNoticeText);
+                } else {
+                    appendClMsg('bot', renderLimitNoticeCardHtml(limitNoticeText), true);
+                }
+                sdvApplyLimitState(data);
                 if (data.session_uuid && data.session_uuid !== sessionUuid) {
                     sessionUuid = data.session_uuid;
                     sdvSafeSet(activeSessionKey, sessionUuid);
@@ -8215,7 +9353,35 @@ HTML;
                 broadcastLiveSync('new_message', {
                     session_uuid: sessionUuid,
                     role: 'bot',
-                    text: replyText
+                    text: limitNoticeText
+                });
+                return;
+            }
+
+            inputEl.disabled = false;
+            if (sendBtn) sendBtn.disabled = false;
+            try { inputEl.focus(); } catch(e) {}
+
+            if (data.status === 'success' || data.success) {
+                var replyText = data.reply || 'Message received.';
+                if (tempBot) {
+                    tempBot.innerHTML = parseSimpleMarkdown(replyText);
+                    if (data.message_id) {
+                        tempBot.id = 'sdv-msg-' + data.message_id;
+                        if (data.message_id > highestMsgId) highestMsgId = data.message_id;
+                    }
+                    attachMsgActions(tempBot, data.message_id, 0);
+                }
+                sdvPlayNotificationChime();
+                if (data.session_uuid && data.session_uuid !== sessionUuid) {
+                    sessionUuid = data.session_uuid;
+                    sdvSafeSet(activeSessionKey, sessionUuid);
+                }
+                broadcastLiveSync('new_message', {
+                    session_uuid: sessionUuid,
+                    role: 'bot',
+                    text: replyText,
+                    msg_id: data.message_id || 0
                 });
             } else {
                 if (tempBot) tempBot.innerHTML = '⚠️ ' + (data.message || data.error || 'Could not send message.');
@@ -8259,14 +9425,21 @@ HTML;
             if (res.messages && res.messages.length > 0) {
                 var msgsEl = document.getElementById('sdv-cl-msgs');
                 var shouldScroll = false;
+                var shouldPlayChime = false;
                 res.messages.forEach(function(m) {
                     if (m.id > highestMsgId) highestMsgId = m.id;
                     var exists = document.getElementById('sdv-msg-' + m.id);
                     if (!exists && msgsEl) {
                         renderSingleMessage(m);
                         shouldScroll = true;
+                        if (m.sender_type !== 'user') {
+                            shouldPlayChime = true;
+                        }
                     }
                 });
+                if (shouldPlayChime) {
+                    sdvPlayNotificationChime();
+                }
                 if (shouldScroll && msgsEl) {
                     msgsEl.scrollTop = msgsEl.scrollHeight;
                 }
@@ -8503,6 +9676,25 @@ HTML;
                 } else {
                     appendClMsg('bot', 'No messages recorded in this conversation yet.', false);
                 }
+
+                if (data.limit_status && data.limit_status.limit_reached) {
+                    sdvApplyLimitState(data.limit_status);
+                } else if (data.status !== 'escalated_ticket') {
+                    var inputEl = document.getElementById('sdv-cl-input');
+                    var sendBtn = document.getElementById('sdv-cl-send');
+                    if (inputEl) {
+                        inputEl.disabled = false;
+                        inputEl.placeholder = 'Type your question here...';
+                        inputEl.style.background = '';
+                        inputEl.style.color = '';
+                        inputEl.style.cursor = '';
+                    }
+                    if (sendBtn) {
+                        sendBtn.disabled = false;
+                        sendBtn.style.opacity = '';
+                        sendBtn.style.cursor = '';
+                    }
+                }
             }
             if (closeDrawerOnDone) {
                 window.sdvCloseHistory();
@@ -8528,7 +9720,17 @@ HTML;
             var msgsEl = document.getElementById('sdv-cl-msgs');
             if (msgsEl) {
                 msgsEl.innerHTML = '';
-                appendClMsg('bot', data.greeting || 'Hi! How can I help you today?', false);
+                var botWelcome = appendClMsg('bot', data.greeting || 'Hi! How can I help you today?', false);
+                var chipsDiv = document.createElement('div');
+                chipsDiv.id = 'sdv-starter-chips';
+                chipsDiv.className = 'sdv-starter-chips';
+                chipsDiv.style.display = 'none';
+                msgsEl.appendChild(chipsDiv);
+            }
+            if (data.starter_chips && data.starter_chips.length) {
+                renderStarterChips(data.starter_chips);
+            } else if (starterChipsData && starterChipsData.length) {
+                renderStarterChips(starterChipsData);
             }
             var escalateBar = document.querySelector('.sdv-cl-escalate-bar');
             if (escalateBar) escalateBar.style.display = 'flex';
@@ -8539,8 +9741,32 @@ HTML;
             }
             window.sdvCloseHistory();
             window.sdvCloseKb();
+
             var inputEl = document.getElementById('sdv-cl-input');
-            if (inputEl) try { inputEl.focus(); } catch(e) {}
+            var sendBtn = document.getElementById('sdv-cl-send');
+            if (data.limit_status && data.limit_status.limit_reached) {
+                sdvApplyLimitState(data.limit_status);
+                if (msgsEl) {
+                    var cardHtml = renderLimitNoticeCardHtml(data.limit_status.message);
+                    appendClMsg('bot', cardHtml, true);
+                }
+            } else {
+                if (inputEl) {
+                    inputEl.disabled = false;
+                    inputEl.placeholder = 'Type your question here...';
+                    inputEl.style.background = '';
+                    inputEl.style.color = '';
+                    inputEl.style.cursor = '';
+                    inputEl.value = '';
+                    try { inputEl.focus(); } catch(e) {}
+                }
+                if (sendBtn) {
+                    sendBtn.disabled = false;
+                    sendBtn.style.opacity = '';
+                    sendBtn.style.cursor = '';
+                }
+            }
+            sdvUpdateCharCounter();
 
             broadcastLiveSync('session_switched', { session_uuid: sessionUuid });
         });
@@ -8664,6 +9890,7 @@ HTML;
         var inputEl = document.getElementById('sdv-cl-input');
         if (inputEl && !inputEl._sdvBound) {
             inputEl._sdvBound = true;
+            inputEl.addEventListener('input', sdvUpdateCharCounter);
             inputEl.addEventListener('keydown', function(e) {
                 if (e.key === 'Enter') {
                     e.preventDefault();
@@ -8676,6 +9903,18 @@ HTML;
     function initWidget() {
         attachListeners();
         initProactiveTrigger();
+
+        // Restore sound state icon
+        if (soundEnabled) {
+            var isMuted = sdvSafeGet('sdv_sound_muted', '0') === '1';
+            sdvUpdateSoundIcon(isMuted);
+        }
+
+        // Attach action toolbar to initial static welcome message if present
+        var initialBot = document.querySelector('#sdv-cl-msgs .sdv-cl-msg-bot');
+        if (initialBot) {
+            attachMsgActions(initialBot, 0, 0);
+        }
 
         // Restore chat window open state across tabs / page navigations
         if (sdvSafeGet('sdv_chat_open', '0') === '1') {

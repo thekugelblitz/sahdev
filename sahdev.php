@@ -330,6 +330,17 @@ function sahdev_activate()
                     $table->string('client_chat_launcher_style', 32)->default('circular');
                     $table->string('client_chat_launcher_text', 64)->default('Chat with Us');
                     $table->boolean('client_chat_history_enabled')->default(1);
+                    $table->integer('client_chat_auth_limit_count')->default(30);
+                    $table->string('client_chat_auth_limit_window', 16)->default('daily');
+                    $table->integer('client_chat_guest_limit_count')->default(5);
+                    $table->integer('client_chat_max_msg_chars')->default(1000);
+                    $table->integer('client_chat_max_session_chars')->default(10000);
+                    $table->text('client_chat_limit_message')->nullable();
+                    $table->text('client_chat_guest_limit_message')->nullable();
+                    $table->boolean('client_chat_pii_masking')->default(1);
+                    $table->boolean('client_chat_csat_enabled')->default(1);
+                    $table->boolean('client_chat_sound_enabled')->default(1);
+                    $table->text('client_chat_starter_chips')->nullable();
                     $table->timestamps(); // creates created_at, updated_at
                 }
             );

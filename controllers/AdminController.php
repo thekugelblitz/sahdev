@@ -487,108 +487,765 @@ class AdminController
         $hasMetricsPerm = $isSuper || \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_METRICS_VIEW);
         $hasClientChatPerm = $isSuper || \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_CLIENT_CHAT_MANAGE);
 
-        $tabs = [];
+        $categories = [
+            'chat' => [
+                'title' => 'Chat & Copilot',
+                'icon'  => 'fas fa-comments',
+                'tools' => []
+            ],
+            'intelligence' => [
+                'title' => 'Intelligence & Analytics',
+                'icon'  => 'fas fa-chart-pie',
+                'tools' => []
+            ],
+            'knowledge' => [
+                'title' => 'Knowledge & Prompts',
+                'icon'  => 'fas fa-book-open',
+                'tools' => []
+            ],
+            'automation' => [
+                'title' => 'Automation & Ops',
+                'icon'  => 'fas fa-robot',
+                'tools' => []
+            ],
+            'logs' => [
+                'title' => 'Logs & Audit',
+                'icon'  => 'fas fa-shield-alt',
+                'tools' => []
+            ],
+            'settings' => [
+                'title' => 'Settings & Security',
+                'icon'  => 'fas fa-cog',
+                'tools' => []
+            ],
+        ];
+
+        // 1. Chat & Copilot
         if ($hasCopilotPerm) {
-            $tabs['admin_copilot'] = ['label' => '<i class="fas fa-terminal"></i> Admin Ops Copilot', 'url' => $base . '&action=admin_copilot'];
-        }
-        if ($hasMetricsPerm) {
-            $tabs['organization_intelligence'] = ['label' => '<i class="fas fa-chart-pie"></i> Organization Intelligence', 'url' => $base . '&action=organization_intelligence'];
+            $categories['chat']['tools']['admin_copilot'] = [
+                'label' => 'Admin Ops Copilot',
+                'icon'  => 'fas fa-terminal',
+                'url'   => $base . '&action=admin_copilot',
+                'desc'  => 'Autonomous operations & command dispatcher'
+            ];
         }
         if ($hasClientChatPerm) {
-            $tabs['client_chat'] = ['label' => '<i class="fas fa-comments"></i> Client Live Chat', 'url' => $base . '&action=client_chat'];
-        }
-        if ($hasIncidentsPerm) {
-            $tabs['incidents'] = ['label' => '<i class="fas fa-satellite-dish"></i> Incident & Server Monitoring', 'url' => $base . '&action=incidents'];
-        }
-        if ($hasSettingsPerm) {
-            $tabs['settings'] = ['label' => '<i class="fas fa-cog"></i> General Settings', 'url' => $base];
-            $tabs['permissions'] = ['label' => '<i class="fas fa-user-shield"></i> Role Permissions', 'url' => $base . '&action=permissions'];
-        }
-        $tabs['my_preferences'] = ['label' => '<i class="fas fa-user-cog"></i> My Preferences', 'url' => $base . '&action=my_preferences'];
-        if ($hasSettingsPerm) {
-            $tabs['providers'] = ['label' => '<i class="fas fa-microchip"></i> AI Providers', 'url' => $base . '&action=providers'];
-        }
-        if ($hasKbPerm) {
-            $tabs['knowledgebase'] = ['label' => '<i class="fas fa-book"></i> Knowledgebase', 'url' => $base . '&action=knowledgebase'];
-        }
-        if ($hasSettingsPerm) {
-            $tabs['prompt_manager'] = ['label' => '<i class="fas fa-magic"></i> Prompt Manager', 'url' => $base . '&action=prompt_manager'];
-        }
-        $tabs['summaries'] = ['label' => '<i class="fas fa-file-alt"></i> Ticket Summaries', 'url' => $base . '&action=summaries'];
-        if ($hasCannedPerm) {
-            $tabs['canned_responses'] = ['label' => '<i class="fas fa-save"></i> Canned Responses', 'url' => $base . '&action=canned_responses'];
-        }
-        if ($hasSettingsPerm) {
-            $tabs['intents'] = ['label' => '<i class="fas fa-bullseye"></i> Intents Manager', 'url' => $base . '&action=intents'];
-        }
-        if ($hasToolsPerm) {
-            $tabs['tools'] = ['label' => '<i class="fas fa-tools"></i> Tools Execution', 'url' => $base . '&action=tools'];
-        }
-        if ($hasSettingsPerm) {
-            $tabs['autopilot'] = ['label' => '<i class="fas fa-robot"></i> Autopilot', 'url' => $base . '&action=autopilot'];
-            $tabs['cron_center'] = ['label' => '<i class="fas fa-clock"></i> Separate Cron', 'url' => $base . '&action=cron_center'];
-        }
-        $tabs['ticket_insights'] = ['label' => '<i class="fas fa-brain"></i> Ticket Insights', 'url' => $base . '&action=ticket_insights'];
-        if ($hasAnalyticsPerm) {
-            $tabs['analytics'] = ['label' => '<i class="fas fa-chart-line"></i> Analytics & ROI', 'url' => $base . '&action=analytics'];
-        }
-        if ($hasAuditPerm) {
-            $tabs['audit_trail'] = ['label' => '<i class="fas fa-history"></i> Audit Trail', 'url' => $base . '&action=audit_trail'];
-            $tabs['module_logs'] = ['label' => '<i class="fas fa-clipboard-list"></i> Module log', 'url' => $base . '&action=module_logs'];
-            $tabs['logs_maintenance'] = ['label' => '<i class="fas fa-database"></i> Logs & Maintenance', 'url' => $base . '&action=logs_maintenance'];
+            $categories['chat']['tools']['client_chat'] = [
+                'label' => 'Client Live Chat',
+                'icon'  => 'fas fa-headset',
+                'url'   => $base . '&action=client_chat',
+                'desc'  => 'Customer portal live widget & sessions'
+            ];
         }
 
-        $html = '<style>
-            .sahdev-nav-wrapper { 
-                background: #fff; 
-                padding: 15px 20px; 
-                border-radius: 8px; 
-                box-shadow: 0 2px 8px rgba(0,0,0,0.04); 
-                margin-bottom: 25px; 
-                display: flex;
-                flex-wrap: wrap;
-                gap: 10px;
-                align-items: center;
-                border-left: 4px solid #0d6efd;
+        // 2. Intelligence & Analytics
+        if ($hasMetricsPerm) {
+            $categories['intelligence']['tools']['organization_intelligence'] = [
+                'label' => 'Org Intelligence',
+                'icon'  => 'fas fa-chart-pie',
+                'url'   => $base . '&action=organization_intelligence',
+                'desc'  => 'Executive KPIs, department metrics & trends'
+            ];
+        }
+        if ($hasAnalyticsPerm) {
+            $categories['intelligence']['tools']['analytics'] = [
+                'label' => 'Analytics & ROI',
+                'icon'  => 'fas fa-chart-line',
+                'url'   => $base . '&action=analytics',
+                'desc'  => 'Token usage, costs, efficiency & time saved'
+            ];
+        }
+        $categories['intelligence']['tools']['ticket_insights'] = [
+            'label' => 'Ticket Insights',
+            'icon'  => 'fas fa-brain',
+            'url'   => $base . '&action=ticket_insights',
+            'desc'  => 'Real-time classification, triage badges & sentiment'
+        ];
+        $categories['intelligence']['tools']['summaries'] = [
+            'label' => 'Ticket Summaries',
+            'icon'  => 'fas fa-file-alt',
+            'url'   => $base . '&action=summaries',
+            'desc'  => 'AI interaction summaries & resolution digest'
+        ];
+
+        // 3. Knowledge & Prompts
+        if ($hasKbPerm) {
+            $categories['knowledge']['tools']['knowledgebase'] = [
+                'label' => 'Knowledgebase Grounding',
+                'icon'  => 'fas fa-book',
+                'url'   => $base . '&action=knowledgebase',
+                'desc'  => 'Article indexing & dynamic RAG vectors'
+            ];
+        }
+        if ($hasSettingsPerm) {
+            $categories['knowledge']['tools']['prompt_manager'] = [
+                'label' => 'Prompt Manager',
+                'icon'  => 'fas fa-magic',
+                'url'   => $base . '&action=prompt_manager',
+                'desc'  => 'System instructions, system persona & prompt presets'
+            ];
+            $categories['knowledge']['tools']['intents'] = [
+                'label' => 'Intents Manager',
+                'icon'  => 'fas fa-bullseye',
+                'url'   => $base . '&action=intents',
+                'desc'  => 'Custom trigger phrases, intent classification & actions'
+            ];
+        }
+        if ($hasCannedPerm) {
+            $categories['knowledge']['tools']['canned_responses'] = [
+                'label' => 'Canned Responses',
+                'icon'  => 'fas fa-save',
+                'url'   => $base . '&action=canned_responses',
+                'desc'  => 'Macros, quick canned snippets & templates'
+            ];
+        }
+
+        // 4. Automation & Ops
+        if ($hasSettingsPerm) {
+            $categories['automation']['tools']['autopilot'] = [
+                'label' => 'Autopilot',
+                'icon'  => 'fas fa-robot',
+                'url'   => $base . '&action=autopilot',
+                'desc'  => 'Autonomous ticket triage & auto-drafting'
+            ];
+            $categories['automation']['tools']['cron_center'] = [
+                'label' => 'Automation Cron Center',
+                'icon'  => 'fas fa-clock',
+                'url'   => $base . '&action=cron_center',
+                'desc'  => 'Scheduled tasks, background workers & queue health'
+            ];
+        }
+        if ($hasIncidentsPerm) {
+            $categories['automation']['tools']['incidents'] = [
+                'label' => 'Incident Monitoring',
+                'icon'  => 'fas fa-satellite-dish',
+                'url'   => $base . '&action=incidents',
+                'desc'  => 'Server uptime, outage detection & client alerts'
+            ];
+        }
+        if ($hasToolsPerm) {
+            $categories['automation']['tools']['tools'] = [
+                'label' => 'Diagnostic Tools',
+                'icon'  => 'fas fa-tools',
+                'url'   => $base . '&action=tools',
+                'desc'  => 'Diagnostic server commands & network tests'
+            ];
+        }
+
+        // 5. Logs & Audit (Consolidated & clarified)
+        if ($hasAuditPerm) {
+            $categories['logs']['tools']['audit_trail'] = [
+                'label' => 'Audit Trail',
+                'icon'  => 'fas fa-history',
+                'url'   => $base . '&action=audit_trail',
+                'desc'  => 'Security audit log, tokens & prompt inspection'
+            ];
+            $categories['logs']['tools']['module_logs'] = [
+                'label' => 'Module Logs',
+                'icon'  => 'fas fa-clipboard-list',
+                'url'   => $base . '&action=module_logs',
+                'desc'  => 'System debug logger & API communications'
+            ];
+            $categories['logs']['tools']['logs_maintenance'] = [
+                'label' => 'Logs & Maintenance',
+                'icon'  => 'fas fa-database',
+                'url'   => $base . '&action=logs_maintenance',
+                'desc'  => 'Table sizes, archiving & retention cleanup'
+            ];
+        }
+
+        // 6. Settings & Security
+        if ($hasSettingsPerm) {
+            $categories['settings']['tools']['settings'] = [
+                'label' => 'General Settings',
+                'icon'  => 'fas fa-cog',
+                'url'   => $base,
+                'desc'  => 'Global feature switches, models & UI'
+            ];
+            $categories['settings']['tools']['providers'] = [
+                'label' => 'AI Providers',
+                'icon'  => 'fas fa-microchip',
+                'url'   => $base . '&action=providers',
+                'desc'  => 'LLM gateways, OpenAI, Anthropic, Gemini API keys'
+            ];
+            $categories['settings']['tools']['permissions'] = [
+                'label' => 'Role Permissions',
+                'icon'  => 'fas fa-user-shield',
+                'url'   => $base . '&action=permissions',
+                'desc'  => 'WHMCS admin group role-based access controls'
+            ];
+        }
+        $categories['settings']['tools']['my_preferences'] = [
+            'label' => 'My Preferences',
+            'icon'  => 'fas fa-user-cog',
+            'url'   => $base . '&action=my_preferences',
+            'desc'  => 'Personal tone, default model & notification options'
+        ];
+
+        // Filter out any categories that have no accessible tools for current admin
+        $categories = array_filter($categories, function($c) {
+            return !empty($c['tools']);
+        });
+
+        // Resolve active category
+        $activeCat = 'settings';
+        foreach ($categories as $catKey => $cat) {
+            if (isset($cat['tools'][$activeTab])) {
+                $activeCat = $catKey;
+                break;
             }
-            .sahdev-nav-btn {
+        }
+        if (!isset($categories[$activeCat])) {
+            $catKeys = array_keys($categories);
+            $activeCat = $catKeys[0] ?? 'settings';
+        }
+
+        // Build items for Quick Jump modal
+        $quickJumpItems = [];
+        foreach ($categories as $catKey => $cat) {
+            foreach ($cat['tools'] as $toolKey => $tool) {
+                $quickJumpItems[] = [
+                    'id'       => $toolKey,
+                    'category' => $cat['title'],
+                    'label'    => $tool['label'],
+                    'icon'     => $tool['icon'],
+                    'url'      => $tool['url'],
+                    'desc'     => $tool['desc'],
+                    'active'   => ($toolKey === $activeTab)
+                ];
+            }
+        }
+        $quickJumpJson = htmlspecialchars(json_encode($quickJumpItems), ENT_QUOTES, 'UTF-8');
+
+        $html = '<style>
+            .sahdev-nav-system {
+                background: #ffffff;
+                border-radius: 12px;
+                box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.08), 0 1px 3px rgba(15, 23, 42, 0.04);
+                border: 1px solid #e2e8f0;
+                margin-bottom: 25px;
+                overflow: hidden;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            }
+            .sahdev-nav-tier1 {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                padding: 10px 18px;
+                background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+                border-bottom: 1px solid #e2e8f0;
+                gap: 12px;
+                flex-wrap: wrap;
+            }
+            .sahdev-nav-brand-wrap {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+            }
+            .sahdev-nav-brand {
+                display: inline-flex;
+                align-items: center;
+                gap: 8px;
+                font-weight: 800;
+                font-size: 15px;
+                color: #0f172a;
+                text-decoration: none !important;
+                letter-spacing: -0.02em;
+            }
+            .sahdev-nav-brand i {
+                color: #4f46e5;
+                font-size: 17px;
+            }
+            .sahdev-ai-badge {
+                padding: 2px 7px;
+                font-size: 10px;
+                font-weight: 700;
+                background: linear-gradient(135deg, #0d6efd, #6366f1);
+                color: #ffffff;
+                border-radius: 9999px;
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+            }
+            .sahdev-nav-categories {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                flex-wrap: wrap;
+            }
+            .sahdev-cat-tab {
+                padding: 6px 12px;
+                font-size: 13px;
+                font-weight: 600;
+                color: #475569;
+                border-radius: 8px;
+                text-decoration: none !important;
+                display: inline-flex;
+                align-items: center;
+                gap: 7px;
+                transition: all 0.18s ease;
+                background: transparent;
+                border: 1px solid transparent;
+            }
+            .sahdev-cat-tab:hover {
+                background: #e2e8f0;
+                color: #0f172a;
+                border-color: #cbd5e1;
+            }
+            .sahdev-cat-tab.active {
+                background: #0f172a;
+                color: #ffffff !important;
+                border-color: #0f172a;
+                box-shadow: 0 2px 8px rgba(15, 23, 42, 0.25);
+            }
+            .sahdev-cat-tab.active i {
+                color: #38bdf8;
+            }
+            .sahdev-cat-count {
+                font-size: 10px;
+                font-weight: 700;
+                padding: 1px 6px;
+                border-radius: 9999px;
+                background: #e2e8f0;
+                color: #475569;
+            }
+            .sahdev-cat-tab.active .sahdev-cat-count {
+                background: rgba(255, 255, 255, 0.2);
+                color: #ffffff;
+            }
+            .sahdev-nav-actions {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                margin-left: auto;
+            }
+            .sahdev-quick-jump-trigger {
+                padding: 6px 11px;
+                font-size: 12px;
+                font-weight: 600;
+                color: #334155;
+                background: #ffffff;
+                border: 1px solid #cbd5e1;
+                border-radius: 8px;
+                display: inline-flex;
+                align-items: center;
+                gap: 7px;
+                cursor: pointer;
+                transition: all 0.15s ease;
+                box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+                line-height: 1.4;
+            }
+            .sahdev-quick-jump-trigger:hover {
+                background: #f8fafc;
+                border-color: #94a3b8;
+                color: #0f172a;
+            }
+            .sahdev-quick-jump-trigger kbd {
+                padding: 1px 5px;
+                font-size: 10px;
+                font-family: inherit;
+                font-weight: 700;
+                background: #f1f5f9;
+                border: 1px solid #cbd5e1;
+                border-radius: 4px;
+                color: #64748b;
+            }
+            .sahdev-copilot-quick-btn {
+                padding: 6px 12px;
+                font-size: 12px;
+                font-weight: 600;
+                color: #4338ca;
+                background: #eef2ff;
+                border: 1px solid #c7d2fe;
+                border-radius: 8px;
                 display: inline-flex;
                 align-items: center;
                 gap: 6px;
-                padding: 8px 16px;
-                font-size: 14px;
-                font-weight: 500;
-                color: #495057;
-                background: #f8f9fa;
-                border: 1px solid #e9ecef;
-                border-radius: 6px;
-                text-decoration: none !important;
-                transition: all 0.2s ease-in-out;
+                cursor: pointer;
+                transition: all 0.15s ease;
+                line-height: 1.4;
             }
-            .sahdev-nav-btn:hover {
-                background: #e9ecef;
+            .sahdev-copilot-quick-btn:hover {
+                background: #e0e7ff;
+                border-color: #a5b4fc;
+                color: #312e81;
+            }
+            .sahdev-nav-tier2 {
+                display: flex;
+                align-items: center;
+                padding: 10px 18px;
+                background: #ffffff;
+                gap: 8px;
+                flex-wrap: wrap;
+            }
+            .sahdev-subnav-context {
+                font-size: 11px;
+                font-weight: 700;
+                color: #94a3b8;
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+                margin-right: 6px;
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+            }
+            .sahdev-subnav-item {
+                display: inline-flex;
+                align-items: center;
+                gap: 7px;
+                padding: 6px 13px;
+                font-size: 13px;
+                font-weight: 500;
+                color: #334155;
+                background: #f8fafc;
+                border: 1px solid #e2e8f0;
+                border-radius: 7px;
+                text-decoration: none !important;
+                transition: all 0.15s ease;
+            }
+            .sahdev-subnav-item:hover {
+                background: #f1f5f9;
                 color: #0d6efd;
+                border-color: #cbd5e1;
                 transform: translateY(-1px);
             }
-            .sahdev-nav-btn.active {
+            .sahdev-subnav-item.active {
                 background: #0d6efd;
-                color: #fff;
+                color: #ffffff !important;
                 border-color: #0d6efd;
-                box-shadow: 0 4px 10px rgba(13, 110, 253, 0.2);
+                font-weight: 600;
+                box-shadow: 0 2px 8px rgba(13, 110, 253, 0.28);
             }
-            .sahdev-nav-btn i { font-size: 13px; }
+            .sahdev-subnav-item i {
+                font-size: 12px;
+            }
             .sahdev-page-container {
                 width: 100%;
                 padding: 20px;
             }
+            /* Quick Jump Modal Overlay */
+            .sahdev-qj-overlay {
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background: rgba(15, 23, 42, 0.55);
+                backdrop-filter: blur(4px);
+                z-index: 100000;
+                display: none;
+                align-items: flex-start;
+                justify-content: center;
+                padding-top: 12vh;
+            }
+            .sahdev-qj-modal {
+                width: 100%;
+                max-width: 560px;
+                background: #ffffff;
+                border-radius: 12px;
+                box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+                border: 1px solid #cbd5e1;
+                overflow: hidden;
+                display: flex;
+                flex-direction: column;
+                animation: sahdevQjSlide 0.15s ease-out;
+            }
+            @keyframes sahdevQjSlide {
+                from { opacity: 0; transform: translateY(-10px) scale(0.98); }
+                to { opacity: 1; transform: translateY(0) scale(1); }
+            }
+            .sahdev-qj-header {
+                display: flex;
+                align-items: center;
+                padding: 14px 16px;
+                border-bottom: 1px solid #e2e8f0;
+                gap: 10px;
+            }
+            .sahdev-qj-search-input {
+                flex: 1;
+                border: none;
+                outline: none;
+                font-size: 15px;
+                color: #0f172a;
+                background: transparent;
+            }
+            .sahdev-qj-close {
+                background: transparent;
+                border: none;
+                cursor: pointer;
+                color: #94a3b8;
+                font-size: 16px;
+                padding: 4px;
+            }
+            .sahdev-qj-close:hover {
+                color: #0f172a;
+            }
+            .sahdev-qj-body {
+                max-height: 380px;
+                overflow-y: auto;
+                padding: 8px;
+            }
+            .sahdev-qj-item {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                padding: 9px 12px;
+                border-radius: 8px;
+                text-decoration: none !important;
+                color: #1e293b;
+                transition: background 0.12s ease;
+                cursor: pointer;
+            }
+            .sahdev-qj-item:hover, .sahdev-qj-item.selected {
+                background: #f1f5f9;
+                color: #0d6efd;
+            }
+            .sahdev-qj-item-left {
+                display: flex;
+                align-items: center;
+                gap: 12px;
+            }
+            .sahdev-qj-item-icon {
+                width: 32px;
+                height: 32px;
+                border-radius: 6px;
+                background: #f8fafc;
+                border: 1px solid #e2e8f0;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 14px;
+                color: #64748b;
+            }
+            .sahdev-qj-item:hover .sahdev-qj-item-icon, .sahdev-qj-item.selected .sahdev-qj-item-icon {
+                background: #0d6efd;
+                color: #ffffff;
+                border-color: #0d6efd;
+            }
+            .sahdev-qj-item-info {
+                display: flex;
+                flex-direction: column;
+            }
+            .sahdev-qj-item-title {
+                font-size: 13px;
+                font-weight: 600;
+            }
+            .sahdev-qj-item-desc {
+                font-size: 11px;
+                color: #64748b;
+            }
+            .sahdev-qj-item-badge {
+                font-size: 10px;
+                font-weight: 700;
+                text-transform: uppercase;
+                padding: 2px 7px;
+                border-radius: 9999px;
+                background: #e2e8f0;
+                color: #475569;
+            }
+            .sahdev-qj-footer {
+                padding: 8px 16px;
+                background: #f8fafc;
+                border-top: 1px solid #e2e8f0;
+                font-size: 11px;
+                color: #64748b;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+            }
         </style>';
 
-        $html .= '<div class="sahdev-nav-wrapper">';
-        foreach ($tabs as $key => $tab) {
-            $activeClass = ($key === $activeTab) ? ' active' : '';
-            $html .= sprintf('<a href="%s" class="sahdev-nav-btn%s">%s</a>', $tab['url'], $activeClass, $tab['label']);
+        $html .= '<div class="sahdev-nav-system">';
+        // Tier 1: Categories Bar
+        $html .= '<div class="sahdev-nav-tier1">';
+        $html .= '<div class="sahdev-nav-brand-wrap">';
+        $html .= '<a href="' . $base . '" class="sahdev-nav-brand"><i class="fas fa-brain"></i> SAHDEV <span class="sahdev-ai-badge">AI Core</span></a>';
+        $html .= '</div>';
+
+        $html .= '<nav class="sahdev-nav-categories">';
+        foreach ($categories as $catKey => $cat) {
+            $isCatActive = ($catKey === $activeCat);
+            $activeClass = $isCatActive ? ' active' : '';
+            $firstTool = reset($cat['tools']);
+            $catUrl = $firstTool['url'] ?? $base;
+            if ($isCatActive && isset($cat['tools'][$activeTab])) {
+                $catUrl = $cat['tools'][$activeTab]['url'];
+            }
+            $toolCount = count($cat['tools']);
+            $html .= sprintf(
+                '<a href="%s" class="sahdev-cat-tab%s" title="%s"><i class="%s"></i> %s <span class="sahdev-cat-count">%d</span></a>',
+                $catUrl,
+                $activeClass,
+                htmlspecialchars($cat['title']),
+                $cat['icon'],
+                htmlspecialchars($cat['title']),
+                $toolCount
+            );
+        }
+        $html .= '</nav>';
+
+        // Actions: Quick Jump (Ctrl+K) + Copilot Drawer shortcut
+        $html .= '<div class="sahdev-nav-actions">';
+        $html .= '<button type="button" class="sahdev-quick-jump-trigger" id="sahdevQuickJumpTrigger" title="Quick Jump (Ctrl+K)"><i class="fas fa-search"></i> <span>Quick Jump</span> <kbd>Ctrl+K</kbd></button>';
+        if ($hasCopilotPerm) {
+            $html .= '<button type="button" class="sahdev-copilot-quick-btn" onclick="if(typeof sahdevToggleAdminCopilot===\'function\'){sahdevToggleAdminCopilot(event);}" title="Toggle AI Operations Copilot"><i class="fas fa-robot"></i> <span>Copilot</span></button>';
         }
         $html .= '</div>';
+        $html .= '</div>'; // End Tier 1
+
+        // Tier 2: Sub-Tools Bar for active category
+        $activeCategoryData = $categories[$activeCat] ?? reset($categories);
+        $html .= '<div class="sahdev-nav-tier2">';
+        $html .= '<span class="sahdev-subnav-context"><i class="' . $activeCategoryData['icon'] . '"></i> ' . htmlspecialchars($activeCategoryData['title']) . ':</span>';
+        foreach ($activeCategoryData['tools'] as $toolKey => $tool) {
+            $isToolActive = ($toolKey === $activeTab);
+            $activeClass = $isToolActive ? ' active' : '';
+            $html .= sprintf(
+                '<a href="%s" class="sahdev-subnav-item%s" title="%s"><i class="%s"></i> <span>%s</span></a>',
+                $tool['url'],
+                $activeClass,
+                htmlspecialchars($tool['desc']),
+                $tool['icon'],
+                htmlspecialchars($tool['label'])
+            );
+        }
+        $html .= '</div>'; // End Tier 2
+
+        $html .= '</div>'; // End nav system
+
+        // Quick Jump Modal Markup & Script
+        $html .= '<div class="sahdev-qj-overlay" id="sahdevQuickJumpOverlay">';
+        $html .= '<div class="sahdev-qj-modal">';
+        $html .= '<div class="sahdev-qj-header">';
+        $html .= '<i class="fas fa-search" style="color: #64748b;"></i>';
+        $html .= '<input type="text" id="sahdevQuickJumpInput" class="sahdev-qj-search-input" placeholder="Jump to any AI tool or setting... (Type or use ↑↓)" autocomplete="off">';
+        $html .= '<button type="button" class="sahdev-qj-close" id="sahdevQuickJumpClose" title="Close (Esc)">&times;</button>';
+        $html .= '</div>';
+        $html .= '<div class="sahdev-qj-body" id="sahdevQuickJumpResults"></div>';
+        $html .= '<div class="sahdev-qj-footer">';
+        $html .= '<span>Navigation: <kbd style="padding:1px 4px;background:#e2e8f0;border-radius:3px;">↑</kbd> <kbd style="padding:1px 4px;background:#e2e8f0;border-radius:3px;">↓</kbd> to select, <kbd style="padding:1px 4px;background:#e2e8f0;border-radius:3px;">Enter</kbd> to jump</span>';
+        $html .= '<span><kbd style="padding:1px 4px;background:#e2e8f0;border-radius:3px;">Esc</kbd> to exit</span>';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '</div>';
+
+        $html .= '<script>
+        (function() {
+            var items = ' . $quickJumpJson . ';
+            var overlay = document.getElementById("sahdevQuickJumpOverlay");
+            var trigger = document.getElementById("sahdevQuickJumpTrigger");
+            var closeBtn = document.getElementById("sahdevQuickJumpClose");
+            var input = document.getElementById("sahdevQuickJumpInput");
+            var results = document.getElementById("sahdevQuickJumpResults");
+            var selectedIdx = 0;
+            var filtered = [];
+
+            function renderResults(list) {
+                filtered = list;
+                results.innerHTML = "";
+                if (!list || list.length === 0) {
+                    results.innerHTML = \'<div style="padding: 24px; text-align: center; color: #94a3b8; font-size: 13px;"><i class="fas fa-search" style="font-size: 20px; margin-bottom: 8px; display:block;"></i>No tools or settings found matching your search.</div>\';
+                    return;
+                }
+                list.forEach(function(item, idx) {
+                    var a = document.createElement("a");
+                    a.href = item.url;
+                    a.className = "sahdev-qj-item" + (idx === selectedIdx ? " selected" : "");
+                    a.innerHTML = \'<div class="sahdev-qj-item-left">\' +
+                        \'<div class="sahdev-qj-item-icon"><i class="\' + item.icon + \'"></i></div>\' +
+                        \'<div class="sahdev-qj-item-info">\' +
+                            \'<span class="sahdev-qj-item-title">\' + item.label + (item.active ? \' <span style="font-size:10px; color:#0d6efd; font-weight:700;">● Active Page</span>\' : \'\') + \'</span>\' +
+                            \'<span class="sahdev-qj-item-desc">\' + item.desc + \'</span>\' +
+                        \'</div>\' +
+                    \'</div>\' +
+                    \'<span class="sahdev-qj-item-badge">\' + item.category + \'</span>\';
+                    results.appendChild(a);
+                });
+            }
+
+            function openModal() {
+                if (!overlay) return;
+                overlay.style.display = "flex";
+                if (input) {
+                    input.value = "";
+                    selectedIdx = 0;
+                    renderResults(items);
+                    setTimeout(function() { input.focus(); }, 50);
+                }
+            }
+
+            function closeModal() {
+                if (!overlay) return;
+                overlay.style.display = "none";
+            }
+
+            if (trigger) trigger.addEventListener("click", openModal);
+            if (closeBtn) closeBtn.addEventListener("click", closeModal);
+            if (overlay) {
+                overlay.addEventListener("click", function(e) {
+                    if (e.target === overlay) closeModal();
+                });
+            }
+
+            document.addEventListener("keydown", function(e) {
+                if ((e.ctrlKey || e.metaKey) && (e.key === "k" || e.key === "K")) {
+                    e.preventDefault();
+                    if (overlay && overlay.style.display === "flex") {
+                        closeModal();
+                    } else {
+                        openModal();
+                    }
+                } else if (e.key === "Escape" && overlay && overlay.style.display === "flex") {
+                    closeModal();
+                } else if (overlay && overlay.style.display === "flex") {
+                    if (e.key === "ArrowDown") {
+                        e.preventDefault();
+                        if (filtered.length > 0) {
+                            selectedIdx = (selectedIdx + 1) % filtered.length;
+                            renderResults(filtered);
+                            ensureVisible();
+                        }
+                    } else if (e.key === "ArrowUp") {
+                        e.preventDefault();
+                        if (filtered.length > 0) {
+                            selectedIdx = (selectedIdx - 1 + filtered.length) % filtered.length;
+                            renderResults(filtered);
+                            ensureVisible();
+                        }
+                    } else if (e.key === "Enter") {
+                        e.preventDefault();
+                        if (filtered[selectedIdx]) {
+                            window.location.href = filtered[selectedIdx].url;
+                        }
+                    }
+                }
+            });
+
+            function ensureVisible() {
+                var el = results.querySelectorAll(".sahdev-qj-item")[selectedIdx];
+                if (el) {
+                    el.scrollIntoView({ block: "nearest" });
+                }
+            }
+
+            if (input) {
+                input.addEventListener("input", function() {
+                    var q = this.value.toLowerCase().trim();
+                    selectedIdx = 0;
+                    if (!q) {
+                        renderResults(items);
+                        return;
+                    }
+                    var matched = items.filter(function(it) {
+                        return it.label.toLowerCase().indexOf(q) !== -1 ||
+                               it.desc.toLowerCase().indexOf(q) !== -1 ||
+                               it.category.toLowerCase().indexOf(q) !== -1 ||
+                               it.id.toLowerCase().indexOf(q) !== -1;
+                    });
+                    renderResults(matched);
+                });
+            }
+        })();
+        </script>';
 
         // Auto-render copilot drawer on all Sahdev module pages if not yet rendered
         if (function_exists('sahdev_render_admin_copilot_drawer')) {
@@ -1237,6 +1894,39 @@ class AdminController
             }
             if (isset($_POST['copilot_primary_provider_id'])) {
                 $updatePayload['copilot_primary_provider_id'] = $copilotPrimaryProviderId ?: null;
+            }
+            if (isset($_POST['client_chat_auth_limit_count'])) {
+                $updatePayload['client_chat_auth_limit_count'] = max(0, (int) $_POST['client_chat_auth_limit_count']);
+            }
+            if (isset($_POST['client_chat_auth_limit_window'])) {
+                $updatePayload['client_chat_auth_limit_window'] = in_array($_POST['client_chat_auth_limit_window'], ['daily', 'weekly', 'monthly'], true) ? $_POST['client_chat_auth_limit_window'] : 'daily';
+            }
+            if (isset($_POST['client_chat_guest_limit_count'])) {
+                $updatePayload['client_chat_guest_limit_count'] = max(0, (int) $_POST['client_chat_guest_limit_count']);
+            }
+            if (isset($_POST['client_chat_max_msg_chars'])) {
+                $updatePayload['client_chat_max_msg_chars'] = max(0, (int) $_POST['client_chat_max_msg_chars']);
+            }
+            if (isset($_POST['client_chat_max_session_chars'])) {
+                $updatePayload['client_chat_max_session_chars'] = max(0, (int) $_POST['client_chat_max_session_chars']);
+            }
+            if (isset($_POST['client_chat_limit_message'])) {
+                $updatePayload['client_chat_limit_message'] = trim($_POST['client_chat_limit_message']) ?: null;
+            }
+            if (isset($_POST['client_chat_guest_limit_message'])) {
+                $updatePayload['client_chat_guest_limit_message'] = trim($_POST['client_chat_guest_limit_message']) ?: null;
+            }
+            if (isset($_POST['client_chat_pii_masking'])) {
+                $updatePayload['client_chat_pii_masking'] = !empty($_POST['client_chat_pii_masking']) ? 1 : 0;
+            }
+            if (isset($_POST['client_chat_csat_enabled'])) {
+                $updatePayload['client_chat_csat_enabled'] = !empty($_POST['client_chat_csat_enabled']) ? 1 : 0;
+            }
+            if (isset($_POST['client_chat_sound_enabled'])) {
+                $updatePayload['client_chat_sound_enabled'] = !empty($_POST['client_chat_sound_enabled']) ? 1 : 0;
+            }
+            if (isset($_POST['client_chat_starter_chips'])) {
+                $updatePayload['client_chat_starter_chips'] = trim($_POST['client_chat_starter_chips']) ?: null;
             }
             if (isset($_POST['copilot_fallback_provider_id'])) {
                 $updatePayload['copilot_fallback_provider_id'] = $copilotFallbackProviderId ?: null;
@@ -7978,7 +8668,7 @@ class AdminController
         }
 
         $currentTab = $_GET['tab'] ?? 'sessions';
-        if (!in_array($currentTab, ['sessions', 'prompts', 'datasources', 'customizer'], true)) {
+        if (!in_array($currentTab, ['sessions', 'prompts', 'datasources', 'customizer', 'limits'], true)) {
             $currentTab = 'sessions';
         }
 
@@ -8016,6 +8706,9 @@ class AdminController
                     'client_chat_launcher_style'    => trim($_POST['client_chat_launcher_style'] ?? 'circular'),
                     'client_chat_launcher_text'     => trim($_POST['client_chat_launcher_text'] ?? 'Chat with Us'),
                     'client_chat_history_enabled'   => !empty($_POST['client_chat_history_enabled']) ? 1 : 0,
+                    'client_chat_csat_enabled'      => !empty($_POST['client_chat_csat_enabled']) ? 1 : 0,
+                    'client_chat_sound_enabled'     => !empty($_POST['client_chat_sound_enabled']) ? 1 : 0,
+                    'client_chat_starter_chips'     => trim($_POST['client_chat_starter_chips'] ?? '') ?: null,
                     'updated_at'                    => \Carbon\Carbon::now(),
                 ]);
                 $successMessage = "Widget configuration and appearance saved successfully.";
@@ -8096,6 +8789,23 @@ class AdminController
                 }
                 $currentTab = 'sessions';
             }
+
+            // 6. Save Quotas & Abuse Protection Limits
+            if (isset($_POST['save_client_chat_limits'])) {
+                Capsule::table('tblsahdev_settings')->where('id', $settingsId)->update([
+                    'client_chat_auth_limit_count'    => max(0, (int)($_POST['client_chat_auth_limit_count'] ?? 30)),
+                    'client_chat_auth_limit_window'   => in_array($_POST['client_chat_auth_limit_window'] ?? '', ['daily', 'weekly', 'monthly'], true) ? $_POST['client_chat_auth_limit_window'] : 'daily',
+                    'client_chat_guest_limit_count'   => max(0, (int)($_POST['client_chat_guest_limit_count'] ?? 5)),
+                    'client_chat_max_msg_chars'       => max(0, (int)($_POST['client_chat_max_msg_chars'] ?? 1000)),
+                    'client_chat_max_session_chars'   => max(0, (int)($_POST['client_chat_max_session_chars'] ?? 10000)),
+                    'client_chat_limit_message'       => trim($_POST['client_chat_limit_message'] ?? '') ?: null,
+                    'client_chat_guest_limit_message' => trim($_POST['client_chat_guest_limit_message'] ?? '') ?: null,
+                    'client_chat_pii_masking'         => !empty($_POST['client_chat_pii_masking']) ? 1 : 0,
+                    'updated_at'                      => \Carbon\Carbon::now(),
+                ]);
+                $successMessage = "AI Rate Limits, Quotas & Token Drain Protection settings saved successfully.";
+                $currentTab = 'limits';
+            }
         }
 
         $settings = Capsule::table('tblsahdev_settings')->first();
@@ -8139,6 +8849,8 @@ class AdminController
             ->where('tblsahdev_chat_sessions.session_type', 'client_livechat')
             ->count();
 
+        $csatStats = \Sahdev\Lib\ChatService::getChatCsatStats();
+
         // Recent Sessions Query
         $sessionsList = Capsule::table('tblsahdev_chat_sessions')
             ->where('session_type', 'client_livechat')
@@ -8156,6 +8868,7 @@ class AdminController
                     <p class="text-muted" style="margin: 0;">Autonomous client self-help live chat with tenant isolation, modular prompt engineering, and deep visual customizer.</p>
                 </div>
                 <div style="display: flex; gap: 8px;">
+                    <a href="<?php echo $baseActionUrl; ?>&tab=limits" class="btn btn-default btn-sm"><i class="fas fa-shield-alt text-warning"></i> Quotas & Limits</a>
                     <a href="<?php echo $baseActionUrl; ?>&tab=customizer" class="btn btn-default btn-sm"><i class="fas fa-palette"></i> Widget Customizer</a>
                     <a href="<?php echo $baseActionUrl; ?>&tab=prompts" class="btn btn-default btn-sm"><i class="fas fa-book-open"></i> Prompt Library</a>
                     <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=module_logs" class="btn btn-default btn-sm" target="_blank"><i class="fas fa-clipboard-list"></i> Logs</a>
@@ -8183,41 +8896,58 @@ class AdminController
                 <li class="<?php echo $currentTab === 'customizer' ? 'active' : ''; ?>">
                     <a href="<?php echo $baseActionUrl; ?>&tab=customizer"><i class="fas fa-palette"></i> Widget Customizer & Appearance</a>
                 </li>
+                <li class="<?php echo $currentTab === 'limits' ? 'active' : ''; ?>">
+                    <a href="<?php echo $baseActionUrl; ?>&tab=limits"><i class="fas fa-shield-alt text-warning"></i> Quotas & Abuse Protection</a>
+                </li>
             </ul>
 
             <!-- ── TAB 1: SESSIONS & LIVE HISTORY ──────────────────────────────── -->
             <?php if ($currentTab === 'sessions'): ?>
                 <!-- Metrics Bar -->
                 <div class="row" style="margin-bottom: 20px;">
-                    <div class="col-md-3">
+                    <div class="col-md-2" style="width: 20%;">
                         <div class="panel panel-default" style="border-radius: 8px; border-left: 4px solid #3b82f6;">
                             <div class="panel-body" style="padding: 15px;">
-                                <div class="text-muted" style="font-size: 11px; text-transform: uppercase;">Total Chat Sessions</div>
-                                <div style="font-size: 24px; font-weight: 700; color: #1e293b;"><?php echo number_format($totalSessions); ?></div>
+                                <div class="text-muted" style="font-size: 11px; text-transform: uppercase;">Total Sessions</div>
+                                <div style="font-size: 22px; font-weight: 700; color: #1e293b;"><?php echo number_format($totalSessions); ?></div>
                             </div>
                         </div>
                     </div>
-                    <div class="col-md-3">
+                    <div class="col-md-2" style="width: 20%;">
                         <div class="panel panel-default" style="border-radius: 8px; border-left: 4px solid #10b981;">
                             <div class="panel-body" style="padding: 15px;">
                                 <div class="text-muted" style="font-size: 11px; text-transform: uppercase;">Active Chats</div>
-                                <div style="font-size: 24px; font-weight: 700; color: #10b981;"><?php echo number_format($activeSessions); ?></div>
+                                <div style="font-size: 22px; font-weight: 700; color: #10b981;"><?php echo number_format($activeSessions); ?></div>
                             </div>
                         </div>
                     </div>
-                    <div class="col-md-3">
+                    <div class="col-md-2" style="width: 20%;">
                         <div class="panel panel-default" style="border-radius: 8px; border-left: 4px solid #f59e0b;">
                             <div class="panel-body" style="padding: 15px;">
-                                <div class="text-muted" style="font-size: 11px; text-transform: uppercase;">Tickets Escalated</div>
-                                <div style="font-size: 24px; font-weight: 700; color: #d97706;"><?php echo number_format($escalatedSessions); ?></div>
+                                <div class="text-muted" style="font-size: 11px; text-transform: uppercase;">Escalated Tickets</div>
+                                <div style="font-size: 22px; font-weight: 700; color: #d97706;"><?php echo number_format($escalatedSessions); ?></div>
                             </div>
                         </div>
                     </div>
-                    <div class="col-md-3">
+                    <div class="col-md-2" style="width: 20%;">
                         <div class="panel panel-default" style="border-radius: 8px; border-left: 4px solid #6366f1;">
                             <div class="panel-body" style="padding: 15px;">
-                                <div class="text-muted" style="font-size: 11px; text-transform: uppercase;">Client Messages Exchanged</div>
-                                <div style="font-size: 24px; font-weight: 700; color: #4338ca;"><?php echo number_format($totalMessages); ?></div>
+                                <div class="text-muted" style="font-size: 11px; text-transform: uppercase;">Total Messages</div>
+                                <div style="font-size: 22px; font-weight: 700; color: #4338ca;"><?php echo number_format($totalMessages); ?></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-2" style="width: 20%;">
+                        <div class="panel panel-default" style="border-radius: 8px; border-left: 4px solid #ec4899;">
+                            <div class="panel-body" style="padding: 15px;">
+                                <div class="text-muted" style="font-size: 11px; text-transform: uppercase;">AI CSAT Quality</div>
+                                <div style="font-size: 22px; font-weight: 700; color: #be185d;">
+                                    <?php if (!empty($csatStats['total_ratings'])): ?>
+                                        <?php echo $csatStats['csat_percent']; ?>% <span style="font-size: 12px; font-weight: normal; color: #64748b;">(<?php echo $csatStats['positive_ratings']; ?> 👍 / <?php echo $csatStats['negative_ratings']; ?> 👎)</span>
+                                    <?php else: ?>
+                                        <span style="font-size: 15px; font-weight: 500; color: #94a3b8;">No ratings yet</span>
+                                    <?php endif; ?>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -8331,6 +9061,18 @@ class AdminController
                                         <div style="background: <?php echo $bubbleBg; ?>; color: <?php echo $bubbleColor; ?>; padding: 10px 14px; border-radius: 12px; border: 1px solid <?php echo $isUser ? '#0d6efd' : '#e2e8f0'; ?>; font-size: 13px; line-height: 1.45; word-break: break-word;">
                                             <?php echo nl2br(htmlspecialchars($vm->message_text)); ?>
                                         </div>
+                                        <?php if (!empty($vm->rating)): ?>
+                                            <div style="margin-top: 4px; font-size: 11px;">
+                                                <?php if ((int)$vm->rating === 1): ?>
+                                                    <span class="label label-success"><i class="fas fa-thumbs-up"></i> Rated Helpful</span>
+                                                <?php else: ?>
+                                                    <span class="label label-danger"><i class="fas fa-thumbs-down"></i> Rated Unhelpful</span>
+                                                <?php endif; ?>
+                                                <?php if (!empty($vm->rating_feedback)): ?>
+                                                    <span class="text-muted" style="margin-left: 5px; font-style: italic;">"<?php echo htmlspecialchars($vm->rating_feedback); ?>"</span>
+                                                <?php endif; ?>
+                                            </div>
+                                        <?php endif; ?>
                                     </div>
                                 <?php endforeach; ?>
                             <?php endif; ?>
@@ -8590,9 +9332,13 @@ class AdminController
                                         <label style="font-weight: 700;">UI/UX Theme Style</label>
                                         <select name="client_chat_theme" id="ctrl_theme" class="form-control" style="font-weight: 600;">
                                             <option value="modern_light" <?php echo (($settings->client_chat_theme ?? 'modern_light') === 'modern_light') ? 'selected' : ''; ?>>Modern Crisp Light (Clean, soft shadows, high readability)</option>
-                                            <option value="cyber_dark" <?php echo (($settings->client_chat_theme ?? '') === 'cyber_dark') ? 'selected' : ''; ?>>Cyber Slate Dark (Deep slate background, vivid contrast)</option>
-                                            <option value="glassmorphism" <?php echo (($settings->client_chat_theme ?? '') === 'glassmorphism') ? 'selected' : ''; ?>>Frosted Glassmorphism (Backdrop blur, translucent glass)</option>
-                                            <option value="brand_gradient" <?php echo (($settings->client_chat_theme ?? '') === 'brand_gradient') ? 'selected' : ''; ?>>Brand Gradient (Vibrant multi-stop header gradient)</option>
+                                            <option value="cyber_dark" <?php echo (($settings->client_chat_theme ?? '') === 'cyber_dark') ? 'selected' : ''; ?>>Cyber Slate Dark (OLED deep slate background, vivid contrast)</option>
+                                            <option value="midnight_indigo" <?php echo (($settings->client_chat_theme ?? '') === 'midnight_indigo') ? 'selected' : ''; ?>>Midnight Indigo (Deep night blue, electric indigo accents)</option>
+                                            <option value="emerald_clean" <?php echo (($settings->client_chat_theme ?? '') === 'emerald_clean') ? 'selected' : ''; ?>>Emerald SaaS (Mint & emerald accents, Shopify/Crisp style)</option>
+                                            <option value="sunset_amber" <?php echo (($settings->client_chat_theme ?? '') === 'sunset_amber') ? 'selected' : ''; ?>>Sunset Amber (Warm terracotta & sandstone, Notion/Stripe warm style)</option>
+                                            <option value="glassmorphism" <?php echo (($settings->client_chat_theme ?? '') === 'glassmorphism') ? 'selected' : ''; ?>>Frosted Glassmorphism (Backdrop blur, glowing translucent glass)</option>
+                                            <option value="high_contrast" <?php echo (($settings->client_chat_theme ?? '') === 'high_contrast') ? 'selected' : ''; ?>>Enterprise High Contrast (Monochrome bold borders, WCAG AAA accessibility)</option>
+                                            <option value="brand_gradient" <?php echo (($settings->client_chat_theme ?? '') === 'brand_gradient') ? 'selected' : ''; ?>>Brand Gradient (Vibrant dynamic multi-stop header gradient)</option>
                                         </select>
                                     </div>
 
@@ -8729,30 +9475,56 @@ class AdminController
                                     </div>
 
                                     <div class="row" style="margin-bottom: 15px;">
-                                        <div class="col-md-4">
+                                        <div class="col-md-3">
                                             <div class="checkbox">
                                                 <label style="font-weight: 600;">
                                                     <input type="checkbox" name="client_chat_require_auth" value="1" <?php echo !empty($settings->client_chat_require_auth) ? 'checked' : ''; ?>>
-                                                    Require Client Login
+                                                    Require Login
                                                 </label>
                                             </div>
                                         </div>
-                                        <div class="col-md-4">
+                                        <div class="col-md-3">
                                             <div class="checkbox">
                                                 <label style="font-weight: 600;">
                                                     <input type="checkbox" name="client_chat_history_enabled" value="1" <?php echo !empty($settings->client_chat_history_enabled ?? 1) ? 'checked' : ''; ?>>
-                                                    Past Chats Drawer
+                                                    Past Chats
                                                 </label>
                                             </div>
                                         </div>
-                                        <div class="col-md-4">
+                                        <div class="col-md-3">
                                             <div class="checkbox">
                                                 <label style="font-weight: 600;">
                                                     <input type="checkbox" name="client_chat_kb_enabled" value="1" <?php echo !empty($settings->client_chat_kb_enabled ?? 1) ? 'checked' : ''; ?>>
-                                                    Knowledge Base Tab
+                                                    Knowledge Base
                                                 </label>
                                             </div>
                                         </div>
+                                        <div class="col-md-3">
+                                            <div class="checkbox">
+                                                <label style="font-weight: 600;">
+                                                    <input type="checkbox" name="client_chat_csat_enabled" value="1" <?php echo !empty($settings->client_chat_csat_enabled ?? 1) ? 'checked' : ''; ?>>
+                                                    CSAT Ratings
+                                                </label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="row" style="margin-bottom: 15px;">
+                                        <div class="col-md-6">
+                                            <div class="checkbox">
+                                                <label style="font-weight: 600;">
+                                                    <input type="checkbox" name="client_chat_sound_enabled" value="1" <?php echo !empty($settings->client_chat_sound_enabled ?? 1) ? 'checked' : ''; ?>>
+                                                    Enable Message Notification Audio Chime (Default)
+                                                </label>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="form-group" style="margin-bottom: 22px;">
+                                        <label style="font-weight: 700;"><i class="fas fa-magic text-primary"></i> Interactive Conversation Starter Chips</label>
+                                        <textarea name="client_chat_starter_chips" class="form-control" rows="4" placeholder="⚡ Check Server Status &amp; Outages&#10;📧 Email &amp; Webmail Setup Guide&#10;🌐 Domain &amp; DNS Management&#10;🎫 Open Support Ticket"><?php echo htmlspecialchars($settings->client_chat_starter_chips ?? ''); ?></textarea>
+                                        <span class="help-block" style="font-size: 11.5px; margin-top: 4px;">
+                                            Enter custom starter prompts (one per line). These are shown as 1-click clickable chips when a user opens the chat or starts a new thread. Leave empty to automatically use dynamic client-aware starters (unpaid invoices, open tickets, server status).
+                                        </span>
                                     </div>
 
                                     <div class="form-group" style="margin-bottom: 20px;">
@@ -8917,6 +9689,7 @@ class AdminController
                             frame.style.background = '#0f172a';
                             frame.style.border = '1px solid #334155';
                             header.style.background = '#1e293b';
+                            header.style.color = '#f8fafc';
                             escalateBar.style.background = '#1e293b';
                             escalateBar.style.borderBottom = '1px solid #334155';
                             messages.style.background = '#090d16';
@@ -8928,13 +9701,96 @@ class AdminController
                             botReply.style.background = '#1e293b';
                             botReply.style.color = '#f8fafc';
                             botReply.style.borderColor = '#334155';
+                        } else if (theme === 'midnight_indigo') {
+                            frame.style.background = '#090d16';
+                            frame.style.border = '1px solid rgba(99, 102, 241, 0.35)';
+                            header.style.background = 'linear-gradient(135deg, #1e1b4b 0%, #312e81 100%)';
+                            header.style.color = '#e0e7ff';
+                            escalateBar.style.background = '#0f172a';
+                            escalateBar.style.borderBottom = '1px solid rgba(99, 102, 241, 0.2)';
+                            messages.style.background = '#05070d';
+                            footer.style.background = '#090d16';
+                            footer.style.borderTop = '1px solid rgba(99, 102, 241, 0.2)';
+                            welcome.style.background = '#131929';
+                            welcome.style.color = '#e0e7ff';
+                            welcome.style.borderColor = 'rgba(99, 102, 241, 0.3)';
+                            botReply.style.background = '#131929';
+                            botReply.style.color = '#e0e7ff';
+                            botReply.style.borderColor = 'rgba(99, 102, 241, 0.3)';
+                        } else if (theme === 'emerald_clean') {
+                            frame.style.background = '#f0fdf4';
+                            frame.style.border = '1px solid #bbf7d0';
+                            header.style.background = 'linear-gradient(135deg, #059669 0%, #047857 100%)';
+                            header.style.color = '#ffffff';
+                            escalateBar.style.background = '#ecfdf5';
+                            escalateBar.style.borderBottom = '1px solid #d1fae5';
+                            messages.style.background = '#f7fee7';
+                            footer.style.background = '#ffffff';
+                            footer.style.borderTop = '1px solid #d1fae5';
+                            welcome.style.background = '#ffffff';
+                            welcome.style.color = '#064e3b';
+                            welcome.style.borderColor = '#a7f3d0';
+                            botReply.style.background = '#ffffff';
+                            botReply.style.color = '#064e3b';
+                            botReply.style.borderColor = '#a7f3d0';
+                        } else if (theme === 'sunset_amber') {
+                            frame.style.background = '#fffbeb';
+                            frame.style.border = '1px solid #fde68a';
+                            header.style.background = 'linear-gradient(135deg, #ea580c 0%, #d97706 100%)';
+                            header.style.color = '#ffffff';
+                            escalateBar.style.background = '#fef3c7';
+                            escalateBar.style.borderBottom = '1px solid #fde68a';
+                            messages.style.background = '#fffdf7';
+                            footer.style.background = '#ffffff';
+                            footer.style.borderTop = '1px solid #fed7aa';
+                            welcome.style.background = '#ffffff';
+                            welcome.style.color = '#7c2d12';
+                            welcome.style.borderColor = '#fed7aa';
+                            botReply.style.background = '#ffffff';
+                            botReply.style.color = '#7c2d12';
+                            botReply.style.borderColor = '#fed7aa';
+                        } else if (theme === 'glassmorphism') {
+                            frame.style.background = 'rgba(255, 255, 255, 0.72)';
+                            frame.style.border = '1px solid rgba(255, 255, 255, 0.45)';
+                            header.style.background = 'rgba(255, 255, 255, 0.55)';
+                            header.style.color = '#0f172a';
+                            escalateBar.style.background = 'rgba(255, 255, 255, 0.4)';
+                            escalateBar.style.borderBottom = '1px solid rgba(255, 255, 255, 0.3)';
+                            messages.style.background = 'rgba(248, 250, 252, 0.55)';
+                            footer.style.background = 'rgba(255, 255, 255, 0.65)';
+                            footer.style.borderTop = '1px solid rgba(255, 255, 255, 0.3)';
+                            welcome.style.background = 'rgba(255, 255, 255, 0.75)';
+                            welcome.style.color = '#0f172a';
+                            welcome.style.borderColor = 'rgba(255, 255, 255, 0.6)';
+                            botReply.style.background = 'rgba(255, 255, 255, 0.75)';
+                            botReply.style.color = '#0f172a';
+                            botReply.style.borderColor = 'rgba(255, 255, 255, 0.6)';
+                        } else if (theme === 'high_contrast') {
+                            frame.style.background = '#ffffff';
+                            frame.style.border = '3px solid #000000';
+                            header.style.background = '#000000';
+                            header.style.color = '#ffffff';
+                            escalateBar.style.background = '#ffffff';
+                            escalateBar.style.borderBottom = '2px solid #000000';
+                            messages.style.background = '#ffffff';
+                            footer.style.background = '#ffffff';
+                            footer.style.borderTop = '2px solid #000000';
+                            welcome.style.background = '#ffffff';
+                            welcome.style.color = '#000000';
+                            welcome.style.borderColor = '#000000';
+                            botReply.style.background = '#f4f4f4';
+                            botReply.style.color = '#000000';
+                            botReply.style.borderColor = '#000000';
                         } else if (theme === 'brand_gradient') {
                             frame.style.background = '#ffffff';
                             frame.style.border = 'none';
                             header.style.background = 'linear-gradient(135deg, ' + brand + ' 0%, #4338ca 100%)';
+                            header.style.color = '#ffffff';
                             escalateBar.style.background = '#f8fafc';
+                            escalateBar.style.borderBottom = '1px solid #e2e8f0';
                             messages.style.background = '#f8fafc';
                             footer.style.background = '#ffffff';
+                            footer.style.borderTop = '1px solid #e2e8f0';
                             welcome.style.background = '#ffffff';
                             welcome.style.color = '#1e293b';
                             welcome.style.borderColor = '#e2e8f0';
@@ -8942,12 +9798,16 @@ class AdminController
                             botReply.style.color = '#1e293b';
                             botReply.style.borderColor = '#e2e8f0';
                         } else {
+                            // modern_light
                             frame.style.background = '#ffffff';
                             frame.style.border = 'none';
                             header.style.background = brand;
+                            header.style.color = '#ffffff';
                             escalateBar.style.background = '#f8fafc';
+                            escalateBar.style.borderBottom = '1px solid #e2e8f0';
                             messages.style.background = '#f8fafc';
                             footer.style.background = '#ffffff';
+                            footer.style.borderTop = '1px solid #e2e8f0';
                             welcome.style.background = '#ffffff';
                             welcome.style.color = '#1e293b';
                             welcome.style.borderColor = '#e2e8f0';
@@ -8999,6 +9859,147 @@ class AdminController
                     updatePreview();
                 });
                 </script>
+            <?php endif; ?>
+
+            <!-- ── TAB 5: QUOTAS & ABUSE PROTECTION ────────────────────────── -->
+            <?php if ($currentTab === 'limits'): ?>
+                <div class="panel panel-default" style="border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
+                    <div class="panel-heading" style="background: #fff; padding: 16px 20px; border-bottom: 1px solid #edf2f7;">
+                        <strong style="font-size: 16px;"><i class="fas fa-shield-alt text-primary"></i> AI Quotas, Rate Limits &amp; Token Drain Protection</strong>
+                        <p class="text-muted" style="margin: 4px 0 0; font-size: 12.5px;">
+                            Protect your OpenAI, Anthropic, and Google Gemini API token budgets from runaway costs or malicious visitors. When a user reaches their configured threshold, Sahdev gracefully stops calling the AI API, informs the user, and guides them to convert their inquiry into an official support ticket.
+                        </p>
+                    </div>
+                    <div class="panel-body" style="padding: 24px;">
+                        <form method="post" action="<?php echo $baseActionUrl; ?>&tab=limits">
+                            <input type="hidden" name="token" value="<?php echo $csrfToken; ?>">
+
+                            <!-- Authenticated Clients Section -->
+                            <div style="border-bottom: 1px solid #edf2f7; padding-bottom: 22px; margin-bottom: 22px;">
+                                <h4 style="margin: 0 0 8px; font-weight: 700; color: #1e293b; display: flex; align-items: center; gap: 8px;">
+                                    <i class="fas fa-user-check text-success"></i> Authenticated Client Account Limits
+                                </h4>
+                                <p class="text-muted" style="font-size: 12.5px; margin-bottom: 16px;">
+                                    Control how many AI live chat messages authenticated clients can send within a specific time window. Set to 0 for unlimited.
+                                </p>
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="form-group">
+                                            <label style="font-weight: 600; font-size: 13px;">Inquiry Message Limit Per Window</label>
+                                            <div class="input-group">
+                                                <input type="number" name="client_chat_auth_limit_count" min="0" max="1000" class="form-control" value="<?php echo htmlspecialchars($settings->client_chat_auth_limit_count ?? 30); ?>" style="font-weight: 600;">
+                                                <span class="input-group-addon">messages</span>
+                                            </div>
+                                            <span class="help-block" style="font-size: 11.5px; margin-top: 4px;">Default: 30 messages. Set to 0 to disable periodic client limits.</span>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="form-group">
+                                            <label style="font-weight: 600; font-size: 13px;">Quota Reset Window</label>
+                                            <select name="client_chat_auth_limit_window" class="form-control" style="font-weight: 600;">
+                                                <option value="daily" <?php echo (($settings->client_chat_auth_limit_window ?? 'daily') === 'daily') ? 'selected' : ''; ?>>Daily (Resets every midnight)</option>
+                                                <option value="weekly" <?php echo (($settings->client_chat_auth_limit_window ?? '') === 'weekly') ? 'selected' : ''; ?>>Weekly (Rolling 7-day window)</option>
+                                                <option value="monthly" <?php echo (($settings->client_chat_auth_limit_window ?? '') === 'monthly') ? 'selected' : ''; ?>>Monthly (Rolling 30-day window)</option>
+                                            </select>
+                                            <span class="help-block" style="font-size: 11.5px; margin-top: 4px;">Timeframe over which the client's message count is evaluated.</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label style="font-weight: 600; font-size: 13px;">Custom Client Limit Notification Notice</label>
+                                    <textarea name="client_chat_limit_message" class="form-control" rows="2" placeholder="Leave empty to use default polite escalation message..."><?php echo htmlspecialchars($settings->client_chat_limit_message ?? ''); ?></textarea>
+                                    <span class="help-block" style="font-size: 11.5px; margin-top: 4px;">Displayed in the chat when an authenticated customer hits their quota. If empty, the default notice inviting 1-click ticket creation is used.</span>
+                                </div>
+                            </div>
+
+                            <!-- Guest Visitors Section -->
+                            <div style="border-bottom: 1px solid #edf2f7; padding-bottom: 22px; margin-bottom: 22px;">
+                                <h4 style="margin: 0 0 8px; font-weight: 700; color: #1e293b; display: flex; align-items: center; gap: 8px;">
+                                    <i class="fas fa-user-secret text-warning"></i> Unauthenticated Guest Visitors Abuse Defense
+                                </h4>
+                                <p class="text-muted" style="font-size: 12.5px; margin-bottom: 16px;">
+                                    Guests who are not logged in pose the highest risk of automated scraping or token drain. This enforces a strict threshold based on browser cookie/token and IP.
+                                </p>
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="form-group">
+                                            <label style="font-weight: 600; font-size: 13px;">Guest Message Limit (Past 24 Hours)</label>
+                                            <div class="input-group">
+                                                <input type="number" name="client_chat_guest_limit_count" min="0" max="100" class="form-control" value="<?php echo htmlspecialchars($settings->client_chat_guest_limit_count ?? 5); ?>" style="font-weight: 600;">
+                                                <span class="input-group-addon">messages / 24h</span>
+                                            </div>
+                                            <span class="help-block" style="font-size: 11.5px; margin-top: 4px;">Default: 5 messages. Set to 0 to disable guest rate limiting.</span>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="form-group">
+                                            <label style="font-weight: 600; font-size: 13px;">Custom Guest Limit Notification Notice</label>
+                                            <textarea name="client_chat_guest_limit_message" class="form-control" rows="2" placeholder="Leave empty to use default guest limit message..."><?php echo htmlspecialchars($settings->client_chat_guest_limit_message ?? ''); ?></textarea>
+                                            <span class="help-block" style="font-size: 11.5px; margin-top: 4px;">Displayed when a guest visitor exceeds their free inquiry limit.</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Character Constraints Section -->
+                            <div style="border-bottom: 1px solid #edf2f7; padding-bottom: 22px; margin-bottom: 22px;">
+                                <h4 style="margin: 0 0 8px; font-weight: 700; color: #1e293b; display: flex; align-items: center; gap: 8px;">
+                                    <i class="fas fa-text-width text-info"></i> Message &amp; Session Character Limits (Model Safeguards)
+                                </h4>
+                                <p class="text-muted" style="font-size: 12.5px; margin-bottom: 16px;">
+                                    Similar to ChatGPT, Claude, and Google Gemini, restrict payload size per request and per overall discussion to prevent prompt stuffing and expensive context overflow.
+                                </p>
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="form-group">
+                                            <label style="font-weight: 600; font-size: 13px;">Max Characters Per Single Message</label>
+                                            <div class="input-group">
+                                                <input type="number" name="client_chat_max_msg_chars" min="0" max="20000" step="100" class="form-control" value="<?php echo htmlspecialchars($settings->client_chat_max_msg_chars ?? 1000); ?>" style="font-weight: 600;">
+                                                <span class="input-group-addon">characters</span>
+                                            </div>
+                                            <span class="help-block" style="font-size: 11.5px; margin-top: 4px;">Default: 1,000 characters. Client input enforces this with a live visual character counter.</span>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="form-group">
+                                            <label style="font-weight: 600; font-size: 13px;">Max Cumulative Characters Per Chat Session</label>
+                                            <div class="input-group">
+                                                <input type="number" name="client_chat_max_session_chars" min="0" max="100000" step="500" class="form-control" value="<?php echo htmlspecialchars($settings->client_chat_max_session_chars ?? 10000); ?>" style="font-weight: 600;">
+                                                <span class="input-group-addon">total characters</span>
+                                            </div>
+                                            <span class="help-block" style="font-size: 11.5px; margin-top: 4px;">Default: 10,000 characters. Prevents indefinitely long chats from bloating LLM context tokens.</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Sensitive Data & PII Redaction Section -->
+                            <div style="border-bottom: 1px solid #edf2f7; padding-bottom: 22px; margin-bottom: 22px;">
+                                <h4 style="margin: 0 0 8px; font-weight: 700; color: #1e293b; display: flex; align-items: center; gap: 8px;">
+                                    <i class="fas fa-user-shield text-danger"></i> Sensitive Data, PII &amp; PCI Redaction (OWASP LLM06)
+                                </h4>
+                                <p class="text-muted" style="font-size: 12.5px; margin-bottom: 14px;">
+                                    Automatically detect and redact customer credit card numbers (with Luhn checksum validation), CVVs, passwords, private keys, and API tokens before passing them to the external AI model or saving them into chat transcripts.
+                                </p>
+                                <div class="checkbox" style="margin: 0;">
+                                    <label style="font-weight: 700; color: #1e293b; font-size: 13.5px;">
+                                        <input type="checkbox" name="client_chat_pii_masking" value="1" <?php echo !empty($settings->client_chat_pii_masking ?? 1) ? 'checked' : ''; ?>>
+                                        Enable Real-Time Sensitive Credential &amp; PII Redaction
+                                    </label>
+                                </div>
+                                <span class="help-block" style="font-size: 11.5px; margin-top: 4px;">
+                                    Protects PCI-DSS and GDPR compliance. Sensitive card numbers and private keys are substituted with non-reversible redaction markers like <code>[REDACTED CREDIT CARD]</code>.
+                                </span>
+                            </div>
+
+                            <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                                <button type="submit" name="save_client_chat_limits" class="btn btn-primary" style="font-weight: 600; padding: 10px 24px; border-radius: 6px;">
+                                    <i class="fas fa-save"></i> Save Quotas &amp; Abuse Protection Settings
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
             <?php endif; ?>
         </div>
         <?php

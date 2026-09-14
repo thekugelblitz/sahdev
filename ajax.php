@@ -121,6 +121,12 @@ if ($isClientChatAction) {
 
             \Sahdev\Lib\ModuleLogger::info('client_chat', "Live chat initialized for session {$session['session_uuid']} (visitor: " . substr($visitorToken, 0, 8) . "..., client: " . ($clientId ?: 'guest') . ")");
 
+            $quotaStatus = \Sahdev\Lib\ChatService::checkClientChatLimits($visitorToken, $clientId, (int) $session['id']);
+            $maxMsgChars = (int) \Sahdev\Lib\ChatService::getChatSetting('client_chat_max_msg_chars', 1000);
+            $starterChips = \Sahdev\Lib\ChatService::getStarterPrompts($clientId);
+            $csatEnabled = (bool) \Sahdev\Lib\ChatService::getChatSetting('client_chat_csat_enabled', 1);
+            $soundEnabled = (bool) \Sahdev\Lib\ChatService::getChatSetting('client_chat_sound_enabled', 1);
+
             echo json_encode([
                 'status'        => 'success',
                 'visitor_token' => $visitorToken,
@@ -130,6 +136,11 @@ if ($isClientChatAction) {
                 'is_logged_in'  => ($clientId > 0),
                 'client_name'   => $metadata['name'] ?? null,
                 'status_chat'   => $session['status'] ?? 'active',
+                'limit_status'  => $quotaStatus,
+                'max_msg_chars' => $maxMsgChars,
+                'starter_chips' => $starterChips,
+                'csat_enabled'  => $csatEnabled,
+                'sound_enabled' => $soundEnabled,
             ]);
             exit;
         }
@@ -174,6 +185,12 @@ if ($isClientChatAction) {
 
             \Sahdev\Lib\ModuleLogger::info('client_chat', "New chat thread created for session {$session['session_uuid']} (client: " . ($clientId ?: 'guest') . ")");
 
+            $quotaStatus = \Sahdev\Lib\ChatService::checkClientChatLimits($visitorToken, $clientId, (int) ($session['id'] ?? 0));
+            $maxMsgChars = (int) \Sahdev\Lib\ChatService::getChatSetting('client_chat_max_msg_chars', 1000);
+            $starterChips = \Sahdev\Lib\ChatService::getStarterPrompts($clientId);
+            $csatEnabled = (bool) \Sahdev\Lib\ChatService::getChatSetting('client_chat_csat_enabled', 1);
+            $soundEnabled = (bool) \Sahdev\Lib\ChatService::getChatSetting('client_chat_sound_enabled', 1);
+
             echo json_encode([
                 'status'        => 'success',
                 'visitor_token' => $visitorToken,
@@ -181,6 +198,11 @@ if ($isClientChatAction) {
                 'greeting'      => $greeting,
                 'messages'      => [],
                 'is_logged_in'  => ($clientId > 0),
+                'limit_status'  => $quotaStatus,
+                'max_msg_chars' => $maxMsgChars,
+                'starter_chips' => $starterChips,
+                'csat_enabled'  => $csatEnabled,
+                'sound_enabled' => $soundEnabled,
             ]);
             exit;
         }
@@ -294,6 +316,36 @@ if ($isClientChatAction) {
             }
 
             $res = \Sahdev\Lib\ChatService::getClientKnowledgeBaseArticles($query, 10);
+            echo json_encode(array_merge(['status' => ($res['success'] ?? false) ? 'success' : 'error'], $res));
+            exit;
+        }
+
+        if ($action === 'client_chat_rate_message') {
+            if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+                header('HTTP/1.1 405 Method Not Allowed');
+                echo json_encode(['status' => 'error', 'message' => 'POST required.']);
+                exit;
+            }
+
+            // Rate limit: 20 rating events per minute per IP
+            $rateKey = 'rate_' . md5($clientIp . '_' . $visitorToken);
+            $rl = \Sahdev\Lib\ChatService::checkRateLimit($rateKey, 'rate_msg', 20, 60);
+            if (!$rl['allowed']) {
+                header('HTTP/1.1 429 Too Many Requests');
+                echo json_encode(['status' => 'error', 'message' => 'Rate limit exceeded.']);
+                exit;
+            }
+
+            $messageId = (int) ($_POST['message_id'] ?? 0);
+            $rating = (int) ($_POST['rating'] ?? 0);
+            $feedback = trim((string) ($_POST['feedback'] ?? ''));
+
+            if ($messageId <= 0 || !in_array($rating, [1, -1, 0], true)) {
+                echo json_encode(['status' => 'error', 'message' => 'Invalid parameters.']);
+                exit;
+            }
+
+            $res = \Sahdev\Lib\ChatService::rateChatMessage($messageId, $rating, $feedback, $visitorToken, $clientId);
             echo json_encode(array_merge(['status' => ($res['success'] ?? false) ? 'success' : 'error'], $res));
             exit;
         }

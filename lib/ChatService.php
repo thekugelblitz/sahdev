@@ -115,6 +115,8 @@ class ChatService
                     'message_text'     => html_entity_decode((string)$m->message_text, ENT_QUOTES | ENT_HTML5, 'UTF-8'),
                     'action_card'      => !empty($m->action_card_json) ? json_decode($m->action_card_json, true) : null,
                     'tool_calls'       => !empty($m->tool_calls_json) ? json_decode($m->tool_calls_json, true) : null,
+                    'rating'           => isset($m->rating) ? (int) $m->rating : null,
+                    'rating_feedback'  => $m->rating_feedback ?? null,
                     'created_at'       => $m->created_at,
                 ];
             })
@@ -457,10 +459,29 @@ class ChatService
      */
     public static function handleClientMessage(string $visitorToken, string $messageText, ?int $clientId = null, ?string $sessionUuid = null): array
     {
-        // Active Input Sanitization & Payload Bounding
-        $messageText = self::sanitizeClientInput($messageText, 2000);
+        // Active Input Sanitization & Dynamic Payload Bounding
+        $maxMsgChars = (int) self::getChatSetting('client_chat_max_msg_chars', 1000);
+        $sanitizeMax = $maxMsgChars > 0 ? max(2000, $maxMsgChars * 2) : 2000;
+        $messageText = self::sanitizeClientInput($messageText, $sanitizeMax);
         if (empty($messageText)) {
             return ['success' => false, 'error' => 'Message cannot be empty.'];
+        }
+
+        // Active Sensitive Data & PII Redaction (OWASP LLM06)
+        if ((bool) self::getChatSetting('client_chat_pii_masking', 1)) {
+            $messageText = self::maskSensitivePiiData($messageText);
+        }
+
+        // Check single message character limit before processing
+        $preQuota = self::checkChatQuota($visitorToken, $clientId, null, $messageText);
+        if (!$preQuota['allowed'] && $preQuota['reason'] === 'max_msg_chars') {
+            return [
+                'success'       => false,
+                'error'         => $preQuota['message'],
+                'limit_reached' => true,
+                'limit_reason'  => 'max_msg_chars',
+                'can_escalate'  => true,
+            ];
         }
 
         $session = self::getOrCreateClientSession($visitorToken, $clientId, [], $sessionUuid);
@@ -478,6 +499,43 @@ class ChatService
                 ModuleLogger::warning('client_chat_security', "Guest cross-session message rejection: visitor attempted to write to session {$session['session_uuid']}");
                 return ['success' => false, 'error' => 'Unauthorized session access.'];
             }
+        }
+
+        // Active Quota & Token Drain Protection Check (Client periodic limit, guest limit, session total chars)
+        $quota = self::checkChatQuota($visitorToken, $clientId, $sessionId, $messageText);
+        if (!$quota['allowed']) {
+            $senderName = $clientId > 0
+                ? (Capsule::table('tblclients')->where('id', $clientId)->value('firstname') ?: 'Client')
+                : 'Visitor';
+
+            // Record visitor message so their inquiry is saved in transcript
+            Capsule::table('tblsahdev_chat_messages')->insert([
+                'session_id'   => $sessionId,
+                'sender_type'  => 'user',
+                'sender_id'    => $clientId ?: 0,
+                'sender_name'  => $senderName,
+                'message_text' => $messageText,
+                'created_at'   => Carbon::now(),
+            ]);
+
+            // Record graceful refusal / ticket escalation prompt in transcript
+            self::recordAssistantMessage($sessionId, $quota['message']);
+
+            Capsule::table('tblsahdev_chat_sessions')->where('id', $sessionId)->update([
+                'last_message_at' => Carbon::now(),
+                'updated_at'      => Carbon::now(),
+            ]);
+
+            ModuleLogger::info('client_chat', "Quota limit enforced [{$quota['reason']}] for session {$sessionId} (client: " . ($clientId ?: 'guest') . ")");
+
+            // Return gracefully without calling LLM API (saving tokens and cost)
+            return [
+                'success'       => true,
+                'limit_reached' => true,
+                'limit_reason'  => $quota['reason'],
+                'reply'         => $quota['message'],
+                'can_escalate'  => true,
+            ];
         }
 
         // Active Prompt Injection Defense
@@ -621,11 +679,12 @@ class ChatService
 
             // Smart link normalizer ensures all clientarea URLs are fully qualified
             $reply = self::normalizeMarkdownLinks($reply);
-            self::recordAssistantMessage($sessionId, $reply);
+            $msgId = self::recordAssistantMessage($sessionId, $reply);
             ModuleLogger::info('client_chat', "Live chat response generated successfully for session {$sessionId} (length: " . strlen($reply) . " chars)");
 
             return [
                 'success'      => true,
+                'message_id'   => $msgId,
                 'reply'        => $reply,
                 'can_escalate' => true,
             ];
@@ -1306,6 +1365,175 @@ class ChatService
     }
 
     /**
+     * AI Quota, Token Drain Defense & Rate Limiting Engine.
+     * Enforces single-request char limits, cumulative session char limits,
+     * authenticated client periodic quotas (daily/weekly/monthly), and guest visitor daily limits.
+     *
+     * @param string $visitorToken Unique visitor cookie/token
+     * @param int|null $clientId WHMCS client ID (or null/0 for guest)
+     * @param int|null $sessionId Chat session database ID
+     * @param string $incomingText User's incoming message text
+     * @return array [
+     *     'allowed'       => bool,
+     *     'limit_reached' => bool,
+     *     'reason'        => string|null,
+     *     'message'       => string,
+     *     'can_escalate'  => bool,
+     *     'current_count' => int,
+     *     'limit_count'   => int,
+     *     'window'        => string,
+     *     'chars_current' => int,
+     *     'chars_limit'   => int,
+     * ]
+     */
+    public static function checkChatQuota(string $visitorToken, ?int $clientId = null, ?int $sessionId = null, string $incomingText = ''): array
+    {
+        try {
+            $clientId = ($clientId && (int)$clientId > 0) ? (int)$clientId : null;
+            $incomingLen = mb_strlen($incomingText, 'UTF-8');
+
+            // 1. Single-Message Character Limit
+            $maxMsgChars = (int) self::getChatSetting('client_chat_max_msg_chars', 1000);
+            if ($maxMsgChars > 0 && $incomingLen > $maxMsgChars) {
+                return [
+                    'allowed'       => false,
+                    'limit_reached' => true,
+                    'reason'        => 'max_msg_chars',
+                    'message'       => "Your message of " . number_format($incomingLen) . " characters exceeds the maximum allowed limit of " . number_format($maxMsgChars) . " characters per request. Please shorten your message or submit a support ticket.",
+                    'can_escalate'  => true,
+                    'chars_current' => $incomingLen,
+                    'chars_limit'   => $maxMsgChars,
+                ];
+            }
+
+            // 2. Cumulative Session Character Limit
+            $maxSessionChars = (int) self::getChatSetting('client_chat_max_session_chars', 10000);
+            if ($maxSessionChars > 0 && $sessionId && (int)$sessionId > 0) {
+                $sessionChars = (int) Capsule::table('tblsahdev_chat_messages')
+                    ->where('session_id', $sessionId)
+                    ->where('sender_type', 'user')
+                    ->selectRaw('COALESCE(SUM(CHAR_LENGTH(message_text)), 0) as total')
+                    ->value('total');
+
+                if (($sessionChars + $incomingLen) > $maxSessionChars) {
+                    $customMsg = trim((string) self::getChatSetting('client_chat_limit_message', ''));
+                    $msg = !empty($customMsg)
+                        ? $customMsg
+                        : "This conversation has reached the cumulative discussion limit (" . number_format($maxSessionChars) . " total characters). To continue receiving detailed technical support, please convert this discussion to a support ticket so our engineers can assist you directly.";
+                    return [
+                        'allowed'       => false,
+                        'limit_reached' => true,
+                        'reason'        => 'max_session_chars',
+                        'message'       => $msg,
+                        'can_escalate'  => true,
+                        'chars_current' => $sessionChars + $incomingLen,
+                        'chars_limit'   => $maxSessionChars,
+                    ];
+                }
+            }
+
+            // 3. Authenticated Client Message Count Limit (Daily, Weekly, Monthly)
+            if ($clientId && $clientId > 0) {
+                $authLimitCount = (int) self::getChatSetting('client_chat_auth_limit_count', 30);
+                if ($authLimitCount > 0) {
+                    $window = strtolower(trim((string) self::getChatSetting('client_chat_auth_limit_window', 'daily')));
+                    if ($window === 'monthly') {
+                        $windowStart = Carbon::now()->subDays(30);
+                        $windowName = 'this month (30 days)';
+                    } elseif ($window === 'weekly') {
+                        $windowStart = Carbon::now()->subDays(7);
+                        $windowName = 'this week (7 days)';
+                    } else {
+                        $window = 'daily';
+                        $windowStart = Carbon::now()->startOfDay();
+                        $windowName = 'today';
+                    }
+
+                    $clientMsgCount = (int) Capsule::table('tblsahdev_chat_messages')
+                        ->join('tblsahdev_chat_sessions', 'tblsahdev_chat_messages.session_id', '=', 'tblsahdev_chat_sessions.id')
+                        ->where('tblsahdev_chat_sessions.client_id', $clientId)
+                        ->where('tblsahdev_chat_messages.sender_type', 'user')
+                        ->where('tblsahdev_chat_messages.created_at', '>=', $windowStart)
+                        ->count();
+
+                    if ($clientMsgCount >= $authLimitCount) {
+                        $customMsg = trim((string) self::getChatSetting('client_chat_limit_message', ''));
+                        $msg = !empty($customMsg)
+                            ? $customMsg
+                            : "You have reached your live chat inquiry limit ({$clientMsgCount}/{$authLimitCount} messages) for {$windowName}. To ensure your requests receive priority technical attention, please convert this discussion to a support ticket.";
+                        return [
+                            'allowed'       => false,
+                            'limit_reached' => true,
+                            'reason'        => 'auth_limit',
+                            'message'       => $msg,
+                            'can_escalate'  => true,
+                            'current_count' => $clientMsgCount,
+                            'limit_count'   => $authLimitCount,
+                            'window'        => $window,
+                        ];
+                    }
+                }
+            }
+
+            // 4. Guest Visitor Message Count Limit (24-Hour Cookie/Token Window)
+            if (empty($clientId) || $clientId <= 0) {
+                $guestLimitCount = (int) self::getChatSetting('client_chat_guest_limit_count', 5);
+                if ($guestLimitCount > 0) {
+                    $guestMsgCount = (int) Capsule::table('tblsahdev_chat_messages')
+                        ->join('tblsahdev_chat_sessions', 'tblsahdev_chat_messages.session_id', '=', 'tblsahdev_chat_sessions.id')
+                        ->where('tblsahdev_chat_sessions.visitor_token', $visitorToken)
+                        ->where('tblsahdev_chat_messages.sender_type', 'user')
+                        ->where('tblsahdev_chat_messages.created_at', '>=', Carbon::now()->subHours(24))
+                        ->count();
+
+                    if ($guestMsgCount >= $guestLimitCount) {
+                        $customGuestMsg = trim((string) self::getChatSetting('client_chat_guest_limit_message', ''));
+                        $msg = !empty($customGuestMsg)
+                            ? $customGuestMsg
+                            : "You have reached the free inquiry limit ({$guestMsgCount}/{$guestLimitCount} messages) for guest visitors. To continue receiving assistance or access account services, please log in to your account or convert this discussion into a support ticket.";
+                        return [
+                            'allowed'       => false,
+                            'limit_reached' => true,
+                            'reason'        => 'guest_limit',
+                            'message'       => $msg,
+                            'can_escalate'  => true,
+                            'current_count' => $guestMsgCount,
+                            'limit_count'   => $guestLimitCount,
+                            'window'        => '24h',
+                        ];
+                    }
+                }
+            }
+
+            return [
+                'allowed'       => true,
+                'limit_reached' => false,
+                'reason'        => null,
+                'message'       => '',
+                'can_escalate'  => true,
+                'chars_limit'   => $maxMsgChars,
+            ];
+        } catch (\Throwable $e) {
+            ModuleLogger::error('client_chat', "Quota check error: " . $e->getMessage());
+            return [
+                'allowed'       => true,
+                'limit_reached' => false,
+                'reason'        => null,
+                'message'       => '',
+                'can_escalate'  => true,
+            ];
+        }
+    }
+
+    /**
+     * Check if a client or guest visitor is currently quota-restricted.
+     */
+    public static function checkClientChatLimits(string $visitorToken, ?int $clientId = null, ?int $sessionId = null): array
+    {
+        return self::checkChatQuota($visitorToken, $clientId, $sessionId, '');
+    }
+
+    /**
      * Active Input Sanitization & Payload Bounding.
      */
     public static function sanitizeClientInput(string $input, int $maxLength = 2000): string
@@ -1345,7 +1573,7 @@ class ChatService
         return false;
     }
 
-    private static function getChatSetting(string $key, $default = null)
+    public static function getChatSetting(string $key, $default = null)
     {
         try {
             $val = Capsule::table('tblsahdev_settings')->value($key);
@@ -1749,12 +1977,14 @@ class ChatService
         }
 
         $messages = self::getSessionMessages((int)$session->id, 100);
+        $quotaStatus = self::checkClientChatLimits($visitorToken, $clientId, (int)$session->id);
         return [
             'success'      => true,
             'session_uuid' => $session->session_uuid,
             'status'       => $session->status,
             'title'        => $session->title,
             'messages'     => $messages,
+            'limit_status' => $quotaStatus,
         ];
     }
 
@@ -1804,6 +2034,7 @@ class ChatService
                 'sender_name'  => $m->sender_name,
                 'message_text' => html_entity_decode((string)$m->message_text, ENT_QUOTES | ENT_HTML5, 'UTF-8'),
                 'action_card'  => !empty($m->action_card_json) ? json_decode($m->action_card_json, true) : null,
+                'rating'       => isset($m->rating) ? (int) $m->rating : null,
                 'created_at'   => Carbon::parse($m->created_at)->diffForHumans(),
             ];
         }
@@ -1814,5 +2045,246 @@ class ChatService
             'status'       => $session->status,
             'messages'     => $formatted,
         ];
+    }
+
+    /**
+     * Active Sensitive Data & PII Redaction Engine (OWASP LLM06).
+     * Automatically redacts credit cards (with Luhn validation), CVVs, passwords, and private keys.
+     */
+    public static function maskSensitivePiiData(string $text): string
+    {
+        if (empty($text)) {
+            return '';
+        }
+
+        // 1. Private Keys & Certificates
+        $text = preg_replace('/-----BEGIN\s+[A-Z\s]+PRIVATE\s+KEY-----[\s\S]*?-----END\s+[A-Z\s]+PRIVATE\s+KEY-----/i', '[REDACTED PRIVATE KEY]', $text);
+
+        // 2. High-Entropy API Keys, Bearer Tokens & Secrets
+        $text = preg_replace('/\b(?:bearer\s+[a-zA-Z0-9_\-\.]{15,})\b/i', '[REDACTED BEARER TOKEN]', $text);
+        $text = preg_replace('/(\b(?:api_key|apikey|secret_key|auth_token|access_token|password|passwd)\s*[:=]\s*)([^\s,;]+)/i', '$1[REDACTED SECRET]', $text);
+        $text = preg_replace('/\b(?:(?:sk|pk)_(?:live|test)_[0-9a-zA-Z]{20,}|sk-[a-zA-Z0-9_\-]{20,}|ghp_[a-zA-Z0-9]{25,}|github_pat_[a-zA-Z0-9_]{25,})\b/i', '[REDACTED API KEY]', $text);
+
+        // 3. CVV / CVC Patterns (e.g., "cvv: 123", "cvc is 1234")
+        $text = preg_replace('/\b(?:cvv2?|cvc2?|security\s+code|card\s+code)[:=\s]+(\d{3,4})\b/i', 'cvv: [REDACTED CVV]', $text);
+
+        // 4. Credit Card Numbers (Visa, Mastercard, Amex, Discover, Diners, JCB) with Luhn Algorithm Check
+        $text = preg_replace_callback('/\b(?:\d[ -]*?){13,19}\b/', function ($matches) {
+            $raw = $matches[0];
+            $digits = preg_replace('/\D/', '', $raw);
+            $len = strlen($digits);
+
+            // Must be between 13 and 19 digits
+            if ($len < 13 || $len > 19) {
+                return $raw;
+            }
+
+            // Must start with known IIN/BIN ranges (Visa 4, MC 51-55 or 22-27, Amex 34/37, Discover 6011/65, etc.)
+            $first1 = substr($digits, 0, 1);
+            $first2 = (int) substr($digits, 0, 2);
+            $isKnownBin = ($first1 === '4') || // Visa
+                          ($first2 >= 51 && $first2 <= 55) || ($first2 >= 22 && $first2 <= 27) || // MC
+                          ($first2 === 34 || $first2 === 37) || // Amex
+                          ($first2 === 65 || substr($digits, 0, 4) === '6011') || // Discover
+                          ($first2 === 36 || $first2 === 38); // Diners
+
+            if (!$isKnownBin) {
+                return $raw;
+            }
+
+            // Luhn Algorithm validation
+            $sum = 0;
+            $alt = false;
+            for ($i = $len - 1; $i >= 0; $i--) {
+                $n = (int) $digits[$i];
+                if ($alt) {
+                    $n *= 2;
+                    if ($n > 9) {
+                        $n -= 9;
+                    }
+                }
+                $sum += $n;
+                $alt = !$alt;
+            }
+
+            if ($sum % 10 === 0) {
+                return '[REDACTED CREDIT CARD]';
+            }
+
+            return $raw;
+        }, $text);
+
+        return $text;
+    }
+
+    /**
+     * Get dynamic conversation starter chips / prompts for the chat widget.
+     */
+    public static function getStarterPrompts(?int $clientId = null): array
+    {
+        try {
+            // Check if admin has configured custom starter chips in settings
+            $customChips = trim((string) self::getChatSetting('client_chat_starter_chips', ''));
+            if (!empty($customChips)) {
+                $lines = array_filter(array_map('trim', explode("\n", str_replace("\r", "", $customChips))));
+                if (!empty($lines)) {
+                    return array_values($lines);
+                }
+            }
+
+            $prompts = [];
+
+            // Context-Aware Prompts for Logged-In Clients
+            if ($clientId && (int)$clientId > 0) {
+                // Check for unpaid invoices
+                $unpaid = Capsule::table('tblinvoices')
+                    ->where('userid', (int)$clientId)
+                    ->where('status', 'Unpaid')
+                    ->orderBy('id', 'desc')
+                    ->first();
+                if ($unpaid) {
+                    $num = !empty($unpaid->invoicenum) ? $unpaid->invoicenum : $unpaid->id;
+                    $prompts[] = "💳 How can I view and pay Invoice #{$num}?";
+                }
+
+                // Check for active services
+                $service = Capsule::table('tblhosting')
+                    ->join('tblproducts', 'tblhosting.packageid', '=', 'tblproducts.id')
+                    ->where('tblhosting.userid', (int)$clientId)
+                    ->where('tblhosting.domainstatus', 'Active')
+                    ->orderBy('tblhosting.id', 'desc')
+                    ->select('tblhosting.id', 'tblhosting.domain', 'tblproducts.name')
+                    ->first();
+                if ($service) {
+                    $target = !empty($service->domain) ? $service->domain : $service->name;
+                    $prompts[] = "🌐 How do I manage DNS and cPanel for {$target}?";
+                }
+
+                // Check for open tickets
+                $ticket = Capsule::table('tbltickets')
+                    ->where('userid', (int)$clientId)
+                    ->whereNotIn('status', ['Closed'])
+                    ->orderBy('id', 'desc')
+                    ->first();
+                if ($ticket) {
+                    $prompts[] = "🎫 What is the current status of Ticket #{$ticket->tid}?";
+                }
+
+                // Standard account FAQs
+                $prompts[] = "⚡ Are there any active server outages or scheduled maintenance?";
+                $prompts[] = "📧 How do I configure my email in Outlook or mobile?";
+                $prompts[] = "🔒 How do I update or reset my account password?";
+            } else {
+                // Guest / Visitor Starters
+                $prompts[] = "⚡ Are there any current server outages or status alerts?";
+                $prompts[] = "🚀 Which web hosting package is right for my website?";
+                $prompts[] = "🌐 How do I register or transfer a domain name?";
+                $prompts[] = "🎫 How do I open a sales or technical support ticket?";
+            }
+
+            return array_slice($prompts, 0, 5);
+        } catch (\Throwable $e) {
+            return [
+                "⚡ Check Server Status & Outages",
+                "📧 Email & Webmail Setup Guide",
+                "🌐 Domain & DNS Management",
+                "🎫 Open Support Ticket"
+            ];
+        }
+    }
+
+    /**
+     * Record customer CSAT helpfulness rating (👍 / 👎) for an assistant message.
+     */
+    public static function rateChatMessage(int $messageId, int $rating, ?string $feedback, string $visitorToken, ?int $clientId = null): array
+    {
+        try {
+            if (!in_array($rating, [1, -1, 0], true)) {
+                return ['success' => false, 'error' => 'Invalid rating value. Must be 1, -1, or 0.'];
+            }
+
+            $msg = Capsule::table('tblsahdev_chat_messages')->where('id', $messageId)->first();
+            if (!$msg) {
+                return ['success' => false, 'error' => 'Message not found.'];
+            }
+
+            if ($msg->sender_type === 'user') {
+                return ['success' => false, 'error' => 'Cannot rate user messages.'];
+            }
+
+            // Verify session ownership strictly
+            $session = Capsule::table('tblsahdev_chat_sessions')->where('id', $msg->session_id)->first();
+            if (!$session) {
+                return ['success' => false, 'error' => 'Session not found.'];
+            }
+
+            $sessionClientId = (int) ($session->client_id ?? 0);
+            if ($clientId && $clientId > 0) {
+                if ($sessionClientId !== (int) $clientId) {
+                    ModuleLogger::warning('client_chat_security', "Unauthorized rateChatMessage blocked: client {$clientId} attempted to rate message in session {$session->session_uuid}");
+                    return ['success' => false, 'error' => 'Unauthorized session access.'];
+                }
+            } else {
+                if ($sessionClientId !== 0 || empty($visitorToken) || $session->visitor_token !== $visitorToken) {
+                    ModuleLogger::warning('client_chat_security', "Unauthorized rateChatMessage blocked: visitor attempted to rate message in session {$session->session_uuid}");
+                    return ['success' => false, 'error' => 'Unauthorized session access.'];
+                }
+            }
+
+            $cleanRating = ($rating === 0) ? null : $rating;
+            $cleanFeedback = !empty($feedback) ? mb_substr(trim($feedback), 0, 500) : null;
+
+            Capsule::table('tblsahdev_chat_messages')->where('id', $messageId)->update([
+                'rating'          => $cleanRating,
+                'rating_feedback' => $cleanFeedback,
+            ]);
+
+            ModuleLogger::info('client_chat', "Message {$messageId} rated {$rating} in session {$session->session_uuid}");
+
+            return [
+                'success'    => true,
+                'message_id' => $messageId,
+                'rating'     => $cleanRating,
+            ];
+        } catch (\Throwable $e) {
+            ModuleLogger::error('client_chat', "Failed to rate message {$messageId}: " . $e->getMessage());
+            return ['success' => false, 'error' => 'Could not save rating.'];
+        }
+    }
+
+    /**
+     * Compute aggregate CSAT helpfulness rating statistics for Client Live Chat.
+     */
+    public static function getChatCsatStats(): array
+    {
+        try {
+            $totalRatings = (int) Capsule::table('tblsahdev_chat_messages')
+                ->whereNotNull('rating')
+                ->count();
+
+            $positiveCount = (int) Capsule::table('tblsahdev_chat_messages')
+                ->where('rating', 1)
+                ->count();
+
+            $negativeCount = (int) Capsule::table('tblsahdev_chat_messages')
+                ->where('rating', -1)
+                ->count();
+
+            $csatPercent = $totalRatings > 0 ? round(($positiveCount / $totalRatings) * 100, 1) : null;
+
+            return [
+                'total_ratings'    => $totalRatings,
+                'positive_ratings' => $positiveCount,
+                'negative_ratings' => $negativeCount,
+                'csat_percent'     => $csatPercent,
+            ];
+        } catch (\Throwable $e) {
+            return [
+                'total_ratings'    => 0,
+                'positive_ratings' => 0,
+                'negative_ratings' => 0,
+                'csat_percent'     => null,
+            ];
+        }
     }
 }
