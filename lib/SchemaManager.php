@@ -143,6 +143,7 @@ class SchemaManager
                 'client_chat_whatsapp_enabled'   => ['type' => 'boolean', 'default' => 0],
                 'client_chat_whatsapp_number'    => ['type' => 'string', 'default' => ''],
                 'client_chat_whatsapp_message'   => ['type' => 'text'],
+                'client_chat_whatsapp_departments' => ['type' => 'text'],
                 'client_chat_siri_orb_enabled'   => ['type' => 'boolean', 'default' => 1],
 
                 // Safe Ops & Rollback Governance

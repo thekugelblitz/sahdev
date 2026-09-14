@@ -1936,6 +1936,9 @@ class AdminController
             if (isset($_POST['client_chat_whatsapp_message'])) {
                 $updatePayload['client_chat_whatsapp_message'] = trim($_POST['client_chat_whatsapp_message']);
             }
+            if (isset($_POST['client_chat_whatsapp_departments'])) {
+                $updatePayload['client_chat_whatsapp_departments'] = trim($_POST['client_chat_whatsapp_departments']) ?: null;
+            }
             if (isset($_POST['client_chat_siri_orb_enabled'])) {
                 $updatePayload['client_chat_siri_orb_enabled'] = !empty($_POST['client_chat_siri_orb_enabled']) ? 1 : 0;
             }
@@ -8728,6 +8731,7 @@ class AdminController
                     'client_chat_whatsapp_enabled'   => !empty($_POST['client_chat_whatsapp_enabled']) ? 1 : 0,
                     'client_chat_whatsapp_number'    => trim($_POST['client_chat_whatsapp_number'] ?? ''),
                     'client_chat_whatsapp_message'   => trim($_POST['client_chat_whatsapp_message'] ?? ''),
+                    'client_chat_whatsapp_departments' => trim($_POST['client_chat_whatsapp_departments'] ?? '') ?: null,
                     'client_chat_siri_orb_enabled'   => !empty($_POST['client_chat_siri_orb_enabled']) ? 1 : 0,
                     'updated_at'                    => \Carbon\Carbon::now(),
                 ]);
@@ -9644,6 +9648,15 @@ class AdminController
                                                     <span class="help-block" style="font-size: 10.5px; margin-bottom: 0;">Automatically populates when user launches WhatsApp.</span>
                                                 </div>
                                             </div>
+                                            <div class="form-group" style="margin-top: 14px; margin-bottom: 0;">
+                                                <label style="font-size: 12px; font-weight: 600;">
+                                                    <i class="fas fa-sitemap text-success"></i> Multi-Department Routing (Optional)
+                                                </label>
+                                                <textarea name="client_chat_whatsapp_departments" class="form-control" rows="3" style="font-size: 12px; font-family: monospace;" placeholder="Technical Support | +14155552671 | Hi! I need help with my hosting service.&#10;Sales &amp; Upgrades | +14155552672 | Hello, I have a question about web hosting plans.&#10;Billing &amp; Invoices | +14155552673 | Hi Billing team, I have an inquiry about my invoice."><?php echo htmlspecialchars($settings->client_chat_whatsapp_departments ?? ''); ?></textarea>
+                                                <span class="help-block" style="font-size: 10.5px; margin-bottom: 0; margin-top: 4px;">
+                                                    Configure multiple WhatsApp lines segmented by department. One per line: <code>Department Label | WhatsApp Number | Optional Message</code>. When set, clients can choose their specific department in the WhatsApp tab!
+                                                </span>
+                                            </div>
                                         </div>
                                     </div>
 
@@ -9692,48 +9705,76 @@ class AdminController
                             </div>
                             <div class="panel-body" style="background: #e2e8f0; padding: 30px; display: flex; flex-direction: column; align-items: center; gap: 20px; overflow-x: auto;">
                                 <!-- Mockup Frame -->
-                                <div id="previewFrame" style="width: 320px; height: 480px; background: #fff; border-radius: 16px; box-shadow: 0 20px 40px -10px rgba(0,0,0,0.25); display: flex; flex-direction: column; overflow: hidden; transition: all 0.25s ease;">
+                                <div id="previewFrame" style="width: 330px; height: 500px; background: #fff; border-radius: 14px; box-shadow: 0 20px 40px -10px rgba(0,0,0,0.25); display: flex; flex-direction: column; overflow: hidden; transition: all 0.25s ease; border: 1px solid #e5e7eb;">
                                     <!-- Header -->
-                                    <div id="previewHeader" style="background: <?php echo htmlspecialchars($settings->client_chat_brand_color ?? '#0d6efd'); ?>; color: #fff; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center;">
-                                        <div style="display: flex; align-items: center; gap: 8px;">
-                                            <div id="previewAvatarContainer" style="width: 30px; height: 30px; border-radius: 50%; background: rgba(255,255,255,0.25); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 11px; overflow: hidden; flex-shrink: 0;">
+                                    <div id="previewHeader" style="background: <?php echo htmlspecialchars($settings->client_chat_brand_color ?? '#0d6efd'); ?>; color: #fff; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(0,0,0,0.06);">
+                                        <div style="display: flex; align-items: center; gap: 10px;">
+                                            <div id="previewAvatarContainer" style="width: 36px; height: 36px; border-radius: 50%; background: rgba(255,255,255,0.25); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 12px; overflow: hidden; flex-shrink: 0;">
                                                 <?php if (!empty($settings->client_chat_logo)): ?>
                                                     <img id="previewAvatarImg" src="<?php echo htmlspecialchars($settings->client_chat_logo); ?>" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">
+                                                <?php elseif (!empty($settings->client_chat_siri_orb_enabled) || ($settings->client_chat_theme ?? '') === 'apple_siri'): ?>
+                                                    <div class="sdv-siri-orb" style="width:32px;height:32px;border-radius:50%;background:radial-gradient(circle at 35% 30%, #ff5e7e 0%, #f97316 28%, #a855f7 65%, #38bdf8 100%);box-shadow:inset 0 2px 4px rgba(255,255,255,0.8), 0 0 10px rgba(244,63,94,0.4);"></div>
                                                 <?php else: ?>
-                                                    <span id="previewAvatarText">AI</span>
+                                                    <span id="previewAvatarText"><i class="fas fa-globe"></i></span>
                                                 <?php endif; ?>
                                             </div>
                                             <div>
-                                                <div id="previewTitle" style="font-weight: 700; font-size: 13px;"><?php echo htmlspecialchars($settings->client_chat_title ?? 'Hosting Support Assistant'); ?></div>
-                                                <div style="font-size: 10px; opacity: 0.9;">● Online &bull; Self-Help AI</div>
+                                                <div style="display: flex; align-items: center; gap: 4px;">
+                                                    <span id="previewTitle" style="font-weight: 700; font-size: 13.5px;"><?php echo htmlspecialchars($settings->client_chat_title ?? 'Sahdev AI Support'); ?></span>
+                                                    <i class="fas fa-globe-americas" style="font-size: 11px; opacity: 0.85; color: inherit;"></i>
+                                                </div>
+                                                <div id="previewStatus" style="font-size: 10.5px; opacity: 0.9; display: flex; align-items: center; gap: 4px; margin-top: 1px;">
+                                                    <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#10b981;"></span> Online &bull; Self-Help AI
+                                                </div>
                                             </div>
                                         </div>
-                                        <div style="display: flex; gap: 4px;">
-                                            <button type="button" id="previewExpandBtn" style="background:none;border:none;color:#fff;cursor:pointer;font-size:12px;">⛶</button>
-                                            <button type="button" style="background:none;border:none;color:#fff;cursor:pointer;font-size:16px;line-height:1;">&minus;</button>
+                                        <div style="display: flex; gap: 5px; align-items: center;">
+                                            <button type="button" id="previewExpandBtn" style="background:none;border:none;color:inherit;cursor:pointer;font-size:12px;opacity:0.85;">⛶</button>
+                                            <button type="button" style="background:none;border:none;color:inherit;cursor:pointer;font-size:16px;line-height:1;opacity:0.85;">&minus;</button>
                                         </div>
                                     </div>
+
+                                    <!-- Navigation Tabs Preview -->
+                                    <div id="previewTabs" style="display: flex; gap: 6px; padding: 7px 14px; background: #fff; border-bottom: 1px solid #f1f3f5; font-size: 11px;">
+                                        <span id="previewTabChat" style="padding: 3px 10px; border-radius: 14px; background: #111827; color: #fff; font-weight: 600; display: inline-flex; align-items: center; gap: 4px;">
+                                            <i class="fas fa-comment-alt" style="font-size: 9.5px;"></i> AI Chat
+                                        </span>
+                                        <span id="previewTabKb" style="padding: 3px 10px; border-radius: 14px; background: #f3f4f6; color: #6b7280; font-weight: 500; display: inline-flex; align-items: center; gap: 4px;">
+                                            <i class="fas fa-book-open" style="font-size: 9.5px;"></i> Help &amp; KB
+                                        </span>
+                                        <span id="previewTabWa" style="padding: 3px 10px; border-radius: 14px; background: #f3f4f6; color: #6b7280; font-weight: 500; display: inline-flex; align-items: center; gap: 4px;">
+                                            <i class="fab fa-whatsapp text-success" style="font-size: 10.5px;"></i> WhatsApp
+                                        </span>
+                                    </div>
+
                                     <!-- Escalation Bar -->
-                                    <div id="previewEscalateBar" style="padding: 7px 14px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; font-size: 11px; color: #64748b; display: flex; justify-content: space-between;">
+                                    <div id="previewEscalateBar" style="padding: 6px 14px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; font-size: 10.5px; color: #64748b; display: none; justify-content: space-between; align-items: center;">
                                         <span>Need official staff?</span>
                                         <span id="previewEscalateLink" style="color: <?php echo htmlspecialchars($settings->client_chat_brand_color ?? '#0d6efd'); ?>; font-weight: 600; cursor: pointer;">Convert to Ticket &rarr;</span>
                                     </div>
+
                                     <!-- Messages Area -->
-                                    <div id="previewMessages" style="flex: 1; padding: 14px; background: #f8fafc; display: flex; flex-direction: column; gap: 10px; overflow-y: auto;">
-                                        <div id="previewWelcome" style="align-self: flex-start; background: #fff; color: #1e293b; padding: 9px 13px; border-radius: 12px 12px 12px 2px; border: 1px solid #e2e8f0; font-size: 12px; max-width: 85%;">
+                                    <div id="previewMessages" style="flex: 1; padding: 12px 14px; background: #ffffff; display: flex; flex-direction: column; gap: 10px; overflow-y: auto;">
+                                        <div id="previewWelcome" style="align-self: flex-start; background: #ffffff; color: #111827; padding: 10px 14px; border-radius: 14px; border: 1px solid #e5e7eb; font-size: 12px; max-width: 88%; box-shadow: 0 1px 2px rgba(0,0,0,0.02);">
                                             <?php echo htmlspecialchars($settings->client_chat_welcome_message ?? 'Hi there! Need help with your hosting, domains, or billing?'); ?>
                                         </div>
-                                        <div id="previewUserBubble" style="align-self: flex-end; background: <?php echo htmlspecialchars($settings->client_chat_brand_color ?? '#0d6efd'); ?>; color: #fff; padding: 9px 13px; border-radius: 12px 12px 2px 12px; font-size: 12px; max-width: 85%;">
+                                        <div id="previewUserBubble" style="align-self: flex-end; background: #f3f4f6; color: #111827; padding: 10px 14px; border-radius: 14px; font-size: 12px; max-width: 85%;">
                                             When is my next hosting invoice due?
                                         </div>
-                                        <div id="previewBotReply" style="align-self: flex-start; background: #fff; color: #1e293b; padding: 9px 13px; border-radius: 12px 12px 12px 2px; border: 1px solid #e2e8f0; font-size: 12px; max-width: 85%;">
+                                        <div id="previewBotReply" style="align-self: flex-start; background: #ffffff; color: #111827; padding: 10px 14px; border-radius: 14px; border: 1px solid #e5e7eb; font-size: 12px; max-width: 88%; box-shadow: 0 1px 2px rgba(0,0,0,0.02);">
                                             Your hosting service <strong>cPanel Premium (example.com)</strong> has an invoice of <strong>$14.99</strong> due on <strong>Oct 1st, 2026</strong>.
                                         </div>
                                     </div>
-                                    <!-- Input Row -->
-                                    <div id="previewFooter" style="padding: 10px 14px; background: #fff; border-top: 1px solid #e2e8f0; display: flex; gap: 8px;">
-                                        <input type="text" id="previewInput" class="form-control input-sm" placeholder="Type message..." disabled style="border-radius: 20px;">
-                                        <button type="button" id="previewSend" class="btn btn-sm" style="background: <?php echo htmlspecialchars($settings->client_chat_brand_color ?? '#0d6efd'); ?>; color: #fff; border-radius: 50%; width: 32px; height: 32px; padding: 0;"><i class="fas fa-paper-plane" style="font-size: 11px;"></i></button>
+
+                                    <!-- Input Row & Compact Branding -->
+                                    <div id="previewFooter" style="padding: 8px 12px 6px 12px; background: #ffffff; border-top: none; display: flex; flex-direction: column; gap: 4px;">
+                                        <div style="display: flex; gap: 8px; align-items: center; background: #ffffff; border: 1px solid #e5e7eb; border-radius: 20px; padding: 4px 6px 4px 12px;">
+                                            <input type="text" id="previewInput" placeholder="Type your question here..." disabled style="border: none; background: transparent; font-size: 12px; outline: none; flex: 1; color: #111827;">
+                                            <button type="button" id="previewSend" style="background: #111827; color: #fff; border: none; border-radius: 50%; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0;"><i class="fas fa-paper-plane" style="font-size: 10px;"></i></button>
+                                        </div>
+                                        <div id="previewBranding" style="text-align: center; font-size: 9.5px; color: #9ca3af; padding: 1px 0 0; line-height: 1;">
+                                            Powered by Sahdev AI
+                                        </div>
                                     </div>
                                 </div>
 
@@ -9813,135 +9854,194 @@ class AdminController
                         }
 
                         // Theme update
-                        if (theme === 'cyber_dark') {
+                        var avatarCont = document.getElementById('previewAvatarContainer');
+                        if (theme === 'apple_siri') {
+                            frame.style.background = '#ffffff';
+                            frame.style.border = '1px solid #e5e7eb';
+                            frame.style.borderRadius = '14px';
+                            header.style.background = '#ffffff';
+                            header.style.color = '#111827';
+                            header.style.borderBottom = '1px solid #f3f4f6';
+                            if (avatarCont && !avatarCont.querySelector('img')) {
+                                avatarCont.innerHTML = '<div style="width:32px;height:32px;border-radius:50%;background:radial-gradient(circle at 35% 30%, #ff5e7e 0%, #f97316 28%, #a855f7 65%, #38bdf8 100%);box-shadow:inset 0 2px 4px rgba(255,255,255,0.8), 0 0 10px rgba(244,63,94,0.4);"></div>';
+                            }
+                            if (escalateBar) { escalateBar.style.display = 'none'; }
+                            messages.style.background = '#ffffff';
+                            welcome.style.background = '#ffffff';
+                            welcome.style.color = '#111827';
+                            welcome.style.borderColor = '#e5e7eb';
+                            welcome.style.borderRadius = '14px';
+                            welcome.style.boxShadow = '0 1px 2px rgba(0,0,0,0.02)';
+                            botReply.style.background = '#ffffff';
+                            botReply.style.color = '#111827';
+                            botReply.style.borderColor = '#e5e7eb';
+                            botReply.style.borderRadius = '14px';
+                            botReply.style.boxShadow = '0 1px 2px rgba(0,0,0,0.02)';
+                            userBubble.style.background = '#f3f4f6';
+                            userBubble.style.color = '#111827';
+                            userBubble.style.borderRadius = '14px';
+                            if (send) { send.style.background = '#111827'; send.style.color = '#ffffff'; }
+                        } else if (theme === 'cyber_dark') {
                             frame.style.background = '#0f172a';
                             frame.style.border = '1px solid #334155';
+                            frame.style.borderRadius = '14px';
                             header.style.background = '#1e293b';
                             header.style.color = '#f8fafc';
-                            escalateBar.style.background = '#1e293b';
-                            escalateBar.style.borderBottom = '1px solid #334155';
+                            header.style.borderBottom = '1px solid #334155';
                             messages.style.background = '#090d16';
-                            footer.style.background = '#0f172a';
-                            footer.style.borderTop = '1px solid #334155';
                             welcome.style.background = '#1e293b';
                             welcome.style.color = '#f8fafc';
                             welcome.style.borderColor = '#334155';
+                            welcome.style.borderRadius = '14px';
                             botReply.style.background = '#1e293b';
                             botReply.style.color = '#f8fafc';
                             botReply.style.borderColor = '#334155';
+                            botReply.style.borderRadius = '14px';
+                            userBubble.style.background = brand;
+                            userBubble.style.color = '#ffffff';
+                            userBubble.style.borderRadius = '14px';
+                            if (send) { send.style.background = brand; send.style.color = '#ffffff'; }
+                        } else if (theme === 'linear_geist') {
+                            frame.style.background = '#000000';
+                            frame.style.border = '1px solid #27272a';
+                            frame.style.borderRadius = '12px';
+                            header.style.background = '#09090b';
+                            header.style.color = '#fafafa';
+                            header.style.borderBottom = '1px solid #27272a';
+                            messages.style.background = '#000000';
+                            welcome.style.background = '#18181b';
+                            welcome.style.color = '#fafafa';
+                            welcome.style.borderColor = '#27272a';
+                            welcome.style.borderRadius = '10px';
+                            botReply.style.background = '#18181b';
+                            botReply.style.color = '#fafafa';
+                            botReply.style.borderColor = '#27272a';
+                            botReply.style.borderRadius = '10px';
+                            userBubble.style.background = '#27272a';
+                            userBubble.style.color = '#fafafa';
+                            userBubble.style.borderRadius = '10px';
+                            if (send) { send.style.background = '#fafafa'; send.style.color = '#000000'; }
+                        } else if (theme === 'terminal_cli') {
+                            frame.style.background = '#0c1017';
+                            frame.style.border = '1px solid #16a34a';
+                            frame.style.borderRadius = '8px';
+                            header.style.background = '#05080c';
+                            header.style.color = '#4ade80';
+                            header.style.borderBottom = '1px solid #16a34a';
+                            messages.style.background = '#0c1017';
+                            welcome.style.background = '#05080c';
+                            welcome.style.color = '#4ade80';
+                            welcome.style.borderColor = '#16a34a';
+                            welcome.style.borderRadius = '4px';
+                            botReply.style.background = '#05080c';
+                            botReply.style.color = '#4ade80';
+                            botReply.style.borderColor = '#16a34a';
+                            botReply.style.borderRadius = '4px';
+                            userBubble.style.background = '#14532d';
+                            userBubble.style.color = '#86efac';
+                            userBubble.style.borderRadius = '4px';
+                            if (send) { send.style.background = '#16a34a'; send.style.color = '#ffffff'; }
+                        } else if (theme === 'notion_paper') {
+                            frame.style.background = '#fcfbf9';
+                            frame.style.border = '1px solid #e7e5e4';
+                            frame.style.borderRadius = '12px';
+                            header.style.background = '#f7f6f3';
+                            header.style.color = '#292524';
+                            header.style.borderBottom = '1px solid #e7e5e4';
+                            messages.style.background = '#fcfbf9';
+                            welcome.style.background = '#ffffff';
+                            welcome.style.color = '#292524';
+                            welcome.style.borderColor = '#e7e5e4';
+                            welcome.style.borderRadius = '10px';
+                            botReply.style.background = '#ffffff';
+                            botReply.style.color = '#292524';
+                            botReply.style.borderColor = '#e7e5e4';
+                            botReply.style.borderRadius = '10px';
+                            userBubble.style.background = '#e7e5e4';
+                            userBubble.style.color = '#292524';
+                            userBubble.style.borderRadius = '10px';
+                            if (send) { send.style.background = '#292524'; send.style.color = '#ffffff'; }
+                        } else if (theme === 'crisp_bubbly') {
+                            frame.style.background = '#ffffff';
+                            frame.style.border = '1px solid #e5e7eb';
+                            frame.style.borderRadius = '20px';
+                            header.style.background = brand;
+                            header.style.color = '#ffffff';
+                            header.style.borderBottom = 'none';
+                            messages.style.background = '#f8fafc';
+                            welcome.style.background = '#ffffff';
+                            welcome.style.color = '#1e293b';
+                            welcome.style.borderColor = '#e2e8f0';
+                            welcome.style.borderRadius = '18px 18px 18px 4px';
+                            botReply.style.background = '#ffffff';
+                            botReply.style.color = '#1e293b';
+                            botReply.style.borderColor = '#e2e8f0';
+                            botReply.style.borderRadius = '18px 18px 18px 4px';
+                            userBubble.style.background = brand;
+                            userBubble.style.color = '#ffffff';
+                            userBubble.style.borderRadius = '18px 18px 4px 18px';
+                            if (send) { send.style.background = brand; send.style.color = '#ffffff'; }
                         } else if (theme === 'midnight_indigo') {
                             frame.style.background = '#090d16';
                             frame.style.border = '1px solid rgba(99, 102, 241, 0.35)';
+                            frame.style.borderRadius = '14px';
                             header.style.background = 'linear-gradient(135deg, #1e1b4b 0%, #312e81 100%)';
                             header.style.color = '#e0e7ff';
-                            escalateBar.style.background = '#0f172a';
-                            escalateBar.style.borderBottom = '1px solid rgba(99, 102, 241, 0.2)';
+                            header.style.borderBottom = '1px solid rgba(99, 102, 241, 0.2)';
                             messages.style.background = '#05070d';
-                            footer.style.background = '#090d16';
-                            footer.style.borderTop = '1px solid rgba(99, 102, 241, 0.2)';
                             welcome.style.background = '#131929';
                             welcome.style.color = '#e0e7ff';
                             welcome.style.borderColor = 'rgba(99, 102, 241, 0.3)';
+                            welcome.style.borderRadius = '14px';
                             botReply.style.background = '#131929';
                             botReply.style.color = '#e0e7ff';
                             botReply.style.borderColor = 'rgba(99, 102, 241, 0.3)';
-                        } else if (theme === 'emerald_clean') {
-                            frame.style.background = '#f0fdf4';
-                            frame.style.border = '1px solid #bbf7d0';
-                            header.style.background = 'linear-gradient(135deg, #059669 0%, #047857 100%)';
-                            header.style.color = '#ffffff';
-                            escalateBar.style.background = '#ecfdf5';
-                            escalateBar.style.borderBottom = '1px solid #d1fae5';
-                            messages.style.background = '#f7fee7';
-                            footer.style.background = '#ffffff';
-                            footer.style.borderTop = '1px solid #d1fae5';
-                            welcome.style.background = '#ffffff';
-                            welcome.style.color = '#064e3b';
-                            welcome.style.borderColor = '#a7f3d0';
-                            botReply.style.background = '#ffffff';
-                            botReply.style.color = '#064e3b';
-                            botReply.style.borderColor = '#a7f3d0';
-                        } else if (theme === 'sunset_amber') {
-                            frame.style.background = '#fffbeb';
-                            frame.style.border = '1px solid #fde68a';
-                            header.style.background = 'linear-gradient(135deg, #ea580c 0%, #d97706 100%)';
-                            header.style.color = '#ffffff';
-                            escalateBar.style.background = '#fef3c7';
-                            escalateBar.style.borderBottom = '1px solid #fde68a';
-                            messages.style.background = '#fffdf7';
-                            footer.style.background = '#ffffff';
-                            footer.style.borderTop = '1px solid #fed7aa';
-                            welcome.style.background = '#ffffff';
-                            welcome.style.color = '#7c2d12';
-                            welcome.style.borderColor = '#fed7aa';
-                            botReply.style.background = '#ffffff';
-                            botReply.style.color = '#7c2d12';
-                            botReply.style.borderColor = '#fed7aa';
+                            botReply.style.borderRadius = '14px';
+                            userBubble.style.background = '#4338ca';
+                            userBubble.style.color = '#ffffff';
+                            userBubble.style.borderRadius = '14px';
+                            if (send) { send.style.background = '#4338ca'; send.style.color = '#ffffff'; }
                         } else if (theme === 'glassmorphism') {
-                            frame.style.background = 'rgba(255, 255, 255, 0.72)';
-                            frame.style.border = '1px solid rgba(255, 255, 255, 0.45)';
-                            header.style.background = 'rgba(255, 255, 255, 0.55)';
+                            frame.style.background = 'rgba(255, 255, 255, 0.85)';
+                            frame.style.border = '1px solid rgba(255, 255, 255, 0.6)';
+                            frame.style.borderRadius = '14px';
+                            header.style.background = 'rgba(255, 255, 255, 0.75)';
                             header.style.color = '#0f172a';
-                            escalateBar.style.background = 'rgba(255, 255, 255, 0.4)';
-                            escalateBar.style.borderBottom = '1px solid rgba(255, 255, 255, 0.3)';
-                            messages.style.background = 'rgba(248, 250, 252, 0.55)';
-                            footer.style.background = 'rgba(255, 255, 255, 0.65)';
-                            footer.style.borderTop = '1px solid rgba(255, 255, 255, 0.3)';
-                            welcome.style.background = 'rgba(255, 255, 255, 0.75)';
+                            header.style.borderBottom = '1px solid rgba(0, 0, 0, 0.06)';
+                            messages.style.background = 'rgba(248, 250, 252, 0.7)';
+                            welcome.style.background = 'rgba(255, 255, 255, 0.9)';
                             welcome.style.color = '#0f172a';
-                            welcome.style.borderColor = 'rgba(255, 255, 255, 0.6)';
-                            botReply.style.background = 'rgba(255, 255, 255, 0.75)';
+                            welcome.style.borderColor = 'rgba(255, 255, 255, 0.8)';
+                            welcome.style.borderRadius = '14px';
+                            botReply.style.background = 'rgba(255, 255, 255, 0.9)';
                             botReply.style.color = '#0f172a';
-                            botReply.style.borderColor = 'rgba(255, 255, 255, 0.6)';
-                        } else if (theme === 'high_contrast') {
-                            frame.style.background = '#ffffff';
-                            frame.style.border = '3px solid #000000';
-                            header.style.background = '#000000';
-                            header.style.color = '#ffffff';
-                            escalateBar.style.background = '#ffffff';
-                            escalateBar.style.borderBottom = '2px solid #000000';
-                            messages.style.background = '#ffffff';
-                            footer.style.background = '#ffffff';
-                            footer.style.borderTop = '2px solid #000000';
-                            welcome.style.background = '#ffffff';
-                            welcome.style.color = '#000000';
-                            welcome.style.borderColor = '#000000';
-                            botReply.style.background = '#f4f4f4';
-                            botReply.style.color = '#000000';
-                            botReply.style.borderColor = '#000000';
-                        } else if (theme === 'brand_gradient') {
-                            frame.style.background = '#ffffff';
-                            frame.style.border = 'none';
-                            header.style.background = 'linear-gradient(135deg, ' + brand + ' 0%, #4338ca 100%)';
-                            header.style.color = '#ffffff';
-                            escalateBar.style.background = '#f8fafc';
-                            escalateBar.style.borderBottom = '1px solid #e2e8f0';
-                            messages.style.background = '#f8fafc';
-                            footer.style.background = '#ffffff';
-                            footer.style.borderTop = '1px solid #e2e8f0';
-                            welcome.style.background = '#ffffff';
-                            welcome.style.color = '#1e293b';
-                            welcome.style.borderColor = '#e2e8f0';
-                            botReply.style.background = '#ffffff';
-                            botReply.style.color = '#1e293b';
-                            botReply.style.borderColor = '#e2e8f0';
+                            botReply.style.borderColor = 'rgba(255, 255, 255, 0.8)';
+                            botReply.style.borderRadius = '14px';
+                            userBubble.style.background = brand;
+                            userBubble.style.color = '#ffffff';
+                            userBubble.style.borderRadius = '14px';
+                            if (send) { send.style.background = brand; send.style.color = '#ffffff'; }
                         } else {
-                            // modern_light
+                            // modern_light / intercom_saas
                             frame.style.background = '#ffffff';
-                            frame.style.border = 'none';
+                            frame.style.border = '1px solid #e5e7eb';
+                            frame.style.borderRadius = '14px';
                             header.style.background = brand;
                             header.style.color = '#ffffff';
-                            escalateBar.style.background = '#f8fafc';
-                            escalateBar.style.borderBottom = '1px solid #e2e8f0';
+                            header.style.borderBottom = 'none';
                             messages.style.background = '#f8fafc';
-                            footer.style.background = '#ffffff';
-                            footer.style.borderTop = '1px solid #e2e8f0';
                             welcome.style.background = '#ffffff';
                             welcome.style.color = '#1e293b';
                             welcome.style.borderColor = '#e2e8f0';
+                            welcome.style.borderRadius = '14px';
                             botReply.style.background = '#ffffff';
                             botReply.style.color = '#1e293b';
                             botReply.style.borderColor = '#e2e8f0';
+                            botReply.style.borderRadius = '14px';
+                            userBubble.style.background = brand;
+                            userBubble.style.color = '#ffffff';
+                            userBubble.style.borderRadius = '14px';
+                            if (send) { send.style.background = brand; send.style.color = '#ffffff'; }
                         }
                     }
 
