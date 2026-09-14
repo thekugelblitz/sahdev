@@ -348,6 +348,10 @@ function sahdev_activate()
                     $table->boolean('client_chat_csat_enabled')->default(1);
                     $table->boolean('client_chat_sound_enabled')->default(1);
                     $table->text('client_chat_starter_chips')->nullable();
+                    $table->boolean('client_chat_whatsapp_enabled')->default(0);
+                    $table->string('client_chat_whatsapp_number', 50)->default('');
+                    $table->text('client_chat_whatsapp_message')->nullable();
+                    $table->boolean('client_chat_siri_orb_enabled')->default(1);
                     $table->timestamps(); // creates created_at, updated_at
                 }
             );

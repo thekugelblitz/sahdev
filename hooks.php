@@ -5894,6 +5894,10 @@ function sahdev_render_client_livechat_widget(array $vars): string
         $poweredByUrl = !empty($settings->client_chat_powered_by_url) ? htmlspecialchars(trim($settings->client_chat_powered_by_url), ENT_QUOTES, 'UTF-8') : '';
         $disclaimerEnabled = !empty($settings->client_chat_disclaimer_enabled);
         $disclaimerText = !empty($settings->client_chat_disclaimer_text) ? htmlspecialchars(trim($settings->client_chat_disclaimer_text), ENT_QUOTES, 'UTF-8') : 'AI Assistant: Responses may be AI-generated. Please verify critical information.';
+        $whatsappEnabled = !empty($settings->client_chat_whatsapp_enabled);
+        $whatsappNumber = !empty($settings->client_chat_whatsapp_number) ? htmlspecialchars(trim($settings->client_chat_whatsapp_number), ENT_QUOTES, 'UTF-8') : '';
+        $whatsappMessage = !empty($settings->client_chat_whatsapp_message) ? htmlspecialchars(trim($settings->client_chat_whatsapp_message), ENT_QUOTES, 'UTF-8') : 'Hi! I need assistance with my hosting account.';
+        $siriOrbEnabled = !isset($settings->client_chat_siri_orb_enabled) || !empty($settings->client_chat_siri_orb_enabled);
 
         $welcomeMsgRaw = !empty($settings->client_chat_welcome_message)
             ? $settings->client_chat_welcome_message
@@ -6094,9 +6098,95 @@ HTML;
     $exportBtnHtml = '';
     $soundBtnHtml = '';
 
+    // Animated Siri macOS Glowing Orb Component
+    $siriOrbHtml = '<div class="sdv-siri-orb-wrap" title="Sahdev AI Assistant">' .
+        '<div class="sdv-siri-orb">' .
+            '<div class="sdv-siri-orb-core"></div>' .
+            '<div class="sdv-siri-orb-glow"></div>' .
+            '<div class="sdv-siri-orb-aura"></div>' .
+        '</div>' .
+    '</div>';
+
     $avatarHtml = !empty($chatLogo)
         ? '<img src="' . $chatLogo . '" alt="Logo" class="sdv-cl-avatar-img">'
-        : 'AI';
+        : (($siriOrbEnabled || $chatTheme === 'apple_siri') ? $siriOrbHtml : 'AI');
+
+    // WhatsApp Configuration & Clean URLs
+    $whatsappCleanNumber = preg_replace('/[^0-9]/', '', $whatsappNumber);
+    $whatsappEncodedMsg = rawurlencode($whatsappMessage);
+
+    // Navigation Tabs (Icon-Based: AI Chat, Knowledge Base, WhatsApp)
+    $whatsappTabBtn = '';
+    if ($whatsappEnabled && !empty($whatsappCleanNumber)) {
+        $whatsappTabBtn = '<button type="button" class="sdv-wtab-btn" id="sdv-tab-btn-whatsapp" onclick="window.sdvSwitchTab&&window.sdvSwitchTab(\'whatsapp\');" title="Official WhatsApp Support" aria-label="WhatsApp Support">' .
+            '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="pointer-events:none;"><path d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.816 9.816 0 0 0 12.04 2m.01 1.67c2.2 0 4.26.86 5.82 2.42a8.225 8.225 0 0 1 2.41 5.83c0 4.54-3.7 8.24-8.24 8.24-1.48 0-2.93-.4-4.2-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.19 8.19 0 0 1-1.26-4.38c0-4.54 3.7-8.24 8.24-8.24m4.52 11.66c-.25-.13-1.47-.72-1.7-.81-.23-.08-.39-.13-.56.13-.17.25-.64.81-.79.97-.14.17-.29.19-.54.06-.25-.13-1.06-.39-2.02-1.24-.75-.67-1.26-1.49-1.41-1.74-.14-.25-.02-.39.11-.51.11-.11.25-.29.37-.44.13-.14.17-.25.25-.42.08-.17.04-.31-.02-.44-.06-.13-.56-1.35-.77-1.85-.2-.49-.41-.42-.56-.43h-.48c-.17 0-.44.06-.67.31-.23.25-.88.86-.88 2.1 0 1.24.9 2.44 1.03 2.61.13.17 1.78 2.72 4.31 3.81.6.26 1.07.42 1.44.54.61.19 1.16.17 1.6.1.49-.07 1.47-.6 1.68-1.18.21-.58.21-1.07.15-1.18-.06-.11-.22-.18-.47-.31"/></svg>' .
+            '<span>WhatsApp</span>' .
+            '</button>';
+    }
+
+    $kbTabBtn = $kbEnabled
+        ? '<button type="button" class="sdv-wtab-btn" id="sdv-tab-btn-kb" onclick="window.sdvSwitchTab&&window.sdvSwitchTab(\'kb\');" title="Search Knowledge Base" aria-label="Knowledgebase">' .
+          '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><line x1="9" y1="7" x2="15" y2="7"/><line x1="9" y1="11" x2="13" y2="11"/></svg>' .
+          '<span>Help &amp; KB</span>' .
+          '</button>'
+        : '';
+
+    $widgetTabsHtml = '<div class="sdv-widget-tabs" id="sdv-widget-tabs" role="tablist">' .
+        '<button type="button" class="sdv-wtab-btn sdv-wtab-active" id="sdv-tab-btn-chat" onclick="window.sdvSwitchTab&&window.sdvSwitchTab(\'chat\');" title="AI Assistant Live Chat" aria-label="AI Chat">' .
+            '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>' .
+            '<span>AI Chat</span>' .
+        '</button>' .
+        $kbTabBtn .
+        $whatsappTabBtn .
+    '</div>';
+
+    // WhatsApp Panel View
+    $whatsappPanelHtml = '';
+    if ($whatsappEnabled && !empty($whatsappCleanNumber)) {
+        $whatsappUrl = 'https://wa.me/' . $whatsappCleanNumber . (!empty($whatsappEncodedMsg) ? '?text=' . $whatsappEncodedMsg : '');
+        $whatsappPanelHtml = <<<WAHTML
+        <div class="sdv-tab-panel sdv-tab-panel-whatsapp" id="sdv-panel-whatsapp" style="display:none;">
+            <div class="sdv-wa-card">
+                <div class="sdv-wa-icon-glow">
+                    <svg width="42" height="42" viewBox="0 0 24 24" fill="#25D366"><path d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.816 9.816 0 0 0 12.04 2m.01 1.67c2.2 0 4.26.86 5.82 2.42a8.225 8.225 0 0 1 2.41 5.83c0 4.54-3.7 8.24-8.24 8.24-1.48 0-2.93-.4-4.2-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.19 8.19 0 0 1-1.26-4.38c0-4.54 3.7-8.24 8.24-8.24m4.52 11.66c-.25-.13-1.47-.72-1.7-.81-.23-.08-.39-.13-.56.13-.17.25-.64.81-.79.97-.14.17-.29.19-.54.06-.25-.13-1.06-.39-2.02-1.24-.75-.67-1.26-1.49-1.41-1.74-.14-.25-.02-.39.11-.51.11-.11.25-.29.37-.44.13-.14.17-.25.25-.42.08-.17.04-.31-.02-.44-.06-.13-.56-1.35-.77-1.85-.2-.49-.41-.42-.56-.43h-.48c-.17 0-.44.06-.67.31-.23.25-.88.86-.88 2.1 0 1.24.9 2.44 1.03 2.61.13.17 1.78 2.72 4.31 3.81.6.26 1.07.42 1.44.54.61.19 1.16.17 1.6.1.49-.07 1.47-.6 1.68-1.18.21-.58.21-1.07.15-1.18-.06-.11-.22-.18-.47-.31"/></svg>
+                </div>
+                <div class="sdv-wa-title">Official WhatsApp Support</div>
+                <div class="sdv-wa-status"><span class="sdv-wa-dot"></span> Online &bull; Direct Human &amp; Staff Support</div>
+                <p class="sdv-wa-desc">Connect directly with our support team on WhatsApp for immediate assistance, billing questions, or urgent hosting inquiries.</p>
+                <div class="sdv-wa-num-badge">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+                    <span>{$whatsappNumber}</span>
+                </div>
+                <div class="sdv-wa-preview-box">
+                    <span class="sdv-wa-preview-label">Pre-filled message:</span>
+                    <span class="sdv-wa-preview-text">"{$whatsappMessage}"</span>
+                </div>
+                <a href="{$whatsappUrl}" target="_blank" rel="noopener noreferrer" class="sdv-wa-launch-btn">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.816 9.816 0 0 0 12.04 2m.01 1.67c2.2 0 4.26.86 5.82 2.42a8.225 8.225 0 0 1 2.41 5.83c0 4.54-3.7 8.24-8.24 8.24-1.48 0-2.93-.4-4.2-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.19 8.19 0 0 1-1.26-4.38c0-4.54 3.7-8.24 8.24-8.24m4.52 11.66c-.25-.13-1.47-.72-1.7-.81-.23-.08-.39-.13-.56.13-.17.25-.64.81-.79.97-.14.17-.29.19-.54.06-.25-.13-1.06-.39-2.02-1.24-.75-.67-1.26-1.49-1.41-1.74-.14-.25-.02-.39.11-.51.11-.11.25-.29.37-.44.13-.14.17-.25.25-.42.08-.17.04-.31-.02-.44-.06-.13-.56-1.35-.77-1.85-.2-.49-.41-.42-.56-.43h-.48c-.17 0-.44.06-.67.31-.23.25-.88.86-.88 2.1 0 1.24.9 2.44 1.03 2.61.13.17 1.78 2.72 4.31 3.81.6.26 1.07.42 1.44.54.61.19 1.16.17 1.6.1.49-.07 1.47-.6 1.68-1.18.21-.58.21-1.07.15-1.18-.06-.11-.22-.18-.47-.31"/></svg>
+                    <span>Open WhatsApp Chat &rarr;</span>
+                </a>
+            </div>
+        </div>
+WAHTML;
+    }
+
+    // Knowledgebase Panel View
+    $kbPanelHtml = '';
+    if ($kbEnabled) {
+        $kbPanelHtml = <<<KBHTML
+        <div class="sdv-tab-panel sdv-tab-panel-kb" id="sdv-panel-kb" style="display:none;">
+            <div class="sdv-kb-pane-header">
+                <div class="sdv-kb-pane-search-wrap">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="flex-shrink:0;opacity:0.6;"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                    <input type="text" id="sdv-kb-pane-search" class="sdv-kb-pane-input" placeholder="Search knowledge base articles..." oninput="window.sdvFilterKbPane&&window.sdvFilterKbPane(this.value);" />
+                </div>
+            </div>
+            <div class="sdv-kb-pane-content" id="sdv-kb-pane-list">
+                <div style="padding:24px; text-align:center; color:#94a3b8; font-size:12.5px;">Searching knowledge base articles...</div>
+            </div>
+        </div>
+KBHTML;
+    }
 
     $poweredByHtml = '';
     if ($poweredByShow) {
@@ -8112,6 +8202,688 @@ DISC;
     color: #61738e !important;
 }
 
+/* ── 11. Apple Siri & Modern Sleek Theme (apple_siri) ──────────────── */
+/* ── 11. Apple Siri & Modern Sleek Theme (apple_siri) ──────────────── */
+#sdv-client-chat-window.sdv-theme-apple_siri {
+    background: #ffffff !important;
+    border: 1px solid #f1f3f5 !important;
+    border-radius: 32px !important;
+    box-shadow: 0 24px 60px -12px rgba(0, 0, 0, 0.12), 0 0 1px rgba(0, 0, 0, 0.08) !important;
+    overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif !important;
+}
+#sdv-client-chat-window.sdv-theme-apple_siri .sdv-cl-header {
+    background: #ffffff !important;
+    border-bottom: none !important;
+    padding: 22px 24px 10px 24px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+}
+#sdv-client-chat-window.sdv-theme-apple_siri .sdv-cl-header-info {
+    display: flex !important;
+    align-items: center !important;
+}
+#sdv-client-chat-window.sdv-theme-apple_siri .sdv-cl-header-info > div:not(.sdv-cl-avatar) {
+    display: none !important; /* Hide text title & status for clean minimalist hero orb */
+}
+#sdv-client-chat-window.sdv-theme-apple_siri .sdv-cl-avatar {
+    width: 52px !important;
+    height: 52px !important;
+    background: transparent !important;
+    box-shadow: none !important;
+}
+#sdv-client-chat-window.sdv-theme-apple_siri .sdv-siri-orb-wrap {
+    width: 52px !important;
+    height: 52px !important;
+    filter: drop-shadow(0 4px 16px rgba(244, 63, 94, 0.45)) drop-shadow(0 2px 10px rgba(168, 85, 247, 0.4)) !important;
+}
+#sdv-client-chat-window.sdv-theme-apple_siri .sdv-siri-orb {
+    width: 48px !important;
+    height: 48px !important;
+    background: radial-gradient(circle at 35% 30%, #ff5e7e 0%, #f97316 28%, #a855f7 65%, #38bdf8 100%) !important;
+    box-shadow: inset 0 2px 4px rgba(255, 255, 255, 0.8), 0 0 18px rgba(244, 63, 94, 0.5) !important;
+}
+#sdv-client-chat-window.sdv-theme-apple_siri .sdv-cl-controls {
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+}
+#sdv-client-chat-window.sdv-theme-apple_siri .sdv-cl-action-btn {
+    background: transparent !important;
+    color: #9ca3af !important;
+    border: none !important;
+    width: 32px !important;
+    height: 32px !important;
+    font-size: 18px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border-radius: 8px !important;
+    transition: color 0.15s ease, background 0.15s ease;
+}
+#sdv-client-chat-window.sdv-theme-apple_siri .sdv-cl-action-btn:hover {
+    background: #f4f5f7 !important;
+    color: #111827 !important;
+}
+#sdv-client-chat-window.sdv-theme-apple_siri #sdv-cl-expand-btn {
+    display: none !important;
+}
+#sdv-client-chat-window.sdv-theme-apple_siri .sdv-widget-tabs {
+    background: transparent !important;
+    border-bottom: none !important;
+    padding: 0 22px 10px 22px !important;
+    gap: 8px !important;
+}
+#sdv-client-chat-window.sdv-theme-apple_siri .sdv-wtab-btn {
+    background: #f4f5f7 !important;
+    border: none !important;
+    border-radius: 18px !important;
+    color: #6b7280 !important;
+    font-size: 11.5px !important;
+    font-weight: 500 !important;
+    padding: 5px 12px !important;
+}
+#sdv-client-chat-window.sdv-theme-apple_siri .sdv-wtab-btn:hover {
+    background: #e5e7eb !important;
+    color: #111827 !important;
+}
+#sdv-client-chat-window.sdv-theme-apple_siri .sdv-wtab-active {
+    background: #111827 !important;
+    color: #ffffff !important;
+    font-weight: 600 !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
+}
+#sdv-client-chat-window.sdv-theme-apple_siri .sdv-wtab-active svg {
+    color: #ffffff !important;
+}
+#sdv-client-chat-window.sdv-theme-apple_siri #sdv-tab-btn-whatsapp.sdv-wtab-active {
+    background: #15803d !important;
+}
+#sdv-client-chat-window.sdv-theme-apple_siri .sdv-cl-messages {
+    background: #ffffff !important;
+    padding: 10px 22px 16px 22px !important;
+    gap: 14px !important;
+}
+#sdv-client-chat-window.sdv-theme-apple_siri .sdv-cl-escalate-bar,
+#sdv-client-chat-window.sdv-theme-apple_siri .sdv-cl-disclaimer {
+    display: none !important;
+}
+#sdv-client-chat-window.sdv-theme-apple_siri .sdv-cl-msg {
+    position: relative !important;
+    margin-bottom: 12px !important;
+    font-size: 14px !important;
+    line-height: 1.6 !important;
+    word-break: break-word !important;
+}
+#sdv-client-chat-window.sdv-theme-apple_siri .sdv-cl-msg-bot {
+    background: #ffffff !important;
+    border: 1px solid #e5e7eb !important;
+    border-radius: 18px !important;
+    color: #111827 !important;
+    padding: 16px 20px !important;
+    max-width: 90% !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03) !important;
+    align-self: flex-start !important;
+}
+#sdv-client-chat-window.sdv-theme-apple_siri .sdv-cl-msg-user {
+    background: #f4f5f7 !important;
+    border: none !important;
+    border-radius: 18px !important;
+    color: #111827 !important;
+    padding: 14px 20px !important;
+    max-width: 88% !important;
+    box-shadow: none !important;
+    align-self: flex-end !important;
+}
+#sdv-client-chat-window.sdv-theme-apple_siri .sdv-msg-actions {
+    position: absolute !important;
+    bottom: -14px !important;
+    right: 14px !important;
+    background: #111827 !important;
+    border-radius: 10px !important;
+    padding: 3px 8px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.24) !important;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s ease, transform 0.15s ease;
+    transform: translateY(2px);
+    z-index: 10;
+}
+#sdv-client-chat-window.sdv-theme-apple_siri .sdv-cl-msg:hover .sdv-msg-actions,
+#sdv-client-chat-window.sdv-theme-apple_siri .sdv-msg-actions:hover {
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    transform: translateY(0) !important;
+}
+#sdv-client-chat-window.sdv-theme-apple_siri .sdv-msg-action-btn {
+    background: transparent !important;
+    color: #ffffff !important;
+    border: none !important;
+    padding: 3px 4px !important;
+    font-size: 11px !important;
+    cursor: pointer;
+    border-radius: 4px;
+    opacity: 0.85;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.15s ease, background 0.15s ease;
+}
+#sdv-client-chat-window.sdv-theme-apple_siri .sdv-msg-action-btn:hover {
+    opacity: 1 !important;
+    background: rgba(255, 255, 255, 0.18) !important;
+}
+#sdv-client-chat-window.sdv-theme-apple_siri .sdv-typing-wave {
+    background: #ffffff !important;
+    border: 1px solid #e5e7eb !important;
+    border-radius: 12px !important;
+    padding: 6px 14px !important;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03) !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 4px !important;
+    width: auto !important;
+}
+#sdv-client-chat-window.sdv-theme-apple_siri .sdv-typing-dot {
+    width: 4px !important;
+    height: 4px !important;
+    background: #9ca3af !important;
+}
+#sdv-client-chat-window.sdv-theme-apple_siri .sdv-starter-chip {
+    background: #f8fafc !important;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 20px !important;
+    color: #334155 !important;
+    font-size: 12px !important;
+    font-weight: 500 !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+}
+#sdv-client-chat-window.sdv-theme-apple_siri .sdv-starter-chip:hover {
+    background: #ffffff !important;
+    border-color: #6366f1 !important;
+    color: #4f46e5 !important;
+    transform: translateY(-1px);
+    box-shadow: 0 3px 10px rgba(99, 102, 241, 0.12);
+}
+#sdv-client-chat-window.sdv-theme-apple_siri .sdv-cl-footer {
+    background: transparent !important;
+    border-top: none !important;
+    padding: 0 18px 18px 18px !important;
+}
+#sdv-client-chat-window.sdv-theme-apple_siri .sdv-cl-input-row {
+    background: #ffffff !important;
+    border: 1.5px solid #e5e7eb !important;
+    border-radius: 28px !important;
+    padding: 8px 14px 8px 16px !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 10px !important;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.03) !important;
+    transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+#sdv-client-chat-window.sdv-theme-apple_siri .sdv-cl-input-row:focus-within {
+    border-color: #6366f1 !important;
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12) !important;
+}
+#sdv-client-chat-window.sdv-theme-apple_siri .sdv-input-prefix-icon {
+    display: flex !important;
+    align-items: center;
+    color: #9ca3af;
+    flex-shrink: 0;
+}
+#sdv-client-chat-window.sdv-theme-apple_siri #sdv-cl-input {
+    border: none !important;
+    background: transparent !important;
+    padding: 6px 0 !important;
+    font-size: 14px !important;
+    color: #111827 !important;
+    box-shadow: none !important;
+    outline: none !important;
+    flex: 1;
+}
+#sdv-client-chat-window.sdv-theme-apple_siri #sdv-cl-input::placeholder {
+    color: #9ca3af !important;
+}
+#sdv-client-chat-window.sdv-theme-apple_siri .sdv-input-mic-btn {
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    background: transparent !important;
+    border: none !important;
+    color: #9ca3af !important;
+    cursor: pointer !important;
+    padding: 4px !important;
+    border-radius: 50%;
+    transition: color 0.15s ease;
+}
+#sdv-client-chat-window.sdv-theme-apple_siri .sdv-input-mic-btn:hover {
+    color: #4b5563 !important;
+}
+#sdv-client-chat-window.sdv-theme-apple_siri #sdv-cl-send {
+    width: 32px !important;
+    height: 32px !important;
+    border-radius: 50% !important;
+    background: #111827 !important;
+    color: #ffffff !important;
+    border: none !important;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15) !important;
+    transition: transform 0.15s ease, background 0.15s ease;
+    flex-shrink: 0;
+}
+#sdv-client-chat-window.sdv-theme-apple_siri #sdv-cl-send:hover {
+    background: #1f2937 !important;
+    transform: scale(1.05);
+}
+#sdv-client-chat-window.sdv-theme-apple_siri .sdv-cl-branding {
+    font-size: 10.5px !important;
+    color: #9ca3af !important;
+    margin-top: 4px !important;
+    text-align: center;
+}
+
+/* File Badge Card */
+.sdv-file-badge-card {
+    background: #111827;
+    border-radius: 14px;
+    padding: 10px 14px;
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 8px 0;
+    max-width: 290px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+.sdv-file-badge-type {
+    background: #16a34a;
+    color: #ffffff;
+    font-size: 10px;
+    font-weight: 700;
+    border-radius: 6px;
+    padding: 4px 6px;
+    line-height: 1;
+    letter-spacing: 0.02em;
+}
+.sdv-file-badge-name {
+    font-size: 12.5px;
+    font-weight: 500;
+    color: #ffffff;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.sdv-file-badge-dl {
+    color: #9ca3af;
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    transition: color 0.15s ease;
+}
+.sdv-file-badge-dl:hover {
+    color: #ffffff;
+}
+
+/* ── macOS / Apple Siri Fluid Glowing Orb ────────────────────────── */
+.sdv-siri-orb-wrap {
+    width: 34px;
+    height: 34px;
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    filter: drop-shadow(0 2px 10px rgba(168, 85, 247, 0.5));
+    cursor: default;
+    user-select: none;
+}
+.sdv-siri-orb {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    position: relative;
+    overflow: hidden;
+    background: radial-gradient(circle at 35% 35%, #ff5277 0%, #a855f7 38%, #3b82f6 72%, #06b6d4 100%);
+    box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.7), 0 0 14px rgba(168, 85, 247, 0.55);
+    animation: sdvSiriBreathing 3.6s ease-in-out infinite alternate;
+}
+.sdv-siri-orb-core {
+    position: absolute;
+    inset: -35%;
+    background: conic-gradient(from 0deg at 50% 50%, #f43f5e 0deg, #ec4899 65deg, #8b5cf6 130deg, #3b82f6 200deg, #06b6d4 270deg, #fb923c 330deg, #f43f5e 360deg);
+    filter: blur(5px);
+    border-radius: 50%;
+    animation: sdvSiriRotate 5.5s linear infinite;
+    mix-blend-mode: screen;
+    opacity: 0.88;
+}
+.sdv-siri-orb-glow {
+    position: absolute;
+    inset: 6%;
+    background: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.2) 45%, transparent 75%);
+    border-radius: 50%;
+    animation: sdvSiriMorph 4.2s ease-in-out infinite alternate;
+    pointer-events: none;
+}
+.sdv-siri-orb-aura {
+    position: absolute;
+    inset: -2px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.45);
+    box-shadow: 0 0 10px rgba(147, 51, 234, 0.45);
+    pointer-events: none;
+}
+@keyframes sdvSiriRotate {
+    0%   { transform: rotate(0deg) scale(1); }
+    50%  { transform: rotate(180deg) scale(1.08); }
+    100% { transform: rotate(360deg) scale(1); }
+}
+@keyframes sdvSiriBreathing {
+    0%   { transform: scale(0.96); filter: brightness(1.02); }
+    100% { transform: scale(1.06); filter: brightness(1.22); }
+}
+@keyframes sdvSiriMorph {
+    0%   { border-radius: 40% 60% 70% 30% / 40% 50% 60% 50%; transform: rotate(0deg); }
+    50%  { border-radius: 65% 35% 30% 70% / 60% 30% 70% 40%; transform: rotate(90deg); }
+    100% { border-radius: 50% 50% 50% 50% / 50% 50% 50% 50%; transform: rotate(180deg); }
+}
+
+/* ── Icon-Based Navigation Tab Bar ─────────────────────────────────── */
+.sdv-widget-tabs {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    background: rgba(0, 0, 0, 0.025);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+    padding: 6px 12px;
+    flex-shrink: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+.sdv-widget-tabs::-webkit-scrollbar { display: none; }
+.sdv-wtab-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border: none;
+    border-radius: 18px;
+    background: transparent;
+    color: #64748b;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    line-height: 1;
+    white-space: nowrap;
+    transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.sdv-wtab-btn:hover {
+    background: rgba(0, 0, 0, 0.05);
+    color: #0f172a;
+}
+.sdv-wtab-btn svg {
+    flex-shrink: 0;
+    opacity: 0.75;
+}
+.sdv-wtab-btn.sdv-wtab-active {
+    background: #ffffff !important;
+    color: #0f172a !important;
+    font-weight: 600 !important;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1), 0 0 0 1px rgba(0, 0, 0, 0.03);
+}
+.sdv-wtab-btn.sdv-wtab-active svg {
+    opacity: 1;
+    color: var(--sdv-brand, #2563eb);
+}
+.sdv-wtab-btn#sdv-tab-btn-whatsapp.sdv-wtab-active svg {
+    color: #25D366 !important;
+}
+
+/* Dark Theme overrides for tabs */
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-widget-tabs,
+#sdv-client-chat-window.sdv-theme-linear_geist .sdv-widget-tabs,
+#sdv-client-chat-window.sdv-theme-terminal_cli .sdv-widget-tabs,
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-widget-tabs,
+#sdv-client-chat-window.sdv-theme-high_contrast .sdv-widget-tabs {
+    background: rgba(255, 255, 255, 0.03);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-wtab-btn,
+#sdv-client-chat-window.sdv-theme-linear_geist .sdv-wtab-btn,
+#sdv-client-chat-window.sdv-theme-terminal_cli .sdv-wtab-btn,
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-wtab-btn,
+#sdv-client-chat-window.sdv-theme-high_contrast .sdv-wtab-btn {
+    color: #94a3b8;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-wtab-btn:hover,
+#sdv-client-chat-window.sdv-theme-linear_geist .sdv-wtab-btn:hover,
+#sdv-client-chat-window.sdv-theme-terminal_cli .sdv-wtab-btn:hover,
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-wtab-btn:hover,
+#sdv-client-chat-window.sdv-theme-high_contrast .sdv-wtab-btn:hover {
+    background: rgba(255, 255, 255, 0.06);
+    color: #f1f5f9;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-wtab-active,
+#sdv-client-chat-window.sdv-theme-linear_geist .sdv-wtab-active,
+#sdv-client-chat-window.sdv-theme-terminal_cli .sdv-wtab-active,
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-wtab-active,
+#sdv-client-chat-window.sdv-theme-high_contrast .sdv-wtab-active {
+    background: #1e293b !important;
+    color: #f8fafc !important;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+
+/* Tab Panels Layout */
+.sdv-tab-panel {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+.sdv-tab-panel-chat {
+    height: 100%;
+}
+
+/* WhatsApp Support Tab Panel */
+.sdv-tab-panel-whatsapp {
+    padding: 24px 20px;
+    align-items: center;
+    text-align: center;
+    overflow-y: auto;
+    background: #ffffff;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-tab-panel-whatsapp,
+#sdv-client-chat-window.sdv-theme-linear_geist .sdv-tab-panel-whatsapp,
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-tab-panel-whatsapp {
+    background: #0f172a;
+    color: #f8fafc;
+}
+.sdv-wa-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    max-width: 320px;
+    width: 100%;
+    margin: auto 0;
+}
+.sdv-wa-icon-glow {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    background: #f0fdf4;
+    border: 2px solid #bbf7d0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 14px;
+    box-shadow: 0 6px 20px rgba(37, 211, 102, 0.22);
+}
+.sdv-wa-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: #0f172a;
+    margin-bottom: 4px;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-wa-title,
+#sdv-client-chat-window.sdv-theme-linear_geist .sdv-wa-title,
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-wa-title {
+    color: #f8fafc;
+}
+.sdv-wa-status {
+    font-size: 11.5px;
+    color: #16a34a;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin-bottom: 12px;
+    font-weight: 600;
+}
+.sdv-wa-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #22c55e;
+    box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.3);
+}
+.sdv-wa-desc {
+    font-size: 12px;
+    color: #64748b;
+    line-height: 1.45;
+    margin: 0 0 16px 0;
+}
+.sdv-wa-num-badge {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 20px;
+    padding: 6px 14px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: #334155;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 14px;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-wa-num-badge,
+#sdv-client-chat-window.sdv-theme-linear_geist .sdv-wa-num-badge,
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-wa-num-badge {
+    background: #1e293b;
+    border-color: #334155;
+    color: #cbd5e1;
+}
+.sdv-wa-preview-box {
+    background: #f1f5f9;
+    border-left: 3px solid #25D366;
+    border-radius: 0 8px 8px 0;
+    padding: 8px 12px;
+    text-align: left;
+    width: 100%;
+    box-sizing: border-box;
+    margin-bottom: 18px;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-wa-preview-box,
+#sdv-client-chat-window.sdv-theme-linear_geist .sdv-wa-preview-box,
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-wa-preview-box {
+    background: #1e293b;
+}
+.sdv-wa-preview-label {
+    display: block;
+    font-size: 10.5px;
+    font-weight: 600;
+    color: #64748b;
+    margin-bottom: 2px;
+    text-transform: uppercase;
+}
+.sdv-wa-preview-text {
+    font-size: 12px;
+    color: #334155;
+    font-style: italic;
+    word-break: break-word;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-wa-preview-text,
+#sdv-client-chat-window.sdv-theme-linear_geist .sdv-wa-preview-text,
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-wa-preview-text {
+    color: #e2e8f0;
+}
+.sdv-wa-launch-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    padding: 12px 18px;
+    border-radius: 22px;
+    background: #25D366;
+    color: #ffffff !important;
+    text-decoration: none !important;
+    font-size: 13.5px;
+    font-weight: 700;
+    box-shadow: 0 4px 14px rgba(37, 211, 102, 0.35);
+    transition: all 0.18s ease;
+}
+.sdv-wa-launch-btn:hover {
+    background: #20ba5a;
+    transform: translateY(-1px);
+    box-shadow: 0 6px 18px rgba(37, 211, 102, 0.45);
+}
+
+/* Knowledgebase Embedded Panel */
+.sdv-tab-panel-kb {
+    padding: 0;
+    background: #ffffff;
+    overflow: hidden;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-tab-panel-kb,
+#sdv-client-chat-window.sdv-theme-linear_geist .sdv-tab-panel-kb,
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-tab-panel-kb {
+    background: #0f172a;
+}
+.sdv-kb-pane-header {
+    padding: 10px 14px;
+    border-bottom: 1px solid #f1f5f9;
+    background: #f8fafc;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-kb-pane-header,
+#sdv-client-chat-window.sdv-theme-linear_geist .sdv-kb-pane-header,
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-kb-pane-header {
+    background: #1e293b;
+    border-bottom-color: #334155;
+}
+.sdv-kb-pane-search-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 18px;
+    padding: 6px 12px;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-kb-pane-search-wrap,
+#sdv-client-chat-window.sdv-theme-linear_geist .sdv-kb-pane-search-wrap,
+#sdv-client-chat-window.sdv-theme-midnight_indigo .sdv-kb-pane-search-wrap {
+    background: #0f172a;
+    border-color: #475569;
+}
+.sdv-kb-pane-input {
+    border: none;
+    background: transparent;
+    outline: none;
+    font-size: 12.5px;
+    width: 100%;
+    color: inherit;
+}
+.sdv-kb-pane-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px 14px;
+}
+
 /* ── Legacy Fallbacks (Compatibility) ──────────────────────────────── */
 /* Midnight Indigo */
 #sdv-client-chat-window.sdv-theme-midnight_indigo {
@@ -8958,35 +9730,47 @@ DISC;
         </div>
     </div>
 
-    <div class="sdv-cl-escalate-bar">
-        <span>Need official staff assistance?</span>
-        <a href="javascript:void(0);" class="sdv-cl-escalate-btn" id="sdv-cl-escalate" onclick="window.sdvEscalateToTicket && window.sdvEscalateToTicket();">Convert to Ticket &rarr;</a>
-    </div>
-    {$disclaimerHtml}
+    {$widgetTabsHtml}
 
-    <div class="sdv-cl-messages" id="sdv-cl-msgs">
-        <div class="sdv-cl-msg sdv-cl-msg-bot">{$welcomeMsg}</div>
-        <div id="sdv-starter-chips" class="sdv-starter-chips" style="display:none;"></div>
-    </div>
+    <div class="sdv-tab-panel sdv-tab-panel-chat" id="sdv-panel-chat">
+        <div class="sdv-cl-escalate-bar">
+            <span>Need official staff assistance?</span>
+            <a href="javascript:void(0);" class="sdv-cl-escalate-btn" id="sdv-cl-escalate" onclick="window.sdvEscalateToTicket && window.sdvEscalateToTicket();">Convert to Ticket &rarr;</a>
+        </div>
+        {$disclaimerHtml}
 
-    <div class="sdv-cl-footer">
-        <div id="sdv-cl-reply-bar" class="sdv-cl-reply-bar" style="display:none;">
-            <div class="sdv-cl-reply-info">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg>
-                <span class="sdv-cl-reply-label">Replying:</span>
-                <span id="sdv-cl-reply-snippet" class="sdv-cl-reply-snippet"></span>
+        <div class="sdv-cl-messages" id="sdv-cl-msgs">
+            <div class="sdv-cl-msg sdv-cl-msg-bot">{$welcomeMsg}</div>
+            <div id="sdv-starter-chips" class="sdv-starter-chips" style="display:none;"></div>
+        </div>
+
+        <div class="sdv-cl-footer">
+            <div id="sdv-cl-reply-bar" class="sdv-cl-reply-bar" style="display:none;">
+                <div class="sdv-cl-reply-info">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg>
+                    <span class="sdv-cl-reply-label">Replying:</span>
+                    <span id="sdv-cl-reply-snippet" class="sdv-cl-reply-snippet"></span>
+                </div>
+                <button type="button" class="sdv-cl-reply-close" id="sdv-cl-reply-close" title="Cancel Reply" onclick="window.sdvCancelReply && window.sdvCancelReply();">&times;</button>
             </div>
-            <button type="button" class="sdv-cl-reply-close" id="sdv-cl-reply-close" title="Cancel Reply" onclick="window.sdvCancelReply && window.sdvCancelReply();">&times;</button>
+            <div class="sdv-cl-input-row">
+                <span class="sdv-input-prefix-icon" style="display:none;">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                </span>
+                <input type="text" id="sdv-cl-input" placeholder="Type here..." autocomplete="off" {$maxMsgAttr} />
+                <button type="button" class="sdv-input-mic-btn" id="sdv-input-mic" title="Voice dictation" style="display:none;" onclick="if(window.sdvVoiceDictation)window.sdvVoiceDictation();">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+                </button>
+                <button type="button" id="sdv-cl-send" title="Send message">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" style="pointer-events:none;"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+                </button>
+            </div>
+            <div id="sdv-cl-char-counter" class="sdv-cl-char-counter" style="display:none;"></div>
+            {$poweredByHtml}
         </div>
-        <div class="sdv-cl-input-row">
-            <input type="text" id="sdv-cl-input" placeholder="Ask about services, invoices, domains..." autocomplete="off" {$maxMsgAttr} />
-            <button type="button" id="sdv-cl-send" title="Send message">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" style="pointer-events:none;"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
-            </button>
-        </div>
-        <div id="sdv-cl-char-counter" class="sdv-cl-char-counter" style="display:none;"></div>
-        {$poweredByHtml}
     </div>
+    {$kbPanelHtml}
+    {$whatsappPanelHtml}
 </div>
 
 <script>
@@ -9200,6 +9984,110 @@ DISC;
             window.sdvCloseHdrMenu();
         }
     }, true);
+
+    // ── Widget Navigation Tabs Engine ─────────────────────────────────────
+    window.sdvSwitchTab = function(tabName) {
+        tabName = tabName || 'chat';
+        var tabButtons = document.querySelectorAll('.sdv-wtab-btn');
+        tabButtons.forEach(function(btn) {
+            btn.classList.remove('sdv-wtab-active');
+        });
+        var activeBtn = document.getElementById('sdv-tab-btn-' + tabName);
+        if (activeBtn) activeBtn.classList.add('sdv-wtab-active');
+
+        var chatPanel = document.getElementById('sdv-panel-chat');
+        var kbPanel = document.getElementById('sdv-panel-kb');
+        var waPanel = document.getElementById('sdv-panel-whatsapp');
+
+        if (chatPanel) chatPanel.style.display = (tabName === 'chat') ? 'flex' : 'none';
+        if (kbPanel) {
+            kbPanel.style.display = (tabName === 'kb') ? 'flex' : 'none';
+            if (tabName === 'kb') {
+                var searchInp = document.getElementById('sdv-kb-pane-search');
+                var q = searchInp ? (searchInp.value || '').trim() : '';
+                loadKbPaneArticles(q);
+            }
+        }
+        if (waPanel) waPanel.style.display = (tabName === 'whatsapp') ? 'flex' : 'none';
+    };
+
+    var _kbPaneTimer = null;
+    window.sdvFilterKbPane = function(query) {
+        if (_kbPaneTimer) clearTimeout(_kbPaneTimer);
+        _kbPaneTimer = setTimeout(function() {
+            loadKbPaneArticles(query);
+        }, 200);
+    };
+
+    function loadKbPaneArticles(query) {
+        var paneList = document.getElementById('sdv-kb-pane-list');
+        if (!paneList) return;
+        paneList.innerHTML = '<div class="sdv-history-loading"><div class="sdv-spinner"></div><span>Searching knowledge base...</span></div>';
+
+        var form = new FormData();
+        form.append('action', 'client_chat_kb_search');
+        form.append('query', query || '');
+        form.append('visitor_token', visitorToken);
+
+        postAjaxWithFallback(form, function(err, data) {
+            if (err || !data || (data.status !== 'success' && !data.success) || !data.articles) {
+                renderKbPaneItems([], []);
+                return;
+            }
+            renderKbPaneItems(data.articles, data.categories || []);
+        });
+    }
+
+    function renderKbPaneItems(articles, categories) {
+        var listEl = document.getElementById('sdv-kb-pane-list');
+        if (!listEl) return;
+
+        if (!articles || articles.length === 0) {
+            listEl.innerHTML = '<div class="sdv-history-empty">' +
+                '<div class="sdv-history-empty-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div>' +
+                '<div class="sdv-history-empty-title">No articles found</div>' +
+                '<div class="sdv-history-empty-desc">Try another keyword or switch back to the AI Chat tab to ask our assistant directly.</div>' +
+            '</div>';
+            return;
+        }
+
+        var html = '';
+        if (categories && categories.length > 0) {
+            html += '<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:12px;">';
+            categories.forEach(function(cat) {
+                var safeName = String(cat.name).replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                var catUrl = resolveChatUrl(cat.rel_url);
+                html += '<a href="' + catUrl + '" target="_blank" rel="noopener noreferrer" style="text-decoration:none;font-size:11px;padding:3px 8px;background:rgba(0,0,0,0.04);color:#475569;border:1px solid rgba(0,0,0,0.06);border-radius:14px;display:inline-flex;align-items:center;gap:3px;">' +
+                    '📁 ' + safeName +
+                '</a>';
+            });
+            html += '</div>';
+        }
+
+        articles.forEach(function(art) {
+            var safeTitle = String(art.title).replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            var safeSnippet = String(art.snippet || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            var artUrl = resolveChatUrl(art.rel_url);
+            var safeTitleAttr = encodeURIComponent(art.title || '');
+
+            html += '<div class="sdv-kb-item">' +
+                '<div class="sdv-kb-title">' +
+                    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>' +
+                    '<span>' + safeTitle + '</span>' +
+                '</div>' +
+                '<div class="sdv-kb-snippet">' + safeSnippet + '</div>' +
+                '<div class="sdv-kb-actions">' +
+                    '<a href="' + artUrl + '" target="_blank" rel="noopener noreferrer" class="sdv-kb-link">' +
+                        '<span>Read Article</span>' +
+                        '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>' +
+                    '</a>' +
+                    '<button type="button" class="sdv-kb-ask-btn" onclick="window.sdvAskArticle(decodeURIComponent(\'' + safeTitleAttr + '\'));">Ask AI &rarr;</button>' +
+                '</div>' +
+            '</div>';
+        });
+
+        listEl.innerHTML = html;
+    }
 
     window.sdvToggleMsgMenu = function(btn, msgId) {
         var parent = btn.parentNode;
@@ -9498,46 +10386,129 @@ DISC;
         });
     };
 
-    function attachMsgActions(el, msgId, rating) {
+    function attachMsgActions(el, msgId, rating, role) {
         if (!el || el.querySelector('.sdv-msg-actions')) return;
         var actions = document.createElement('div');
         actions.className = 'sdv-msg-actions';
 
-        // 1. CSAT Rating Buttons if enabled
-        if (csatEnabled && msgId) {
-            var upBtn = document.createElement('button');
-            upBtn.type = 'button';
-            upBtn.className = 'sdv-msg-action-btn sdv-rate-up' + (rating == 1 ? ' sdv-rated-up' : '');
-            upBtn.title = 'Helpful response';
-            upBtn.setAttribute('aria-label', 'Helpful');
-            upBtn.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>';
-            if (rating) upBtn.disabled = true;
-            upBtn.onclick = function(e) { if (e && e.stopPropagation) e.stopPropagation(); window.sdvRateMessage(msgId, 1, this); };
-            actions.appendChild(upBtn);
+        var win = document.getElementById('sdv-client-chat-window');
+        var isAppleSiri = win && win.classList.contains('sdv-theme-apple_siri');
 
-            var downBtn = document.createElement('button');
-            downBtn.type = 'button';
-            downBtn.className = 'sdv-msg-action-btn sdv-rate-down' + (rating == -1 ? ' sdv-rated-down' : '');
-            downBtn.title = 'Not helpful';
-            downBtn.setAttribute('aria-label', 'Not helpful');
-            downBtn.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h3a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-3"/></svg>';
-            if (rating) downBtn.disabled = true;
-            downBtn.onclick = function(e) { if (e && e.stopPropagation) e.stopPropagation(); window.sdvRateMessage(msgId, -1, this); };
-            actions.appendChild(downBtn);
+        if (isAppleSiri) {
+            // Dribbble-style floating black micro-toolbar: Sparkle, Pencil, Retry, Copy
+            var sparkBtn = document.createElement('button');
+            sparkBtn.type = 'button';
+            sparkBtn.className = 'sdv-msg-action-btn';
+            sparkBtn.title = 'Enhance prompt / AI suggestions';
+            sparkBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>';
+            sparkBtn.onclick = function(e) { if (e && e.stopPropagation) e.stopPropagation(); window.sdvSparkleAction && window.sdvSparkleAction(this); };
+            actions.appendChild(sparkBtn);
+
+            var editBtn = document.createElement('button');
+            editBtn.type = 'button';
+            editBtn.className = 'sdv-msg-action-btn';
+            editBtn.title = 'Edit query';
+            editBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>';
+            editBtn.onclick = function(e) { if (e && e.stopPropagation) e.stopPropagation(); window.sdvEditUserMsg && window.sdvEditUserMsg(this); };
+            actions.appendChild(editBtn);
+
+            var retryBtn = document.createElement('button');
+            retryBtn.type = 'button';
+            retryBtn.className = 'sdv-msg-action-btn';
+            retryBtn.title = 'Regenerate / Retry';
+            retryBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg>';
+            retryBtn.onclick = function(e) { if (e && e.stopPropagation) e.stopPropagation(); window.sdvRetryMsg && window.sdvRetryMsg(this); };
+            actions.appendChild(retryBtn);
+
+            var copyBtn = document.createElement('button');
+            copyBtn.type = 'button';
+            copyBtn.className = 'sdv-msg-action-btn';
+            copyBtn.title = 'Copy message';
+            copyBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>';
+            copyBtn.onclick = function(e) { if (e && e.stopPropagation) e.stopPropagation(); window.sdvCopyMsgText && window.sdvCopyMsgText(this); };
+            actions.appendChild(copyBtn);
+        } else {
+            // 1. CSAT Rating Buttons if enabled
+            if (csatEnabled && msgId && role === 'bot') {
+                var upBtn = document.createElement('button');
+                upBtn.type = 'button';
+                upBtn.className = 'sdv-msg-action-btn sdv-rate-up' + (rating == 1 ? ' sdv-rated-up' : '');
+                upBtn.title = 'Helpful response';
+                upBtn.setAttribute('aria-label', 'Helpful');
+                upBtn.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>';
+                if (rating) upBtn.disabled = true;
+                upBtn.onclick = function(e) { if (e && e.stopPropagation) e.stopPropagation(); window.sdvRateMessage(msgId, 1, this); };
+                actions.appendChild(upBtn);
+
+                var downBtn = document.createElement('button');
+                downBtn.type = 'button';
+                downBtn.className = 'sdv-msg-action-btn sdv-rate-down' + (rating == -1 ? ' sdv-rated-down' : '');
+                downBtn.title = 'Not helpful';
+                downBtn.setAttribute('aria-label', 'Not helpful');
+                downBtn.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h3a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-3"/></svg>';
+                if (rating) downBtn.disabled = true;
+                downBtn.onclick = function(e) { if (e && e.stopPropagation) e.stopPropagation(); window.sdvRateMessage(msgId, -1, this); };
+                actions.appendChild(downBtn);
+            }
+
+            // 2. 3-dots More options micro-button
+            var moreBtn = document.createElement('button');
+            moreBtn.type = 'button';
+            moreBtn.className = 'sdv-msg-action-btn sdv-action-more';
+            moreBtn.title = 'Options';
+            moreBtn.setAttribute('aria-label', 'Options');
+            moreBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="pointer-events:none;"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>';
+            moreBtn.onclick = function(e) { if (e && e.stopPropagation) e.stopPropagation(); window.sdvToggleMsgMenu(this, msgId); };
+            actions.appendChild(moreBtn);
         }
-
-        // 2. 3-dots More options micro-button
-        var moreBtn = document.createElement('button');
-        moreBtn.type = 'button';
-        moreBtn.className = 'sdv-msg-action-btn sdv-action-more';
-        moreBtn.title = 'Options';
-        moreBtn.setAttribute('aria-label', 'Options');
-        moreBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="pointer-events:none;"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>';
-        moreBtn.onclick = function(e) { if (e && e.stopPropagation) e.stopPropagation(); window.sdvToggleMsgMenu(this, msgId); };
-        actions.appendChild(moreBtn);
 
         el.appendChild(actions);
     }
+
+    window.sdvEditUserMsg = function(btn) {
+        if (!btn) return;
+        var msgEl = btn.closest('.sdv-cl-msg');
+        if (!msgEl) return;
+        var clone = msgEl.cloneNode(true);
+        var acts = clone.querySelector('.sdv-msg-actions');
+        if (acts) acts.remove();
+        var txt = (clone.innerText || clone.textContent || '').trim();
+        var input = document.getElementById('sdv-cl-input');
+        if (input && txt) {
+            input.value = txt;
+            input.focus();
+        }
+    };
+
+    window.sdvRetryMsg = function(btn) {
+        if (!btn) return;
+        var msgEl = btn.closest('.sdv-cl-msg');
+        if (!msgEl) return;
+        var clone = msgEl.cloneNode(true);
+        var acts = clone.querySelector('.sdv-msg-actions');
+        if (acts) acts.remove();
+        var txt = (clone.innerText || clone.textContent || '').trim();
+        var input = document.getElementById('sdv-cl-input');
+        if (input && txt) {
+            input.value = txt;
+            if (window.sdvSendMessage) window.sdvSendMessage();
+        }
+    };
+
+    window.sdvSparkleAction = function(btn) {
+        if (!btn) return;
+        var msgEl = btn.closest('.sdv-cl-msg');
+        if (!msgEl) return;
+        var clone = msgEl.cloneNode(true);
+        var acts = clone.querySelector('.sdv-msg-actions');
+        if (acts) acts.remove();
+        var txt = (clone.innerText || clone.textContent || '').trim();
+        var input = document.getElementById('sdv-cl-input');
+        if (input && txt) {
+            input.value = 'Can you improve and give more details on: ' + txt;
+            if (window.sdvSendMessage) window.sdvSendMessage();
+        }
+    };
 
     // ── Conversation Starter Chips Engine ─────────────────────────────────
     function renderStarterChips(chips) {
@@ -10078,6 +11049,15 @@ DISC;
             if (st === 'paid' || st === 'active' || st === 'completed') cls = 'sdv-badge-success';
             else if (st === 'overdue' || st === 'cancelled' || st === 'suspended') cls = 'sdv-badge-danger';
             return prefix + ' <span class="sdv-badge-pill ' + cls + '"><span class="sdv-badge-dot"></span>' + status + '</span>';
+        // File badge card syntax: [file:filename.csv] or [file:report.pdf]
+        s = s.replace(/\[file:([^\]]+)\]/gi, function(_, fname) {
+            var ext = (fname.split('.').pop() || 'FILE').toUpperCase();
+            var safeName = sdvEscapeHtml(fname);
+            return '<div class="sdv-file-badge-card">' +
+                '<span class="sdv-file-badge-type">' + sdvEscapeHtml(ext) + '</span>' +
+                '<span class="sdv-file-badge-name">' + safeName + '</span>' +
+                '<span class="sdv-file-badge-dl" title="Download ' + safeName + '"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg></span>' +
+            '</div>';
         });
 
         var lines = s.split(String.fromCharCode(10));
@@ -10217,8 +11197,8 @@ DISC;
         } else {
             d.innerHTML = parseSimpleMarkdown(text);
         }
-        if (role === 'bot' && !isHtml) {
-            attachMsgActions(d, msgId, rating);
+        if (!isHtml) {
+            attachMsgActions(d, msgId, rating, role);
         }
         msgsEl.appendChild(d);
         msgsEl.scrollTop = msgsEl.scrollHeight;
@@ -11075,6 +12055,7 @@ DISC;
 
     window.sdvAskArticle = function(title) {
         window.sdvCloseKb();
+        if (window.sdvSwitchTab) window.sdvSwitchTab('chat');
         var input = document.getElementById('sdv-cl-input');
         if (input) {
             input.value = 'Can you summarize and help me with the article: "' + title + '"?';
@@ -11155,7 +12136,7 @@ DISC;
         // Attach action toolbar to initial static welcome message if present
         var initialBot = document.querySelector('#sdv-cl-msgs .sdv-cl-msg-bot');
         if (initialBot) {
-            attachMsgActions(initialBot, 0, 0);
+            attachMsgActions(initialBot, 0, 0, 'bot');
         }
 
         // Restore chat window open state across tabs / page navigations

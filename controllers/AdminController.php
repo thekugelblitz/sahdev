@@ -1927,6 +1927,18 @@ class AdminController
             if (isset($_POST['client_chat_starter_chips'])) {
                 $updatePayload['client_chat_starter_chips'] = trim($_POST['client_chat_starter_chips']) ?: null;
             }
+            if (isset($_POST['client_chat_whatsapp_enabled'])) {
+                $updatePayload['client_chat_whatsapp_enabled'] = !empty($_POST['client_chat_whatsapp_enabled']) ? 1 : 0;
+            }
+            if (isset($_POST['client_chat_whatsapp_number'])) {
+                $updatePayload['client_chat_whatsapp_number'] = trim($_POST['client_chat_whatsapp_number']);
+            }
+            if (isset($_POST['client_chat_whatsapp_message'])) {
+                $updatePayload['client_chat_whatsapp_message'] = trim($_POST['client_chat_whatsapp_message']);
+            }
+            if (isset($_POST['client_chat_siri_orb_enabled'])) {
+                $updatePayload['client_chat_siri_orb_enabled'] = !empty($_POST['client_chat_siri_orb_enabled']) ? 1 : 0;
+            }
             if (isset($_POST['copilot_fallback_provider_id'])) {
                 $updatePayload['copilot_fallback_provider_id'] = $copilotFallbackProviderId ?: null;
             }
@@ -8713,6 +8725,10 @@ class AdminController
                     'client_chat_csat_enabled'      => !empty($_POST['client_chat_csat_enabled']) ? 1 : 0,
                     'client_chat_sound_enabled'     => !empty($_POST['client_chat_sound_enabled']) ? 1 : 0,
                     'client_chat_starter_chips'     => trim($_POST['client_chat_starter_chips'] ?? '') ?: null,
+                    'client_chat_whatsapp_enabled'   => !empty($_POST['client_chat_whatsapp_enabled']) ? 1 : 0,
+                    'client_chat_whatsapp_number'    => trim($_POST['client_chat_whatsapp_number'] ?? ''),
+                    'client_chat_whatsapp_message'   => trim($_POST['client_chat_whatsapp_message'] ?? ''),
+                    'client_chat_siri_orb_enabled'   => !empty($_POST['client_chat_siri_orb_enabled']) ? 1 : 0,
                     'updated_at'                    => \Carbon\Carbon::now(),
                 ]);
                 $successMessage = "Widget configuration and appearance saved successfully.";
@@ -9336,6 +9352,9 @@ class AdminController
                                         <label style="font-weight: 700;">UI/UX Theme Style &amp; Structural Architecture</label>
                                         <?php $currentTheme = $settings->client_chat_theme ?? 'modern_light'; ?>
                                         <select name="client_chat_theme" id="ctrl_theme" class="form-control" style="font-weight: 600;">
+                                            <optgroup label="Next-Gen AI &amp; Modern Minimalist">
+                                                <option value="apple_siri" <?php echo ($currentTheme === 'apple_siri') ? 'selected' : ''; ?>>★ Apple Siri &mdash; macOS Sequoia / iOS 18 fluid animated gradient orb, floating micro-toolbar, ultra-sleek minimalist UI</option>
+                                            </optgroup>
                                             <optgroup label="Modern Conversational &amp; SaaS">
                                                 <option value="modern_light" <?php echo in_array($currentTheme, ['modern_light', 'intercom_saas']) ? 'selected' : ''; ?>>1. Intercom Modern &mdash; Soft ambient elevation, pillowy 18px radii, rounded search-pill input, humanist layout</option>
                                                 <option value="crisp_bubbly" <?php echo ($currentTheme === 'crisp_bubbly') ? 'selected' : ''; ?>>2. Crisp Playful &mdash; Hyper-rounded 24px teardrop bubbles, bouncy micro-interactions, friendly energetic vibe</option>
@@ -9586,6 +9605,44 @@ class AdminController
                                                     <input type="checkbox" name="client_chat_sound_enabled" value="1" <?php echo !empty($settings->client_chat_sound_enabled ?? 1) ? 'checked' : ''; ?>>
                                                     Enable Message Notification Audio Chime (Default)
                                                 </label>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="checkbox">
+                                                <label style="font-weight: 600;">
+                                                    <input type="checkbox" name="client_chat_siri_orb_enabled" value="1" <?php echo (!isset($settings->client_chat_siri_orb_enabled) || !empty($settings->client_chat_siri_orb_enabled)) ? 'checked' : ''; ?>>
+                                                    Enable macOS Siri Animated Orb Avatar
+                                                </label>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- WhatsApp Channel Integration Panel -->
+                                    <div class="panel panel-default" style="border-radius: 8px; margin-bottom: 22px; background: #f0fdf4; border: 1px solid #bbf7d0;">
+                                        <div class="panel-heading" style="background: #dcfce7; padding: 10px 15px; font-weight: 700; font-size: 13px; color: #166534;">
+                                            <i class="fab fa-whatsapp" style="font-size: 15px; color: #22c55e;"></i> WhatsApp Direct Contact Channel &amp; Tab
+                                        </div>
+                                        <div class="panel-body" style="padding: 15px;">
+                                            <div class="checkbox" style="margin-top: 0; margin-bottom: 10px;">
+                                                <label style="font-weight: 700; color: #166534;">
+                                                    <input type="checkbox" name="client_chat_whatsapp_enabled" value="1" <?php echo !empty($settings->client_chat_whatsapp_enabled) ? 'checked' : ''; ?>>
+                                                    Enable WhatsApp Tab in Widget (Icon Navigation)
+                                                </label>
+                                            </div>
+                                            <span class="help-block" style="font-size: 11.5px; margin-bottom: 12px; color: #15803d;">
+                                                Adds a dedicated WhatsApp icon tab inside the chat widget, enabling clients to transition from AI chat directly to your official WhatsApp support line with 1 click.
+                                            </span>
+                                            <div class="row">
+                                                <div class="col-md-5 form-group" style="margin-bottom: 0;">
+                                                    <label style="font-size: 12px; font-weight: 600;">WhatsApp Support Number</label>
+                                                    <input type="text" name="client_chat_whatsapp_number" class="form-control input-sm" value="<?php echo htmlspecialchars($settings->client_chat_whatsapp_number ?? ''); ?>" placeholder="e.g. +14155552671 or 447123456789">
+                                                    <span class="help-block" style="font-size: 10.5px; margin-bottom: 0;">Include country code with no dashes or spaces.</span>
+                                                </div>
+                                                <div class="col-md-7 form-group" style="margin-bottom: 0;">
+                                                    <label style="font-size: 12px; font-weight: 600;">Default Pre-filled Message</label>
+                                                    <input type="text" name="client_chat_whatsapp_message" class="form-control input-sm" value="<?php echo htmlspecialchars($settings->client_chat_whatsapp_message ?? 'Hi! I need assistance with my hosting account.'); ?>" placeholder="Hi! I need help with my service.">
+                                                    <span class="help-block" style="font-size: 10.5px; margin-bottom: 0;">Automatically populates when user launches WhatsApp.</span>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>

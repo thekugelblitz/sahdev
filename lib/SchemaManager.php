@@ -140,6 +140,10 @@ class SchemaManager
                 'client_chat_csat_enabled'       => ['type' => 'boolean', 'default' => 1],
                 'client_chat_sound_enabled'      => ['type' => 'boolean', 'default' => 1],
                 'client_chat_starter_chips'      => ['type' => 'text'],
+                'client_chat_whatsapp_enabled'   => ['type' => 'boolean', 'default' => 0],
+                'client_chat_whatsapp_number'    => ['type' => 'string', 'default' => ''],
+                'client_chat_whatsapp_message'   => ['type' => 'text'],
+                'client_chat_siri_orb_enabled'   => ['type' => 'boolean', 'default' => 1],
 
                 // Safe Ops & Rollback Governance
                 'ops_journal_retention_days'   => ['type' => 'integer', 'default' => 90],
