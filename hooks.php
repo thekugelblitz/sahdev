@@ -5898,6 +5898,12 @@ function sahdev_render_client_livechat_widget(array $vars): string
         $whatsappNumber = !empty($settings->client_chat_whatsapp_number) ? htmlspecialchars(trim($settings->client_chat_whatsapp_number), ENT_QUOTES, 'UTF-8') : '';
         $whatsappMessage = !empty($settings->client_chat_whatsapp_message) ? htmlspecialchars(trim($settings->client_chat_whatsapp_message), ENT_QUOTES, 'UTF-8') : 'Hi! I need assistance with my hosting account.';
         $whatsappDeptsRaw = !empty($settings->client_chat_whatsapp_departments) ? trim($settings->client_chat_whatsapp_departments) : '';
+        $waVerifiedLabel = !empty($settings->client_chat_wa_verified_label) ? htmlspecialchars(trim($settings->client_chat_wa_verified_label), ENT_QUOTES, 'UTF-8') : 'Verified Business';
+        $waLiveLabel = !empty($settings->client_chat_wa_live_label) ? htmlspecialchars(trim($settings->client_chat_wa_live_label), ENT_QUOTES, 'UTF-8') : 'Live Team Online';
+        $waHeroTitle = !empty($settings->client_chat_wa_hero_title) ? htmlspecialchars(trim($settings->client_chat_wa_hero_title), ENT_QUOTES, 'UTF-8') : '';
+        $waHeroSubtitle = !empty($settings->client_chat_wa_hero_subtitle) ? htmlspecialchars(trim($settings->client_chat_wa_hero_subtitle), ENT_QUOTES, 'UTF-8') : '';
+        $waDeptHeading = !empty($settings->client_chat_wa_dept_heading) ? htmlspecialchars(trim($settings->client_chat_wa_dept_heading), ENT_QUOTES, 'UTF-8') : 'Select Your Department';
+        $waSpeedLabel = !empty($settings->client_chat_wa_speed_label) ? htmlspecialchars(trim($settings->client_chat_wa_speed_label), ENT_QUOTES, 'UTF-8') : '⚡ Under 5 min reply';
         $siriOrbEnabled = !isset($settings->client_chat_siri_orb_enabled) || !empty($settings->client_chat_siri_orb_enabled);
 
         $welcomeMsgRaw = !empty($settings->client_chat_welcome_message)
@@ -6131,12 +6137,16 @@ HTML;
     if (!empty($whatsappDeptsRaw)) {
         $lines = preg_split('/[\r\n]+/', $whatsappDeptsRaw);
         foreach ($lines as $l) {
-            $l = trim($l);
-            if (empty($l)) continue;
-            $parts = array_map('trim', explode('|', $l));
+            $l = preg_replace('/^[\p{Z}\p{C}\s]+|[\p{Z}\p{C}\s]+$/u', '', $l);
+            if ($l === '' || $l === '|') continue;
+            $parts = explode('|', $l);
+            $parts = array_map(function($p) {
+                return preg_replace('/^[\p{Z}\p{C}\s]+|[\p{Z}\p{C}\s]+$/u', '', $p);
+            }, $parts);
             $deptLabel = !empty($parts[0]) ? $parts[0] : 'Support';
             $deptNum = !empty($parts[1]) ? $parts[1] : '';
             $deptMsg = !empty($parts[2]) ? $parts[2] : $whatsappMessage;
+            $deptIcon = !empty($parts[3]) ? strtolower($parts[3]) : '';
             $cleanNum = preg_replace('/[^0-9]/', '', $deptNum);
             if (!empty($cleanNum)) {
                 $whatsappDepartments[] = [
@@ -6144,6 +6154,7 @@ HTML;
                     'number' => htmlspecialchars($deptNum, ENT_QUOTES, 'UTF-8'),
                     'clean_number' => $cleanNum,
                     'message' => htmlspecialchars($deptMsg, ENT_QUOTES, 'UTF-8'),
+                    'icon' => $deptIcon,
                     'url' => 'https://wa.me/' . $cleanNum . (!empty($deptMsg) ? '?text=' . rawurlencode($deptMsg) : '')
                 ];
             }
@@ -6193,22 +6204,53 @@ HTML;
         if (count($whatsappDepartments) > 1) {
             $deptCardsHtml = '';
             foreach ($whatsappDepartments as $dept) {
-                $lowerLabel = strtolower($dept['label']);
-                if (strpos($lowerLabel, 'international') !== false || strpos($lowerLabel, 'global') !== false || strpos($lowerLabel, 'world') !== false) {
+                $iconSvg = '';
+                $metaBadge = '';
+                $explicitIcon = $dept['icon'] ?? '';
+                if ($explicitIcon === 'globe') {
                     $iconSvg = '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>';
                     $metaBadge = 'Global Desk &bull; 24/7 Available';
-                } elseif (strpos($lowerLabel, 'india') !== false || strpos($lowerLabel, 'regional') !== false || strpos($lowerLabel, 'domestic') !== false) {
+                } elseif ($explicitIcon === 'person' || $explicitIcon === 'user') {
                     $iconSvg = '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>';
-                    $metaBadge = 'Regional Desk &bull; Direct WhatsApp';
-                } elseif (strpos($lowerLabel, 'tech') !== false || strpos($lowerLabel, 'support') !== false || strpos($lowerLabel, 'engineer') !== false) {
+                    $metaBadge = 'Personal Desk &bull; Direct WhatsApp';
+                } elseif ($explicitIcon === 'headset' || $explicitIcon === 'support') {
                     $iconSvg = '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg>';
                     $metaBadge = 'Technical Engineers &bull; Instant Help';
-                } elseif (strpos($lowerLabel, 'bill') !== false || strpos($lowerLabel, 'sale') !== false || strpos($lowerLabel, 'account') !== false) {
+                } elseif ($explicitIcon === 'billing' || $explicitIcon === 'card' || $explicitIcon === 'sale' || $explicitIcon === 'sales') {
                     $iconSvg = '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>';
                     $metaBadge = 'Sales &amp; Accounts &bull; Priority Routing';
-                } else {
+                } elseif ($explicitIcon === 'shield' || $explicitIcon === 'security') {
+                    $iconSvg = '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>';
+                    $metaBadge = 'Security &bull; Verified Staff';
+                } elseif ($explicitIcon === 'server') {
+                    $iconSvg = '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>';
+                    $metaBadge = 'Infrastructure &bull; Server Ops';
+                } elseif ($explicitIcon === 'email' || $explicitIcon === 'mail') {
+                    $iconSvg = '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>';
+                    $metaBadge = 'Direct Inbox &bull; Verified Routing';
+                } elseif ($explicitIcon === 'whatsapp') {
                     $iconSvg = '<svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor"><path d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.816 9.816 0 0 0 12.04 2m.01 1.67c2.2 0 4.26.86 5.82 2.42a8.225 8.225 0 0 1 2.41 5.83c0 4.54-3.7 8.24-8.24 8.24-1.48 0-2.93-.4-4.2-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.19 8.19 0 0 1-1.26-4.38c0-4.54 3.7-8.24 8.24-8.24m4.52 11.66c-.25-.13-1.47-.72-1.7-.81-.23-.08-.39-.13-.56.13-.17.25-.64.81-.79.97-.14.17-.29.19-.54.06-.25-.13-1.06-.39-2.02-1.24-.75-.67-1.26-1.49-1.41-1.74-.14-.25-.02-.39.11-.51.11-.11.25-.29.37-.44.13-.14.17-.25.25-.42.08-.17.04-.31-.02-.44-.06-.13-.56-1.35-.77-1.85-.2-.49-.41-.42-.56-.43h-.48c-.17 0-.44.06-.67.31-.23.25-.88.86-.88 2.1 0 1.24.9 2.44 1.03 2.61.13.17 1.78 2.72 4.31 3.81.6.26 1.07.42 1.44.54.61.19 1.16.17 1.6.1.49-.07 1.47-.6 1.68-1.18.21-.58.21-1.07.15-1.18-.06-.11-.22-.18-.47-.31"/></svg>';
                     $metaBadge = 'Online &bull; Direct WhatsApp';
+                }
+
+                if (empty($iconSvg)) {
+                    $lowerLabel = strtolower($dept['label']);
+                    if (strpos($lowerLabel, 'international') !== false || strpos($lowerLabel, 'global') !== false || strpos($lowerLabel, 'world') !== false) {
+                        $iconSvg = '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>';
+                        $metaBadge = 'Global Desk &bull; 24/7 Available';
+                    } elseif (strpos($lowerLabel, 'india') !== false || strpos($lowerLabel, 'regional') !== false || strpos($lowerLabel, 'domestic') !== false) {
+                        $iconSvg = '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>';
+                        $metaBadge = 'Regional Desk &bull; Direct WhatsApp';
+                    } elseif (strpos($lowerLabel, 'tech') !== false || strpos($lowerLabel, 'support') !== false || strpos($lowerLabel, 'engineer') !== false) {
+                        $iconSvg = '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg>';
+                        $metaBadge = 'Technical Engineers &bull; Instant Help';
+                    } elseif (strpos($lowerLabel, 'bill') !== false || strpos($lowerLabel, 'sale') !== false || strpos($lowerLabel, 'account') !== false) {
+                        $iconSvg = '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>';
+                        $metaBadge = 'Sales &amp; Accounts &bull; Priority Routing';
+                    } else {
+                        $iconSvg = '<svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor"><path d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.816 9.816 0 0 0 12.04 2m.01 1.67c2.2 0 4.26.86 5.82 2.42a8.225 8.225 0 0 1 2.41 5.83c0 4.54-3.7 8.24-8.24 8.24-1.48 0-2.93-.4-4.2-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.19 8.19 0 0 1-1.26-4.38c0-4.54 3.7-8.24 8.24-8.24m4.52 11.66c-.25-.13-1.47-.72-1.7-.81-.23-.08-.39-.13-.56.13-.17.25-.64.81-.79.97-.14.17-.29.19-.54.06-.25-.13-1.06-.39-2.02-1.24-.75-.67-1.26-1.49-1.41-1.74-.14-.25-.02-.39.11-.51.11-.11.25-.29.37-.44.13-.14.17-.25.25-.42.08-.17.04-.31-.02-.44-.06-.13-.56-1.35-.77-1.85-.2-.49-.41-.42-.56-.43h-.48c-.17 0-.44.06-.67.31-.23.25-.88.86-.88 2.1 0 1.24.9 2.44 1.03 2.61.13.17 1.78 2.72 4.31 3.81.6.26 1.07.42 1.44.54.61.19 1.16.17 1.6.1.49-.07 1.47-.6 1.68-1.18.21-.58.21-1.07.15-1.18-.06-.11-.22-.18-.47-.31"/></svg>';
+                        $metaBadge = 'Online &bull; Direct WhatsApp';
+                    }
                 }
 
                 $deptCardsHtml .= '<a href="' . $dept['url'] . '" target="_blank" rel="noopener noreferrer" class="sdv-wa-dept-card">' .
@@ -6233,6 +6275,9 @@ HTML;
                 '</a>';
             }
 
+            $waMultiHeroTitle = !empty($waHeroTitle) ? $waHeroTitle : 'Direct WhatsApp Support';
+            $waMultiHeroSubtitle = !empty($waHeroSubtitle) ? $waHeroSubtitle : 'Connect instantly with our dedicated support engineers on WhatsApp. Average response time is under 5 minutes.';
+
             $whatsappPanelHtml = <<<WAHTML
             <div class="sdv-tab-panel sdv-tab-panel-whatsapp" id="sdv-panel-whatsapp" style="display:none;">
                 <div class="sdv-wa-panel-body">
@@ -6240,20 +6285,20 @@ HTML;
                         <div class="sdv-wa-badge-row">
                             <span class="sdv-wa-verified-badge">
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
-                                Verified Business
+                                {$waVerifiedLabel}
                             </span>
                             <span class="sdv-wa-speed-pill">
                                 <span class="sdv-wa-pulse-dot"></span>
-                                <span>Live Team Online</span>
+                                <span>{$waLiveLabel}</span>
                             </span>
                         </div>
-                        <div class="sdv-wa-hero-title">Direct WhatsApp Support</div>
-                        <div class="sdv-wa-hero-subtitle">Connect instantly with our dedicated support engineers on WhatsApp. Average response time is under 5 minutes.</div>
+                        <div class="sdv-wa-hero-title">{$waMultiHeroTitle}</div>
+                        <div class="sdv-wa-hero-subtitle">{$waMultiHeroSubtitle}</div>
                     </div>
 
                     <div class="sdv-wa-section-title">
-                        <span>Select Your Department</span>
-                        <span class="sdv-wa-reply-speed">⚡ Under 5 min reply</span>
+                        <span>{$waDeptHeading}</span>
+                        <span class="sdv-wa-reply-speed">{$waSpeedLabel}</span>
                     </div>
 
                     <div class="sdv-wa-dept-list">
@@ -6278,6 +6323,9 @@ WAHTML;
             $deptNum = $primaryDept['number'];
             $deptMsg = $primaryDept['message'];
             $deptTitle = $primaryDept['label'];
+            $waSingleHeroTitle = !empty($waHeroTitle) ? $waHeroTitle : 'Official WhatsApp Channel';
+            $waSingleHeroSubtitle = !empty($waHeroSubtitle) ? $waHeroSubtitle : 'Connect directly with our dedicated staff on WhatsApp for immediate priority support.';
+
             $whatsappPanelHtml = <<<WAHTML
             <div class="sdv-tab-panel sdv-tab-panel-whatsapp" id="sdv-panel-whatsapp" style="display:none;">
                 <div class="sdv-wa-panel-body">
@@ -6285,15 +6333,15 @@ WAHTML;
                         <div class="sdv-wa-badge-row">
                             <span class="sdv-wa-verified-badge">
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
-                                Verified Business
+                                {$waVerifiedLabel}
                             </span>
                             <span class="sdv-wa-speed-pill">
                                 <span class="sdv-wa-pulse-dot"></span>
-                                <span>Live Team Online</span>
+                                <span>{$waLiveLabel}</span>
                             </span>
                         </div>
-                        <div class="sdv-wa-hero-title">Official WhatsApp Channel</div>
-                        <div class="sdv-wa-hero-subtitle">Connect directly with our dedicated staff on WhatsApp for immediate priority support.</div>
+                        <div class="sdv-wa-hero-title">{$waSingleHeroTitle}</div>
+                        <div class="sdv-wa-hero-subtitle">{$waSingleHeroSubtitle}</div>
                     </div>
 
                     <div class="sdv-wa-single-card">
@@ -8539,7 +8587,7 @@ DISC;
 }
 #sdv-client-chat-window.sdv-theme-apple_siri .sdv-cl-msg {
     position: relative !important;
-    margin-bottom: 12px !important;
+    margin-bottom: 20px !important;
     font-size: 14px !important;
     line-height: 1.6 !important;
     word-break: break-word !important;
@@ -8564,6 +8612,12 @@ DISC;
     box-shadow: none !important;
     align-self: flex-end !important;
 }
+#sdv-client-chat-window.sdv-theme-apple_siri .sdv-cl-msg {
+    min-width: 145px !important;
+}
+#sdv-client-chat-window.sdv-theme-apple_siri .sdv-cl-messages {
+    padding-bottom: 24px !important;
+}
 #sdv-client-chat-window.sdv-theme-apple_siri .sdv-msg-actions {
     position: absolute !important;
     bottom: -14px !important;
@@ -8573,7 +8627,7 @@ DISC;
     padding: 3px 8px !important;
     display: inline-flex !important;
     align-items: center !important;
-    gap: 8px !important;
+    gap: 6px !important;
     box-shadow: 0 4px 14px rgba(0, 0, 0, 0.24) !important;
     opacity: 0;
     pointer-events: none;
@@ -8586,6 +8640,25 @@ DISC;
     opacity: 1 !important;
     pointer-events: auto !important;
     transform: translateY(0) !important;
+}
+#sdv-client-chat-window.sdv-theme-apple_siri .sdv-msg-time {
+    color: #9ca3af !important;
+    font-size: 10.5px !important;
+    font-weight: 500 !important;
+    letter-spacing: 0.2px !important;
+    padding: 1px 2px 1px 2px !important;
+    line-height: 1 !important;
+    white-space: nowrap !important;
+    font-variant-numeric: tabular-nums !important;
+    user-select: none !important;
+}
+#sdv-client-chat-window.sdv-theme-apple_siri .sdv-msg-actions-sep {
+    width: 1px !important;
+    height: 11px !important;
+    background: rgba(255, 255, 255, 0.22) !important;
+    margin: 0 1px !important;
+    flex-shrink: 0 !important;
+    display: inline-block !important;
 }
 #sdv-client-chat-window.sdv-theme-apple_siri .sdv-msg-action-btn {
     background: transparent !important;
@@ -8908,12 +8981,17 @@ DISC;
     display: flex;
     flex-direction: column;
     gap: 2px;
+    align-items: flex-start;
+    text-align: left;
 }
 .sdv-wa-dept-name {
     font-size: 13px;
     font-weight: 700;
     color: #0f172a;
     line-height: 1.25;
+    text-align: left;
+    margin: 0;
+    padding: 0;
 }
 .sdv-wa-dept-phone-row {
     display: flex;
@@ -9878,21 +9956,65 @@ DISC;
 .sdv-msg-actions {
     display: inline-flex;
     align-items: center;
-    gap: 2px;
+    gap: 3px;
     margin-top: 4px;
     padding-top: 2px;
     user-select: none;
-    opacity: 0.6;
+    opacity: 0;
     transition: opacity 0.15s ease;
     position: relative;
 }
-.sdv-cl-msg-bot:hover .sdv-msg-actions,
+.sdv-cl-msg:hover .sdv-msg-actions,
 .sdv-msg-actions:hover,
 .sdv-msg-actions.sdv-has-open-menu {
     opacity: 1;
 }
-.sdv-cl-msg-user .sdv-msg-actions {
-    display: none;
+.sdv-msg-time {
+    font-size: 10.5px;
+    color: #94a3b8;
+    font-weight: 500;
+    margin-right: 2px;
+    white-space: nowrap;
+    user-select: none;
+    font-variant-numeric: tabular-nums;
+}
+.sdv-msg-actions-sep {
+    width: 1px;
+    height: 10px;
+    background: rgba(0, 0, 0, 0.12);
+    margin: 0 2px;
+    display: inline-block;
+    flex-shrink: 0;
+}
+.sdv-msg-replied-quote {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    color: #64748b;
+    background: rgba(0, 0, 0, 0.04);
+    border-left: 3px solid #3b82f6;
+    padding: 3px 8px;
+    border-radius: 4px;
+    margin-bottom: 6px;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.sdv-msg-replied-quote svg {
+    flex-shrink: 0;
+    opacity: 0.7;
+}
+.sdv-cl-msg-user .sdv-msg-replied-quote {
+    background: rgba(0, 0, 0, 0.06);
+    border-left-color: #2563eb;
+    color: #475569;
+}
+#sdv-client-chat-window.sdv-theme-apple_siri .sdv-msg-replied-quote {
+    background: rgba(0, 0, 0, 0.04);
+    border-left: 3px solid #111827;
+    color: #6b7280;
 }
 .sdv-msg-action-btn {
     background: transparent;
@@ -10485,6 +10607,8 @@ DISC;
         if (actions) actions.remove();
         var menu = clone.querySelector('.sdv-msg-menu');
         if (menu) menu.remove();
+        var oldQuote = clone.querySelector('.sdv-msg-replied-quote');
+        if (oldQuote) oldQuote.remove();
 
         var fullText = (clone.innerText || clone.textContent || '').trim();
         if (!fullText) return;
@@ -10997,49 +11121,104 @@ DISC;
         });
     };
 
-    function attachMsgActions(el, msgId, rating, role) {
+    function attachMsgActions(el, msgId, rating, role, timestamp) {
         if (!el || el.querySelector('.sdv-msg-actions')) return;
+
+        if (!role) {
+            role = el.classList.contains('sdv-cl-msg-user') ? 'user' : 'bot';
+        }
+
         var actions = document.createElement('div');
         actions.className = 'sdv-msg-actions';
+
+        // 1. Resolve message timestamp
+        var msgTime = timestamp;
+        if (!msgTime && el.getAttribute('data-timestamp')) {
+            msgTime = el.getAttribute('data-timestamp');
+        }
+        var dateObj = msgTime ? new Date(msgTime) : new Date();
+        if (isNaN(dateObj.getTime())) dateObj = new Date();
+        if (!el.getAttribute('data-timestamp')) {
+            el.setAttribute('data-timestamp', dateObj.toISOString());
+        }
+
+        var hours = dateObj.getHours();
+        var minutes = dateObj.getMinutes();
+        var ampm = hours >= 12 ? 'PM' : 'AM';
+        var displayHours = hours % 12;
+        displayHours = displayHours ? displayHours : 12;
+        var displayMinutes = minutes < 10 ? '0' + minutes : minutes;
+        var timeStr = (displayHours < 10 ? '0' + displayHours : displayHours) + ':' + displayMinutes + ' ' + ampm;
+        var fullTimeTitle = 'Sent at ' + dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+
+        // Add Timestamp Element (shows time of message on hover)
+        var timeEl = document.createElement('span');
+        timeEl.className = 'sdv-msg-time';
+        timeEl.textContent = timeStr;
+        timeEl.title = fullTimeTitle;
+        actions.appendChild(timeEl);
+
+        // Divider
+        var sepEl = document.createElement('span');
+        sepEl.className = 'sdv-msg-actions-sep';
+        actions.appendChild(sepEl);
+
+        // Reply Button (for BOTH user and bot messages)
+        var replyBtn = document.createElement('button');
+        replyBtn.type = 'button';
+        replyBtn.className = 'sdv-msg-action-btn sdv-action-reply';
+        replyBtn.title = 'Reply to this message';
+        replyBtn.setAttribute('aria-label', 'Reply');
+        replyBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg>';
+        replyBtn.onclick = function(e) {
+            if (e && e.stopPropagation) e.stopPropagation();
+            window.sdvReplyToMsg && window.sdvReplyToMsg(this);
+        };
+        actions.appendChild(replyBtn);
 
         var win = document.getElementById('sdv-client-chat-window');
         var isAppleSiri = win && win.classList.contains('sdv-theme-apple_siri');
 
         if (isAppleSiri) {
-            // Dribbble-style floating black micro-toolbar: Sparkle, Pencil, Retry, Copy
+            // Sparkle AI button
             var sparkBtn = document.createElement('button');
             sparkBtn.type = 'button';
-            sparkBtn.className = 'sdv-msg-action-btn';
-            sparkBtn.title = 'Enhance prompt / AI suggestions';
+            sparkBtn.className = 'sdv-msg-action-btn sdv-action-sparkle';
+            sparkBtn.title = role === 'user' ? 'Enhance prompt' : 'Enhance prompt / AI suggestions';
             sparkBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>';
             sparkBtn.onclick = function(e) { if (e && e.stopPropagation) e.stopPropagation(); window.sdvSparkleAction && window.sdvSparkleAction(this); };
             actions.appendChild(sparkBtn);
 
+            // Edit button
             var editBtn = document.createElement('button');
             editBtn.type = 'button';
-            editBtn.className = 'sdv-msg-action-btn';
-            editBtn.title = 'Edit query';
+            editBtn.className = 'sdv-msg-action-btn sdv-action-edit';
+            editBtn.title = 'Edit message';
             editBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>';
             editBtn.onclick = function(e) { if (e && e.stopPropagation) e.stopPropagation(); window.sdvEditUserMsg && window.sdvEditUserMsg(this); };
             actions.appendChild(editBtn);
 
-            var retryBtn = document.createElement('button');
-            retryBtn.type = 'button';
-            retryBtn.className = 'sdv-msg-action-btn';
-            retryBtn.title = 'Regenerate / Retry';
-            retryBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg>';
-            retryBtn.onclick = function(e) { if (e && e.stopPropagation) e.stopPropagation(); window.sdvRetryMsg && window.sdvRetryMsg(this); };
-            actions.appendChild(retryBtn);
+            // Retry/Regenerate button (for bot messages)
+            if (role !== 'user') {
+                var retryBtn = document.createElement('button');
+                retryBtn.type = 'button';
+                retryBtn.className = 'sdv-msg-action-btn sdv-action-retry';
+                retryBtn.title = 'Regenerate / Retry';
+                retryBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg>';
+                retryBtn.onclick = function(e) { if (e && e.stopPropagation) e.stopPropagation(); window.sdvRetryMsg && window.sdvRetryMsg(this); };
+                actions.appendChild(retryBtn);
+            }
 
+            // Copy button
             var copyBtn = document.createElement('button');
             copyBtn.type = 'button';
-            copyBtn.className = 'sdv-msg-action-btn';
+            copyBtn.className = 'sdv-msg-action-btn sdv-action-copy';
             copyBtn.title = 'Copy message';
             copyBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>';
             copyBtn.onclick = function(e) { if (e && e.stopPropagation) e.stopPropagation(); window.sdvCopyMsgText && window.sdvCopyMsgText(this); };
             actions.appendChild(copyBtn);
         } else {
-            // 1. CSAT Rating Buttons if enabled
+            // CSAT Rating Buttons if enabled and bot message
             if (csatEnabled && msgId && role === 'bot') {
                 var upBtn = document.createElement('button');
                 upBtn.type = 'button';
@@ -11062,7 +11241,16 @@ DISC;
                 actions.appendChild(downBtn);
             }
 
-            // 2. 3-dots More options micro-button
+            // Copy button
+            var copyBtnNonSiri = document.createElement('button');
+            copyBtnNonSiri.type = 'button';
+            copyBtnNonSiri.className = 'sdv-msg-action-btn sdv-action-copy';
+            copyBtnNonSiri.title = 'Copy message';
+            copyBtnNonSiri.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>';
+            copyBtnNonSiri.onclick = function(e) { if (e && e.stopPropagation) e.stopPropagation(); window.sdvCopyMsgText && window.sdvCopyMsgText(this); };
+            actions.appendChild(copyBtnNonSiri);
+
+            // 3-dots More options micro-button
             var moreBtn = document.createElement('button');
             moreBtn.type = 'button';
             moreBtn.className = 'sdv-msg-action-btn sdv-action-more';
@@ -11083,6 +11271,10 @@ DISC;
         var clone = msgEl.cloneNode(true);
         var acts = clone.querySelector('.sdv-msg-actions');
         if (acts) acts.remove();
+        var menu = clone.querySelector('.sdv-msg-menu');
+        if (menu) menu.remove();
+        var quote = clone.querySelector('.sdv-msg-replied-quote');
+        if (quote) quote.remove();
         var txt = (clone.innerText || clone.textContent || '').trim();
         var input = document.getElementById('sdv-cl-input');
         if (input && txt) {
@@ -11098,6 +11290,10 @@ DISC;
         var clone = msgEl.cloneNode(true);
         var acts = clone.querySelector('.sdv-msg-actions');
         if (acts) acts.remove();
+        var menu = clone.querySelector('.sdv-msg-menu');
+        if (menu) menu.remove();
+        var quote = clone.querySelector('.sdv-msg-replied-quote');
+        if (quote) quote.remove();
         var txt = (clone.innerText || clone.textContent || '').trim();
         var input = document.getElementById('sdv-cl-input');
         if (input && txt) {
@@ -11113,6 +11309,10 @@ DISC;
         var clone = msgEl.cloneNode(true);
         var acts = clone.querySelector('.sdv-msg-actions');
         if (acts) acts.remove();
+        var menu = clone.querySelector('.sdv-msg-menu');
+        if (menu) menu.remove();
+        var quote = clone.querySelector('.sdv-msg-replied-quote');
+        if (quote) quote.remove();
         var txt = (clone.innerText || clone.textContent || '').trim();
         var input = document.getElementById('sdv-cl-input');
         if (input && txt) {
@@ -11651,6 +11851,11 @@ DISC;
             return '@@@IC' + idx + '@@@';
         });
 
+        // Replied-to message block quote
+        s = s.replace(/^\[Replying to:\s*"([\s\S]*?)"\]\\r?\\n?/i, function(_, rep) {
+            return '<div class="sdv-msg-replied-quote"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg><span>' + sdvEscapeHtml(rep) + '</span></div>';
+        });
+
         // Bold and Italics
         s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
         s = s.replace(/\*([^*\\n\\r]+)\*/g, '<em>$1</em>');
@@ -11815,7 +12020,7 @@ DISC;
         return res;
     }
 
-    function appendClMsg(role, text, isHtml, msgId, rating) {
+    function appendClMsg(role, text, isHtml, msgId, rating, timestamp) {
         if (!text && !isHtml) return null;
         if (typeof text === 'string' && !text.trim() && !isHtml) return null;
 
@@ -11836,7 +12041,7 @@ DISC;
             d.innerHTML = parseSimpleMarkdown(text);
         }
         if (!isHtml) {
-            attachMsgActions(d, msgId, rating, role);
+            attachMsgActions(d, msgId, rating, role, timestamp);
         }
         msgsEl.appendChild(d);
         msgsEl.scrollTop = msgsEl.scrollHeight;
@@ -12144,7 +12349,7 @@ DISC;
             window.sdvCancelReply();
         }
 
-        var userMsgEl = appendClMsg('user', text, false);
+        var userMsgEl = appendClMsg('user', textToSend, false, null, null, Date.now());
         inputEl.value = '';
         sdvUpdateCharCounter();
         inputEl.disabled = true;
@@ -12241,7 +12446,7 @@ DISC;
                         tempBot.id = 'sdv-msg-' + data.message_id;
                         if (data.message_id > highestMsgId) highestMsgId = data.message_id;
                     }
-                    attachMsgActions(tempBot, data.message_id, 0);
+                    attachMsgActions(tempBot, data.message_id, 0, 'bot', Date.now());
                 }
                 sdvPlayNotificationChime();
                 if (data.session_uuid && data.session_uuid !== sessionUuid) {
@@ -12827,7 +13032,7 @@ DISC;
         // Attach action toolbar to initial static welcome message if present
         var initialBot = document.querySelector('#sdv-cl-msgs .sdv-cl-msg-bot');
         if (initialBot) {
-            attachMsgActions(initialBot, 0, 0, 'bot');
+            attachMsgActions(initialBot, 0, 0, 'bot', Date.now());
         }
 
         // Restore chat window open state across tabs / page navigations

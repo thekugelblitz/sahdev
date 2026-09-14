@@ -1939,6 +1939,24 @@ class AdminController
             if (isset($_POST['client_chat_whatsapp_departments'])) {
                 $updatePayload['client_chat_whatsapp_departments'] = trim($_POST['client_chat_whatsapp_departments']) ?: null;
             }
+            if (isset($_POST['client_chat_wa_verified_label'])) {
+                $updatePayload['client_chat_wa_verified_label'] = trim($_POST['client_chat_wa_verified_label']) ?: null;
+            }
+            if (isset($_POST['client_chat_wa_live_label'])) {
+                $updatePayload['client_chat_wa_live_label'] = trim($_POST['client_chat_wa_live_label']) ?: null;
+            }
+            if (isset($_POST['client_chat_wa_hero_title'])) {
+                $updatePayload['client_chat_wa_hero_title'] = trim($_POST['client_chat_wa_hero_title']) ?: null;
+            }
+            if (isset($_POST['client_chat_wa_hero_subtitle'])) {
+                $updatePayload['client_chat_wa_hero_subtitle'] = trim($_POST['client_chat_wa_hero_subtitle']) ?: null;
+            }
+            if (isset($_POST['client_chat_wa_dept_heading'])) {
+                $updatePayload['client_chat_wa_dept_heading'] = trim($_POST['client_chat_wa_dept_heading']) ?: null;
+            }
+            if (isset($_POST['client_chat_wa_speed_label'])) {
+                $updatePayload['client_chat_wa_speed_label'] = trim($_POST['client_chat_wa_speed_label']) ?: null;
+            }
             if (isset($_POST['client_chat_siri_orb_enabled'])) {
                 $updatePayload['client_chat_siri_orb_enabled'] = !empty($_POST['client_chat_siri_orb_enabled']) ? 1 : 0;
             }
@@ -8738,6 +8756,12 @@ class AdminController
                     'client_chat_whatsapp_number'    => trim($_POST['client_chat_whatsapp_number'] ?? ''),
                     'client_chat_whatsapp_message'   => trim($_POST['client_chat_whatsapp_message'] ?? ''),
                     'client_chat_whatsapp_departments' => trim($_POST['client_chat_whatsapp_departments'] ?? '') ?: null,
+                    'client_chat_wa_verified_label'  => trim($_POST['client_chat_wa_verified_label'] ?? '') ?: null,
+                    'client_chat_wa_live_label'      => trim($_POST['client_chat_wa_live_label'] ?? '') ?: null,
+                    'client_chat_wa_hero_title'      => trim($_POST['client_chat_wa_hero_title'] ?? '') ?: null,
+                    'client_chat_wa_hero_subtitle'   => trim($_POST['client_chat_wa_hero_subtitle'] ?? '') ?: null,
+                    'client_chat_wa_dept_heading'    => trim($_POST['client_chat_wa_dept_heading'] ?? '') ?: null,
+                    'client_chat_wa_speed_label'     => trim($_POST['client_chat_wa_speed_label'] ?? '') ?: null,
                     'client_chat_siri_orb_enabled'   => !empty($_POST['client_chat_siri_orb_enabled']) ? 1 : 0,
                     'updated_at'                    => \Carbon\Carbon::now(),
                 ]);
@@ -9658,10 +9682,47 @@ class AdminController
                                                 <label style="font-size: 12px; font-weight: 600;">
                                                     <i class="fas fa-sitemap text-success"></i> Multi-Department Routing (Optional)
                                                 </label>
-                                                <textarea name="client_chat_whatsapp_departments" class="form-control" rows="3" style="font-size: 12px; font-family: monospace;" placeholder="Technical Support | +14155552671 | Hi! I need help with my hosting service.&#10;Sales &amp; Upgrades | +14155552672 | Hello, I have a question about web hosting plans.&#10;Billing &amp; Invoices | +14155552673 | Hi Billing team, I have an inquiry about my invoice."><?php echo htmlspecialchars($settings->client_chat_whatsapp_departments ?? ''); ?></textarea>
+                                                <textarea name="client_chat_whatsapp_departments" class="form-control" rows="3" style="font-size: 12px; font-family: monospace;" placeholder="Technical Support | +14155552671 | Hi! I need help with my hosting service. | headset&#10;Sales &amp; Upgrades | +14155552672 | Hello, I have a question about web hosting plans. | billing&#10;Pan-India Support | +919409594000 | Hi! I need help. | person"><?php echo htmlspecialchars($settings->client_chat_whatsapp_departments ?? ''); ?></textarea>
                                                 <span class="help-block" style="font-size: 10.5px; margin-bottom: 0; margin-top: 4px;">
-                                                    Configure multiple WhatsApp lines segmented by department. One per line: <code>Department Label | WhatsApp Number | Optional Message</code>. When set, clients can choose their specific department in the WhatsApp tab!
+                                                    One per line: <code>Label | Number | Message | Icon</code>. Icon is optional &mdash; auto-detected from label keywords if omitted. Supported icons: <code>globe</code>, <code>person</code>, <code>headset</code>, <code>billing</code>, <code>whatsapp</code>, <code>shield</code>, <code>server</code>, <code>email</code>.
                                                 </span>
+                                            </div>
+
+                                            <div style="margin-top: 16px; padding: 12px 14px; background: #f8fdf9; border: 1px solid #d1fae5; border-radius: 6px;">
+                                                <label style="font-size: 12px; font-weight: 700; color: #166534; margin-bottom: 10px; display: block;">
+                                                    <i class="fas fa-tag text-success"></i> WhatsApp Tab Labels &amp; Text Customization
+                                                </label>
+                                                <span class="help-block" style="font-size: 10.5px; margin-top: -6px; margin-bottom: 10px;">
+                                                    Customize all visible text on the WhatsApp tab. Leave blank to use defaults.
+                                                </span>
+                                                <div class="row">
+                                                    <div class="col-md-4 form-group" style="margin-bottom: 8px;">
+                                                        <label style="font-size: 11px; font-weight: 600;">Verified Badge Label</label>
+                                                        <input type="text" name="client_chat_wa_verified_label" class="form-control input-sm" value="<?php echo htmlspecialchars($settings->client_chat_wa_verified_label ?? ''); ?>" placeholder="Verified Business">
+                                                    </div>
+                                                    <div class="col-md-4 form-group" style="margin-bottom: 8px;">
+                                                        <label style="font-size: 11px; font-weight: 600;">Live Status Label</label>
+                                                        <input type="text" name="client_chat_wa_live_label" class="form-control input-sm" value="<?php echo htmlspecialchars($settings->client_chat_wa_live_label ?? ''); ?>" placeholder="Live Team Online">
+                                                    </div>
+                                                    <div class="col-md-4 form-group" style="margin-bottom: 8px;">
+                                                        <label style="font-size: 11px; font-weight: 600;">Speed Badge</label>
+                                                        <input type="text" name="client_chat_wa_speed_label" class="form-control input-sm" value="<?php echo htmlspecialchars($settings->client_chat_wa_speed_label ?? ''); ?>" placeholder="⚡ Under 5 min reply">
+                                                    </div>
+                                                </div>
+                                                <div class="row">
+                                                    <div class="col-md-5 form-group" style="margin-bottom: 8px;">
+                                                        <label style="font-size: 11px; font-weight: 600;">Hero Title</label>
+                                                        <input type="text" name="client_chat_wa_hero_title" class="form-control input-sm" value="<?php echo htmlspecialchars($settings->client_chat_wa_hero_title ?? ''); ?>" placeholder="Direct WhatsApp Support">
+                                                    </div>
+                                                    <div class="col-md-4 form-group" style="margin-bottom: 8px;">
+                                                        <label style="font-size: 11px; font-weight: 600;">Department Section Heading</label>
+                                                        <input type="text" name="client_chat_wa_dept_heading" class="form-control input-sm" value="<?php echo htmlspecialchars($settings->client_chat_wa_dept_heading ?? ''); ?>" placeholder="Select Your Department">
+                                                    </div>
+                                                </div>
+                                                <div class="form-group" style="margin-bottom: 0;">
+                                                    <label style="font-size: 11px; font-weight: 600;">Hero Subtitle / Description</label>
+                                                    <input type="text" name="client_chat_wa_hero_subtitle" class="form-control input-sm" value="<?php echo htmlspecialchars($settings->client_chat_wa_hero_subtitle ?? ''); ?>" placeholder="Connect instantly with our dedicated support engineers on WhatsApp. Average response time is under 5 minutes.">
+                                                </div>
                                             </div>
                                         </div>
                                     </div>

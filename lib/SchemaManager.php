@@ -144,6 +144,12 @@ class SchemaManager
                 'client_chat_whatsapp_number'    => ['type' => 'string', 'default' => ''],
                 'client_chat_whatsapp_message'   => ['type' => 'text'],
                 'client_chat_whatsapp_departments' => ['type' => 'text'],
+                'client_chat_wa_verified_label'  => ['type' => 'text'],
+                'client_chat_wa_live_label'      => ['type' => 'text'],
+                'client_chat_wa_hero_title'      => ['type' => 'text'],
+                'client_chat_wa_hero_subtitle'   => ['type' => 'text'],
+                'client_chat_wa_dept_heading'    => ['type' => 'text'],
+                'client_chat_wa_speed_label'     => ['type' => 'text'],
                 'client_chat_siri_orb_enabled'   => ['type' => 'boolean', 'default' => 1],
 
                 // Safe Ops & Rollback Governance
