@@ -9696,25 +9696,25 @@ class AdminController
                                                     Customize all visible text on the WhatsApp tab. Leave blank to use defaults.
                                                 </span>
                                                 <div class="row">
-                                                    <div class="col-md-4 form-group" style="margin-bottom: 8px;">
+                                                    <div class="col-md-4 col-sm-4 col-xs-12 form-group" style="margin-bottom: 8px;">
                                                         <label style="font-size: 11px; font-weight: 600;">Verified Badge Label</label>
                                                         <input type="text" name="client_chat_wa_verified_label" class="form-control input-sm" value="<?php echo htmlspecialchars($settings->client_chat_wa_verified_label ?? ''); ?>" placeholder="Verified Business">
                                                     </div>
-                                                    <div class="col-md-4 form-group" style="margin-bottom: 8px;">
+                                                    <div class="col-md-4 col-sm-4 col-xs-12 form-group" style="margin-bottom: 8px;">
                                                         <label style="font-size: 11px; font-weight: 600;">Live Status Label</label>
                                                         <input type="text" name="client_chat_wa_live_label" class="form-control input-sm" value="<?php echo htmlspecialchars($settings->client_chat_wa_live_label ?? ''); ?>" placeholder="Live Team Online">
                                                     </div>
-                                                    <div class="col-md-4 form-group" style="margin-bottom: 8px;">
+                                                    <div class="col-md-4 col-sm-4 col-xs-12 form-group" style="margin-bottom: 8px;">
                                                         <label style="font-size: 11px; font-weight: 600;">Speed Badge</label>
                                                         <input type="text" name="client_chat_wa_speed_label" class="form-control input-sm" value="<?php echo htmlspecialchars($settings->client_chat_wa_speed_label ?? ''); ?>" placeholder="⚡ Under 5 min reply">
                                                     </div>
                                                 </div>
                                                 <div class="row">
-                                                    <div class="col-md-5 form-group" style="margin-bottom: 8px;">
+                                                    <div class="col-md-6 col-sm-6 col-xs-12 form-group" style="margin-bottom: 8px;">
                                                         <label style="font-size: 11px; font-weight: 600;">Hero Title</label>
                                                         <input type="text" name="client_chat_wa_hero_title" class="form-control input-sm" value="<?php echo htmlspecialchars($settings->client_chat_wa_hero_title ?? ''); ?>" placeholder="Direct WhatsApp Support">
                                                     </div>
-                                                    <div class="col-md-4 form-group" style="margin-bottom: 8px;">
+                                                    <div class="col-md-6 col-sm-6 col-xs-12 form-group" style="margin-bottom: 8px;">
                                                         <label style="font-size: 11px; font-weight: 600;">Department Section Heading</label>
                                                         <input type="text" name="client_chat_wa_dept_heading" class="form-control input-sm" value="<?php echo htmlspecialchars($settings->client_chat_wa_dept_heading ?? ''); ?>" placeholder="Select Your Department">
                                                     </div>

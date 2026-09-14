@@ -6612,14 +6612,28 @@ DISC;
     }
 }
 @media (max-width: 640px) {
-    #sdv-client-chat-window {
-        bottom: 84px !important;
-        left: 12px !important;
-        right: 12px !important;
+    #sdv-client-chat-window,
+    #sdv-client-chat-window.sdv-expanded {
+        bottom: 76px !important;
+        left: 8px !important;
+        right: 8px !important;
         width: auto !important;
         max-width: none !important;
-        height: calc(100vh - 110px) !important;
+        height: calc(100vh - 92px) !important;
+        height: calc(100dvh - 92px) !important;
         max-height: none !important;
+        border-radius: 14px !important;
+    }
+}
+@media (max-width: 360px) {
+    #sdv-client-chat-window,
+    #sdv-client-chat-window.sdv-expanded {
+        bottom: 70px !important;
+        left: 4px !important;
+        right: 4px !important;
+        height: calc(100vh - 80px) !important;
+        height: calc(100dvh - 80px) !important;
+        border-radius: 12px !important;
     }
 }
 
@@ -8833,7 +8847,9 @@ DISC;
     flex-direction: column;
     gap: 14px;
     overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
     height: 100%;
+    width: 100%;
     box-sizing: border-box;
 }
 .sdv-wa-hero {
@@ -8843,6 +8859,8 @@ DISC;
     padding: 15px 16px 13px 16px;
     position: relative;
     overflow: hidden;
+    word-break: break-word;
+    flex-shrink: 0;
 }
 .sdv-wa-hero::before {
     content: "";
@@ -8859,6 +8877,8 @@ DISC;
     display: flex;
     align-items: center;
     justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 6px;
     margin-bottom: 7px;
 }
 .sdv-wa-verified-badge {
@@ -8901,12 +8921,14 @@ DISC;
     color: #0f172a;
     margin: 0 0 3px 0;
     letter-spacing: -0.01em;
+    word-break: break-word;
 }
 .sdv-wa-hero-subtitle {
     font-size: 12px;
     color: #475569;
     margin: 0;
     line-height: 1.45;
+    word-break: break-word;
 }
 .sdv-wa-section-title {
     font-size: 11.5px;
@@ -8917,7 +8939,10 @@ DISC;
     display: flex;
     align-items: center;
     justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 6px;
     margin: 2px 0 -4px 0;
+    flex-shrink: 0;
 }
 .sdv-wa-reply-speed {
     font-weight: 600;
@@ -8943,6 +8968,8 @@ DISC;
     transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
     cursor: pointer !important;
+    gap: 10px;
+    flex-shrink: 0;
 }
 .sdv-wa-dept-card:hover {
     transform: translateY(-2px);
@@ -8957,6 +8984,8 @@ DISC;
     display: flex;
     align-items: center;
     gap: 12px;
+    min-width: 0;
+    flex: 1;
 }
 .sdv-wa-avatar-box {
     width: 38px;
@@ -8983,6 +9012,8 @@ DISC;
     gap: 2px;
     align-items: flex-start;
     text-align: left;
+    min-width: 0;
+    flex: 1;
 }
 .sdv-wa-dept-name {
     font-size: 13px;
@@ -8992,6 +9023,8 @@ DISC;
     text-align: left;
     margin: 0;
     padding: 0;
+    word-break: break-word;
+    overflow-wrap: break-word;
 }
 .sdv-wa-dept-phone-row {
     display: flex;
@@ -8999,6 +9032,12 @@ DISC;
     gap: 5px;
     font-size: 11.5px;
     color: #64748b;
+    max-width: 100%;
+}
+.sdv-wa-dept-phone-row span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 .sdv-wa-dept-meta {
     display: flex;
@@ -9007,6 +9046,7 @@ DISC;
     font-size: 11px;
     color: #15803d;
     font-weight: 500;
+    word-break: break-word;
 }
 .sdv-wa-meta-dot {
     width: 5px;
@@ -9014,6 +9054,7 @@ DISC;
     background: #22c55e;
     border-radius: 50%;
     display: inline-block;
+    flex-shrink: 0;
 }
 .sdv-wa-dept-action {
     display: inline-flex;
@@ -9051,6 +9092,7 @@ DISC;
     display: flex;
     align-items: flex-start;
     gap: 10px;
+    flex-shrink: 0;
 }
 .sdv-wa-trust-icon {
     color: #64748b;
@@ -9089,6 +9131,7 @@ DISC;
     flex-direction: column;
     gap: 12px;
     box-shadow: 0 4px 14px rgba(0, 0, 0, 0.04);
+    flex-shrink: 0;
 }
 .sdv-wa-single-top {
     display: flex;
@@ -9172,6 +9215,73 @@ DISC;
     background: #1eb954;
     transform: translateY(-1px);
     box-shadow: 0 6px 18px rgba(37, 211, 102, 0.45);
+}
+
+@media (max-width: 480px) {
+    .sdv-wa-panel-body {
+        padding: 12px 10px;
+        gap: 10px;
+    }
+    .sdv-wa-hero {
+        padding: 12px 12px 10px 12px;
+    }
+    .sdv-wa-hero-title {
+        font-size: 13.5px;
+    }
+    .sdv-wa-hero-subtitle {
+        font-size: 11px;
+    }
+    .sdv-wa-dept-card {
+        padding: 10px 10px;
+        gap: 8px;
+    }
+    .sdv-wa-dept-left {
+        gap: 9px;
+    }
+    .sdv-wa-avatar-box {
+        width: 34px;
+        height: 34px;
+    }
+    .sdv-wa-avatar-box svg {
+        width: 16px;
+        height: 16px;
+    }
+    .sdv-wa-dept-name {
+        font-size: 12.5px;
+    }
+    .sdv-wa-dept-phone-row {
+        font-size: 11px;
+    }
+    .sdv-wa-dept-meta {
+        font-size: 10px;
+    }
+    .sdv-wa-dept-action {
+        padding: 6px 9px;
+        font-size: 11.5px;
+        gap: 4px;
+    }
+    .sdv-wa-single-card {
+        padding: 14px 12px;
+        gap: 10px;
+    }
+    .sdv-wa-single-avatar {
+        width: 38px;
+        height: 38px;
+    }
+    .sdv-wa-single-name {
+        font-size: 13.5px;
+    }
+    .sdv-wa-single-btn {
+        padding: 9px 12px;
+        font-size: 12.5px;
+    }
+    .sdv-wa-trust-card {
+        padding: 10px 10px;
+        gap: 8px;
+    }
+    .sdv-wa-trust-desc {
+        font-size: 10.5px;
+    }
 }
 
 /* ── macOS / Apple Siri Fluid Glowing Orb (Crisp, No Background Blur/Haze) ── */
@@ -9344,11 +9454,12 @@ DISC;
 
 /* WhatsApp Support Tab Panel */
 .sdv-tab-panel-whatsapp {
-    padding: 24px 20px;
-    align-items: center;
-    text-align: center;
-    overflow-y: auto;
+    padding: 0 !important;
+    align-items: stretch !important;
+    text-align: left !important;
+    overflow: hidden !important;
     background: #ffffff;
+    height: 100%;
 }
 #sdv-client-chat-window.sdv-theme-cyber_dark .sdv-tab-panel-whatsapp,
 #sdv-client-chat-window.sdv-theme-linear_geist .sdv-tab-panel-whatsapp,
