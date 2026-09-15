@@ -782,10 +782,49 @@ class ChatService
             'max_tokens'  => 1024,
         ];
 
+        $debugMode = !empty(self::getChatSetting('client_chat_debug', 0));
+        $debugPayload = null;
+
         try {
             $pName = $pRecord->name ?? 'AI Provider';
             $pType = $pRecord->provider_type ?? 'generic';
             ModuleLogger::debug('client_chat', "Requesting chat reply for session {$sessionId} using [{$pName} ({$pType})] model [{$modelName}]");
+
+            if ($debugMode) {
+                $debugPayload = [
+                    'timestamp'    => Carbon::now()->toDateTimeString(),
+                    'session_id'   => $sessionId,
+                    'session_uuid' => $sessionUuid,
+                    'client_id'    => $clientId,
+                    'provider'     => [
+                        'name'  => $pName,
+                        'type'  => $pType,
+                        'model' => $modelName,
+                    ],
+                    'settings'     => $settings,
+                    'tools'        => [],
+                    'messages'     => $chatHistory,
+                ];
+
+                $payloadJson = json_encode($debugPayload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+
+                // 1. Log to WHMCS Module Diagnostic Logs table (tblsahdev_module_logs)
+                ModuleLogger::logPayload('client_chat_payload', $payloadJson);
+
+                // 2. Log to dedicated persistent disk file
+                try {
+                    $logDir = dirname(__DIR__) . '/modules/addons/sahdev/logs';
+                    if (!is_dir($logDir)) {
+                        @mkdir($logDir, 0755, true);
+                    }
+                    $logFile = $logDir . '/client_chat_payload_debug.log';
+                    $entryHeader = "================================================================================\n"
+                        . "[" . date('Y-m-d H:i:s') . "] LIVE CHAT AI PAYLOAD - Session #{$sessionId} ({$sessionUuid})\n"
+                        . "Provider: {$pName} ({$pType}) | Model: {$modelName}\n"
+                        . "--------------------------------------------------------------------------------\n";
+                    @file_put_contents($logFile, $entryHeader . $payloadJson . "\n\n", FILE_APPEND | LOCK_EX);
+                } catch (\Throwable $logEx) {}
+            }
 
             if (method_exists($provider, 'generateChat')) {
                 // Strictly pass empty tools array [] — NO mutating tools or safe ops are exposed to client chat
@@ -813,18 +852,21 @@ class ChatService
             $msgId = self::recordAssistantMessage($sessionId, $reply);
             ModuleLogger::info('client_chat', "Live chat response generated successfully for session {$sessionId} (length: " . strlen($reply) . " chars)");
 
-            return [
+            $out = [
                 'success'         => true,
                 'message_id'      => $msgId,
                 'user_message_id' => $userMsgId ?? null,
                 'reply'           => $reply,
                 'can_escalate'    => true,
             ];
+            if ($debugMode && $debugPayload !== null) {
+                $out['debug_payload'] = $debugPayload;
+            }
+            return $out;
         } catch (\Throwable $e) {
             $pName = $pRecord->name ?? 'AI Provider';
             ModuleLogger::error('client_chat', "Live chat generation failed: " . $e->getMessage() . " [Provider: {$pName}, Model: {$modelName}]");
 
-            $debugMode = !empty(self::getChatSetting('client_chat_debug', 0));
             $errReply = "We apologize, our assistant encountered a momentary issue. Would you like to create a support ticket with your inquiry?";
             if ($debugMode) {
                 $errReply .= "\n\n⚠️ [Debug Notice] Error from {$pName}: " . $e->getMessage();
@@ -832,7 +874,7 @@ class ChatService
 
             $errReply = self::normalizeMarkdownLinks($errReply);
             $msgId = self::recordAssistantMessage($sessionId, $errReply);
-            return [
+            $out = [
                 'success'         => true,
                 'message_id'      => $msgId,
                 'user_message_id' => $userMsgId ?? null,
@@ -840,6 +882,10 @@ class ChatService
                 'can_escalate'    => true,
                 'error'           => $e->getMessage(),
             ];
+            if ($debugMode && $debugPayload !== null) {
+                $out['debug_payload'] = $debugPayload;
+            }
+            return $out;
         }
     }
 

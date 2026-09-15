@@ -12972,7 +12972,18 @@ DISC;
 
             inputEl.disabled = false;
             if (sendBtn) sendBtn.disabled = false;
-            try { inputEl.focus(); } catch(e) {}
+            if (data.debug_payload) {
+                try {
+                    var modelTag = (data.debug_payload.provider && data.debug_payload.provider.model) ? data.debug_payload.provider.model : 'AI';
+                    console.groupCollapsed("%c🤖 [Sahdev Live Chat Debug] Dispatched AI Payload: " + modelTag, "background:#4f46e5;color:#ffffff;font-weight:bold;padding:3px 7px;border-radius:4px;");
+                    console.log("%cTimestamp:%c " + (data.debug_payload.timestamp || ''), "font-weight:bold;color:#6366f1;", "color:#0f172a;");
+                    console.log("%cProvider & Model:%c", "font-weight:bold;color:#6366f1;", "color:#0f172a;", data.debug_payload.provider);
+                    console.log("%cSettings:%c", "font-weight:bold;color:#6366f1;", "color:#0f172a;", data.debug_payload.settings);
+                    console.log("%cMessages Array (" + (data.debug_payload.messages ? data.debug_payload.messages.length : 0) + " items):%c", "font-weight:bold;color:#6366f1;", "color:#0f172a;", data.debug_payload.messages);
+                    console.log("%cComplete Raw JSON Payload:%c\n" + JSON.stringify(data.debug_payload, null, 2), "font-weight:bold;color:#6366f1;", "font-family:monospace;color:#047857;");
+                    console.groupEnd();
+                } catch(e) {}
+            }
 
             if (data.status === 'success' || data.success) {
                 if (data.user_message_id) {
@@ -13812,15 +13823,11 @@ function sahdev_render_admin_live_chat_alert_listener(array $vars = []): string
 
         return <<<HTML
 <!-- Sahdev Global Live Chat Alert Listener & Audio Synthesizer -->
-<div id="sdv-admin-global-toast-container" style="position:fixed;bottom:28px;right:28px;z-index:9999999;display:flex;flex-direction:column;gap:14px;pointer-events:none;max-width:400px;width:100%;"></div>
+<div id="sdv-admin-global-toast-container" style="position:fixed;bottom:24px;right:24px;z-index:2147483647;display:flex;flex-direction:column;gap:12px;pointer-events:none;max-width:420px;width:calc(100% - 48px);"></div>
 
 <script>
 (function() {
     'use strict';
-    // If admin is already on the dedicated live console dashboard, yield to the dashboard poller
-    if (document.getElementById('liveConsoleApp') || document.getElementById('sdv-live-console-app')) {
-        return;
-    }
 
     var loc = window.location;
     var adminBase = loc.origin + loc.pathname.substring(0, loc.pathname.lastIndexOf('/') + 1);
@@ -13829,6 +13836,9 @@ function sahdev_render_admin_live_chat_alert_listener(array $vars = []): string
     var defaultSoundType = {$soundTypeJs};
     var soundEnabled = {$soundEnabledJs};
     var defaultAlertDuration = {$alertDurationJs};
+
+    // Unique per-tab identifier for cross-tab leader election
+    var tabId = 'tab_' + Math.random().toString(36).substring(2, 9) + '_' + Date.now();
 
     function sdvEscapeHtml(str) {
         if (!str) return '';
@@ -13840,6 +13850,7 @@ function sahdev_render_admin_live_chat_alert_listener(array $vars = []): string
             .replace(/'/g, '&#039;');
     }
 
+    // ── Web Audio API Synthesizer (Zero external audio file dependencies) ────
     var audioCtx = null;
     function getAudioContext() {
         if (!audioCtx) {
@@ -13852,7 +13863,21 @@ function sahdev_render_admin_live_chat_alert_listener(array $vars = []): string
         return audioCtx;
     }
 
-    // Zero-dependency pure Web Audio API oscillator synthesis
+    // Auto-resume audio on first user gesture
+    function initUserGestureUnlock() {
+        var unlock = function() {
+            var ctx = getAudioContext();
+            if (ctx && ctx.state === 'suspended') {
+                ctx.resume().catch(function(){});
+            }
+            window.removeEventListener('click', unlock, true);
+            window.removeEventListener('keydown', unlock, true);
+        };
+        window.addEventListener('click', unlock, true);
+        window.addEventListener('keydown', unlock, true);
+    }
+    initUserGestureUnlock();
+
     function playSynthesizedSound(type) {
         if (!soundEnabled) return;
         try {
@@ -13865,57 +13890,59 @@ function sahdev_render_admin_live_chat_alert_listener(array $vars = []): string
         var now = ctx.currentTime;
         type = type || defaultSoundType || 'chime';
 
-        if (type === 'bell') {
-            [523.25, 659.25, 783.99].forEach(function(freq, idx) {
+        try {
+            if (type === 'bell') {
+                [523.25, 659.25, 783.99].forEach(function(freq, idx) {
+                    var osc = ctx.createOscillator();
+                    var gain = ctx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(freq, now + (idx * 0.05));
+                    gain.gain.setValueAtTime(0.20, now + (idx * 0.05));
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 1.1);
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.start(now + (idx * 0.05));
+                    osc.stop(now + 1.15);
+                });
+            } else if (type === 'ping') {
                 var osc = ctx.createOscillator();
                 var gain = ctx.createGain();
                 osc.type = 'sine';
-                osc.frequency.setValueAtTime(freq, now + (idx * 0.04));
-                gain.gain.setValueAtTime(0.22, now + (idx * 0.04));
-                gain.gain.exponentialRampToValueAtTime(0.001, now + 1.2);
+                osc.frequency.setValueAtTime(987.77, now);
+                gain.gain.setValueAtTime(0.24, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
                 osc.connect(gain);
                 gain.connect(ctx.destination);
-                osc.start(now + (idx * 0.04));
-                osc.stop(now + 1.25);
-            });
-        } else if (type === 'ping') {
-            var osc = ctx.createOscillator();
-            var gain = ctx.createGain();
-            osc.type = 'sine';
-            osc.frequency.setValueAtTime(987.77, now);
-            gain.gain.setValueAtTime(0.28, now);
-            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.55);
-            osc.connect(gain);
-            gain.connect(ctx.destination);
-            osc.start(now);
-            osc.stop(now + 0.6);
-        } else {
-            // Chime: 587.33Hz (D5) -> 880Hz (A5)
-            var osc1 = ctx.createOscillator();
-            var gain1 = ctx.createGain();
-            osc1.type = 'sine';
-            osc1.frequency.setValueAtTime(587.33, now);
-            gain1.gain.setValueAtTime(0.26, now);
-            gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
-            osc1.connect(gain1);
-            gain1.connect(ctx.destination);
-            osc1.start(now);
-            osc1.stop(now + 0.48);
+                osc.start(now);
+                osc.stop(now + 0.5);
+            } else {
+                // Executive Chime: D5 (587.33Hz) -> A5 (880Hz)
+                var osc1 = ctx.createOscillator();
+                var gain1 = ctx.createGain();
+                osc1.type = 'sine';
+                osc1.frequency.setValueAtTime(587.33, now);
+                gain1.gain.setValueAtTime(0.22, now);
+                gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.40);
+                osc1.connect(gain1);
+                gain1.connect(ctx.destination);
+                osc1.start(now);
+                osc1.stop(now + 0.42);
 
-            var osc2 = ctx.createOscillator();
-            var gain2 = ctx.createGain();
-            osc2.type = 'sine';
-            osc2.frequency.setValueAtTime(880.00, now + 0.18);
-            gain2.gain.setValueAtTime(0.3, now + 0.18);
-            gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.95);
-            osc2.connect(gain2);
-            gain2.connect(ctx.destination);
-            osc2.start(now + 0.18);
-            osc2.stop(now + 0.98);
-        }
+                var osc2 = ctx.createOscillator();
+                var gain2 = ctx.createGain();
+                osc2.type = 'sine';
+                osc2.frequency.setValueAtTime(880.00, now + 0.16);
+                gain2.gain.setValueAtTime(0.25, now + 0.16);
+                gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.85);
+                osc2.connect(gain2);
+                gain2.connect(ctx.destination);
+                osc2.start(now + 0.16);
+                osc2.stop(now + 0.90);
+            }
+        } catch(e) {}
     }
 
-    // Title blinker
+    // ── Page Title Flasher ────────────────────────────────────────────────
     var origTitle = document.title;
     var titleBlinkTimer = null;
     function startTitleBlink(count) {
@@ -13923,8 +13950,8 @@ function sahdev_render_admin_live_chat_alert_listener(array $vars = []): string
         var toggle = false;
         titleBlinkTimer = setInterval(function() {
             toggle = !toggle;
-            document.title = toggle ? ('🔴 (' + count + ') Live Support Request!') : origTitle;
-        }, 1000);
+            document.title = toggle ? ('🔴 (' + count + ') Live Support Summon!') : origTitle;
+        }, 1200);
     }
     function stopTitleBlink() {
         if (titleBlinkTimer) {
@@ -13934,23 +13961,106 @@ function sahdev_render_admin_live_chat_alert_listener(array $vars = []): string
         }
     }
 
-    // Summon Alert Tracking, Mindful Repeating Chime & Cross-Tab Broadcast
-    var activeSummonIds = {};
+    // ── Cross-Tab Audio Leader Election & Strict Ring Window ──────────────
     var alertRingTimer = null;
     var alertRingTimeout = null;
     var isRinging = false;
+    var activeSummonIds = {};
 
-    function startAlertRing(soundType, durationSec) {
+    function canClaimAudioLeader() {
+        try {
+            var currentLeader = localStorage.getItem('sdv_audio_leader_tab');
+            var leaderTs = parseInt(localStorage.getItem('sdv_audio_leader_ts') || '0', 10);
+            var now = Date.now();
+            // If leader is missing or stale (> 7 seconds), claim leadership
+            if (!currentLeader || currentLeader === tabId || (now - leaderTs) > 7000) {
+                localStorage.setItem('sdv_audio_leader_tab', tabId);
+                localStorage.setItem('sdv_audio_leader_ts', String(now));
+                return true;
+            }
+            return false;
+        } catch(e) {
+            return true;
+        }
+    }
+
+    function refreshAudioLeaderHeartbeat() {
+        try {
+            if (localStorage.getItem('sdv_audio_leader_tab') === tabId) {
+                localStorage.setItem('sdv_audio_leader_ts', String(Date.now()));
+            }
+        } catch(e) {}
+    }
+
+    function releaseAudioLeader() {
+        try {
+            if (localStorage.getItem('sdv_audio_leader_tab') === tabId) {
+                localStorage.removeItem('sdv_audio_leader_tab');
+                localStorage.removeItem('sdv_audio_leader_ts');
+            }
+        } catch(e) {}
+    }
+
+    /**
+     * Start mindful alert chime strictly within [T0, T0 + durationMs].
+     * Guarantees only ONE tab plays audio, and stops permanently once time expires.
+     */
+    function triggerStrictSummonAlert(summonId, soundType, durationSec) {
+        var totalDurSec = durationSec || defaultAlertDuration || 15;
+        var totalDurMs = totalDurSec * 1000;
+        var startKey = 'sdv_summon_ring_start_' + summonId;
+
+        var t0 = 0;
+        try {
+            t0 = parseInt(localStorage.getItem(startKey) || '0', 10);
+            if (!t0 || isNaN(t0)) {
+                t0 = Date.now();
+                localStorage.setItem(startKey, String(t0));
+            }
+        } catch(e) {
+            t0 = Date.now();
+        }
+
+        var elapsedMs = Date.now() - t0;
+        var remainingMs = totalDurMs - elapsedMs;
+
+        // STRICT DURATION ENFORCEMENT: If duration window has expired, NEVER ring!
+        if (remainingMs <= 0) {
+            stopAlertRing();
+            return;
+        }
+
+        // Only ONE tab plays the sound across all open tabs
+        if (!canClaimAudioLeader()) {
+            return;
+        }
+
         stopAlertRing();
-        var dur = (durationSec || defaultAlertDuration || 15) * 1000;
         isRinging = true;
+
+        // Initial gentle chime
         playSynthesizedSound(soundType || defaultSoundType);
+        refreshAudioLeaderHeartbeat();
+
+        // Repeat chime gently every 5.5 seconds during the remaining active window
         alertRingTimer = setInterval(function() {
-            playSynthesizedSound(soundType || defaultSoundType);
-        }, 2800); // 2.8 second gentle chime loop
+            var curElapsed = Date.now() - t0;
+            if (curElapsed >= totalDurMs) {
+                stopAlertRing();
+                return;
+            }
+            if (canClaimAudioLeader()) {
+                playSynthesizedSound(soundType || defaultSoundType);
+                refreshAudioLeaderHeartbeat();
+            } else {
+                stopAlertRing();
+            }
+        }, 5500);
+
+        // Strict timeout auto-silence
         alertRingTimeout = setTimeout(function() {
             stopAlertRing();
-        }, dur);
+        }, remainingMs);
     }
 
     function stopAlertRing() {
@@ -13963,14 +14073,16 @@ function sahdev_render_admin_live_chat_alert_listener(array $vars = []): string
             alertRingTimeout = null;
         }
         isRinging = false;
+        releaseAudioLeader();
     }
 
-    // Cross-tab synchronization: dismiss toasts and silence audio when handled in another tab
+    // ── Universal Cross-Tab Synchronization ────────────────────────────────
     window.addEventListener('storage', function(e) {
         if (e.key === 'sdv_summon_claimed_or_dismissed') {
             try {
                 var d = JSON.parse(e.newValue || '{}');
-                if (d) {
+                if (d && (d.id || d.uuid)) {
+                    stopAlertRing();
                     if (d.id) {
                         var t = document.getElementById('sdv-toast-' + d.id);
                         if (t && t.parentNode) t.parentNode.removeChild(t);
@@ -13987,29 +14099,44 @@ function sahdev_render_admin_live_chat_alert_listener(array $vars = []): string
                     }
                     if (Object.keys(activeSummonIds).length === 0) {
                         stopTitleBlink();
-                        stopAlertRing();
                     }
                 }
             } catch(err) {}
         }
+        if (e.key === 'sdv_silence_all_audio') {
+            stopAlertRing();
+        }
     });
 
+    // ── Guaranteed High-Priority Toast Renderer ───────────────────────────
+    function getOrCreateToastContainer() {
+        var c = document.getElementById('sdv-admin-global-toast-container');
+        if (!c) {
+            c = document.createElement('div');
+            c.id = 'sdv-admin-global-toast-container';
+            c.style.cssText = 'position:fixed;bottom:24px;right:24px;z-index:2147483647;display:flex;flex-direction:column;gap:12px;pointer-events:none;max-width:420px;width:calc(100% - 48px);';
+            document.body.appendChild(c);
+        }
+        return c;
+    }
+
     function renderToastNotification(summon) {
-        var container = document.getElementById('sdv-admin-global-toast-container');
+        var container = getOrCreateToastContainer();
         if (!container) return;
 
         var toastId = 'sdv-toast-' + summon.id;
         if (document.getElementById(toastId)) return;
 
-        var dismissedKey = 'sdv_dismissed_summon_' + summon.id;
+        var dismissedKey = 'sdv_summon_dismissed_' + summon.id;
         try {
-            if (sessionStorage.getItem(dismissedKey) === '1') return;
+            if (localStorage.getItem(dismissedKey) === '1') return;
         } catch(e) {}
 
         var toast = document.createElement('div');
         toast.id = toastId;
         toast.setAttribute('data-uuid', summon.session_uuid || '');
-        toast.style.cssText = 'pointer-events:auto;width:360px;background:#ffffff;border-radius:12px;box-shadow:0 14px 40px -4px rgba(15,23,42,0.35),0 0 0 1px rgba(0,0,0,0.08);border-left:5px solid #ef4444;padding:16px 18px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;animation:sdvToastIn 0.28s cubic-bezier(0.16,1,0.3,1);position:relative;';
+        toast.setAttribute('data-id', summon.id || '');
+        toast.style.cssText = 'pointer-events:auto;width:380px;max-width:100%;background:#ffffff;border-radius:12px;box-shadow:0 16px 48px -6px rgba(15,23,42,0.38), 0 0 0 1px rgba(0,0,0,0.08);border-left:5px solid #ef4444;padding:16px 18px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;animation:sdvToastIn 0.3s cubic-bezier(0.16,1,0.3,1);position:relative;';
 
         var clientName = summon.client_name || summon.visitor_name || 'Website Visitor';
         var sourceDomain = summon.source_domain ? (' • ' + summon.source_domain) : '';
@@ -14017,23 +14144,23 @@ function sahdev_render_admin_live_chat_alert_listener(array $vars = []): string
 
         var html = '<div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px;">' +
             '<div style="display:flex;align-items:center;gap:8px;">' +
-                '<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#ef4444;animation:sdvPulse 1.2s infinite;"></span>' +
-                '<span style="font-size:12.5px;font-weight:700;color:#b91c1c;letter-spacing:-0.2px;text-transform:uppercase;">🚨 Live Support Request</span>' +
+                '<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#ef4444;box-shadow:0 0 0 3px rgba(239,68,68,0.25);animation:sdvPulse 1.2s infinite;"></span>' +
+                '<span style="font-size:12px;font-weight:800;color:#b91c1c;letter-spacing:0.3px;text-transform:uppercase;">🚨 Live Support Request</span>' +
             '</div>' +
-            '<button type="button" class="sdv-toast-dismiss-btn" style="background:none;border:none;color:#94a3b8;font-size:18px;cursor:pointer;line-height:1;padding:0 4px;" title="Dismiss">&times;</button>' +
+            '<button type="button" class="sdv-toast-dismiss-btn" style="background:none;border:none;color:#94a3b8;font-size:20px;cursor:pointer;line-height:1;padding:0 4px;transition:color 0.15s;" title="Dismiss">&times;</button>' +
         '</div>' +
-        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">' +
-            '<div style="font-size:14px;font-weight:700;color:#0f172a;">' + sdvEscapeHtml(clientName) + '</div>' +
-            '<span style="font-size:11px;color:#64748b;font-weight:500;">' + sdvEscapeHtml(summon.summoned_at || 'Just now') + '</span>' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">' +
+            '<div style="font-size:14.5px;font-weight:700;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + sdvEscapeHtml(clientName) + '</div>' +
+            '<span style="font-size:11px;color:#64748b;font-weight:600;flex-shrink:0;margin-left:8px;">' + sdvEscapeHtml(summon.summoned_at || 'Just now') + '</span>' +
         '</div>' +
-        '<div style="font-size:12px;color:#475569;line-height:1.45;margin-bottom:12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:7px;padding:8px 10px;word-break:break-word;">' +
-            sdvEscapeHtml(lastMsg) + (sourceDomain ? ('<div style="font-size:10.5px;color:#94a3b8;margin-top:3px;">Source: ' + sdvEscapeHtml(summon.source_domain) + '</div>') : '') +
+        '<div style="font-size:12.5px;color:#334155;line-height:1.45;margin-bottom:14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:9px 12px;word-break:break-word;">' +
+            sdvEscapeHtml(lastMsg) + (sourceDomain ? ('<div style="font-size:11px;color:#94a3b8;margin-top:4px;"><i class="fas fa-globe"></i> ' + sdvEscapeHtml(summon.source_domain) + '</div>') : '') +
         '</div>' +
         '<div style="display:flex;gap:8px;align-items:center;">' +
-            '<a href="' + consoleUrl + '&session_uuid=' + encodeURIComponent(summon.session_uuid) + '&auto_claim=1" class="sdv-toast-accept-btn" style="flex:1;text-align:center;text-decoration:none;background:#2563eb;color:#ffffff;font-size:12.5px;font-weight:600;padding:8px 12px;border-radius:6px;box-shadow:0 1px 3px rgba(37,99,235,0.3);transition:background 0.2s ease;">' +
-                'Accept &amp; Open Live Console &rarr;' +
+            '<a href="' + consoleUrl + '&session_uuid=' + encodeURIComponent(summon.session_uuid) + '&auto_claim=1" class="sdv-toast-accept-btn" style="flex:1;text-align:center;text-decoration:none;background:#2563eb;color:#ffffff;font-size:12.5px;font-weight:600;padding:9px 14px;border-radius:7px;box-shadow:0 2px 4px rgba(37,99,235,0.3);transition:background 0.2s ease;">' +
+                'Accept &amp; Open Console &rarr;' +
             '</a>' +
-            '<button type="button" class="sdv-toast-silence-btn" style="background:#f1f5f9;border:1px solid #cbd5e1;color:#475569;font-size:12px;font-weight:500;padding:8px 12px;border-radius:6px;cursor:pointer;">' +
+            '<button type="button" class="sdv-toast-silence-btn" style="background:#f1f5f9;border:1px solid #cbd5e1;color:#475569;font-size:12.5px;font-weight:600;padding:9px 14px;border-radius:7px;cursor:pointer;transition:background 0.15s;">' +
                 'Dismiss' +
             '</button>' +
         '</div>';
@@ -14042,7 +14169,7 @@ function sahdev_render_admin_live_chat_alert_listener(array $vars = []): string
         container.appendChild(toast);
 
         function dismissToast(shouldNotifyServer) {
-            try { sessionStorage.setItem(dismissedKey, '1'); } catch(e) {}
+            try { localStorage.setItem(dismissedKey, '1'); } catch(e) {}
             try {
                 localStorage.setItem('sdv_summon_claimed_or_dismissed', JSON.stringify({
                     uuid: summon.session_uuid,
@@ -14052,6 +14179,8 @@ function sahdev_render_admin_live_chat_alert_listener(array $vars = []): string
                 }));
             } catch(e) {}
 
+            stopAlertRing();
+
             if (shouldNotifyServer) {
                 var fdDismiss = new FormData();
                 fdDismiss.append('action', 'admin_dismiss_summon');
@@ -14060,16 +14189,15 @@ function sahdev_render_admin_live_chat_alert_listener(array $vars = []): string
             }
 
             toast.style.opacity = '0';
-            toast.style.transform = 'translateY(10px)';
-            toast.style.transition = 'all 0.2s ease';
+            toast.style.transform = 'translateY(12px) scale(0.96)';
+            toast.style.transition = 'all 0.22s cubic-bezier(0.16,1,0.3,1)';
             setTimeout(function() {
                 if (toast.parentNode) toast.parentNode.removeChild(toast);
                 delete activeSummonIds[summon.id];
                 if (Object.keys(activeSummonIds).length === 0) {
                     stopTitleBlink();
-                    stopAlertRing();
                 }
-            }, 200);
+            }, 220);
         }
 
         toast.querySelector('.sdv-toast-dismiss-btn').addEventListener('click', function() {
@@ -14097,6 +14225,7 @@ function sahdev_render_admin_live_chat_alert_listener(array $vars = []): string
         });
     }
 
+    // ── Background Admin Heartbeat Poller ─────────────────────────────────
     var heartbeatTimer = null;
     function pollAdminHeartbeat() {
         var fd = new FormData();
@@ -14111,17 +14240,30 @@ function sahdev_render_admin_live_chat_alert_listener(array $vars = []): string
 
             var summons = res.pending_summons || res.summons || [];
             if (summons.length > 0) {
-                var hasNewSummon = false;
+                var hasUnalertedSummon = false;
                 summons.forEach(function(s) {
-                    if (!activeSummonIds[s.id]) {
-                        activeSummonIds[s.id] = s;
-                        hasNewSummon = true;
-                        renderToastNotification(s);
+                    // Check if already dismissed in localStorage
+                    try {
+                        if (localStorage.getItem('sdv_summon_dismissed_' + s.id) === '1') return;
+                    } catch(e) {}
+
+                    activeSummonIds[s.id] = s;
+
+                    // Always guarantee the toast is rendered in all tabs
+                    renderToastNotification(s);
+
+                    // Check if summon alert duration is still active
+                    var startKey = 'sdv_summon_ring_start_' + s.id;
+                    var t0 = parseInt(localStorage.getItem(startKey) || '0', 10);
+                    var totalDurMs = (res.alert_duration || defaultAlertDuration || 15) * 1000;
+                    if (!t0 || (Date.now() - t0) < totalDurMs) {
+                        hasUnalertedSummon = true;
+                        triggerStrictSummonAlert(s.id, res.sound_type || defaultSoundType, res.alert_duration || defaultAlertDuration);
                     }
                 });
-                if (hasNewSummon) {
+
+                if (hasUnalertedSummon) {
                     startTitleBlink(summons.length);
-                    startAlertRing(res.sound_type || defaultSoundType, res.alert_duration || defaultAlertDuration);
                 }
             } else {
                 if (Object.keys(activeSummonIds).length > 0) {
@@ -14135,22 +14277,31 @@ function sahdev_render_admin_live_chat_alert_listener(array $vars = []): string
         }).catch(function(){});
     }
 
-    // Polling every 8 seconds
+    // Run poll every 8 seconds with initial heartbeat after 1.2s
     heartbeatTimer = setInterval(pollAdminHeartbeat, 8000);
-    setTimeout(pollAdminHeartbeat, 1500);
+    setTimeout(pollAdminHeartbeat, 1200);
+
+    // Clean up on tab unload
+    window.addEventListener('beforeunload', function() {
+        if (heartbeatTimer) clearInterval(heartbeatTimer);
+        stopAlertRing();
+    });
 
 })();
 </script>
 <style>
 @keyframes sdvToastIn {
-    from { opacity: 0; transform: translateY(16px) scale(0.96); }
+    from { opacity: 0; transform: translateY(20px) scale(0.95); }
     to { opacity: 1; transform: translateY(0) scale(1); }
 }
 @keyframes sdvPulse {
     0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
-    70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+    70% { transform: scale(1); box-shadow: 0 0 0 7px rgba(239, 68, 68, 0); }
     100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
 }
+.sdv-toast-accept-btn:hover { background: #1d4ed8 !important; }
+.sdv-toast-silence-btn:hover { background: #e2e8f0 !important; color: #1e293b !important; }
+.sdv-toast-dismiss-btn:hover { color: #ef4444 !important; }
 </style>
 HTML;
     } catch (\Throwable $e) {

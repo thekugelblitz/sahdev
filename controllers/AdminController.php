@@ -2658,7 +2658,7 @@ class AdminController
                                     Enable Live Chat Diagnostics & Console Logging
                                 </label>
                                 <small class="text-muted" style="display: block;">
-                                    Logs detailed chat interaction steps to <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=module_logs" target="_blank">Module diagnostic log</a> and browser DevTools console.
+                                    Logs full AI prompt payloads and interaction steps to <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=module_logs" target="_blank">Module diagnostic log</a>, disk file (<code>modules/addons/sahdev/logs/client_chat_payload_debug.log</code>), and browser DevTools console (F12).
                                 </small>
                             </div>
 
@@ -4536,7 +4536,7 @@ class AdminController
                 <div>
                     <h2 style="margin:0 0 6px 0;">Module diagnostic log</h2>
                     <p class="text-muted" style="margin:0; font-size:13px;">
-                        Warnings and errors from Sahdev internals (e.g. account context enrichment). Does not include full AI prompts.
+                        Warnings, errors, and live chat AI payloads (when Debug mode is enabled in Settings).
                     </p>
                 </div>
                 <div style="background:#fff3cd; padding:10px 15px; border-radius:6px; border:1px solid #ffc107;">
@@ -4548,9 +4548,8 @@ class AdminController
                             <option value="7">Older than 7 days</option>
                             <option value="15">Older than 15 days</option>
                             <option value="30" selected>Older than 30 days</option>
-                            <option value="90">Older than 90 days</option>
                         </select>
-                        <button type="submit" class="btn btn-sm btn-warning">Prune now</button>
+                        <button type="submit" class="btn btn-sm btn-danger"><i class="fas fa-trash"></i> Prune logs</button>
                     </form>
                 </div>
             </div>
@@ -4562,11 +4561,11 @@ class AdminController
             <?php if (!Capsule::schema()->hasTable('tblsahdev_module_logs')): ?>
                 <div class="alert alert-info">Table <code>tblsahdev_module_logs</code> is not present yet. Save module settings or re-run module activation to create it.</div>
             <?php else: ?>
-            <table class="table table-bordered table-striped" style="font-size:12px;">
-                <thead style="background:#f8f9fa;">
+            <table class="table table-striped table-bordered" style="background:#fff;">
+                <thead>
                     <tr>
-                        <th width="90">ID</th>
-                        <th width="100">Level</th>
+                        <th width="70">ID</th>
+                        <th width="110">Level</th>
                         <th width="200">Source</th>
                         <th width="120">Ticket</th>
                         <th>Message</th>
@@ -4579,9 +4578,14 @@ class AdminController
                         <tr><td colspan="7" class="text-center text-muted py-4">No module log entries yet.</td></tr>
                     <?php else: ?>
                         <?php foreach ($logs as $log): ?>
+                            <?php
+                            $isPayload = ($log->source === 'client_chat_payload');
+                            $levelClass = ($log->level === 'error') ? 'label-danger' : (($isPayload) ? 'label-info' : 'label-warning');
+                            $levelLabel = $isPayload ? 'debug (payload)' : ($log->level ?? '');
+                            ?>
                             <tr>
                                 <td><?php echo (int) $log->id; ?></td>
-                                <td><span class="label <?php echo ($log->level === 'error') ? 'label-danger' : 'label-warning'; ?>"><?php echo htmlspecialchars($log->level ?? ''); ?></span></td>
+                                <td><span class="label <?php echo $levelClass; ?>" <?php echo $isPayload ? 'style="background:#6366f1;color:#fff;"' : ''; ?>><?php echo htmlspecialchars($levelLabel); ?></span></td>
                                 <td style="word-break:break-all;"><?php echo htmlspecialchars($log->source ?? ''); ?></td>
                                 <td>
                                     <?php if (!empty($log->ticket_id)): ?>
@@ -4590,7 +4594,17 @@ class AdminController
                                         <span class="text-muted">—</span>
                                     <?php endif; ?>
                                 </td>
-                                <td style="word-break:break-word; white-space:pre-wrap; font-family:monospace; font-size:11px;"><?php echo htmlspecialchars($log->message ?? ''); ?></td>
+                                <td style="word-break:break-word; white-space:pre-wrap; font-family:monospace; font-size:11px;">
+                                    <?php if ($isPayload): ?>
+                                        <div style="margin-bottom:6px; display:flex; justify-content:space-between; align-items:center;">
+                                            <span style="font-weight:600; color:#4f46e5; font-size:11.5px;"><i class="fas fa-microchip"></i> Full LLM Dispatched Payload</span>
+                                            <button type="button" class="btn btn-xs btn-default" onclick="navigator.clipboard.writeText(this.parentNode.nextElementSibling.textContent).then(function(){alert('Payload JSON copied to clipboard!');});"><i class="fas fa-copy"></i> Copy JSON</button>
+                                        </div>
+                                        <div style="max-height:300px; overflow-y:auto; background:#f8fafc; border:1px solid #e2e8f0; border-radius:4px; padding:8px;"><?php echo htmlspecialchars($log->message ?? ''); ?></div>
+                                    <?php else: ?>
+                                        <?php echo htmlspecialchars($log->message ?? ''); ?>
+                                    <?php endif; ?>
+                                </td>
                                 <td class="text-muted" style="font-size:11px;"><?php echo htmlspecialchars((string) ($log->created_at ?? '')); ?></td>
                                 <td>
                                     <form method="post" action="<?php echo $actionUrl; ?>" style="display:inline;">
@@ -12517,16 +12531,50 @@ class AdminController
                 }
             }
 
-            // Mindful Alert Ring Controller: rings every 2.8s for exactly X seconds then auto-silences
+            var consoleTabId = 'console_' + Math.random().toString(36).substring(2, 9) + '_' + Date.now();
+
+            function canConsoleClaimAudioLeader() {
+                try {
+                    var currentLeader = localStorage.getItem('sdv_audio_leader_tab');
+                    var leaderTs = parseInt(localStorage.getItem('sdv_audio_leader_ts') || '0', 10);
+                    var now = Date.now();
+                    if (!currentLeader || currentLeader === consoleTabId || (now - leaderTs) > 7000) {
+                        localStorage.setItem('sdv_audio_leader_tab', consoleTabId);
+                        localStorage.setItem('sdv_audio_leader_ts', String(now));
+                        return true;
+                    }
+                    return false;
+                } catch(e) {
+                    return true;
+                }
+            }
+
+            function releaseConsoleAudioLeader() {
+                try {
+                    if (localStorage.getItem('sdv_audio_leader_tab') === consoleTabId) {
+                        localStorage.removeItem('sdv_audio_leader_tab');
+                        localStorage.removeItem('sdv_audio_leader_ts');
+                    }
+                } catch(e) {}
+            }
+
+            // Mindful Alert Ring Controller: synchronized across all tabs via audio leader lock
             function startAlertRing(type, durationSec) {
                 if (!SOUND_ENABLED) return;
                 stopAlertRing();
+                if (!canConsoleClaimAudioLeader()) return;
+
                 var dur = (durationSec || ALERT_DURATION || 15) * 1000;
                 isRinging = true;
                 playAlertSound(type || SOUND_TYPE);
                 ringInterval = setInterval(function() {
-                    playAlertSound(type || SOUND_TYPE);
-                }, 2800);
+                    if (canConsoleClaimAudioLeader()) {
+                        playAlertSound(type || SOUND_TYPE);
+                        try { localStorage.setItem('sdv_audio_leader_ts', String(Date.now())); } catch(e) {}
+                    } else {
+                        stopAlertRing();
+                    }
+                }, 5500);
                 ringTimeout = setTimeout(function() {
                     stopAlertRing();
                 }, dur);
@@ -12536,6 +12584,7 @@ class AdminController
                 if (ringInterval) { clearInterval(ringInterval); ringInterval = null; }
                 if (ringTimeout) { clearTimeout(ringTimeout); ringTimeout = null; }
                 isRinging = false;
+                releaseConsoleAudioLeader();
             }
 
             // Tab activity & user interaction listeners to silence rings

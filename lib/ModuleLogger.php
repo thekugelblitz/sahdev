@@ -10,12 +10,37 @@ use WHMCS\Database\Capsule;
 class ModuleLogger
 {
     private const MAX_MESSAGE_LEN = 2000;
+    private const MAX_PAYLOAD_LEN = 60000;
 
     public static function log(string $level, string $source, string $message, ?int $ticketId = null): void
     {
         $level = strtolower(substr($level, 0, 16));
         $source = substr($source, 0, 128);
         $message = substr($message, 0, self::MAX_MESSAGE_LEN);
+
+        try {
+            if (!Capsule::schema()->hasTable('tblsahdev_module_logs')) {
+                return;
+            }
+            Capsule::table('tblsahdev_module_logs')->insert([
+                'level' => $level,
+                'source' => $source,
+                'message' => $message,
+                'ticket_id' => $ticketId,
+                'created_at' => \Carbon\Carbon::now(),
+            ]);
+        } catch (\Throwable $e) {
+        }
+    }
+
+    /**
+     * Store rich AI prompt/response debug payloads without premature 2k truncation (up to 60KB MySQL TEXT).
+     */
+    public static function logPayload(string $source, string $message, ?int $ticketId = null): void
+    {
+        $level = 'debug';
+        $source = substr($source, 0, 128);
+        $message = substr($message, 0, self::MAX_PAYLOAD_LEN);
 
         try {
             if (!Capsule::schema()->hasTable('tblsahdev_module_logs')) {
