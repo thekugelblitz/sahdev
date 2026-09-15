@@ -5610,7 +5610,196 @@ function sahdev_render_admin_copilot_drawer(array $vars = []): string
         }
     });
 
-    // Quick chips
+    // Global Quick Jump shortcut (Alt+K / Ctrl+/ / Slash)
+    window.addEventListener('keydown', function(e) {
+        var isAltK = (e.altKey && (e.key === 'k' || e.key === 'K' || e.code === 'KeyK'));
+        var isCtrlSlash = ((e.ctrlKey || e.metaKey) && (e.key === '/' || e.code === 'Slash'));
+        var isCtrlK = ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K' || e.code === 'KeyK'));
+        var targetTag = e.target ? (e.target.tagName || '').toLowerCase() : '';
+        var isInputFocused = (targetTag === 'input' || targetTag === 'textarea' || targetTag === 'select' || (e.target && e.target.isContentEditable));
+        var isSlashOnly = (!e.ctrlKey && !e.altKey && !e.metaKey && e.key === '/' && !isInputFocused);
+
+        if (isAltK || isCtrlSlash || isCtrlK || isSlashOnly) {
+            if (typeof window.sahdevOpenQuickJump === 'function') {
+                e.preventDefault();
+                window.sahdevOpenQuickJump();
+            } else if (typeof sahdevInitGlobalQuickJump === 'function') {
+                e.preventDefault();
+                sahdevInitGlobalQuickJump();
+            }
+        }
+    });
+
+    function sahdevInitGlobalQuickJump() {
+        var existingOverlay = document.getElementById('sahdevQuickJumpOverlay');
+        if (existingOverlay) {
+            if (typeof window.sahdevOpenQuickJump === 'function') {
+                window.sahdevOpenQuickJump();
+            } else {
+                existingOverlay.style.display = 'flex';
+                var inp = document.getElementById('sahdevQuickJumpInput');
+                if (inp) setTimeout(function() { inp.focus(); }, 50);
+            }
+            return;
+        }
+
+        var baseMod = 'addonmodules.php?module=sahdev';
+        var items = [
+            { id: 'client_chat', category: 'Live Chat', label: 'Client Live Chat Hub', icon: 'fas fa-comments', url: baseMod + '&action=client_chat', desc: 'Autonomous client chat, customizer & prompt library' },
+            { id: 'sessions', category: 'Live Chat', label: 'Chat Sessions & Live History', icon: 'fas fa-history', url: baseMod + '&action=client_chat&tab=sessions', desc: 'Live monitoring, staff takeover & transcripts' },
+            { id: 'limits', category: 'Live Chat', label: 'Chat Quotas & Abuse Limits', icon: 'fas fa-shield-alt', url: baseMod + '&action=client_chat&tab=limits', desc: 'Guest & client limits, token protection' },
+            { id: 'customizer', category: 'Live Chat', label: 'Chat Widget Customizer', icon: 'fas fa-palette', url: baseMod + '&action=client_chat&tab=customizer', desc: 'Styling, layout, welcome message & colors' },
+            { id: 'ticket_reply', category: 'Ticketing', label: 'Ticket AI Assistant', icon: 'fas fa-ticket-alt', url: baseMod + '&action=ticket_reply', desc: 'Smart ticket drafting, suggestions & triage' },
+            { id: 'kb_generator', category: 'Knowledge', label: 'KB Article Generator', icon: 'fas fa-book', url: baseMod + '&action=kb_generator', desc: 'Generate and publish KB articles using AI' },
+            { id: 'copilot', category: 'Operations', label: 'Ops Copilot & BI Console', icon: 'fas fa-robot', url: baseMod + '&action=copilot', desc: 'Interactive ops dispatcher & system telemetry' },
+            { id: 'email_composer', category: 'Communication', label: 'Email AI Composer', icon: 'fas fa-envelope', url: baseMod + '&action=email_composer', desc: 'Marketing, billing and announcement drafts' },
+            { id: 'product_catalog', category: 'Commerce', label: 'Product & Domain Catalog', icon: 'fas fa-shopping-cart', url: baseMod + '&action=product_catalog', desc: 'Catalog grounding for autonomous sales' },
+            { id: 'providers', category: 'Settings', label: 'AI Providers & Models', icon: 'fas fa-microchip', url: baseMod + '&action=providers', desc: 'Configure OpenAI, Anthropic, Gemini gateways' },
+            { id: 'permissions', category: 'Settings', label: 'Role Permissions & Access', icon: 'fas fa-user-shield', url: baseMod + '&action=permissions', desc: 'Admin group role-based permissions' },
+            { id: 'settings', category: 'Settings', label: 'General AI Settings', icon: 'fas fa-cog', url: baseMod, desc: 'Global feature switches, default models' },
+            { id: 'module_logs', category: 'Logs', label: 'Audit & Activity Logs', icon: 'fas fa-clipboard-list', url: baseMod + '&action=module_logs', desc: 'Complete audit trail of all AI operations' },
+            { id: 'logs_maintenance', category: 'Maintenance', label: 'Logs & Table Maintenance', icon: 'fas fa-database', url: baseMod + '&action=logs_maintenance', desc: 'Cleanups, table optimization & archiving' }
+        ];
+
+        var styleEl = document.createElement('style');
+        styleEl.id = 'sahdevGlobalQjStyles';
+        styleEl.textContent = [
+            '.sahdev-qj-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15, 23, 42, 0.55); backdrop-filter: blur(4px); z-index: 100000; display: flex; align-items: flex-start; justify-content: center; padding-top: 12vh; }',
+            '.sahdev-qj-modal { width: 100%; max-width: 560px; background: #ffffff; border-radius: 12px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); border: 1px solid #cbd5e1; overflow: hidden; display: flex; flex-direction: column; animation: sahdevQjSlide 0.15s ease-out; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }',
+            '@keyframes sahdevQjSlide { from { opacity: 0; transform: translateY(-10px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }',
+            '.sahdev-qj-header { display: flex; align-items: center; padding: 14px 16px; border-bottom: 1px solid #e2e8f0; gap: 10px; }',
+            '.sahdev-qj-search-input { flex: 1; border: none; outline: none; font-size: 15px; color: #0f172a; background: transparent; }',
+            '.sahdev-qj-close { background: transparent; border: none; cursor: pointer; color: #94a3b8; font-size: 18px; padding: 4px; line-height: 1; }',
+            '.sahdev-qj-close:hover { color: #0f172a; }',
+            '.sahdev-qj-body { max-height: 380px; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 4px; }',
+            '.sahdev-qj-item { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-radius: 8px; text-decoration: none !important; color: #1e293b; transition: all 0.1s ease; border: 1px solid transparent; }',
+            '.sahdev-qj-item:hover, .sahdev-qj-item.selected { background: #f1f5f9; border-color: #cbd5e1; color: #0f172a; }',
+            '.sahdev-qj-item-left { display: flex; align-items: center; gap: 12px; }',
+            '.sahdev-qj-item-icon { width: 34px; height: 34px; border-radius: 8px; background: #e2e8f0; display: flex; align-items: center; justify-content: center; font-size: 14px; color: #475569; }',
+            '.sahdev-qj-item.selected .sahdev-qj-item-icon, .sahdev-qj-item:hover .sahdev-qj-item-icon { background: #0d6efd; color: #ffffff; }',
+            '.sahdev-qj-item-info { display: flex; flex-direction: column; }',
+            '.sahdev-qj-item-title { font-size: 13px; font-weight: 600; color: #1e293b; }',
+            '.sahdev-qj-item-desc { font-size: 11px; color: #64748b; }',
+            '.sahdev-qj-item-badge { font-size: 10px; font-weight: 700; text-transform: uppercase; padding: 2px 7px; border-radius: 9999px; background: #e2e8f0; color: #475569; }',
+            '.sahdev-qj-footer { padding: 8px 16px; background: #f8fafc; border-top: 1px solid #e2e8f0; font-size: 11px; color: #64748b; display: flex; align-items: center; justify-content: space-between; }'
+        ].join('\n');
+        document.head.appendChild(styleEl);
+
+        var overlay = document.createElement('div');
+        overlay.className = 'sahdev-qj-overlay';
+        overlay.id = 'sahdevQuickJumpOverlay';
+        overlay.innerHTML = [
+            '<div class="sahdev-qj-modal">',
+            '  <div class="sahdev-qj-header">',
+            '    <i class="fas fa-search" style="color: #64748b;"></i>',
+            '    <input type="text" id="sahdevQuickJumpInput" class="sahdev-qj-search-input" placeholder="Jump to any AI tool or setting... (Type or use ↑↓)" autocomplete="off">',
+            '    <button type="button" class="sahdev-qj-close" id="sahdevQuickJumpClose" title="Close (Esc)">&times;</button>',
+            '  </div>',
+            '  <div class="sahdev-qj-body" id="sahdevQuickJumpResults"></div>',
+            '  <div class="sahdev-qj-footer">',
+            '    <span>Navigation: <kbd style="padding:1px 4px;background:#e2e8f0;border-radius:3px;">↑</kbd> <kbd style="padding:1px 4px;background:#e2e8f0;border-radius:3px;">↓</kbd> select, <kbd style="padding:1px 4px;background:#e2e8f0;border-radius:3px;">Enter</kbd> jump</span>',
+            '    <span>Shortcuts: <kbd style="padding:1px 4px;background:#e2e8f0;border-radius:3px;">Alt+K</kbd> / <kbd style="padding:1px 4px;background:#e2e8f0;border-radius:3px;">Ctrl+/</kbd> &bull; <kbd style="padding:1px 4px;background:#e2e8f0;border-radius:3px;">Esc</kbd> exit</span>',
+            '  </div>',
+            '</div>'
+        ].join('');
+        document.body.appendChild(overlay);
+
+        var input = document.getElementById('sahdevQuickJumpInput');
+        var results = document.getElementById('sahdevQuickJumpResults');
+        var closeBtn = document.getElementById('sahdevQuickJumpClose');
+        var selectedIdx = 0;
+        var filtered = items;
+
+        function renderResults(list) {
+            filtered = list;
+            results.innerHTML = '';
+            if (!list || list.length === 0) {
+                results.innerHTML = '<div style="padding: 24px; text-align: center; color: #94a3b8; font-size: 13px;"><i class="fas fa-search" style="font-size: 20px; margin-bottom: 8px; display:block;"></i>No tools or settings found matching your search.</div>';
+                return;
+            }
+            list.forEach(function(item, idx) {
+                var a = document.createElement('a');
+                a.href = item.url;
+                a.className = 'sahdev-qj-item' + (idx === selectedIdx ? ' selected' : '');
+                a.innerHTML = '<div class="sahdev-qj-item-left">' +
+                    '<div class="sahdev-qj-item-icon"><i class="' + item.icon + '"></i></div>' +
+                    '<div class="sahdev-qj-item-info">' +
+                        '<span class="sahdev-qj-item-title">' + item.label + '</span>' +
+                        '<span class="sahdev-qj-item-desc">' + item.desc + '</span>' +
+                    '</div>' +
+                '</div>' +
+                '<span class="sahdev-qj-item-badge">' + item.category + '</span>';
+                results.appendChild(a);
+            });
+        }
+
+        function openModal() {
+            overlay.style.display = 'flex';
+            input.value = '';
+            selectedIdx = 0;
+            renderResults(items);
+            setTimeout(function() { input.focus(); }, 50);
+        }
+
+        function closeModal() {
+            overlay.style.display = 'none';
+        }
+
+        window.sahdevOpenQuickJump = openModal;
+        window.sahdevCloseQuickJump = closeModal;
+
+        closeBtn.addEventListener('click', closeModal);
+        overlay.addEventListener('click', function(e) {
+            if (e.target === overlay) closeModal();
+        });
+
+        input.addEventListener('input', function() {
+            var q = this.value.toLowerCase().trim();
+            selectedIdx = 0;
+            if (!q) {
+                renderResults(items);
+                return;
+            }
+            var matched = items.filter(function(it) {
+                return it.label.toLowerCase().indexOf(q) !== -1 ||
+                       it.desc.toLowerCase().indexOf(q) !== -1 ||
+                       it.category.toLowerCase().indexOf(q) !== -1 ||
+                       it.id.toLowerCase().indexOf(q) !== -1;
+            });
+            renderResults(matched);
+        });
+
+        document.addEventListener('keydown', function(e) {
+            if (overlay.style.display === 'flex') {
+                if (e.key === 'Escape') {
+                    closeModal();
+                } else if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    if (filtered.length > 0) {
+                        selectedIdx = (selectedIdx + 1) % filtered.length;
+                        renderResults(filtered);
+                        var el = results.querySelectorAll('.sahdev-qj-item')[selectedIdx];
+                        if (el) el.scrollIntoView({ block: 'nearest' });
+                    }
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    if (filtered.length > 0) {
+                        selectedIdx = (selectedIdx - 1 + filtered.length) % filtered.length;
+                        renderResults(filtered);
+                        var el = results.querySelectorAll('.sahdev-qj-item')[selectedIdx];
+                        if (el) el.scrollIntoView({ block: 'nearest' });
+                    }
+                } else if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (filtered[selectedIdx]) {
+                        window.location.href = filtered[selectedIdx].url;
+                    }
+                }
+            }
+        });
+
+        openModal();
+    }
     document.querySelectorAll('.sdv-chip').forEach(function(chip) {
         chip.addEventListener('click', function() {
             var prompt = this.getAttribute('data-prompt');

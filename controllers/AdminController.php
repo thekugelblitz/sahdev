@@ -1082,9 +1082,9 @@ class AdminController
         }
         $html .= '</nav>';
 
-        // Actions: Quick Jump (Ctrl+K) + Copilot Drawer shortcut
+        // Actions: Quick Jump (Alt+K / Ctrl+/) + Copilot Drawer shortcut
         $html .= '<div class="sahdev-nav-actions">';
-        $html .= '<button type="button" class="sahdev-quick-jump-trigger" id="sahdevQuickJumpTrigger" title="Quick Jump (Ctrl+K)"><i class="fas fa-search"></i> <span>Quick Jump</span> <kbd>Ctrl+K</kbd></button>';
+        $html .= '<button type="button" class="sahdev-quick-jump-trigger" id="sahdevQuickJumpTrigger" title="Quick Jump (Alt+K or Ctrl+/)"><i class="fas fa-search"></i> <span>Quick Jump</span> <kbd>Alt+K</kbd></button>';
         if ($hasCopilotPerm) {
             $html .= '<button type="button" class="sahdev-copilot-quick-btn" onclick="if(typeof sahdevToggleAdminCopilot===\'function\'){sahdevToggleAdminCopilot(event);}" title="Toggle AI Operations Copilot"><i class="fas fa-robot"></i> <span>Copilot</span></button>';
         }
@@ -1121,8 +1121,8 @@ class AdminController
         $html .= '</div>';
         $html .= '<div class="sahdev-qj-body" id="sahdevQuickJumpResults"></div>';
         $html .= '<div class="sahdev-qj-footer">';
-        $html .= '<span>Navigation: <kbd style="padding:1px 4px;background:#e2e8f0;border-radius:3px;">↑</kbd> <kbd style="padding:1px 4px;background:#e2e8f0;border-radius:3px;">↓</kbd> to select, <kbd style="padding:1px 4px;background:#e2e8f0;border-radius:3px;">Enter</kbd> to jump</span>';
-        $html .= '<span><kbd style="padding:1px 4px;background:#e2e8f0;border-radius:3px;">Esc</kbd> to exit</span>';
+        $html .= '<span>Navigation: <kbd style="padding:1px 4px;background:#e2e8f0;border-radius:3px;">↑</kbd> <kbd style="padding:1px 4px;background:#e2e8f0;border-radius:3px;">↓</kbd> select, <kbd style="padding:1px 4px;background:#e2e8f0;border-radius:3px;">Enter</kbd> jump</span>';
+        $html .= '<span>Shortcuts: <kbd style="padding:1px 4px;background:#e2e8f0;border-radius:3px;">Alt+K</kbd> / <kbd style="padding:1px 4px;background:#e2e8f0;border-radius:3px;">Ctrl+/</kbd> &bull; <kbd style="padding:1px 4px;background:#e2e8f0;border-radius:3px;">Esc</kbd> exit</span>';
         $html .= '</div>';
         $html .= '</div>';
         $html .= '</div>';
@@ -1177,6 +1177,9 @@ class AdminController
                 overlay.style.display = "none";
             }
 
+            window.sahdevOpenQuickJump = openModal;
+            window.sahdevCloseQuickJump = closeModal;
+
             if (trigger) trigger.addEventListener("click", openModal);
             if (closeBtn) closeBtn.addEventListener("click", closeModal);
             if (overlay) {
@@ -1186,7 +1189,14 @@ class AdminController
             }
 
             document.addEventListener("keydown", function(e) {
-                if ((e.ctrlKey || e.metaKey) && (e.key === "k" || e.key === "K")) {
+                var isAltK = (e.altKey && (e.key === "k" || e.key === "K" || e.code === "KeyK"));
+                var isCtrlSlash = ((e.ctrlKey || e.metaKey) && (e.key === "/" || e.code === "Slash"));
+                var isCtrlK = ((e.ctrlKey || e.metaKey) && (e.key === "k" || e.key === "K" || e.code === "KeyK"));
+                var targetTag = e.target ? (e.target.tagName || "").toLowerCase() : "";
+                var isInputFocused = (targetTag === "input" || targetTag === "textarea" || targetTag === "select" || (e.target && e.target.isContentEditable));
+                var isSlashOnly = (!e.ctrlKey && !e.altKey && !e.metaKey && e.key === "/" && !isInputFocused);
+
+                if (isAltK || isCtrlSlash || isCtrlK || isSlashOnly) {
                     e.preventDefault();
                     if (overlay && overlay.style.display === "flex") {
                         closeModal();
@@ -8839,7 +8849,7 @@ class AdminController
                 $currentTab = 'prompts';
             }
 
-            // 5. Close Session Action
+            // 5. Chat Session Lifecycle & Staff Takeover Actions
             if (isset($_POST['close_chat_session'])) {
                 $closeSessionId = (int)($_POST['session_id'] ?? 0);
                 if ($closeSessionId > 0) {
@@ -8849,6 +8859,119 @@ class AdminController
                     ]);
                     $successMessage = "Chat session #{$closeSessionId} marked as closed.";
                 }
+                $currentTab = 'sessions';
+            }
+
+            if (isset($_POST['reopen_chat_session'])) {
+                $reopenSessionId = (int)($_POST['session_id'] ?? 0);
+                if ($reopenSessionId > 0) {
+                    Capsule::table('tblsahdev_chat_sessions')->where('id', $reopenSessionId)->update([
+                        'status'     => 'active',
+                        'updated_at' => \Carbon\Carbon::now(),
+                    ]);
+                    $successMessage = "Chat session #{$reopenSessionId} reopened as active.";
+                }
+                $currentTab = 'sessions';
+            }
+
+            if (isset($_POST['takeover_chat_session'])) {
+                $takeoverSessionId = (int)($_POST['session_id'] ?? 0);
+                $currentAdminId = (int)($_SESSION['adminid'] ?? 0);
+                $adminName = 'Staff Member';
+                if ($currentAdminId > 0) {
+                    $adm = Capsule::table('tbladmins')->where('id', $currentAdminId)->first(['firstname', 'lastname']);
+                    if ($adm) {
+                        $adminName = trim($adm->firstname . ' ' . $adm->lastname);
+                    }
+                }
+                if ($takeoverSessionId > 0) {
+                    Capsule::table('tblsahdev_chat_sessions')->where('id', $takeoverSessionId)->update([
+                        'status'            => 'taken_over',
+                        'assigned_admin_id' => $currentAdminId,
+                        'updated_at'        => \Carbon\Carbon::now(),
+                    ]);
+                    Capsule::table('tblsahdev_chat_messages')->insert([
+                        'session_id'   => $takeoverSessionId,
+                        'sender_type'  => 'system',
+                        'sender_id'    => $currentAdminId,
+                        'sender_name'  => 'System',
+                        'message_text' => "Staff member {$adminName} joined the chat. Autonomous AI replies are paused.",
+                        'created_at'   => \Carbon\Carbon::now(),
+                    ]);
+                    $successMessage = "You have taken over chat session #{$takeoverSessionId}. AI auto-replies are paused.";
+                }
+                $currentTab = 'sessions';
+            }
+
+            if (isset($_POST['release_takeover_session'])) {
+                $releaseSessionId = (int)($_POST['session_id'] ?? 0);
+                if ($releaseSessionId > 0) {
+                    Capsule::table('tblsahdev_chat_sessions')->where('id', $releaseSessionId)->update([
+                        'status'            => 'active',
+                        'assigned_admin_id' => 0,
+                        'updated_at'        => \Carbon\Carbon::now(),
+                    ]);
+                    Capsule::table('tblsahdev_chat_messages')->insert([
+                        'session_id'   => $releaseSessionId,
+                        'sender_type'  => 'system',
+                        'sender_id'    => 0,
+                        'sender_name'  => 'System',
+                        'message_text' => "Staff member released the chat. Autonomous AI Assistant is active.",
+                        'created_at'   => \Carbon\Carbon::now(),
+                    ]);
+                    $successMessage = "Chat session #{$releaseSessionId} released back to AI Assistant.";
+                }
+                $currentTab = 'sessions';
+            }
+
+            if (isset($_POST['send_staff_message'])) {
+                $staffSessionId = (int)($_POST['session_id'] ?? 0);
+                $staffMsgText = trim((string)($_POST['staff_message'] ?? ''));
+                $currentAdminId = (int)($_SESSION['adminid'] ?? 0);
+                $adminName = 'Staff Member';
+                if ($currentAdminId > 0) {
+                    $adm = Capsule::table('tbladmins')->where('id', $currentAdminId)->first(['firstname', 'lastname']);
+                    if ($adm) {
+                        $adminName = trim($adm->firstname . ' ' . $adm->lastname);
+                    }
+                }
+                if ($staffSessionId > 0 && !empty($staffMsgText)) {
+                    Capsule::table('tblsahdev_chat_messages')->insert([
+                        'session_id'   => $staffSessionId,
+                        'sender_type'  => 'staff',
+                        'sender_id'    => $currentAdminId,
+                        'sender_name'  => $adminName,
+                        'message_text' => $staffMsgText,
+                        'created_at'   => \Carbon\Carbon::now(),
+                    ]);
+                    Capsule::table('tblsahdev_chat_sessions')->where('id', $staffSessionId)->update([
+                        'status'            => 'taken_over',
+                        'assigned_admin_id' => $currentAdminId,
+                        'last_message_at'   => \Carbon\Carbon::now(),
+                        'updated_at'        => \Carbon\Carbon::now(),
+                    ]);
+                    $successMessage = "Live staff reply sent to customer.";
+                }
+                $currentTab = 'sessions';
+            }
+
+            if (isset($_POST['purge_empty_sessions'])) {
+                $emptySessionIds = Capsule::table('tblsahdev_chat_sessions')
+                    ->where('session_type', 'client_livechat')
+                    ->whereNotExists(function($q) {
+                        $q->select(Capsule::raw(1))
+                          ->from('tblsahdev_chat_messages')
+                          ->whereRaw('tblsahdev_chat_messages.session_id = tblsahdev_chat_sessions.id');
+                    })
+                    ->pluck('id');
+
+                $deletedCount = 0;
+                if (!empty($emptySessionIds)) {
+                    $deletedCount = Capsule::table('tblsahdev_chat_sessions')
+                        ->whereIn('id', $emptySessionIds)
+                        ->delete();
+                }
+                $successMessage = "Purged {$deletedCount} abandoned sessions with 0 messages.";
                 $currentTab = 'sessions';
             }
 
@@ -8888,13 +9011,77 @@ class AdminController
         $csrfToken = generate_token('form');
         $baseActionUrl = htmlspecialchars($this->moduleVars['modulelink']) . '&action=client_chat';
 
-        // Transcript viewer modal data
+        // Export Session Transcript (.txt download)
+        if (!empty($_GET['export_session'])) {
+            $expId = (int)$_GET['export_session'];
+            $expSession = Capsule::table('tblsahdev_chat_sessions')->where('id', $expId)->first();
+            if ($expSession) {
+                $expMessages = Capsule::table('tblsahdev_chat_messages')
+                    ->where('session_id', $expId)
+                    ->orderBy('id', 'asc')
+                    ->get();
+                $clientLabel = 'Guest Visitor';
+                if ($expSession->client_id > 0) {
+                    $cl = Capsule::table('tblclients')->where('id', $expSession->client_id)->first();
+                    if ($cl) {
+                        $clientLabel = "{$cl->firstname} {$cl->lastname} <{$cl->email}> (Client ID #{$cl->id})";
+                    }
+                }
+                $txt = "=======================================================\n";
+                $txt .= " SAHDEV AI CLIENT LIVE CHAT TRANSCRIPT\n";
+                $txt .= " Session ID: #{$expSession->id}\n";
+                $txt .= " UUID: {$expSession->session_uuid}\n";
+                $txt .= " Client: {$clientLabel}\n";
+                $txt .= " Status: {$expSession->status}\n";
+                $txt .= " Started: {$expSession->created_at}\n";
+                $txt .= " Last Active: " . ($expSession->last_message_at ?: 'N/A') . "\n";
+                $txt .= "=======================================================\n\n";
+                foreach ($expMessages as $m) {
+                    $time = \Carbon\Carbon::parse($m->created_at)->format('Y-m-d H:i:s');
+                    $sender = strtoupper($m->sender_type);
+                    $name = $m->sender_name ?: $sender;
+                    $txt .= "[{$time}] [{$name}] ({$sender}):\n";
+                    $txt .= trim($m->message_text) . "\n";
+                    if ($m->rating) {
+                        $ratingStr = ((int)$m->rating === 1) ? 'Positive (Thumbs Up)' : 'Negative (Thumbs Down)';
+                        $txt .= "   [CSAT Rating: {$ratingStr}" . (!empty($m->rating_feedback) ? " - Feedback: \"{$m->rating_feedback}\"" : "") . "]\n";
+                    }
+                    $txt .= "\n";
+                }
+                $txt .= "--- END OF TRANSCRIPT ---\n";
+                while (ob_get_level()) {
+                    ob_end_clean();
+                }
+                header('Content-Type: text/plain; charset=utf-8');
+                header('Content-Disposition: attachment; filename="chat_transcript_session_' . $expId . '_' . date('Ymd_His') . '.txt"');
+                header('Content-Length: ' . strlen($txt));
+                echo $txt;
+                exit;
+            }
+        }
+
+        // Transcript viewer drawer data
         $viewSessionId = (int)($_GET['view_session'] ?? 0);
         $viewSession = null;
+        $viewClient = null;
+        $viewClientServicesCount = 0;
+        $viewClientTicketsCount = 0;
         $viewMessages = [];
         if ($viewSessionId > 0) {
             $viewSession = Capsule::table('tblsahdev_chat_sessions')->where('id', $viewSessionId)->first();
             if ($viewSession) {
+                if ($viewSession->client_id > 0) {
+                    $viewClient = Capsule::table('tblclients')->where('id', $viewSession->client_id)->first();
+                    if ($viewClient) {
+                        $viewClientServicesCount = Capsule::table('tblhosting')
+                            ->where('userid', $viewClient->id)
+                            ->whereIn('domainstatus', ['Active', 'Suspended'])
+                            ->count();
+                        $viewClientTicketsCount = Capsule::table('tbltickets')
+                            ->where('userid', $viewClient->id)
+                            ->count();
+                    }
+                }
                 $viewMessages = Capsule::table('tblsahdev_chat_messages')
                     ->where('session_id', $viewSession->id)
                     ->orderBy('id', 'asc')
@@ -8905,6 +9092,7 @@ class AdminController
         // Sessions Statistics
         $totalSessions = Capsule::table('tblsahdev_chat_sessions')->where('session_type', 'client_livechat')->count();
         $activeSessions = Capsule::table('tblsahdev_chat_sessions')->where('session_type', 'client_livechat')->where('status', 'active')->count();
+        $takenOverSessions = Capsule::table('tblsahdev_chat_sessions')->where('session_type', 'client_livechat')->where('status', 'taken_over')->count();
         $escalatedSessions = Capsule::table('tblsahdev_chat_sessions')->where('session_type', 'client_livechat')->where('status', 'escalated_ticket')->count();
         $totalMessages = Capsule::table('tblsahdev_chat_messages')
             ->join('tblsahdev_chat_sessions', 'tblsahdev_chat_messages.session_id', '=', 'tblsahdev_chat_sessions.id')
@@ -8913,12 +9101,106 @@ class AdminController
 
         $csatStats = \Sahdev\Lib\ChatService::getChatCsatStats();
 
-        // Recent Sessions Query
-        $sessionsList = Capsule::table('tblsahdev_chat_sessions')
-            ->where('session_type', 'client_livechat')
-            ->orderBy('id', 'desc')
-            ->limit(50)
-            ->get();
+        // ── SCALABLE QUERY PIPELINE (ZERO N+1, MULTI-FILTER, SERVER-SIDE PAGINATION) ──
+        $searchQ      = trim((string)($_GET['q'] ?? ''));
+        $filterStatus = trim((string)($_GET['status'] ?? ''));
+        $filterUser   = trim((string)($_GET['user_type'] ?? ''));
+        $filterRating = trim((string)($_GET['rating'] ?? ''));
+        $filterDate   = trim((string)($_GET['date_range'] ?? ''));
+        $filterSort   = trim((string)($_GET['sort'] ?? 'newest'));
+        $perPage      = in_array((int)($_GET['limit'] ?? 25), [15, 25, 50, 100], true) ? (int)$_GET['limit'] : 25;
+        $page         = max(1, (int)($_GET['p'] ?? 1));
+
+        $sessionsQuery = Capsule::table('tblsahdev_chat_sessions')
+            ->leftJoin('tblclients', 'tblsahdev_chat_sessions.client_id', '=', 'tblclients.id')
+            ->where('tblsahdev_chat_sessions.session_type', 'client_livechat');
+
+        if (!empty($filterStatus) && in_array($filterStatus, ['active', 'taken_over', 'escalated_ticket', 'closed'], true)) {
+            $sessionsQuery->where('tblsahdev_chat_sessions.status', $filterStatus);
+        }
+
+        if ($filterUser === 'client') {
+            $sessionsQuery->where('tblsahdev_chat_sessions.client_id', '>', 0);
+        } elseif ($filterUser === 'guest') {
+            $sessionsQuery->where('tblsahdev_chat_sessions.client_id', 0);
+        }
+
+        if ($filterDate === 'today') {
+            $sessionsQuery->where('tblsahdev_chat_sessions.created_at', '>=', \Carbon\Carbon::today());
+        } elseif ($filterDate === '7d') {
+            $sessionsQuery->where('tblsahdev_chat_sessions.created_at', '>=', \Carbon\Carbon::now()->subDays(7));
+        } elseif ($filterDate === '30d') {
+            $sessionsQuery->where('tblsahdev_chat_sessions.created_at', '>=', \Carbon\Carbon::now()->subDays(30));
+        }
+
+        if (!empty($searchQ)) {
+            $sessionsQuery->where(function($q) use ($searchQ) {
+                $q->where('tblsahdev_chat_sessions.session_uuid', 'like', "%{$searchQ}%")
+                  ->orWhere('tblsahdev_chat_sessions.title', 'like', "%{$searchQ}%")
+                  ->orWhere('tblsahdev_chat_sessions.metadata_json', 'like', "%{$searchQ}%")
+                  ->orWhere('tblclients.firstname', 'like', "%{$searchQ}%")
+                  ->orWhere('tblclients.lastname', 'like', "%{$searchQ}%")
+                  ->orWhere('tblclients.email', 'like', "%{$searchQ}%")
+                  ->orWhere(Capsule::raw("CONCAT(tblclients.firstname, ' ', tblclients.lastname)"), 'like', "%{$searchQ}%");
+                if (is_numeric($searchQ)) {
+                    $q->orWhere('tblsahdev_chat_sessions.id', (int)$searchQ)
+                      ->orWhere('tblsahdev_chat_sessions.client_id', (int)$searchQ);
+                }
+            });
+        }
+
+        if ($filterRating === '1') {
+            $sessionsQuery->whereExists(function ($sub) {
+                $sub->select(Capsule::raw(1))
+                    ->from('tblsahdev_chat_messages')
+                    ->whereRaw('tblsahdev_chat_messages.session_id = tblsahdev_chat_sessions.id')
+                    ->where('tblsahdev_chat_messages.rating', 1);
+            });
+        } elseif ($filterRating === '-1') {
+            $sessionsQuery->whereExists(function ($sub) {
+                $sub->select(Capsule::raw(1))
+                    ->from('tblsahdev_chat_messages')
+                    ->whereRaw('tblsahdev_chat_messages.session_id = tblsahdev_chat_sessions.id')
+                    ->where('tblsahdev_chat_messages.rating', -1);
+            });
+        } elseif ($filterRating === 'unrated') {
+            $sessionsQuery->whereNotExists(function ($sub) {
+                $sub->select(Capsule::raw(1))
+                    ->from('tblsahdev_chat_messages')
+                    ->whereRaw('tblsahdev_chat_messages.session_id = tblsahdev_chat_sessions.id')
+                    ->whereNotNull('tblsahdev_chat_messages.rating');
+            });
+        }
+
+        $totalFilteredSessions = $sessionsQuery->count();
+        $totalPages = max(1, (int)ceil($totalFilteredSessions / $perPage));
+        if ($page > $totalPages) {
+            $page = $totalPages;
+        }
+        $offset = ($page - 1) * $perPage;
+
+        $sessionsQuery->select([
+            'tblsahdev_chat_sessions.*',
+            'tblclients.firstname as client_firstname',
+            'tblclients.lastname as client_lastname',
+            'tblclients.email as client_email',
+            'tblclients.companyname as client_company',
+            Capsule::raw('(SELECT COUNT(*) FROM tblsahdev_chat_messages WHERE tblsahdev_chat_messages.session_id = tblsahdev_chat_sessions.id) as message_count'),
+            Capsule::raw('(SELECT message_text FROM tblsahdev_chat_messages WHERE tblsahdev_chat_messages.session_id = tblsahdev_chat_sessions.id ORDER BY id DESC LIMIT 1) as last_message_preview'),
+            Capsule::raw('(SELECT rating FROM tblsahdev_chat_messages WHERE tblsahdev_chat_messages.session_id = tblsahdev_chat_sessions.id AND rating IS NOT NULL ORDER BY id DESC LIMIT 1) as latest_rating')
+        ]);
+
+        if ($filterSort === 'oldest') {
+            $sessionsQuery->orderBy('tblsahdev_chat_sessions.id', 'asc');
+        } elseif ($filterSort === 'most_active') {
+            $sessionsQuery->orderBy(Capsule::raw('COALESCE(tblsahdev_chat_sessions.last_message_at, tblsahdev_chat_sessions.created_at)'), 'desc');
+        } elseif ($filterSort === 'most_messages') {
+            $sessionsQuery->orderBy('message_count', 'desc');
+        } else {
+            $sessionsQuery->orderBy('tblsahdev_chat_sessions.id', 'desc');
+        }
+
+        $sessionsList = $sessionsQuery->offset($offset)->limit($perPage)->get();
 
         ob_start();
         ?>
@@ -8965,123 +9247,304 @@ class AdminController
 
             <!-- ── TAB 1: SESSIONS & LIVE HISTORY ──────────────────────────────── -->
             <?php if ($currentTab === 'sessions'): ?>
-                <!-- Metrics Bar -->
+                <!-- Interactive Metrics Bar -->
                 <div class="row" style="margin-bottom: 20px;">
                     <div class="col-md-2" style="width: 20%;">
-                        <div class="panel panel-default" style="border-radius: 8px; border-left: 4px solid #3b82f6;">
-                            <div class="panel-body" style="padding: 15px;">
-                                <div class="text-muted" style="font-size: 11px; text-transform: uppercase;">Total Sessions</div>
-                                <div style="font-size: 22px; font-weight: 700; color: #1e293b;"><?php echo number_format($totalSessions); ?></div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-2" style="width: 20%;">
-                        <div class="panel panel-default" style="border-radius: 8px; border-left: 4px solid #10b981;">
-                            <div class="panel-body" style="padding: 15px;">
-                                <div class="text-muted" style="font-size: 11px; text-transform: uppercase;">Active Chats</div>
-                                <div style="font-size: 22px; font-weight: 700; color: #10b981;"><?php echo number_format($activeSessions); ?></div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-2" style="width: 20%;">
-                        <div class="panel panel-default" style="border-radius: 8px; border-left: 4px solid #f59e0b;">
-                            <div class="panel-body" style="padding: 15px;">
-                                <div class="text-muted" style="font-size: 11px; text-transform: uppercase;">Escalated Tickets</div>
-                                <div style="font-size: 22px; font-weight: 700; color: #d97706;"><?php echo number_format($escalatedSessions); ?></div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-2" style="width: 20%;">
-                        <div class="panel panel-default" style="border-radius: 8px; border-left: 4px solid #6366f1;">
-                            <div class="panel-body" style="padding: 15px;">
-                                <div class="text-muted" style="font-size: 11px; text-transform: uppercase;">Total Messages</div>
-                                <div style="font-size: 22px; font-weight: 700; color: #4338ca;"><?php echo number_format($totalMessages); ?></div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-2" style="width: 20%;">
-                        <div class="panel panel-default" style="border-radius: 8px; border-left: 4px solid #ec4899;">
-                            <div class="panel-body" style="padding: 15px;">
-                                <div class="text-muted" style="font-size: 11px; text-transform: uppercase;">AI CSAT Quality</div>
-                                <div style="font-size: 22px; font-weight: 700; color: #be185d;">
-                                    <?php if (!empty($csatStats['total_ratings'])): ?>
-                                        <?php echo $csatStats['csat_percent']; ?>% <span style="font-size: 12px; font-weight: normal; color: #64748b;">(<?php echo $csatStats['positive_ratings']; ?> 👍 / <?php echo $csatStats['negative_ratings']; ?> 👎)</span>
-                                    <?php else: ?>
-                                        <span style="font-size: 15px; font-weight: 500; color: #94a3b8;">No ratings yet</span>
-                                    <?php endif; ?>
+                        <a href="<?php echo $baseActionUrl; ?>&tab=sessions" style="text-decoration: none; color: inherit; display: block;">
+                            <div class="panel panel-default" style="border-radius: 8px; border-left: 4px solid #3b82f6; transition: transform 0.15s ease;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='translateY(0)'">
+                                <div class="panel-body" style="padding: 15px;">
+                                    <div class="text-muted" style="font-size: 11px; text-transform: uppercase; font-weight: 700;">Total Sessions</div>
+                                    <div style="font-size: 22px; font-weight: 700; color: #1e293b;"><?php echo number_format($totalSessions); ?></div>
+                                    <small class="text-muted" style="font-size: 10.5px;">All channels</small>
                                 </div>
                             </div>
-                        </div>
+                        </a>
+                    </div>
+                    <div class="col-md-2" style="width: 20%;">
+                        <a href="<?php echo $baseActionUrl; ?>&tab=sessions&status=active" style="text-decoration: none; color: inherit; display: block;">
+                            <div class="panel panel-default" style="border-radius: 8px; border-left: 4px solid #10b981; transition: transform 0.15s ease;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='translateY(0)'">
+                                <div class="panel-body" style="padding: 15px;">
+                                    <div class="text-muted" style="font-size: 11px; text-transform: uppercase; font-weight: 700;">Active AI Chats</div>
+                                    <div style="font-size: 22px; font-weight: 700; color: #10b981;"><?php echo number_format($activeSessions); ?></div>
+                                    <small class="text-success" style="font-size: 10.5px;"><i class="fas fa-circle" style="font-size: 7px;"></i> Autonomous live</small>
+                                </div>
+                            </div>
+                        </a>
+                    </div>
+                    <div class="col-md-2" style="width: 20%;">
+                        <a href="<?php echo $baseActionUrl; ?>&tab=sessions&status=taken_over" style="text-decoration: none; color: inherit; display: block;">
+                            <div class="panel panel-default" style="border-radius: 8px; border-left: 4px solid #8b5cf6; transition: transform 0.15s ease;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='translateY(0)'">
+                                <div class="panel-body" style="padding: 15px;">
+                                    <div class="text-muted" style="font-size: 11px; text-transform: uppercase; font-weight: 700;">Staff Takeovers</div>
+                                    <div style="font-size: 22px; font-weight: 700; color: #7c3aed;"><?php echo number_format($takenOverSessions); ?></div>
+                                    <small class="text-muted" style="font-size: 10.5px;"><i class="fas fa-user-shield"></i> Handled by humans</small>
+                                </div>
+                            </div>
+                        </a>
+                    </div>
+                    <div class="col-md-2" style="width: 20%;">
+                        <a href="<?php echo $baseActionUrl; ?>&tab=sessions&status=escalated_ticket" style="text-decoration: none; color: inherit; display: block;">
+                            <div class="panel panel-default" style="border-radius: 8px; border-left: 4px solid #f59e0b; transition: transform 0.15s ease;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='translateY(0)'">
+                                <div class="panel-body" style="padding: 15px;">
+                                    <div class="text-muted" style="font-size: 11px; text-transform: uppercase; font-weight: 700;">Escalated Tickets</div>
+                                    <div style="font-size: 22px; font-weight: 700; color: #d97706;"><?php echo number_format($escalatedSessions); ?></div>
+                                    <small class="text-warning" style="font-size: 10.5px;"><i class="fas fa-ticket-alt"></i> Created in WHMCS</small>
+                                </div>
+                            </div>
+                        </a>
+                    </div>
+                    <div class="col-md-2" style="width: 20%;">
+                        <a href="<?php echo $baseActionUrl; ?>&tab=sessions&rating=1" style="text-decoration: none; color: inherit; display: block;">
+                            <div class="panel panel-default" style="border-radius: 8px; border-left: 4px solid #ec4899; transition: transform 0.15s ease;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='translateY(0)'">
+                                <div class="panel-body" style="padding: 15px;">
+                                    <div class="text-muted" style="font-size: 11px; text-transform: uppercase; font-weight: 700;">AI CSAT Quality</div>
+                                    <div style="font-size: 22px; font-weight: 700; color: #be185d;">
+                                        <?php if (!empty($csatStats['total_ratings'])): ?>
+                                            <?php echo $csatStats['csat_percent']; ?>% <span style="font-size: 12px; font-weight: normal; color: #64748b;">(<?php echo $csatStats['positive_ratings']; ?> 👍 / <?php echo $csatStats['negative_ratings']; ?> 👎)</span>
+                                        <?php else: ?>
+                                            <span style="font-size: 14px; font-weight: 500; color: #94a3b8;">No ratings yet</span>
+                                        <?php endif; ?>
+                                    </div>
+                                    <small class="text-muted" style="font-size: 10.5px;">Click to filter positive</small>
+                                </div>
+                            </div>
+                        </a>
                     </div>
                 </div>
 
-                <!-- Sessions Table -->
+                <!-- Comprehensive Search & Multi-Attribute Filters Toolbar -->
+                <div class="panel panel-default" style="border-radius: 8px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
+                    <div class="panel-body" style="padding: 14px 18px; background: #fbfcfe;">
+                        <form method="get" action="addonmodules.php" class="form-inline" style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between;">
+                            <input type="hidden" name="module" value="sahdev">
+                            <input type="hidden" name="action" value="client_chat">
+                            <input type="hidden" name="tab" value="sessions">
+
+                            <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center; flex: 1;">
+                                <!-- Search Input -->
+                                <div class="input-group" style="min-width: 260px;">
+                                    <span class="input-group-addon" style="background: #fff;"><i class="fas fa-search text-muted"></i></span>
+                                    <input type="text" name="q" class="form-control" placeholder="Search name, email, IP, UUID, message..." value="<?php echo htmlspecialchars($searchQ); ?>">
+                                </div>
+
+                                <!-- Status Filter -->
+                                <select name="status" class="form-control" onchange="this.form.submit();">
+                                    <option value="">All Statuses</option>
+                                    <option value="active" <?php echo $filterStatus === 'active' ? 'selected' : ''; ?>>🟢 Active Chats</option>
+                                    <option value="taken_over" <?php echo $filterStatus === 'taken_over' ? 'selected' : ''; ?>>🟣 Staff Taken Over</option>
+                                    <option value="escalated_ticket" <?php echo $filterStatus === 'escalated_ticket' ? 'selected' : ''; ?>>🟠 Ticket Opened</option>
+                                    <option value="closed" <?php echo $filterStatus === 'closed' ? 'selected' : ''; ?>>⚪ Closed</option>
+                                </select>
+
+                                <!-- User Type Filter -->
+                                <select name="user_type" class="form-control" onchange="this.form.submit();">
+                                    <option value="">All Visitors</option>
+                                    <option value="client" <?php echo $filterUser === 'client' ? 'selected' : ''; ?>>👤 Logged-in Clients</option>
+                                    <option value="guest" <?php echo $filterUser === 'guest' ? 'selected' : ''; ?>>🌐 Guest Visitors</option>
+                                </select>
+
+                                <!-- CSAT Rating Filter -->
+                                <select name="rating" class="form-control" onchange="this.form.submit();">
+                                    <option value="">All CSAT</option>
+                                    <option value="1" <?php echo $filterRating === '1' ? 'selected' : ''; ?>>👍 Rated Helpful</option>
+                                    <option value="-1" <?php echo $filterRating === '-1' ? 'selected' : ''; ?>>👎 Rated Unhelpful</option>
+                                    <option value="unrated" <?php echo $filterRating === 'unrated' ? 'selected' : ''; ?>>⚪ Unrated</option>
+                                </select>
+
+                                <!-- Date Range Filter -->
+                                <select name="date_range" class="form-control" onchange="this.form.submit();">
+                                    <option value="">All Time</option>
+                                    <option value="today" <?php echo $filterDate === 'today' ? 'selected' : ''; ?>>📅 Today</option>
+                                    <option value="7d" <?php echo $filterDate === '7d' ? 'selected' : ''; ?>>📅 Last 7 Days</option>
+                                    <option value="30d" <?php echo $filterDate === '30d' ? 'selected' : ''; ?>>📅 Last 30 Days</option>
+                                </select>
+
+                                <!-- Sort Filter -->
+                                <select name="sort" class="form-control" onchange="this.form.submit();">
+                                    <option value="newest" <?php echo $filterSort === 'newest' ? 'selected' : ''; ?>>Sort: Newest First</option>
+                                    <option value="most_active" <?php echo $filterSort === 'most_active' ? 'selected' : ''; ?>>Sort: Most Active</option>
+                                    <option value="most_messages" <?php echo $filterSort === 'most_messages' ? 'selected' : ''; ?>>Sort: Most Messages</option>
+                                    <option value="oldest" <?php echo $filterSort === 'oldest' ? 'selected' : ''; ?>>Sort: Oldest First</option>
+                                </select>
+
+                                <!-- Per Page Limit -->
+                                <select name="limit" class="form-control" onchange="this.form.submit();" title="Page size">
+                                    <option value="15" <?php echo $perPage === 15 ? 'selected' : ''; ?>>15 / page</option>
+                                    <option value="25" <?php echo $perPage === 25 ? 'selected' : ''; ?>>25 / page</option>
+                                    <option value="50" <?php echo $perPage === 50 ? 'selected' : ''; ?>>50 / page</option>
+                                    <option value="100" <?php echo $perPage === 100 ? 'selected' : ''; ?>>100 / page</option>
+                                </select>
+
+                                <button type="submit" class="btn btn-primary"><i class="fas fa-filter"></i> Apply</button>
+
+                                <?php if (!empty($searchQ) || !empty($filterStatus) || !empty($filterUser) || !empty($filterRating) || !empty($filterDate) || $filterSort !== 'newest'): ?>
+                                    <a href="<?php echo $baseActionUrl; ?>&tab=sessions" class="btn btn-default text-danger" title="Clear all filters"><i class="fas fa-times"></i> Reset</a>
+                                <?php endif; ?>
+                            </div>
+
+                            <div style="display: flex; gap: 8px; align-items: center;">
+                                <!-- Live Auto-Refresh Toggle -->
+                                <button type="button" id="sdv-autorefresh-btn" class="btn btn-default btn-sm" style="font-weight: 600;" onclick="toggleAutoRefresh();">
+                                    <i class="fas fa-sync-alt" id="sdv-refresh-icon"></i> <span id="sdv-refresh-label">Live Monitor (30s)</span>
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Sessions Table Panel -->
                 <div class="panel panel-default" style="border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
                     <div class="panel-heading" style="background: #fff; padding: 14px 20px; display: flex; justify-content: space-between; align-items: center;">
-                        <strong style="font-size: 15px;"><i class="fas fa-list"></i> Customer Live Chat Conversations</strong>
-                        <span class="text-muted" style="font-size: 12px;">Showing recent 50 sessions</span>
+                        <div>
+                            <strong style="font-size: 15px;"><i class="fas fa-list"></i> Customer Live Chat Conversations</strong>
+                            <span class="text-muted" style="font-size: 12px; margin-left: 8px;">
+                                Showing <?php echo $totalFilteredSessions > 0 ? ($offset + 1) : 0; ?> to <?php echo min($offset + $perPage, $totalFilteredSessions); ?> of <?php echo number_format($totalFilteredSessions); ?> sessions
+                            </span>
+                        </div>
+                        <div style="display: flex; gap: 8px; align-items: center;">
+                            <!-- Purge Empty Abandoned Sessions Form -->
+                            <form method="post" action="<?php echo $baseActionUrl; ?>&tab=sessions" style="margin: 0;" onsubmit="return confirm('Purge all abandoned visitor sessions that have 0 messages? This will optimize database storage without touching real chats.');">
+                                <?php echo $csrfToken; ?>
+                                <input type="hidden" name="purge_empty_sessions" value="1">
+                                <button type="submit" class="btn btn-default btn-xs text-muted" title="Clean abandoned visitor sessions with 0 messages">
+                                    <i class="fas fa-broom"></i> Clean 0-msg Sessions
+                                </button>
+                            </form>
+                        </div>
                     </div>
                     <div class="panel-body" style="padding: 0;">
                         <div class="table-responsive" style="margin-bottom: 0;">
-                            <table class="table table-hover" style="margin-bottom: 0;">
+                            <table class="table table-hover" style="margin-bottom: 0; vertical-align: middle;">
                                 <thead>
-                                    <tr style="background: #f8fafc; font-size: 12px;">
-                                        <th>ID / UUID</th>
-                                        <th>User / Client</th>
-                                        <th>Status</th>
-                                        <th>Messages</th>
-                                        <th>Started</th>
-                                        <th>Last Active</th>
-                                        <th style="text-align: right;">Actions</th>
+                                    <tr style="background: #f8fafc; font-size: 12px; color: #475569;">
+                                        <th style="width: 140px;">ID & Channel</th>
+                                        <th style="min-width: 180px;">Customer / Visitor</th>
+                                        <th style="width: 130px;">Status</th>
+                                        <th style="min-width: 250px;">Messages & Preview</th>
+                                        <th style="width: 110px;">CSAT</th>
+                                        <th style="width: 140px;">Timeline</th>
+                                        <th style="text-align: right; width: 170px;">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     <?php if (count($sessionsList) === 0): ?>
-                                        <tr><td colspan="7" class="text-center" style="padding: 40px; color: #94a3b8;">No customer chat conversations recorded yet. Conversations will automatically appear as clients chat in the portal.</td></tr>
+                                        <tr>
+                                            <td colspan="7" class="text-center" style="padding: 45px; color: #94a3b8;">
+                                                <i class="fas fa-comments" style="font-size: 28px; margin-bottom: 10px; display: block;"></i>
+                                                No customer chat conversations matched your filter criteria.<br>
+                                                <a href="<?php echo $baseActionUrl; ?>&tab=sessions" class="btn btn-default btn-xs" style="margin-top: 10px;">Clear Filters</a>
+                                            </td>
+                                        </tr>
                                     <?php else: ?>
                                         <?php foreach ($sessionsList as $s): ?>
                                             <?php
-                                            $msgCount = Capsule::table('tblsahdev_chat_messages')->where('session_id', $s->id)->count();
+                                            $msgCount = (int)($s->message_count ?? 0);
                                             $clientInfo = 'Guest Visitor';
                                             if ($s->client_id > 0) {
-                                                $cl = Capsule::table('tblclients')->where('id', $s->client_id)->first(['id', 'firstname', 'lastname', 'email']);
-                                                if ($cl) {
-                                                    $clientInfo = '<a href="clientssummary.php?userid=' . $cl->id . '" target="_blank"><strong>' . htmlspecialchars($cl->firstname . ' ' . $cl->lastname) . '</strong></a><br><small class="text-muted">' . htmlspecialchars($cl->email) . '</small>';
+                                                $cName = trim(($s->client_firstname ?? '') . ' ' . ($s->client_lastname ?? '')) ?: 'Client #' . $s->client_id;
+                                                $cEmail = $s->client_email ?? '';
+                                                $clientInfo = '<a href="clientssummary.php?userid=' . (int)$s->client_id . '" target="_blank" style="font-weight: 600; color: #0d6efd;"><i class="fas fa-user-circle"></i> ' . htmlspecialchars($cName) . '</a>';
+                                                if (!empty($cEmail)) {
+                                                    $clientInfo .= '<br><small class="text-muted" style="font-size: 11px;">' . htmlspecialchars($cEmail) . '</small>';
                                                 }
                                             } else {
                                                 $meta = !empty($s->metadata_json) ? json_decode($s->metadata_json, true) : [];
-                                                $ip = $meta['ip'] ?? 'Unknown IP';
-                                                $clientInfo = '<span class="label label-default">Guest</span> <small class="text-muted">' . htmlspecialchars($ip) . '</small>';
+                                                $ip = $meta['ip'] ?? 'Guest IP';
+                                                $clientInfo = '<span class="label label-default" style="font-size: 10.5px;"><i class="fas fa-globe"></i> Guest</span> <small class="text-muted" style="font-size: 11px;">' . htmlspecialchars($ip) . '</small>';
                                             }
 
-                                            $statusBadge = '<span class="label label-success">Active</span>';
-                                            if ($s->status === 'escalated_ticket') {
-                                                $statusBadge = '<span class="label label-warning"><i class="fas fa-ticket-alt"></i> Ticket Opened</span>';
+                                            // Status Badges
+                                            $statusBadge = '<span class="label label-success" style="font-size: 11px;"><i class="fas fa-circle" style="font-size: 7px;"></i> Active</span>';
+                                            if ($s->status === 'taken_over') {
+                                                $statusBadge = '<span class="label label-info" style="font-size: 11px; background-color: #7c3aed;"><i class="fas fa-user-shield"></i> Staff Active</span>';
+                                            } elseif ($s->status === 'escalated_ticket') {
+                                                $meta = !empty($s->metadata_json) ? json_decode($s->metadata_json, true) : [];
+                                                $ticketId = $meta['ticket_id'] ?? null;
+                                                if ($ticketId) {
+                                                    $statusBadge = '<a href="supporttickets.php?action=view&id=' . (int)$ticketId . '" target="_blank" class="label label-warning" style="font-size: 11px;"><i class="fas fa-ticket-alt"></i> Ticket #' . (int)$ticketId . '</a>';
+                                                } else {
+                                                    $statusBadge = '<span class="label label-warning" style="font-size: 11px;"><i class="fas fa-ticket-alt"></i> Ticket Opened</span>';
+                                                }
                                             } elseif ($s->status === 'closed') {
-                                                $statusBadge = '<span class="label label-default">Closed</span>';
+                                                $statusBadge = '<span class="label label-default" style="font-size: 11px;">Closed</span>';
+                                            }
+
+                                            // Preview snippet
+                                            $lastPreview = trim((string)($s->last_message_preview ?? ''));
+                                            if (mb_strlen($lastPreview) > 75) {
+                                                $lastPreview = mb_substr($lastPreview, 0, 75) . '...';
+                                            }
+
+                                            // CSAT Rating
+                                            $ratingHtml = '<span class="text-muted" style="font-size: 11px;">-</span>';
+                                            if (isset($s->latest_rating) && $s->latest_rating !== null) {
+                                                if ((int)$s->latest_rating === 1) {
+                                                    $ratingHtml = '<span class="label label-success" style="font-size: 10.5px;" title="Client rated helpful"><i class="fas fa-thumbs-up"></i> Helpful</span>';
+                                                } elseif ((int)$s->latest_rating === -1) {
+                                                    $ratingHtml = '<span class="label label-danger" style="font-size: 10.5px;" title="Client rated unhelpful"><i class="fas fa-thumbs-down"></i> Unhelpful</span>';
+                                                }
+                                            }
+
+                                            // Recency indicator
+                                            $isRecent = false;
+                                            if ($s->last_message_at && \Carbon\Carbon::parse($s->last_message_at)->diffInMinutes() < 10 && $s->status !== 'closed') {
+                                                $isRecent = true;
                                             }
                                             ?>
-                                            <tr>
+                                            <tr style="<?php echo $isRecent ? 'background-color: #f0fdf4;' : ''; ?>">
                                                 <td>
-                                                    <strong>#<?php echo (int)$s->id; ?></strong><br>
-                                                    <small class="text-muted" style="font-family: monospace; font-size: 11px;"><?php echo htmlspecialchars(substr($s->session_uuid, 0, 16)); ?>...</small>
+                                                    <div style="font-weight: 700; color: #1e293b; font-size: 13px;">
+                                                        #<?php echo (int)$s->id; ?>
+                                                        <?php if ($isRecent): ?>
+                                                            <span class="badge" style="background:#10b981; font-size: 9px; padding: 2px 5px;">LIVE</span>
+                                                        <?php endif; ?>
+                                                    </div>
+                                                    <small class="text-muted" style="font-family: monospace; font-size: 10px;"><?php echo htmlspecialchars(substr($s->session_uuid, 0, 14)); ?>...</small>
                                                 </td>
                                                 <td><?php echo $clientInfo; ?></td>
                                                 <td><?php echo $statusBadge; ?></td>
-                                                <td><span class="badge"><?php echo $msgCount; ?></span></td>
-                                                <td><small class="text-muted"><?php echo htmlspecialchars(\Carbon\Carbon::parse($s->created_at)->diffForHumans()); ?></small></td>
-                                                <td><small class="text-muted"><?php echo htmlspecialchars($s->last_message_at ? \Carbon\Carbon::parse($s->last_message_at)->diffForHumans() : '-'); ?></small></td>
-                                                <td style="text-align: right;">
-                                                    <a href="<?php echo $baseActionUrl; ?>&tab=sessions&view_session=<?php echo (int)$s->id; ?>" class="btn btn-primary btn-xs">
-                                                        <i class="fas fa-eye"></i> View Transcript
+                                                <td>
+                                                    <span class="badge" style="background: #e2e8f0; color: #334155; font-size: 11px;"><?php echo $msgCount; ?> msgs</span>
+                                                    <?php if (!empty($lastPreview)): ?>
+                                                        <div style="font-size: 11.5px; color: #64748b; margin-top: 3px; font-style: italic;">
+                                                            "<?php echo htmlspecialchars($lastPreview); ?>"
+                                                        </div>
+                                                    <?php else: ?>
+                                                        <div style="font-size: 11px; color: #94a3b8; margin-top: 3px;">No messages sent yet</div>
+                                                    <?php endif; ?>
+                                                </td>
+                                                <td><?php echo $ratingHtml; ?></td>
+                                                <td>
+                                                    <small class="text-muted" title="Session Started: <?php echo htmlspecialchars($s->created_at); ?>">
+                                                        <i class="far fa-clock"></i> <?php echo htmlspecialchars(\Carbon\Carbon::parse($s->created_at)->diffForHumans()); ?>
+                                                    </small>
+                                                    <?php if ($s->last_message_at): ?>
+                                                        <br><small class="text-muted" style="font-size: 10px;">Active: <?php echo htmlspecialchars(\Carbon\Carbon::parse($s->last_message_at)->diffForHumans()); ?></small>
+                                                    <?php endif; ?>
+                                                </td>
+                                                <td style="text-align: right; white-space: nowrap;">
+                                                    <a href="<?php echo $baseActionUrl; ?>&tab=sessions&view_session=<?php echo (int)$s->id; ?><?php echo !empty($searchQ) ? '&q=' . urlencode($searchQ) : ''; ?>&p=<?php echo $page; ?>&limit=<?php echo $perPage; ?>" class="btn btn-primary btn-xs" title="View chat transcript & live drawer">
+                                                        <i class="fas fa-eye"></i> Transcript
+                                                    </a>
+                                                    <a href="<?php echo $baseActionUrl; ?>&export_session=<?php echo (int)$s->id; ?>" class="btn btn-default btn-xs" title="Download .txt transcript">
+                                                        <i class="fas fa-download"></i>
                                                     </a>
                                                     <?php if ($s->status !== 'closed'): ?>
-                                                        <form method="post" action="<?php echo $baseActionUrl; ?>&tab=sessions" style="display: inline-block; margin: 0;">
+                                                        <form method="post" action="<?php echo $baseActionUrl; ?>&tab=sessions&p=<?php echo $page; ?>&limit=<?php echo $perPage; ?>" style="display: inline-block; margin: 0;">
                                                             <?php echo $csrfToken; ?>
                                                             <input type="hidden" name="close_chat_session" value="1">
                                                             <input type="hidden" name="session_id" value="<?php echo (int)$s->id; ?>">
-                                                            <button type="submit" class="btn btn-default btn-xs" onclick="return confirm('Close this session?');" title="Close Session">
-                                                                <i class="fas fa-times"></i>
+                                                            <button type="submit" class="btn btn-default btn-xs" onclick="return confirm('Mark chat session #<?php echo (int)$s->id; ?> as closed?');" title="Close Session">
+                                                                <i class="fas fa-times text-danger"></i>
+                                                            </button>
+                                                        </form>
+                                                    <?php else: ?>
+                                                        <form method="post" action="<?php echo $baseActionUrl; ?>&tab=sessions&p=<?php echo $page; ?>&limit=<?php echo $perPage; ?>" style="display: inline-block; margin: 0;">
+                                                            <?php echo $csrfToken; ?>
+                                                            <input type="hidden" name="reopen_chat_session" value="1">
+                                                            <input type="hidden" name="session_id" value="<?php echo (int)$s->id; ?>">
+                                                            <button type="submit" class="btn btn-default btn-xs" title="Reopen Closed Session">
+                                                                <i class="fas fa-undo text-success"></i>
                                                             </button>
                                                         </form>
                                                     <?php endif; ?>
@@ -9093,42 +9556,215 @@ class AdminController
                             </table>
                         </div>
                     </div>
+
+                    <!-- Server-Side Pagination Bar -->
+                    <?php if ($totalPages > 1): ?>
+                        <div class="panel-footer" style="background: #fff; padding: 12px 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                            <div class="text-muted" style="font-size: 12px;">
+                                Showing Page <strong><?php echo $page; ?></strong> of <strong><?php echo $totalPages; ?></strong> (<?php echo number_format($totalFilteredSessions); ?> total conversations)
+                            </div>
+                            <div>
+                                <ul class="pagination pagination-sm" style="margin: 0;">
+                                    <?php
+                                    $pageBaseParams = "&tab=sessions&limit={$perPage}";
+                                    if (!empty($searchQ)) $pageBaseParams .= '&q=' . urlencode($searchQ);
+                                    if (!empty($filterStatus)) $pageBaseParams .= '&status=' . urlencode($filterStatus);
+                                    if (!empty($filterUser)) $pageBaseParams .= '&user_type=' . urlencode($filterUser);
+                                    if (!empty($filterRating)) $pageBaseParams .= '&rating=' . urlencode($filterRating);
+                                    if (!empty($filterDate)) $pageBaseParams .= '&date_range=' . urlencode($filterDate);
+                                    if ($filterSort !== 'newest') $pageBaseParams .= '&sort=' . urlencode($filterSort);
+
+                                    // Previous button
+                                    if ($page > 1): ?>
+                                        <li><a href="<?php echo $baseActionUrl . $pageBaseParams . '&p=' . ($page - 1); ?>">&laquo; Prev</a></li>
+                                    <?php else: ?>
+                                        <li class="disabled"><span>&laquo; Prev</span></li>
+                                    <?php endif; ?>
+
+                                    <?php
+                                    $startPage = max(1, $page - 3);
+                                    $endPage = min($totalPages, $page + 3);
+                                    if ($startPage > 1): ?>
+                                        <li><a href="<?php echo $baseActionUrl . $pageBaseParams . '&p=1'; ?>">1</a></li>
+                                        <?php if ($startPage > 2): ?><li class="disabled"><span>...</span></li><?php endif; ?>
+                                    <?php endif; ?>
+
+                                    <?php for ($pNum = $startPage; $pNum <= $endPage; $pNum++): ?>
+                                        <li class="<?php echo $pNum === $page ? 'active' : ''; ?>">
+                                            <a href="<?php echo $baseActionUrl . $pageBaseParams . '&p=' . $pNum; ?>"><?php echo $pNum; ?></a>
+                                        </li>
+                                    <?php endfor; ?>
+
+                                    <?php if ($endPage < $totalPages): ?>
+                                        <?php if ($endPage < $totalPages - 1): ?><li class="disabled"><span>...</span></li><?php endif; ?>
+                                        <li><a href="<?php echo $baseActionUrl . $pageBaseParams . '&p=' . $totalPages; ?>"><?php echo $totalPages; ?></a></li>
+                                    <?php endif; ?>
+
+                                    <?php // Next button
+                                    if ($page < $totalPages): ?>
+                                        <li><a href="<?php echo $baseActionUrl . $pageBaseParams . '&p=' . ($page + 1); ?>">Next &raquo;</a></li>
+                                    <?php else: ?>
+                                        <li class="disabled"><span>Next &raquo;</span></li>
+                                    <?php endif; ?>
+                                </ul>
+                            </div>
+                        </div>
+                    <?php endif; ?>
                 </div>
 
-                <!-- Transcript Viewer Drawer / Modal -->
+                <!-- Slide-over Transcript Drawer with Live Staff Reply & Client Profile -->
                 <?php if ($viewSession): ?>
-                    <div style="position: fixed; top: 0; right: 0; width: 500px; height: 100vh; background: #fff; box-shadow: -5px 0 25px rgba(0,0,0,0.15); z-index: 99999; display: flex; flex-direction: column;">
-                        <div style="background: #1e293b; color: #fff; padding: 16px 20px; display: flex; justify-content: space-between; align-items: center;">
+                    <?php
+                    $drawerReturnUrl = $baseActionUrl . '&tab=sessions&p=' . $page . '&limit=' . $perPage;
+                    if (!empty($searchQ)) $drawerReturnUrl .= '&q=' . urlencode($searchQ);
+                    if (!empty($filterStatus)) $drawerReturnUrl .= '&status=' . urlencode($filterStatus);
+
+                    $vMeta = !empty($viewSession->metadata_json) ? json_decode($viewSession->metadata_json, true) : [];
+                    $vTicketId = $vMeta['ticket_id'] ?? null;
+                    ?>
+                    <!-- Drawer Backdrop -->
+                    <div id="sahdevDrawerBackdrop" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15, 23, 42, 0.5); z-index: 99998;" onclick="window.location.href='<?php echo $drawerReturnUrl; ?>';"></div>
+
+                    <!-- Slide-out Drawer Panel -->
+                    <div id="sahdevTranscriptDrawer" style="position: fixed; top: 0; right: 0; width: 620px; max-width: 95vw; height: 100vh; background: #ffffff; box-shadow: -10px 0 35px rgba(0,0,0,0.25); z-index: 99999; display: flex; flex-direction: column; animation: sdvDrawerSlide 0.2s ease-out; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+                        <style>
+                            @keyframes sdvDrawerSlide { from { transform: translateX(100%); } to { transform: translateX(0); } }
+                        </style>
+
+                        <!-- Drawer Header -->
+                        <div style="background: #0f172a; color: #ffffff; padding: 16px 22px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1e293b;">
                             <div>
-                                <strong style="font-size: 15px;">Conversation #<?php echo (int)$viewSession->id; ?></strong>
-                                <div style="font-size: 12px; color: #94a3b8;"><?php echo htmlspecialchars($viewSession->title ?: 'Client Live Chat'); ?></div>
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <strong style="font-size: 16px;">Chat #<?php echo (int)$viewSession->id; ?></strong>
+                                    <?php if ($viewSession->status === 'taken_over'): ?>
+                                        <span class="label label-info" style="background:#7c3aed; font-size: 10px;">STAFF TAKEN OVER</span>
+                                    <?php elseif ($viewSession->status === 'active'): ?>
+                                        <span class="label label-success" style="font-size: 10px;">AI ACTIVE</span>
+                                    <?php elseif ($viewSession->status === 'escalated_ticket'): ?>
+                                        <span class="label label-warning" style="font-size: 10px;">ESCALATED TICKET</span>
+                                    <?php else: ?>
+                                        <span class="label label-default" style="font-size: 10px;">CLOSED</span>
+                                    <?php endif; ?>
+                                </div>
+                                <div style="font-size: 11.5px; color: #94a3b8; font-family: monospace; margin-top: 2px;">UUID: <?php echo htmlspecialchars($viewSession->session_uuid); ?></div>
                             </div>
-                            <a href="<?php echo $baseActionUrl; ?>&tab=sessions" style="color: #fff; font-size: 22px; text-decoration: none;">&times;</a>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <button type="button" class="btn btn-default btn-xs" onclick="copyTranscriptToClipboard();" title="Copy full transcript formatted to clipboard">
+                                    <i class="fas fa-copy"></i> Copy
+                                </button>
+                                <a href="<?php echo $baseActionUrl; ?>&export_session=<?php echo (int)$viewSession->id; ?>" class="btn btn-default btn-xs" title="Download .txt transcript">
+                                    <i class="fas fa-download"></i> .txt
+                                </a>
+                                <a href="<?php echo $drawerReturnUrl; ?>" style="color: #94a3b8; font-size: 24px; text-decoration: none; margin-left: 8px; line-height: 1;" title="Close Drawer (Esc)">&times;</a>
+                            </div>
                         </div>
-                        <div style="flex: 1; overflow-y: auto; padding: 20px; background: #f8fafc; display: flex; flex-direction: column; gap: 12px;">
+
+                        <!-- Customer Overview Card -->
+                        <div style="padding: 12px 20px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; font-size: 12px;">
+                            <?php if ($viewClient): ?>
+                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                    <div>
+                                        <div style="font-weight: 700; color: #0f172a; font-size: 13.5px;">
+                                            <i class="fas fa-user-circle text-primary"></i> <?php echo htmlspecialchars($viewClient->firstname . ' ' . $viewClient->lastname); ?>
+                                            <?php if (!empty($viewClient->companyname)): ?>
+                                                <span class="text-muted">(<?php echo htmlspecialchars($viewClient->companyname); ?>)</span>
+                                            <?php endif; ?>
+                                        </div>
+                                        <div class="text-muted" style="font-size: 11.5px;">
+                                            <i class="fas fa-envelope"></i> <?php echo htmlspecialchars($viewClient->email); ?> &bull; Client ID #<?php echo (int)$viewClient->id; ?>
+                                        </div>
+                                    </div>
+                                    <div style="display: flex; gap: 8px; align-items: center;">
+                                        <span class="badge" style="background: #3b82f6;" title="Active/Suspended Products"><?php echo $viewClientServicesCount; ?> Services</span>
+                                        <span class="badge" style="background: #64748b;" title="Total Support Tickets"><?php echo $viewClientTicketsCount; ?> Tickets</span>
+                                        <a href="clientssummary.php?userid=<?php echo (int)$viewClient->id; ?>" target="_blank" class="btn btn-default btn-xs" style="font-weight: 600;">
+                                            WHMCS Profile &rarr;
+                                        </a>
+                                    </div>
+                                </div>
+                            <?php else: ?>
+                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                    <div>
+                                        <strong style="color: #334155;"><i class="fas fa-globe text-muted"></i> Guest Visitor</strong>
+                                        <div class="text-muted" style="font-size: 11.5px;">
+                                            IP: <code><?php echo htmlspecialchars($vMeta['ip'] ?? 'Unknown'); ?></code>
+                                            <?php if (!empty($vMeta['browser'])): ?>
+                                                &bull; <?php echo htmlspecialchars($vMeta['browser']); ?>
+                                            <?php endif; ?>
+                                        </div>
+                                    </div>
+                                    <span class="label label-default">Unauthenticated</span>
+                                </div>
+                            <?php endif; ?>
+
+                            <!-- Ticket Cross-Link Notice if Escalated -->
+                            <?php if ($vTicketId || $viewSession->status === 'escalated_ticket'): ?>
+                                <div style="margin-top: 10px; padding: 8px 12px; background: #fef3c7; border: 1px solid #fde68a; border-radius: 6px; display: flex; justify-content: space-between; align-items: center;">
+                                    <span style="color: #92400e; font-weight: 600;">
+                                        <i class="fas fa-ticket-alt"></i> Escalated to Ticket <?php echo $vTicketId ? '#' . (int)$vTicketId : ''; ?>
+                                    </span>
+                                    <?php if ($vTicketId): ?>
+                                        <a href="supporttickets.php?action=view&id=<?php echo (int)$vTicketId; ?>" target="_blank" class="btn btn-warning btn-xs" style="font-weight: 600;">
+                                            Open Ticket in WHMCS &rarr;
+                                        </a>
+                                    <?php endif; ?>
+                                </div>
+                            <?php endif; ?>
+                        </div>
+
+                        <!-- Chat Messages Transcript Stream -->
+                        <div id="sdvTranscriptContainer" style="flex: 1; overflow-y: auto; padding: 20px; background: #f1f5f9; display: flex; flex-direction: column; gap: 14px;">
                             <?php if (count($viewMessages) === 0): ?>
-                                <div class="text-center text-muted" style="padding: 30px;">No messages in this conversation.</div>
+                                <div class="text-center text-muted" style="padding: 50px 20px;">
+                                    <i class="far fa-comment-dots" style="font-size: 32px; color: #cbd5e1; margin-bottom: 8px; display: block;"></i>
+                                    No messages recorded in this chat session yet.
+                                </div>
                             <?php else: ?>
                                 <?php foreach ($viewMessages as $vm): ?>
                                     <?php
                                     $isUser = ($vm->sender_type === 'user');
-                                    $bubbleBg = $isUser ? '#0d6efd' : '#ffffff';
-                                    $bubbleColor = $isUser ? '#ffffff' : '#1e293b';
-                                    $align = $isUser ? 'flex-end' : 'flex-start';
-                                    ?>
-                                    <div style="align-self: <?php echo $align; ?>; max-width: 85%;">
-                                        <div style="font-size: 11px; color: #64748b; margin-bottom: 3px; text-align: <?php echo $isUser ? 'right' : 'left'; ?>;">
-                                            <?php echo htmlspecialchars($vm->sender_name ?: ($isUser ? 'Customer' : 'AI Assistant')); ?> &bull; <?php echo htmlspecialchars(\Carbon\Carbon::parse($vm->created_at)->format('g:i A')); ?>
+                                    $isStaff = ($vm->sender_type === 'staff');
+                                    $isSystem = ($vm->sender_type === 'system');
+
+                                    if ($isSystem): ?>
+                                        <div style="align-self: center; background: #e2e8f0; color: #475569; padding: 4px 12px; border-radius: 9999px; font-size: 11px; font-style: italic;">
+                                            <i class="fas fa-info-circle"></i> <?php echo htmlspecialchars($vm->message_text); ?>
                                         </div>
-                                        <div style="background: <?php echo $bubbleBg; ?>; color: <?php echo $bubbleColor; ?>; padding: 10px 14px; border-radius: 12px; border: 1px solid <?php echo $isUser ? '#0d6efd' : '#e2e8f0'; ?>; font-size: 13px; line-height: 1.45; word-break: break-word;">
+                                        <?php continue;
+                                    endif;
+
+                                    $align = $isUser ? 'flex-end' : 'flex-start';
+                                    if ($isUser) {
+                                        $bubbleBg = '#0d6efd';
+                                        $bubbleColor = '#ffffff';
+                                        $bubbleBorder = '#0d6efd';
+                                        $senderLabel = $vm->sender_name ?: 'Customer';
+                                    } elseif ($isStaff) {
+                                        $bubbleBg = '#7c3aed';
+                                        $bubbleColor = '#ffffff';
+                                        $bubbleBorder = '#6d28d9';
+                                        $senderLabel = ($vm->sender_name ?: 'Staff') . ' (Staff Reply)';
+                                    } else {
+                                        // Assistant
+                                        $bubbleBg = '#ffffff';
+                                        $bubbleColor = '#0f172a';
+                                        $bubbleBorder = '#cbd5e1';
+                                        $senderLabel = $vm->sender_name ?: 'Sahdev AI Assistant';
+                                    }
+                                    ?>
+                                    <div class="sdv-transcript-msg" data-sender="<?php echo htmlspecialchars($senderLabel); ?>" data-time="<?php echo htmlspecialchars(\Carbon\Carbon::parse($vm->created_at)->format('Y-m-d H:i')); ?>" data-text="<?php echo htmlspecialchars($vm->message_text); ?>" style="align-self: <?php echo $align; ?>; max-width: 82%;">
+                                        <div style="font-size: 11px; color: #64748b; margin-bottom: 4px; text-align: <?php echo $isUser ? 'right' : 'left'; ?>;">
+                                            <strong><?php echo htmlspecialchars($senderLabel); ?></strong> &bull; <?php echo htmlspecialchars(\Carbon\Carbon::parse($vm->created_at)->format('g:i A')); ?>
+                                        </div>
+                                        <div style="background: <?php echo $bubbleBg; ?>; color: <?php echo $bubbleColor; ?>; padding: 11px 15px; border-radius: 12px; border: 1px solid <?php echo $bubbleBorder; ?>; font-size: 13.5px; line-height: 1.5; word-break: break-word; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
                                             <?php echo nl2br(htmlspecialchars($vm->message_text)); ?>
                                         </div>
                                         <?php if (!empty($vm->rating)): ?>
-                                            <div style="margin-top: 4px; font-size: 11px;">
+                                            <div style="margin-top: 4px; font-size: 11px; text-align: left;">
                                                 <?php if ((int)$vm->rating === 1): ?>
-                                                    <span class="label label-success"><i class="fas fa-thumbs-up"></i> Rated Helpful</span>
+                                                    <span class="label label-success"><i class="fas fa-thumbs-up"></i> Helpful</span>
                                                 <?php else: ?>
-                                                    <span class="label label-danger"><i class="fas fa-thumbs-down"></i> Rated Unhelpful</span>
+                                                    <span class="label label-danger"><i class="fas fa-thumbs-down"></i> Unhelpful</span>
                                                 <?php endif; ?>
                                                 <?php if (!empty($vm->rating_feedback)): ?>
                                                     <span class="text-muted" style="margin-left: 5px; font-style: italic;">"<?php echo htmlspecialchars($vm->rating_feedback); ?>"</span>
@@ -9139,12 +9775,169 @@ class AdminController
                                 <?php endforeach; ?>
                             <?php endif; ?>
                         </div>
-                        <div style="padding: 15px; background: #fff; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
-                            <span class="text-muted" style="font-size: 12px;">Status: <strong><?php echo htmlspecialchars($viewSession->status); ?></strong></span>
-                            <a href="<?php echo $baseActionUrl; ?>&tab=sessions" class="btn btn-default btn-sm">Close Transcript</a>
+
+                        <!-- Live Staff Reply Bar & Actions Footer -->
+                        <div style="background: #ffffff; border-top: 1px solid #e2e8f0; padding: 14px 20px;">
+                            <?php if ($viewSession->status !== 'closed'): ?>
+                                <form method="post" action="<?php echo $drawerReturnUrl; ?>&view_session=<?php echo (int)$viewSession->id; ?>" style="margin-bottom: 10px;">
+                                    <?php echo $csrfToken; ?>
+                                    <input type="hidden" name="session_id" value="<?php echo (int)$viewSession->id; ?>">
+                                    <div class="input-group">
+                                        <textarea name="staff_message" rows="2" class="form-control" placeholder="Type live staff message to client... (Automatically puts chat in takeover mode)" style="resize: vertical; font-size: 13px;" required></textarea>
+                                        <span class="input-group-btn" style="vertical-align: bottom;">
+                                            <button type="submit" name="send_staff_message" value="1" class="btn btn-primary" style="height: 54px; font-weight: 600;">
+                                                <i class="fas fa-paper-plane"></i> Send Reply
+                                            </button>
+                                        </span>
+                                    </div>
+                                </form>
+                            <?php endif; ?>
+
+                            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+                                <div style="display: flex; gap: 6px;">
+                                    <?php if ($viewSession->status === 'active'): ?>
+                                        <form method="post" action="<?php echo $drawerReturnUrl; ?>&view_session=<?php echo (int)$viewSession->id; ?>" style="margin: 0; display: inline-block;">
+                                            <?php echo $csrfToken; ?>
+                                            <input type="hidden" name="takeover_chat_session" value="1">
+                                            <input type="hidden" name="session_id" value="<?php echo (int)$viewSession->id; ?>">
+                                            <button type="submit" class="btn btn-warning btn-xs" title="Pause AI and take over live session">
+                                                <i class="fas fa-user-shield"></i> Take Over Chat
+                                            </button>
+                                        </form>
+                                    <?php elseif ($viewSession->status === 'taken_over'): ?>
+                                        <form method="post" action="<?php echo $drawerReturnUrl; ?>&view_session=<?php echo (int)$viewSession->id; ?>" style="margin: 0; display: inline-block;">
+                                            <?php echo $csrfToken; ?>
+                                            <input type="hidden" name="release_takeover_session" value="1">
+                                            <input type="hidden" name="session_id" value="<?php echo (int)$viewSession->id; ?>">
+                                            <button type="submit" class="btn btn-info btn-xs" title="Hand session back to AI Assistant">
+                                                <i class="fas fa-robot"></i> Hand Back to AI
+                                            </button>
+                                        </form>
+                                    <?php endif; ?>
+
+                                    <?php if ($viewSession->status !== 'closed'): ?>
+                                        <form method="post" action="<?php echo $drawerReturnUrl; ?>" style="margin: 0; display: inline-block;">
+                                            <?php echo $csrfToken; ?>
+                                            <input type="hidden" name="close_chat_session" value="1">
+                                            <input type="hidden" name="session_id" value="<?php echo (int)$viewSession->id; ?>">
+                                            <button type="submit" class="btn btn-default btn-xs text-danger" onclick="return confirm('Close chat session #<?php echo (int)$viewSession->id; ?>?');">
+                                                <i class="fas fa-times"></i> Close Session
+                                            </button>
+                                        </form>
+                                    <?php else: ?>
+                                        <form method="post" action="<?php echo $drawerReturnUrl; ?>&view_session=<?php echo (int)$viewSession->id; ?>" style="margin: 0; display: inline-block;">
+                                            <?php echo $csrfToken; ?>
+                                            <input type="hidden" name="reopen_chat_session" value="1">
+                                            <input type="hidden" name="session_id" value="<?php echo (int)$viewSession->id; ?>">
+                                            <button type="submit" class="btn btn-success btn-xs">
+                                                <i class="fas fa-undo"></i> Reopen Session
+                                            </button>
+                                        </form>
+                                    <?php endif; ?>
+                                </div>
+
+                                <div>
+                                    <a href="<?php echo $drawerReturnUrl; ?>" class="btn btn-default btn-sm">Close Drawer</a>
+                                </div>
+                            </div>
                         </div>
                     </div>
+
+                    <script>
+                    function copyTranscriptToClipboard() {
+                        var msgs = document.querySelectorAll('.sdv-transcript-msg');
+                        var text = '=== SAHDEV CHAT TRANSCRIPT #<?php echo (int)$viewSession->id; ?> ===\n\n';
+                        msgs.forEach(function(el) {
+                            var sender = el.getAttribute('data-sender') || 'User';
+                            var time = el.getAttribute('data-time') || '';
+                            var body = el.getAttribute('data-text') || '';
+                            text += '[' + time + '] ' + sender + ':\n' + body + '\n\n';
+                        });
+                        text += '=== END OF TRANSCRIPT ===';
+
+                        if (navigator.clipboard && window.isSecureContext) {
+                            navigator.clipboard.writeText(text).then(function() {
+                                alert('Transcript successfully copied to clipboard!');
+                            });
+                        } else {
+                            var ta = document.createElement('textarea');
+                            ta.value = text;
+                            document.body.appendChild(ta);
+                            ta.select();
+                            document.execCommand('copy');
+                            document.body.removeChild(ta);
+                            alert('Transcript successfully copied to clipboard!');
+                        }
+                    }
+
+                    // Auto scroll to bottom of transcript
+                    (function() {
+                        var c = document.getElementById('sdvTranscriptContainer');
+                        if (c) c.scrollTop = c.scrollHeight;
+                    })();
+
+                    // Close on Escape key
+                    document.addEventListener('keydown', function(e) {
+                        if (e.key === 'Escape') {
+                            window.location.href = '<?php echo $drawerReturnUrl; ?>';
+                        }
+                    });
+                    </script>
                 <?php endif; ?>
+
+                <script>
+                // Live Auto-Refresh (30s) logic
+                var refreshTimer = null;
+                var refreshSeconds = 30;
+                var isAutoRefreshActive = (localStorage.getItem('sahdev_chat_autorefresh') === '1');
+
+                function updateRefreshUI() {
+                    var btn = document.getElementById('sdv-autorefresh-btn');
+                    var icon = document.getElementById('sdv-refresh-icon');
+                    var lbl = document.getElementById('sdv-refresh-label');
+                    if (!btn) return;
+
+                    if (isAutoRefreshActive) {
+                        btn.className = 'btn btn-success btn-sm';
+                        icon.className = 'fas fa-sync-alt fa-spin';
+                        lbl.textContent = 'Live Active (' + refreshSeconds + 's)';
+                    } else {
+                        btn.className = 'btn btn-default btn-sm';
+                        icon.className = 'fas fa-sync-alt';
+                        lbl.textContent = 'Live Monitor (30s)';
+                    }
+                }
+
+                function toggleAutoRefresh() {
+                    isAutoRefreshActive = !isAutoRefreshActive;
+                    localStorage.setItem('sahdev_chat_autorefresh', isAutoRefreshActive ? '1' : '0');
+                    if (isAutoRefreshActive) {
+                        startCountdown();
+                    } else {
+                        clearInterval(refreshTimer);
+                        refreshSeconds = 30;
+                    }
+                    updateRefreshUI();
+                }
+
+                function startCountdown() {
+                    clearInterval(refreshTimer);
+                    refreshSeconds = 30;
+                    refreshTimer = setInterval(function() {
+                        refreshSeconds--;
+                        updateRefreshUI();
+                        if (refreshSeconds <= 0) {
+                            clearInterval(refreshTimer);
+                            window.location.reload();
+                        }
+                    }, 1000);
+                }
+
+                if (isAutoRefreshActive) {
+                    startCountdown();
+                }
+                updateRefreshUI();
+                </script>
             <?php endif; ?>
 
             <!-- ── TAB 2: CLIENT CHAT PROMPT LIBRARY ───────────────────────────── -->
