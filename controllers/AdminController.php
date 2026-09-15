@@ -8711,11 +8711,13 @@ class AdminController
         $adminId = (int) ($_SESSION['adminid'] ?? 0);
         require_once dirname(__DIR__) . '/lib/PermissionService.php';
         require_once dirname(__DIR__) . '/lib/SchemaManager.php';
+        require_once dirname(__DIR__) . '/lib/WebsiteDataSourcesService.php';
         \Sahdev\Lib\SchemaManager::ensureAll();
         \Sahdev\Lib\SchemaManager::ensureSettingsColumns();
         \Sahdev\Lib\SchemaManager::ensureClientChatPromptsTable();
         \Sahdev\Lib\SchemaManager::ensureChatSessionsTable();
         \Sahdev\Lib\SchemaManager::ensureChatMessagesTable();
+        \Sahdev\Lib\SchemaManager::ensureWebsiteDataSourcesTable();
 
         if (!\Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_CLIENT_CHAT_MANAGE)) {
             return $this->getNavigationMarkup('client_chat') . '<div class="sahdev-page-container"><div class="alert alert-danger">Access Denied: Missing permissions for Client Live Chat settings.</div></div>';
@@ -8807,9 +8809,85 @@ class AdminController
                     'client_chat_ds_promotions'         => !empty($_POST['client_chat_ds_promotions']) ? 1 : 0,
                     'client_chat_ds_payment_gateways'   => !empty($_POST['client_chat_ds_payment_gateways']) ? 1 : 0,
                     'client_chat_ds_departments'        => !empty($_POST['client_chat_ds_departments']) ? 1 : 0,
+                    'client_chat_ds_websites'           => !empty($_POST['client_chat_ds_websites']) ? 1 : 0,
                     'updated_at'                        => \Carbon\Carbon::now(),
                 ]);
                 $successMessage = "Self-Help Data Source permissions updated successfully.";
+                $currentTab = 'datasources';
+            }
+
+            // 2b. Website AI-Summary Data Source Actions
+            if (isset($_POST['add_website_datasource'])) {
+                $wName = trim((string)($_POST['website_name'] ?? ''));
+                $wType = in_array($_POST['source_type'] ?? '', ['url', 'custom'], true) ? $_POST['source_type'] : 'url';
+                $wUrl  = trim((string)($_POST['source_url'] ?? ''));
+                $wCustom = trim((string)($_POST['custom_content'] ?? ''));
+                $wEnabled = !empty($_POST['is_enabled']) ? 1 : 0;
+                if (empty($wName)) {
+                    $errorMessage = "Please enter a name or label for the website data source.";
+                } elseif ($wType === 'url' && (empty($wUrl) || !filter_var($wUrl, FILTER_VALIDATE_URL))) {
+                    $errorMessage = "Please provide a valid HTTP/HTTPS URL.";
+                } else {
+                    $newId = \Sahdev\Lib\WebsiteDataSourcesService::create([
+                        'name'           => $wName,
+                        'source_type'    => $wType,
+                        'source_url'     => $wUrl,
+                        'custom_content' => $wCustom,
+                        'is_enabled'     => $wEnabled,
+                    ]);
+                    $successMessage = "Website data source '{$wName}' created successfully.";
+                }
+                $currentTab = 'datasources';
+            }
+
+            if (isset($_POST['edit_website_datasource'])) {
+                $wId   = (int)($_POST['website_id'] ?? 0);
+                $wName = trim((string)($_POST['website_name'] ?? ''));
+                $wType = in_array($_POST['source_type'] ?? '', ['url', 'custom'], true) ? $_POST['source_type'] : 'url';
+                $wUrl  = trim((string)($_POST['source_url'] ?? ''));
+                $wCustom = trim((string)($_POST['custom_content'] ?? ''));
+                $wEnabled = !empty($_POST['is_enabled']) ? 1 : 0;
+                if ($wId > 0 && !empty($wName)) {
+                    \Sahdev\Lib\WebsiteDataSourcesService::update($wId, [
+                        'name'           => $wName,
+                        'source_type'    => $wType,
+                        'source_url'     => $wUrl,
+                        'custom_content' => $wCustom,
+                        'is_enabled'     => $wEnabled,
+                    ]);
+                    $successMessage = "Website data source '{$wName}' updated successfully.";
+                }
+                $currentTab = 'datasources';
+            }
+
+            if (isset($_POST['delete_website_datasource'])) {
+                $wId = (int)($_POST['website_id'] ?? 0);
+                if ($wId > 0) {
+                    \Sahdev\Lib\WebsiteDataSourcesService::delete($wId);
+                    $successMessage = "Website data source deleted successfully.";
+                }
+                $currentTab = 'datasources';
+            }
+
+            if (isset($_POST['sync_website_datasource'])) {
+                $wId = (int)($_POST['website_id'] ?? 0);
+                if ($wId > 0) {
+                    $syncRes = \Sahdev\Lib\WebsiteDataSourcesService::syncSource($wId);
+                    if (!empty($syncRes['success'])) {
+                        $successMessage = "Website data source synchronized successfully. " . ($syncRes['message'] ?? '');
+                    } else {
+                        $errorMessage = "Sync failed: " . ($syncRes['error'] ?? 'Unknown error');
+                    }
+                }
+                $currentTab = 'datasources';
+            }
+
+            if (isset($_POST['toggle_website_datasource'])) {
+                $wId = (int)($_POST['website_id'] ?? 0);
+                if ($wId > 0) {
+                    $newState = \Sahdev\Lib\WebsiteDataSourcesService::toggle($wId);
+                    $successMessage = "Website data source " . ($newState ? 'enabled' : 'disabled') . ".";
+                }
                 $currentTab = 'datasources';
             }
 
@@ -9018,6 +9096,8 @@ class AdminController
             ->orderBy('order', 'asc')
             ->orderBy('name', 'asc')
             ->get();
+
+        $websiteDataSources = \Sahdev\Lib\WebsiteDataSourcesService::getAll();
 
         $csrfToken = generate_token('form');
         $baseActionUrl = htmlspecialchars($this->moduleVars['modulelink']) . '&action=client_chat';
@@ -10522,6 +10602,31 @@ class AdminController
                                     </div>
                                 </div>
 
+                                <!-- 20. Public Website AI Summaries -->
+                                <div class="list-group-item" style="padding: 16px 20px; border-left: none; border-right: none;">
+                                    <div class="row" style="display: flex; align-items: center;">
+                                        <div class="col-sm-10 col-xs-9">
+                                            <div style="font-weight: 700; font-size: 14px; color: #1e293b; margin-bottom: 4px;">
+                                                <i class="fas fa-globe text-primary" style="width: 20px;"></i> Website AI Summaries &amp; External Knowledge Grounding
+                                                <span class="label label-info" style="margin-left: 6px; font-weight: 500; font-size: 10px;">Public Grounding</span>
+                                                <span class="badge" style="background: #3b82f6; color: #fff; margin-left: 6px; font-size: 10px; font-weight: 600;"><?php echo count($websiteDataSources); ?> Source<?php echo count($websiteDataSources) === 1 ? '' : 's'; ?></span>
+                                            </div>
+                                            <div class="text-muted" style="font-size: 12.5px; line-height: 1.5;">
+                                                Grounds public website knowledge, company background, infrastructure specs, guarantees, hosting plans, FAQs, and policies from website AI summaries (e.g. <code>https://hostingspell.com/ai-summary</code>) or custom JSON input.
+                                                <a href="#sectionWebsiteDataSources" style="margin-left: 6px; font-weight: 600; color: #0284c7;"><i class="fas fa-arrow-down"></i> Manage Website Sources below</a>
+                                            </div>
+                                        </div>
+                                        <div class="col-sm-2 col-xs-3 text-right">
+                                            <label style="position: relative; display: inline-block; width: 46px; height: 24px; margin: 0; cursor: pointer; vertical-align: middle;">
+                                                <input type="checkbox" name="client_chat_ds_websites" value="1" <?php echo !empty($settings->client_chat_ds_websites ?? 1) ? 'checked' : ''; ?> style="position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer; z-index: 2;" onchange="var s=this.nextElementSibling; var k=s.firstElementChild; if(this.checked){ s.style.backgroundColor='#10b981'; k.style.left='24px'; }else{ s.style.backgroundColor='#cbd5e1'; k.style.left='3px'; }">
+                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: <?php echo !empty($settings->client_chat_ds_websites ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
+                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_websites ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: #fff; transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
+                                                </span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+
                             </div>
                         </div>
                     </div>
@@ -10538,6 +10643,364 @@ class AdminController
                         </div>
                     </div>
                 </form>
+
+                <!-- ── CARD 3: WEBSITE DATA SOURCES & AI SUMMARIES MANAGEMENT ── -->
+                <div id="sectionWebsiteDataSources" class="panel panel-default" style="border-radius: 8px; margin-bottom: 25px; box-shadow: 0 1px 4px rgba(0,0,0,0.04); overflow: hidden;">
+                    <div class="panel-heading" style="background: linear-gradient(to right, #f8fafc, #ffffff); padding: 16px 20px; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; justify-content: space-between;">
+                        <div>
+                            <strong style="font-size: 15px; color: #0f172a;">
+                                <i class="fas fa-network-wired text-primary" style="margin-right: 6px;"></i> Website AI-Summary Data Sources (Public Grounding)
+                            </strong>
+                            <span class="badge" style="background: #10b981; color: #fff; font-size: 11px; margin-left: 8px; padding: 4px 8px;">Presales &amp; Guests Safe</span>
+                        </div>
+                        <div>
+                            <button type="button" class="btn btn-success btn-sm" data-toggle="modal" data-target="#modalAddWebsiteSource" style="font-weight: 600; border-radius: 6px;">
+                                <i class="fas fa-plus-circle" style="margin-right: 5px;"></i> Add Website Data Source
+                            </button>
+                        </div>
+                    </div>
+                    <div class="panel-body" style="padding: 20px;">
+                        <?php if (empty($websiteDataSources)): ?>
+                            <div style="text-align: center; padding: 40px 20px; background: #f8fafc; border: 2px dashed #cbd5e1; border-radius: 8px;">
+                                <div style="width: 54px; height: 54px; line-height: 54px; border-radius: 50%; background: #e0f2fe; color: #0284c7; font-size: 24px; margin: 0 auto 15px auto;">
+                                    <i class="fas fa-globe"></i>
+                                </div>
+                                <h4 style="font-weight: 700; color: #1e293b; margin-bottom: 8px;">No Website Data Sources Configured Yet</h4>
+                                <p class="text-muted" style="max-width: 560px; margin: 0 auto 18px auto; font-size: 13.5px; line-height: 1.6;">
+                                    Link external website JSON summaries (such as <code>https://hostingspell.com/ai-summary</code>) or paste custom JSON/text. Client Live Chat will automatically ingest this knowledge to answer presales, specs, pricing, and FAQ queries for both guests and logged-in clients.
+                                </p>
+                                <button type="button" class="btn btn-primary btn-sm" data-toggle="modal" data-target="#modalAddWebsiteSource" style="font-weight: 600; border-radius: 6px; padding: 8px 18px;">
+                                    <i class="fas fa-plus-circle" style="margin-right: 5px;"></i> Add Your First Website Source
+                                </button>
+                            </div>
+                        <?php else: ?>
+                            <div class="table-responsive">
+                                <table class="table table-hover" style="margin-bottom: 0; vertical-align: middle;">
+                                    <thead>
+                                        <tr style="background: #f8fafc; font-size: 12px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">
+                                            <th style="padding: 12px 14px;">Website / Source</th>
+                                            <th style="padding: 12px 14px;">Type</th>
+                                            <th style="padding: 12px 14px;">Sync Status &amp; Cache</th>
+                                            <th style="padding: 12px 14px; text-align: center;">Status</th>
+                                            <th style="padding: 12px 14px; text-align: right;">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <?php foreach ($websiteDataSources as $ws): ?>
+                                            <?php
+                                                $cacheBytes = !empty($ws->cached_content) ? strlen($ws->cached_content) : 0;
+                                                $cacheKb = round($cacheBytes / 1024, 1);
+                                                $previewSnippet = \Sahdev\Lib\WebsiteDataSourcesService::formatWebsiteForPrompt($ws);
+                                            ?>
+                                            <tr>
+                                                <td style="padding: 14px;">
+                                                    <div style="font-weight: 700; color: #1e293b; font-size: 14px;">
+                                                        <i class="fas <?php echo $ws->source_type === 'url' ? 'fa-globe text-primary' : 'fa-code text-info'; ?>" style="margin-right: 6px;"></i>
+                                                        <?php echo htmlspecialchars($ws->name); ?>
+                                                    </div>
+                                                    <?php if ($ws->source_type === 'url' && !empty($ws->source_url)): ?>
+                                                        <div style="font-size: 12px; color: #64748b; margin-top: 3px;">
+                                                            <a href="<?php echo htmlspecialchars($ws->source_url); ?>" target="_blank" rel="noopener noreferrer" style="color: #0284c7; text-decoration: none;">
+                                                                <?php echo htmlspecialchars($ws->source_url); ?> <i class="fas fa-external-link-alt" style="font-size: 10px;"></i>
+                                                            </a>
+                                                        </div>
+                                                    <?php elseif ($ws->source_type === 'custom'): ?>
+                                                        <div style="font-size: 11.5px; color: #64748b; margin-top: 3px;">
+                                                            <span class="text-muted"><i class="fas fa-file-alt"></i> Custom Input (<?php echo number_format($cacheBytes); ?> bytes)</span>
+                                                        </div>
+                                                    <?php endif; ?>
+                                                </td>
+                                                <td style="padding: 14px; vertical-align: middle;">
+                                                    <?php if ($ws->source_type === 'url'): ?>
+                                                        <span class="label label-primary" style="font-weight: 600; font-size: 11px;"><i class="fas fa-sync-alt"></i> JSON URL</span>
+                                                    <?php else: ?>
+                                                        <span class="label label-default" style="font-weight: 600; font-size: 11px;"><i class="fas fa-keyboard"></i> Custom Input</span>
+                                                    <?php endif; ?>
+                                                </td>
+                                                <td style="padding: 14px; vertical-align: middle;">
+                                                    <?php if ($ws->sync_status === 'success'): ?>
+                                                        <span class="label label-success" style="font-size: 11px;"><i class="fas fa-check-circle"></i> Synced</span>
+                                                        <div style="font-size: 11px; color: #64748b; margin-top: 3px;">
+                                                            <?php echo $cacheKb; ?> KB cached <?php echo !empty($ws->last_synced_at) ? '• ' . \Carbon\Carbon::parse($ws->last_synced_at)->diffForHumans() : ''; ?>
+                                                        </div>
+                                                    <?php elseif ($ws->sync_status === 'error'): ?>
+                                                        <span class="label label-danger" style="font-size: 11px;" title="<?php echo htmlspecialchars($ws->sync_error ?? ''); ?>">
+                                                            <i class="fas fa-exclamation-triangle"></i> Error
+                                                        </span>
+                                                        <div style="font-size: 11px; color: #dc2626; margin-top: 3px; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="<?php echo htmlspecialchars($ws->sync_error ?? ''); ?>">
+                                                            <?php echo htmlspecialchars($ws->sync_error ?? 'Sync failed'); ?>
+                                                        </div>
+                                                    <?php else: ?>
+                                                        <span class="label label-warning" style="font-size: 11px;"><i class="fas fa-clock"></i> Pending Sync</span>
+                                                    <?php endif; ?>
+                                                </td>
+                                                <td style="padding: 14px; text-align: center; vertical-align: middle;">
+                                                    <form method="post" action="<?php echo $baseActionUrl; ?>&tab=datasources" style="display: inline-block; margin: 0;">
+                                                        <?php echo $csrfToken; ?>
+                                                        <input type="hidden" name="toggle_website_datasource" value="1">
+                                                        <input type="hidden" name="website_id" value="<?php echo (int)$ws->id; ?>">
+                                                        <button type="submit" class="btn btn-xs <?php echo !empty($ws->is_enabled) ? 'btn-success' : 'btn-default'; ?>" style="border-radius: 12px; padding: 2px 10px; font-weight: 600;" title="Click to toggle status">
+                                                            <?php echo !empty($ws->is_enabled) ? '<i class="fas fa-toggle-on"></i> Active' : '<i class="fas fa-toggle-off"></i> Disabled'; ?>
+                                                        </button>
+                                                    </form>
+                                                </td>
+                                                <td style="padding: 14px; text-align: right; vertical-align: middle;">
+                                                    <div class="btn-group" role="group">
+                                                        <?php if ($ws->source_type === 'url'): ?>
+                                                            <form method="post" action="<?php echo $baseActionUrl; ?>&tab=datasources" style="display: inline-block; margin: 0;">
+                                                                <?php echo $csrfToken; ?>
+                                                                <input type="hidden" name="sync_website_datasource" value="1">
+                                                                <input type="hidden" name="website_id" value="<?php echo (int)$ws->id; ?>">
+                                                                <button type="submit" class="btn btn-default btn-xs" title="Sync / Fetch now from URL">
+                                                                    <i class="fas fa-sync text-primary"></i> Sync
+                                                                </button>
+                                                            </form>
+                                                        <?php endif; ?>
+
+                                                        <button type="button" class="btn btn-default btn-xs btn-preview-ws" data-name="<?php echo htmlspecialchars($ws->name); ?>" data-content="<?php echo htmlspecialchars($previewSnippet); ?>" title="Preview AI grounding digest">
+                                                            <i class="fas fa-eye text-info"></i> Preview
+                                                        </button>
+
+                                                        <button type="button" class="btn btn-default btn-xs btn-edit-ws"
+                                                            data-id="<?php echo (int)$ws->id; ?>"
+                                                            data-name="<?php echo htmlspecialchars($ws->name); ?>"
+                                                            data-type="<?php echo htmlspecialchars($ws->source_type); ?>"
+                                                            data-url="<?php echo htmlspecialchars($ws->source_url ?? ''); ?>"
+                                                            data-custom="<?php echo htmlspecialchars($ws->custom_content ?? ''); ?>"
+                                                            data-enabled="<?php echo (int)$ws->is_enabled; ?>"
+                                                            title="Edit website data source">
+                                                            <i class="fas fa-edit text-warning"></i> Edit
+                                                        </button>
+
+                                                        <form method="post" action="<?php echo $baseActionUrl; ?>&tab=datasources" style="display: inline-block; margin: 0;" onsubmit="return confirm('Are you sure you want to delete this website data source?');">
+                                                            <?php echo $csrfToken; ?>
+                                                            <input type="hidden" name="delete_website_datasource" value="1">
+                                                            <input type="hidden" name="website_id" value="<?php echo (int)$ws->id; ?>">
+                                                            <button type="submit" class="btn btn-default btn-xs" title="Delete">
+                                                                <i class="fas fa-trash text-danger"></i>
+                                                            </button>
+                                                        </form>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+                </div>
+
+                <!-- MODAL: ADD WEBSITE DATA SOURCE -->
+                <div class="modal fade" id="modalAddWebsiteSource" tabindex="-1" role="dialog">
+                    <div class="modal-dialog modal-lg" role="document">
+                        <div class="modal-content" style="border-radius: 8px;">
+                            <form method="post" action="<?php echo $baseActionUrl; ?>&tab=datasources">
+                                <?php echo $csrfToken; ?>
+                                <input type="hidden" name="add_website_datasource" value="1">
+                                
+                                <div class="modal-header" style="background: #f8fafc; border-bottom: 1px solid #e2e8f0;">
+                                    <button type="button" class="close" data-dismiss="modal">&times;</button>
+                                    <h4 class="modal-title" style="font-weight: 700; color: #1e293b;">
+                                        <i class="fas fa-globe text-primary" style="margin-right: 6px;"></i> Add Website AI-Summary Data Source
+                                    </h4>
+                                </div>
+                                <div class="modal-body" style="padding: 24px;">
+                                    <div class="form-group">
+                                        <label style="font-weight: 600; color: #1e293b;">Website / Source Label <span class="text-danger">*</span></label>
+                                        <input type="text" name="website_name" class="form-control" placeholder="e.g. HostingSpell Main Website" required style="border-radius: 6px;">
+                                        <span class="help-block" style="font-size: 11.5px;">A human-readable label identifying this website source.</span>
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label style="font-weight: 600; color: #1e293b;">Source Type</label>
+                                        <div style="display: flex; gap: 20px; margin-top: 4px;">
+                                            <label style="font-weight: 500; cursor: pointer;">
+                                                <input type="radio" name="source_type" value="url" checked onchange="toggleAddWsType('url')">
+                                                <i class="fas fa-link text-primary" style="margin-left: 4px;"></i> Fetch from JSON Summary URL
+                                            </label>
+                                            <label style="font-weight: 500; cursor: pointer;">
+                                                <input type="radio" name="source_type" value="custom" onchange="toggleAddWsType('custom')">
+                                                <i class="fas fa-keyboard text-info" style="margin-left: 4px;"></i> Custom JSON / Text Input
+                                            </label>
+                                        </div>
+                                    </div>
+
+                                    <div id="addWsUrlGroup" class="form-group">
+                                        <label style="font-weight: 600; color: #1e293b;">JSON Summary URL <span class="text-danger">*</span></label>
+                                        <input type="url" name="source_url" class="form-control" placeholder="https://hostingspell.com/ai-summary" style="border-radius: 6px;">
+                                        <span class="help-block" style="font-size: 11.5px;">
+                                            Direct link to your website's AI summary JSON (e.g. <code>https://hostingspell.com/ai-summary</code>). Sahdev will fetch, validate, and cache it automatically.
+                                        </span>
+                                    </div>
+
+                                    <div id="addWsCustomGroup" class="form-group" style="display: none;">
+                                        <label style="font-weight: 600; color: #1e293b;">Custom JSON / Markdown Content</label>
+                                        <textarea name="custom_content" class="form-control" rows="10" placeholder='{"name": "My Hosting", "company": {...}, "hosting_products": {...}}' style="font-family: monospace; font-size: 12px; border-radius: 6px;"></textarea>
+                                        <span class="help-block" style="font-size: 11.5px;">
+                                            Paste any structured JSON summary or plain markdown describing your website, plans, and policies.
+                                        </span>
+                                    </div>
+
+                                    <div class="checkbox" style="margin-top: 15px;">
+                                        <label style="font-weight: 600; color: #1e293b;">
+                                            <input type="checkbox" name="is_enabled" value="1" checked> Enable immediately in Client Live Chat
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="modal-footer" style="background: #f8fafc; border-top: 1px solid #e2e8f0;">
+                                    <button type="button" class="btn btn-default" data-dismiss="modal">Cancel</button>
+                                    <button type="submit" class="btn btn-primary" style="font-weight: 600;">
+                                        <i class="fas fa-save" style="margin-right: 4px;"></i> Save &amp; Synchronize Source
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- MODAL: EDIT WEBSITE DATA SOURCE -->
+                <div class="modal fade" id="modalEditWebsiteSource" tabindex="-1" role="dialog">
+                    <div class="modal-dialog modal-lg" role="document">
+                        <div class="modal-content" style="border-radius: 8px;">
+                            <form method="post" action="<?php echo $baseActionUrl; ?>&tab=datasources">
+                                <?php echo $csrfToken; ?>
+                                <input type="hidden" name="edit_website_datasource" value="1">
+                                <input type="hidden" name="website_id" id="edit_ws_id" value="">
+                                
+                                <div class="modal-header" style="background: #f8fafc; border-bottom: 1px solid #e2e8f0;">
+                                    <button type="button" class="close" data-dismiss="modal">&times;</button>
+                                    <h4 class="modal-title" style="font-weight: 700; color: #1e293b;">
+                                        <i class="fas fa-edit text-warning" style="margin-right: 6px;"></i> Edit Website AI-Summary Data Source
+                                    </h4>
+                                </div>
+                                <div class="modal-body" style="padding: 24px;">
+                                    <div class="form-group">
+                                        <label style="font-weight: 600; color: #1e293b;">Website / Source Label <span class="text-danger">*</span></label>
+                                        <input type="text" name="website_name" id="edit_ws_name" class="form-control" required style="border-radius: 6px;">
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label style="font-weight: 600; color: #1e293b;">Source Type</label>
+                                        <div style="display: flex; gap: 20px; margin-top: 4px;">
+                                            <label style="font-weight: 500; cursor: pointer;">
+                                                <input type="radio" name="source_type" id="edit_ws_type_url" value="url" onchange="toggleEditWsType('url')">
+                                                <i class="fas fa-link text-primary" style="margin-left: 4px;"></i> Fetch from JSON Summary URL
+                                            </label>
+                                            <label style="font-weight: 500; cursor: pointer;">
+                                                <input type="radio" name="source_type" id="edit_ws_type_custom" value="custom" onchange="toggleEditWsType('custom')">
+                                                <i class="fas fa-keyboard text-info" style="margin-left: 4px;"></i> Custom JSON / Text Input
+                                            </label>
+                                        </div>
+                                    </div>
+
+                                    <div id="editWsUrlGroup" class="form-group">
+                                        <label style="font-weight: 600; color: #1e293b;">JSON Summary URL</label>
+                                        <input type="url" name="source_url" id="edit_ws_url" class="form-control" style="border-radius: 6px;">
+                                        <span class="help-block" style="font-size: 11.5px;">Saving a changed URL will trigger a re-sync automatically.</span>
+                                    </div>
+
+                                    <div id="editWsCustomGroup" class="form-group" style="display: none;">
+                                        <label style="font-weight: 600; color: #1e293b;">Custom JSON / Markdown Content</label>
+                                        <textarea name="custom_content" id="edit_ws_custom" class="form-control" rows="10" style="font-family: monospace; font-size: 12px; border-radius: 6px;"></textarea>
+                                    </div>
+
+                                    <div class="checkbox" style="margin-top: 15px;">
+                                        <label style="font-weight: 600; color: #1e293b;">
+                                            <input type="checkbox" name="is_enabled" id="edit_ws_enabled" value="1"> Enable in Client Live Chat
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="modal-footer" style="background: #f8fafc; border-top: 1px solid #e2e8f0;">
+                                    <button type="button" class="btn btn-default" data-dismiss="modal">Cancel</button>
+                                    <button type="submit" class="btn btn-primary" style="font-weight: 600;">
+                                        <i class="fas fa-save" style="margin-right: 4px;"></i> Save Changes
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- MODAL: PREVIEW AI GROUNDING DIGEST -->
+                <div class="modal fade" id="modalPreviewWebsiteSource" tabindex="-1" role="dialog">
+                    <div class="modal-dialog modal-lg" role="document">
+                        <div class="modal-content" style="border-radius: 8px;">
+                            <div class="modal-header" style="background: #f8fafc; border-bottom: 1px solid #e2e8f0;">
+                                <button type="button" class="close" data-dismiss="modal">&times;</button>
+                                <h4 class="modal-title" style="font-weight: 700; color: #1e293b;">
+                                    <i class="fas fa-eye text-info" style="margin-right: 6px;"></i> AI Grounding Digest Preview: <span id="previewWsTitle"></span>
+                                </h4>
+                            </div>
+                            <div class="modal-body" style="padding: 20px;">
+                                <p class="text-muted" style="font-size: 12.5px; margin-bottom: 12px;">
+                                    Below is the exact token-efficient knowledge digest compiled from this data source that is injected into the AI's system prompt during Client Live Chat conversations.
+                                </p>
+                                <pre id="previewWsContent" style="background: #0f172a; color: #e2e8f0; padding: 16px; border-radius: 6px; max-height: 480px; overflow-y: auto; font-family: monospace; font-size: 12px; line-height: 1.6; white-space: pre-wrap; word-break: break-word;"></pre>
+                            </div>
+                            <div class="modal-footer" style="background: #f8fafc; border-top: 1px solid #e2e8f0;">
+                                <button type="button" class="btn btn-default" data-dismiss="modal">Close Preview</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <script>
+                function toggleAddWsType(type) {
+                    if (type === 'custom') {
+                        document.getElementById('addWsUrlGroup').style.display = 'none';
+                        document.getElementById('addWsCustomGroup').style.display = 'block';
+                    } else {
+                        document.getElementById('addWsUrlGroup').style.display = 'block';
+                        document.getElementById('addWsCustomGroup').style.display = 'none';
+                    }
+                }
+
+                function toggleEditWsType(type) {
+                    if (type === 'custom') {
+                        document.getElementById('editWsUrlGroup').style.display = 'none';
+                        document.getElementById('editWsCustomGroup').style.display = 'block';
+                    } else {
+                        document.getElementById('editWsUrlGroup').style.display = 'block';
+                        document.getElementById('editWsCustomGroup').style.display = 'none';
+                    }
+                }
+
+                document.addEventListener('DOMContentLoaded', function() {
+                    // Edit button handler
+                    $('.btn-edit-ws').on('click', function() {
+                        var id = $(this).data('id');
+                        var name = $(this).data('name');
+                        var type = $(this).data('type');
+                        var url = $(this).data('url');
+                        var custom = $(this).data('custom');
+                        var enabled = $(this).data('enabled');
+
+                        $('#edit_ws_id').val(id);
+                        $('#edit_ws_name').val(name);
+                        if (type === 'custom') {
+                            $('#edit_ws_type_custom').prop('checked', true);
+                            toggleEditWsType('custom');
+                        } else {
+                            $('#edit_ws_type_url').prop('checked', true);
+                            toggleEditWsType('url');
+                        }
+                        $('#edit_ws_url').val(url);
+                        $('#edit_ws_custom').val(custom);
+                        $('#edit_ws_enabled').prop('checked', enabled == 1);
+                        $('#modalEditWebsiteSource').modal('show');
+                    });
+
+                    // Preview button handler
+                    $('.btn-preview-ws').on('click', function() {
+                        var name = $(this).data('name');
+                        var content = $(this).data('content');
+                        $('#previewWsTitle').text(name);
+                        $('#previewWsContent').text(content || '(Empty content. Click "Sync" to fetch from URL.)');
+                        $('#modalPreviewWebsiteSource').modal('show');
+                    });
+                });
+                </script>
             <?php endif; ?>
 
             <!-- ── TAB 4: WIDGET CUSTOMIZER & APPEARANCE ──────────────────────── -->

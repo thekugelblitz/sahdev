@@ -27,6 +27,7 @@ class SchemaManager
         self::ensureVisitorTable();
         self::ensureClientChatPromptsTable();
         self::ensureRateLimitsTable();
+        self::ensureWebsiteDataSourcesTable();
     }
 
     /**
@@ -123,6 +124,7 @@ class SchemaManager
                 'client_chat_ds_promotions'         => ['type' => 'boolean', 'default' => 1],
                 'client_chat_ds_payment_gateways'   => ['type' => 'boolean', 'default' => 1],
                 'client_chat_ds_departments'        => ['type' => 'boolean', 'default' => 1],
+                'client_chat_ds_websites'           => ['type' => 'boolean', 'default' => 1],
 
                 // Client Live Chat Widget Dimensions & Themes
                 'client_chat_width'             => ['type' => 'integer', 'default' => 380],
@@ -506,6 +508,32 @@ class SchemaManager
             }
         } catch (\Throwable $e) {
             // Benign failure if table exists
+        }
+    }
+
+    /**
+     * Ensure website data sources table exists for public website AI summary grounding.
+     */
+    public static function ensureWebsiteDataSourcesTable(): void
+    {
+        try {
+            if (!Capsule::schema()->hasTable('tblsahdev_website_datasources')) {
+                Capsule::schema()->create('tblsahdev_website_datasources', function ($table) {
+                    $table->increments('id');
+                    $table->string('name', 128);
+                    $table->string('source_type', 32)->default('url'); // 'url' or 'custom'
+                    $table->string('source_url', 255)->nullable();
+                    $table->longText('custom_content')->nullable();
+                    $table->longText('cached_content')->nullable();
+                    $table->timestamp('last_synced_at')->nullable();
+                    $table->string('sync_status', 32)->default('pending'); // 'pending', 'success', 'error'
+                    $table->text('sync_error')->nullable();
+                    $table->boolean('is_enabled')->default(1);
+                    $table->timestamps();
+                });
+            }
+        } catch (\Throwable $e) {
+            // Benign failure
         }
     }
 }

@@ -337,6 +337,7 @@ function sahdev_activate()
                     $table->boolean('client_chat_ds_promotions')->default(1);
                     $table->boolean('client_chat_ds_payment_gateways')->default(1);
                     $table->boolean('client_chat_ds_departments')->default(1);
+                    $table->boolean('client_chat_ds_websites')->default(1);
                     $table->integer('client_chat_width')->default(380);
                     $table->integer('client_chat_height')->default(560);
                     $table->integer('client_chat_expand_width')->default(700);

@@ -500,6 +500,22 @@ class ClientChatScopeService
             } catch (\Throwable $e) {}
         }
 
+        // 6. Public Websites & AI Summary Knowledge Grounding
+        if (self::isSourceEnabled('client_chat_ds_websites', true)) {
+            try {
+                require_once __DIR__ . '/WebsiteDataSourcesService.php';
+                if (class_exists('Sahdev\Lib\WebsiteDataSourcesService')) {
+                    $webScope = WebsiteDataSourcesService::getActiveWebsiteScope();
+                    if (!empty($webScope)) {
+                        $sections[] = "OFFICIAL WEBSITE KNOWLEDGE & SERVICES (AI Summary Grounding):\n" . $webScope;
+                    }
+                }
+            } catch (\Throwable $e) {
+                ModuleLogger::error('client_chat', "Website data source grounding error: " . $e->getMessage());
+            }
+        }
+
         return !empty($sections) ? implode("\n\n", $sections) : "";
     }
 }
+
