@@ -28,6 +28,7 @@ class SchemaManager
         self::ensureClientChatPromptsTable();
         self::ensureRateLimitsTable();
         self::ensureWebsiteDataSourcesTable();
+        self::ensureAdminPresenceTable();
     }
 
     /**
@@ -169,6 +170,14 @@ class SchemaManager
                 'client_chat_wa_speed_label'     => ['type' => 'text'],
                 'client_chat_siri_orb_enabled'   => ['type' => 'boolean', 'default' => 1],
 
+                // Live Agent Console, Real-Time Takeover & External Embedding
+                'client_chat_human_takeover_enabled' => ['type' => 'boolean', 'default' => 1],
+                'client_chat_sound_admin_alert'      => ['type' => 'boolean', 'default' => 1],
+                'client_chat_sound_type'             => ['type' => 'string', 'length' => 32, 'default' => 'chime'],
+                'client_chat_console_poll_interval'  => ['type' => 'integer', 'default' => 2],
+                'client_chat_cors_origins'           => ['type' => 'text'],
+                'client_chat_external_embed_enabled' => ['type' => 'boolean', 'default' => 1],
+
                 // Safe Ops & Rollback Governance
                 'ops_journal_retention_days'   => ['type' => 'integer', 'default' => 90],
                 'ops_require_password_tier3'   => ['type' => 'boolean', 'default' => 1],
@@ -253,9 +262,34 @@ class SchemaManager
                     $table->string('title', 255)->nullable();
                     $table->integer('assigned_admin_id')->unsigned()->default(0)->index();
                     $table->longText('metadata_json')->nullable();
+                    $table->text('typing_preview')->nullable();
+                    $table->timestamp('typing_at')->nullable();
+                    $table->string('summon_status', 32)->default('none')->index();
+                    $table->timestamp('summoned_at')->nullable()->index();
+                    $table->string('source_domain', 255)->nullable()->index();
+                    $table->text('source_page')->nullable();
+                    $table->integer('takeover_timeout_mins')->default(0);
+                    $table->timestamp('last_staff_message_at')->nullable();
                     $table->timestamp('last_message_at')->nullable()->index();
                     $table->timestamps();
                 });
+            }
+
+            // Ensure columns exist if table was previously created
+            $sessionCols = [
+                'typing_preview'         => function ($table) { $table->text('typing_preview')->nullable(); },
+                'typing_at'              => function ($table) { $table->timestamp('typing_at')->nullable(); },
+                'summon_status'          => function ($table) { $table->string('summon_status', 32)->default('none')->index(); },
+                'summoned_at'            => function ($table) { $table->timestamp('summoned_at')->nullable()->index(); },
+                'source_domain'          => function ($table) { $table->string('source_domain', 255)->nullable()->index(); },
+                'source_page'            => function ($table) { $table->text('source_page')->nullable(); },
+                'takeover_timeout_mins'  => function ($table) { $table->integer('takeover_timeout_mins')->default(0); },
+                'last_staff_message_at'  => function ($table) { $table->timestamp('last_staff_message_at')->nullable(); },
+            ];
+            foreach ($sessionCols as $col => $fn) {
+                if (!Capsule::schema()->hasColumn('tblsahdev_chat_sessions', $col)) {
+                    Capsule::schema()->table('tblsahdev_chat_sessions', $fn);
+                }
             }
 
             // Ensure utf8mb4 collation for full emoji and multilingual support
@@ -529,6 +563,28 @@ class SchemaManager
                     $table->string('sync_status', 32)->default('pending'); // 'pending', 'success', 'error'
                     $table->text('sync_error')->nullable();
                     $table->boolean('is_enabled')->default(1);
+                    $table->timestamps();
+                });
+            }
+        } catch (\Throwable $e) {
+            // Benign failure
+        }
+    }
+
+    /**
+     * Ensure admin presence table exists for live chat operator monitoring and assignment.
+     */
+    public static function ensureAdminPresenceTable(): void
+    {
+        try {
+            if (!Capsule::schema()->hasTable('tblsahdev_admin_presence')) {
+                Capsule::schema()->create('tblsahdev_admin_presence', function ($table) {
+                    $table->increments('id');
+                    $table->integer('admin_id')->unsigned()->unique();
+                    $table->string('admin_name', 128)->nullable();
+                    $table->timestamp('last_seen_at')->nullable()->index();
+                    $table->boolean('is_online')->default(1)->index();
+                    $table->integer('active_session_id')->unsigned()->default(0);
                     $table->timestamps();
                 });
             }

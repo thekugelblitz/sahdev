@@ -529,6 +529,12 @@ class AdminController
             ];
         }
         if ($hasClientChatPerm) {
+            $categories['chat']['tools']['live_console'] = [
+                'label' => 'Live Support Console',
+                'icon'  => 'fas fa-satellite-dish',
+                'url'   => $base . '&action=live_console',
+                'desc'  => 'Real-time operator dashboard & sneak-peek'
+            ];
             $categories['chat']['tools']['client_chat'] = [
                 'label' => 'Client Live Chat',
                 'icon'  => 'fas fa-headset',
@@ -8781,6 +8787,12 @@ class AdminController
                     'client_chat_wa_dept_heading'    => trim($_POST['client_chat_wa_dept_heading'] ?? '') ?: null,
                     'client_chat_wa_speed_label'     => trim($_POST['client_chat_wa_speed_label'] ?? '') ?: null,
                     'client_chat_siri_orb_enabled'   => !empty($_POST['client_chat_siri_orb_enabled']) ? 1 : 0,
+                    'client_chat_human_takeover_enabled' => !empty($_POST['client_chat_human_takeover_enabled']) ? 1 : 0,
+                    'client_chat_sound_admin_alert'      => !empty($_POST['client_chat_sound_admin_alert']) ? 1 : 0,
+                    'client_chat_sound_type'             => in_array($_POST['client_chat_sound_type'] ?? '', ['chime', 'bell', 'ping'], true) ? $_POST['client_chat_sound_type'] : 'chime',
+                    'client_chat_console_poll_interval'  => max(1, min(10, (int)($_POST['client_chat_console_poll_interval'] ?? 2))),
+                    'client_chat_cors_origins'           => trim($_POST['client_chat_cors_origins'] ?? '*'),
+                    'client_chat_external_embed_enabled' => !empty($_POST['client_chat_external_embed_enabled']) ? 1 : 0,
                     'updated_at'                    => \Carbon\Carbon::now(),
                 ]);
                 $successMessage = "Widget configuration and appearance saved successfully.";
@@ -11396,14 +11408,104 @@ class AdminController
                                         </select>
                                     </div>
 
-                                    <div class="form-group" style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px; margin-bottom: 25px;">
-                                        <div class="checkbox" style="margin: 0 0 4px 0;">
-                                            <label style="font-weight: 600;">
-                                                <input type="checkbox" name="client_chat_debug" value="1" <?php echo !empty($settings->client_chat_debug) ? 'checked' : ''; ?>>
-                                                Enable Live Chat Diagnostics & Console Logging
-                                            </label>
+                                    <!-- Live Operator Console & Audio Alerts Panel -->
+                                    <div class="panel panel-default" style="border-radius: 8px; margin-bottom: 22px; background: #f8fafc; border: 1px solid #cbd5e1;">
+                                        <div class="panel-heading" style="background: #e2e8f0; padding: 10px 15px; font-weight: 700; font-size: 13px; color: #1e293b; display: flex; justify-content: space-between; align-items: center;">
+                                            <span><i class="fas fa-satellite-dish text-primary"></i> Live Operator Console &amp; Audio Alerts</span>
+                                            <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=live_console" target="_blank" class="btn btn-xs btn-primary" style="font-weight: 600;">
+                                                <i class="fas fa-external-link-alt"></i> Open Live Console
+                                            </a>
                                         </div>
-                                        <span class="help-block" style="margin: 0; font-size: 11.5px;">Logs full endpoint handshakes and LLM payloads to Module Logs for real-time debugging.</span>
+                                        <div class="panel-body" style="padding: 15px;">
+                                            <div class="checkbox" style="margin-top: 0; margin-bottom: 12px;">
+                                                <label style="font-weight: 700; color: #1e293b;">
+                                                    <input type="checkbox" name="client_chat_human_takeover_enabled" value="1" <?php echo !empty($settings->client_chat_human_takeover_enabled ?? 1) ? 'checked' : ''; ?>>
+                                                    Enable Live Human Agent Participation &amp; Summoning
+                                                </label>
+                                                <span class="help-block" style="font-size: 11px; margin-top: 2px;">
+                                                    Allows visitors to request a human agent, enables typing sneak-peek, and permits staff to take over conversations.
+                                                </span>
+                                            </div>
+
+                                            <div class="checkbox" style="margin-bottom: 14px;">
+                                                <label style="font-weight: 700; color: #1e293b;">
+                                                    <input type="checkbox" name="client_chat_sound_admin_alert" id="client_chat_sound_admin_alert" value="1" <?php echo !empty($settings->client_chat_sound_admin_alert ?? 1) ? 'checked' : ''; ?>>
+                                                    Play Audio Notification Chime on Live Chat Summon
+                                                </label>
+                                                <span class="help-block" style="font-size: 11px; margin-top: 2px;">
+                                                    Alerts online WHMCS administrators across all admin pages when a visitor clicks "Talk to Human" or needs assistance.
+                                                </span>
+                                            </div>
+
+                                            <div class="row">
+                                                <div class="col-md-6 form-group">
+                                                    <label style="font-size: 12px; font-weight: 600;">Alert Sound Tone</label>
+                                                    <div style="display: flex; gap: 8px;">
+                                                        <select name="client_chat_sound_type" id="soundTypeSelect" class="form-control input-sm" style="font-weight: 600;">
+                                                            <option value="chime" <?php echo (($settings->client_chat_sound_type ?? 'chime') === 'chime') ? 'selected' : ''; ?>>Modern Chime (Dual Tone 587Hz &amp; 880Hz)</option>
+                                                            <option value="bell" <?php echo (($settings->client_chat_sound_type ?? '') === 'bell') ? 'selected' : ''; ?>>Support Bell (Harmonized 523Hz &amp; 659Hz)</option>
+                                                            <option value="ping" <?php echo (($settings->client_chat_sound_type ?? '') === 'ping') ? 'selected' : ''; ?>>Electronic Ping (Crisp High-Frequency 987Hz)</option>
+                                                        </select>
+                                                        <button type="button" class="btn btn-default btn-sm" id="testSoundBtn" title="Test notification sound" style="flex-shrink: 0;">
+                                                            <i class="fas fa-volume-up"></i> Test
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                <div class="col-md-6 form-group">
+                                                    <label style="font-size: 12px; font-weight: 600;">Console Refresh Polling</label>
+                                                    <div style="display: flex; align-items: center; gap: 10px;">
+                                                        <input type="range" name="client_chat_console_poll_interval" min="1" max="5" step="1" value="<?php echo (int)($settings->client_chat_console_poll_interval ?? 2); ?>" id="pollIntervalRange" style="flex: 1;">
+                                                        <span id="pollIntervalDisplay" style="font-weight: 700; font-size: 13px; min-width: 35px;"><?php echo (int)($settings->client_chat_console_poll_interval ?? 2); ?>s</span>
+                                                    </div>
+                                                    <span class="help-block" style="font-size: 10.5px; margin-top: 2px;">2s recommended for shared hosting (adaptive 5s when tab blurred).</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- External Website Embedding & CORS Card -->
+                                    <div class="panel panel-default" style="border-radius: 8px; margin-bottom: 22px; background: #eff6ff; border: 1px solid #bfdbfe;">
+                                        <div class="panel-heading" style="background: #dbeafe; padding: 10px 15px; font-weight: 700; font-size: 13px; color: #1e40af;">
+                                            <i class="fas fa-code"></i> External Website Embedding &amp; CORS Integration
+                                        </div>
+                                        <div class="panel-body" style="padding: 15px;">
+                                            <div class="checkbox" style="margin-top: 0; margin-bottom: 12px;">
+                                                <label style="font-weight: 700; color: #1e40af;">
+                                                    <input type="checkbox" name="client_chat_external_embed_enabled" value="1" <?php echo !empty($settings->client_chat_external_embed_enabled ?? 1) ? 'checked' : ''; ?>>
+                                                    Enable External Website Embed (embed.js &amp; CORS)
+                                                </label>
+                                                <span class="help-block" style="font-size: 11px; margin-top: 2px; color: #1d4ed8;">
+                                                    Embed the exact same live chat widget onto external sites (e.g. hostingspell.com, WordPress, custom landing pages).
+                                                </span>
+                                            </div>
+
+                                            <?php 
+                                            $systemUrl = \Sahdev\Lib\ChatService::getWhmcsSystemUrl();
+                                            $embedJsUrl = rtrim($systemUrl, '/') . '/modules/addons/sahdev/embed.js';
+                                            $embedSnippet = '<!-- Sahdev AI + Human Live Chat Widget -->' . "\n" . '<script src="' . htmlspecialchars($embedJsUrl) . '" async defer></script>';
+                                            ?>
+
+                                            <div class="form-group" style="margin-bottom: 14px;">
+                                                <label style="font-size: 12px; font-weight: 600; color: #1e40af;">1-Click Website Embed Code</label>
+                                                <div style="position: relative;">
+                                                    <textarea id="embedSnippetText" class="form-control" rows="2" readonly style="font-family: monospace; font-size: 12px; background: #fff; color: #0f172a; padding-right: 80px;"><?php echo $embedSnippet; ?></textarea>
+                                                    <button type="button" id="copyEmbedBtn" class="btn btn-xs btn-primary" style="position: absolute; right: 8px; top: 8px; font-weight: 600;">
+                                                        <i class="fas fa-copy"></i> Copy
+                                                    </button>
+                                                </div>
+                                                <span class="help-block" style="font-size: 11px; margin-top: 4px; color: #2563eb;">
+                                                    Paste this script tag right before the closing <code>&lt;/body&gt;</code> tag on any website. Zero dependencies required!
+                                                </span>
+                                            </div>
+
+                                            <div class="form-group" style="margin-bottom: 0;">
+                                                <label style="font-size: 12px; font-weight: 600; color: #1e40af;">Allowed CORS Domains (Whitelist)</label>
+                                                <input type="text" name="client_chat_cors_origins" class="form-control input-sm" value="<?php echo htmlspecialchars($settings->client_chat_cors_origins ?? '*'); ?>" placeholder="* or https://hostingspell.com, https://mywebsite.com">
+                                                <span class="help-block" style="font-size: 10.5px; margin-top: 2px; color: #2563eb;">
+                                                    Enter <code>*</code> to permit all domains, or specify comma-separated origins.
+                                                </span>
+                                            </div>
+                                        </div>
                                     </div>
 
                                     <button type="submit" class="btn btn-primary btn-lg"><i class="fas fa-save"></i> Save Widget Customization</button>
@@ -11800,6 +11902,92 @@ class AdminController
                     if (launcherStyleSelect) launcherStyleSelect.addEventListener('change', updatePreview);
                     if (launcherTextInput) launcherTextInput.addEventListener('input', updatePreview);
 
+                    // Range slider display
+                    var pollRange = document.getElementById('pollIntervalRange');
+                    var pollDisplay = document.getElementById('pollIntervalDisplay');
+                    if (pollRange && pollDisplay) {
+                        pollRange.addEventListener('input', function() {
+                            pollDisplay.textContent = this.value + 's';
+                        });
+                    }
+
+                    // 1-Click Copy Embed Code
+                    var copyBtn = document.getElementById('copyEmbedBtn');
+                    var embedText = document.getElementById('embedSnippetText');
+                    if (copyBtn && embedText) {
+                        copyBtn.addEventListener('click', function() {
+                            embedText.select();
+                            if (navigator.clipboard) {
+                                navigator.clipboard.writeText(embedText.value).then(function() {
+                                    copyBtn.innerHTML = '<i class="fas fa-check"></i> Copied!';
+                                    setTimeout(function() { copyBtn.innerHTML = '<i class="fas fa-copy"></i> Copy'; }, 2000);
+                                });
+                            } else {
+                                document.execCommand('copy');
+                                copyBtn.innerHTML = '<i class="fas fa-check"></i> Copied!';
+                                setTimeout(function() { copyBtn.innerHTML = '<i class="fas fa-copy"></i> Copy'; }, 2000);
+                            }
+                        });
+                    }
+
+                    // Test Web Audio Sound Generator (Zero file dependency!)
+                    var testSoundBtn = document.getElementById('testSoundBtn');
+                    var soundTypeSelect = document.getElementById('soundTypeSelect');
+                    if (testSoundBtn) {
+                        testSoundBtn.addEventListener('click', function() {
+                            var tone = soundTypeSelect ? soundTypeSelect.value : 'chime';
+                            playNotificationSound(tone);
+                        });
+                    }
+
+                    function playNotificationSound(type) {
+                        try {
+                            var ctx = new (window.AudioContext || window.webkitAudioContext)();
+                            if (ctx.state === 'suspended') ctx.resume();
+                            var now = ctx.currentTime;
+                            if (type === 'bell') {
+                                [523.25, 659.25, 783.99].forEach(function(freq, idx) {
+                                    var osc = ctx.createOscillator();
+                                    var gain = ctx.createGain();
+                                    osc.type = 'sine';
+                                    osc.frequency.setValueAtTime(freq, now + idx * 0.08);
+                                    gain.gain.setValueAtTime(0.25, now + idx * 0.08);
+                                    gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.08 + 0.6);
+                                    osc.connect(gain);
+                                    gain.connect(ctx.destination);
+                                    osc.start(now + idx * 0.08);
+                                    osc.stop(now + idx * 0.08 + 0.65);
+                                });
+                            } else if (type === 'ping') {
+                                var osc = ctx.createOscillator();
+                                var gain = ctx.createGain();
+                                osc.type = 'sine';
+                                osc.frequency.setValueAtTime(987.77, now);
+                                gain.gain.setValueAtTime(0.3, now);
+                                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+                                osc.connect(gain);
+                                gain.connect(ctx.destination);
+                                osc.start(now);
+                                osc.stop(now + 0.38);
+                            } else {
+                                [587.33, 880.00].forEach(function(freq, idx) {
+                                    var osc = ctx.createOscillator();
+                                    var gain = ctx.createGain();
+                                    osc.type = 'sine';
+                                    osc.frequency.setValueAtTime(freq, now + idx * 0.12);
+                                    gain.gain.setValueAtTime(0.3, now + idx * 0.12);
+                                    gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.12 + 0.5);
+                                    osc.connect(gain);
+                                    gain.connect(ctx.destination);
+                                    osc.start(now + idx * 0.12);
+                                    osc.stop(now + idx * 0.12 + 0.55);
+                                });
+                            }
+                        } catch (e) {
+                            console.warn('AudioContext error:', e);
+                        }
+                    }
+
                     updatePreview();
                 });
                 </script>
@@ -11947,6 +12135,935 @@ class AdminController
                 </div>
             <?php endif; ?>
         </div>
+        <?php
+        return ob_get_clean();
+    }
+
+    /**
+     * Enterprise AI + Human Live Support Console (Tawk.to Style).
+     * Provides real-time visitor queues, sneak-peek keystroke monitoring,
+     * live staff takeover with configurable inactivity timers, AI Co-Pilot
+     * suggestion generation, client profile watcher, and 1-click ticket conversion.
+     */
+    public function live_console()
+    {
+        $adminId = (int) ($_SESSION['adminid'] ?? 0);
+        require_once dirname(__DIR__) . '/lib/PermissionService.php';
+        require_once dirname(__DIR__) . '/lib/SchemaManager.php';
+        require_once dirname(__DIR__) . '/lib/ChatService.php';
+        \Sahdev\Lib\SchemaManager::ensureAll();
+
+        if (!\Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_CLIENT_CHAT_MANAGE)) {
+            return $this->getNavigationMarkup('live_console') . '<div class="sahdev-page-container"><div class="alert alert-danger">Access Denied: Missing permissions for Live Support Console.</div></div>';
+        }
+
+        $admin = Capsule::table('tbladmins')->where('id', $adminId)->first(['firstname', 'lastname', 'username', 'email']);
+        $adminName = $admin ? trim($admin->firstname . ' ' . $admin->lastname) : "Staff Agent";
+        $settings = Capsule::table('tblsahdev_settings')->first();
+        $pollInterval = max(1, min(10, (int)($settings->client_chat_console_poll_interval ?? 2)));
+        $soundType = $settings->client_chat_sound_type ?? 'chime';
+        $soundEnabled = !empty($settings->client_chat_sound_admin_alert ?? 1);
+        $moduleLink = htmlspecialchars($this->moduleVars['modulelink']);
+        $ajaxEndpoint = 'addonmodules.php?module=sahdev&sahdev_act=ajax_handler';
+
+        // Fetch support departments for ticket conversion modal
+        $departments = Capsule::table('tblticketdepartments')->orderBy('order', 'asc')->get(['id', 'name']);
+        $defaultDeptId = $departments->first()->id ?? 1;
+
+        $isStandalone = !empty($_GET['standalone']);
+
+        ob_start();
+        ?>
+        <?php if (!$isStandalone): ?>
+            <?php echo $this->getNavigationMarkup('live_console'); ?>
+        <?php endif; ?>
+
+        <div class="sahdev-page-container" style="<?php echo $isStandalone ? 'margin:0;padding:12px;height:100vh;box-sizing:border-box;' : 'margin-top:15px;'; ?>">
+            <!-- Top Control Bar -->
+            <div style="display:flex;align-items:center;justify-content:space-between;background:#0f172a;color:#f8fafc;padding:12px 20px;border-radius:10px 10px 0 0;box-shadow:0 4px 12px rgba(0,0,0,0.15);">
+                <div style="display:flex;align-items:center;gap:14px;">
+                    <div style="width:36px;height:36px;border-radius:8px;background:linear-gradient(135deg, #0284c7, #6366f1);display:flex;align-items:center;justify-content:center;font-size:18px;">
+                        <i class="fas fa-satellite-dish"></i>
+                    </div>
+                    <div>
+                        <div style="font-weight:700;font-size:16px;letter-spacing:-0.2px;display:flex;align-items:center;gap:8px;">
+                            Sahdev Live Support Console
+                            <span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:12px;background:#10b981;color:#fff;">
+                                <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#fff;margin-right:4px;animation:pulseDot 1.5s infinite;"></span> LIVE
+                            </span>
+                        </div>
+                        <div style="font-size:12px;color:#94a3b8;">
+                            Operator: <strong style="color:#e2e8f0;"><?php echo htmlspecialchars($adminName); ?></strong> &bull; Adaptive micro-polling: <strong><?php echo $pollInterval; ?>s</strong>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="display:flex;align-items:center;gap:10px;">
+                    <button type="button" id="toggleSoundBtn" class="btn btn-sm" style="background:#1e293b;border:1px solid #334155;color:#e2e8f0;font-weight:600;border-radius:6px;" title="Toggle audio alert chime">
+                        <i class="fas fa-volume-up text-success" id="soundIcon"></i> <span id="soundText">Sound On</span>
+                    </button>
+
+                    <button type="button" id="triggerSoundTestBtn" class="btn btn-sm" style="background:#1e293b;border:1px solid #334155;color:#94a3b8;border-radius:6px;" title="Test audio notification">
+                        <i class="fas fa-play"></i> Test Chime
+                    </button>
+
+                    <?php if (!$isStandalone): ?>
+                        <button type="button" id="popOutConsoleBtn" class="btn btn-sm" style="background:#3b82f6;border:none;color:#fff;font-weight:600;border-radius:6px;" title="Pop-out to dedicated full-screen window for multi-monitor setups">
+                            <i class="fas fa-external-link-alt"></i> Pop Out Window
+                        </button>
+                    <?php else: ?>
+                        <button type="button" onclick="window.close()" class="btn btn-sm btn-default" style="border-radius:6px;">
+                            <i class="fas fa-times"></i> Close Window
+                        </button>
+                    <?php endif; ?>
+                </div>
+            </div>
+
+            <!-- Main 3-Column Layout Workspace -->
+            <div id="liveConsoleApp" style="display:grid;grid-template-columns:330px 1fr 340px;height:calc(100vh - <?php echo $isStandalone ? '95px' : '230px'; ?>);min-height:600px;background:#f8fafc;border:1px solid #cbd5e1;border-top:none;border-radius:0 0 10px 10px;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,0.06);">
+                
+                <!-- ── COLUMN 1: SESSIONS QUEUE & FILTERS ────────────────────────── -->
+                <div style="border-right:1px solid #e2e8f0;background:#ffffff;display:flex;flex-direction:column;overflow:hidden;">
+                    <!-- Filter Tabs -->
+                    <div style="padding:12px;border-bottom:1px solid #e2e8f0;background:#f8fafc;">
+                        <div style="position:relative;margin-bottom:10px;">
+                            <i class="fas fa-search" style="position:absolute;left:10px;top:10px;color:#94a3b8;font-size:12px;"></i>
+                            <input type="text" id="queueSearch" placeholder="Search visitor name, email, UUID..." style="width:100%;padding:7px 10px 7px 30px;font-size:12px;border:1px solid #cbd5e1;border-radius:6px;box-sizing:border-box;">
+                        </div>
+                        <div style="display:flex;gap:4px;overflow-x:auto;" id="queueFilterTabs">
+                            <button type="button" class="q-tab active" data-filter="all">All</button>
+                            <button type="button" class="q-tab" data-filter="active">Active</button>
+                            <button type="button" class="q-tab" data-filter="summoned">
+                                <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#ef4444;margin-right:3px;"></span>Summoned
+                            </button>
+                            <button type="button" class="q-tab" data-filter="taken_over">Takeovers</button>
+                            <button type="button" class="q-tab" data-filter="closed">History</button>
+                        </div>
+                    </div>
+
+                    <!-- Session Cards List -->
+                    <div id="queueListContainer" style="flex:1;overflow-y:auto;padding:8px;">
+                        <div style="text-align:center;padding:40px 15px;color:#94a3b8;font-size:13px;">
+                            <i class="fas fa-spinner fa-spin" style="font-size:20px;margin-bottom:8px;"></i>
+                            <div>Connecting to live stream...</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ── COLUMN 2: LIVE CONVERSATION & SNEAK-PEEK COMPOSER ────────── -->
+                <div style="display:flex;flex-direction:column;background:#ffffff;overflow:hidden;position:relative;">
+                    <!-- Chat Header -->
+                    <div id="chatViewHeader" style="padding:12px 18px;border-bottom:1px solid #e2e8f0;background:#ffffff;display:flex;align-items:center;justify-content:space-between;min-height:55px;">
+                        <div id="chatHeaderDetails" style="display:flex;align-items:center;gap:12px;">
+                            <div style="font-size:13px;color:#64748b;">Select a conversation from the left queue to begin live monitoring or takeover.</div>
+                        </div>
+                        <div id="chatHeaderActions" style="display:none;align-items:center;gap:8px;">
+                            <!-- Takeover Controls injected dynamically -->
+                        </div>
+                    </div>
+
+                    <!-- Messages Thread Scroll Area -->
+                    <div id="chatMessagesScroll" style="flex:1;overflow-y:auto;padding:20px;background:#f8fafc;display:flex;flex-direction:column;gap:12px;">
+                        <div style="margin:auto;text-align:center;color:#94a3b8;font-size:13px;padding:30px;">
+                            <i class="fas fa-comments" style="font-size:36px;color:#cbd5e1;margin-bottom:10px;"></i>
+                            <div>No conversation selected</div>
+                        </div>
+                    </div>
+
+                    <!-- Real-Time Client Typing Sneak-Peek Bar (Pinned above composer) -->
+                    <div id="typingSneakPeekBar" style="display:none;background:#fffbeb;border-top:1px solid #fde68a;padding:8px 16px;font-size:12px;color:#92400e;align-items:center;gap:8px;animation:fadeIn 0.2s ease;">
+                        <i class="fas fa-keyboard fa-pulse" style="color:#d97706;"></i>
+                        <strong>Sneak-Peek Preview:</strong>
+                        <span id="typingSneakPeekText" style="font-style:italic;color:#78350f;word-break:break-all;"></span>
+                    </div>
+
+                    <!-- Staff Reply Composer -->
+                    <div id="chatComposerContainer" style="border-top:1px solid #e2e8f0;background:#ffffff;padding:12px 16px;display:none;flex-direction:column;gap:8px;">
+                        <div style="display:flex;align-items:center;justify-content:space-between;">
+                            <div style="font-size:11.5px;color:#64748b;font-weight:600;">
+                                <i class="fas fa-user-shield text-success"></i> Replying as Staff: <strong><?php echo htmlspecialchars($adminName); ?></strong>
+                            </div>
+                            <button type="button" id="btnAiSuggestReply" class="btn btn-xs" style="background:#f1f5f9;color:#4f46e5;font-weight:600;border:1px solid #c7d2fe;border-radius:4px;" title="AI Co-Pilot generates contextual draft suggestion">
+                                <i class="fas fa-magic"></i> AI Co-Pilot Suggest Reply
+                            </button>
+                        </div>
+                        <div style="display:flex;gap:10px;align-items:flex-end;">
+                            <textarea id="staffReplyInput" rows="2" placeholder="Type message as human staff agent... (Shift+Enter for newline, Enter to send)" style="flex:1;padding:10px 12px;font-size:13px;border:1px solid #cbd5e1;border-radius:6px;resize:none;outline:none;line-height:1.4;box-sizing:border-box;"></textarea>
+                            <button type="button" id="btnSendStaffReply" class="btn btn-primary" style="height:44px;padding:0 20px;font-weight:700;border-radius:6px;display:flex;align-items:center;gap:6px;">
+                                <i class="fas fa-paper-plane"></i> Send
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ── COLUMN 3: CLIENT ACCOUNT WATCHER & TICKET CONVERT ────────── -->
+                <div id="sideWatcherContainer" style="border-left:1px solid #e2e8f0;background:#ffffff;display:flex;flex-direction:column;overflow-y:auto;">
+                    <div style="padding:14px 16px;border-bottom:1px solid #e2e8f0;background:#f8fafc;font-weight:700;font-size:13px;color:#1e293b;display:flex;align-items:center;gap:8px;">
+                        <i class="fas fa-id-card text-primary"></i> Client Profile &amp; Account Watcher
+                    </div>
+                    <div id="sideWatcherContent" style="padding:16px;">
+                        <div style="text-align:center;padding:40px 10px;color:#94a3b8;font-size:12.5px;">
+                            Select a chat to inspect live client billing, services, and support history.
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- ── INTERACTIVE 1-CLICK TICKET CONVERSION MODAL ───────────────────── -->
+        <div class="modal fade" id="ticketConvertModal" tabindex="-1" role="dialog" aria-labelledby="ticketConvertModalLabel">
+            <div class="modal-dialog modal-lg" role="document">
+                <div class="modal-content" style="border-radius:10px;overflow:hidden;">
+                    <div class="modal-header" style="background:#0f172a;color:#fff;padding:14px 20px;">
+                        <button type="button" class="close" data-dismiss="modal" aria-label="Close" style="color:#fff;opacity:0.8;"><span aria-hidden="true">&times;</span></button>
+                        <h4 class="modal-title" id="ticketConvertModalLabel" style="font-weight:700;font-size:16px;">
+                            <i class="fas fa-ticket-alt text-warning"></i> Convert Live Chat to WHMCS Support Ticket
+                        </h4>
+                    </div>
+                    <div class="modal-body" style="padding:20px;">
+                        <form id="convertTicketForm">
+                            <input type="hidden" id="convertSessionUuid" name="session_uuid" value="">
+                            <input type="hidden" id="convertClientId" name="client_id" value="">
+
+                            <div class="row">
+                                <div class="col-md-7">
+                                    <div class="form-group">
+                                        <label style="font-weight:700;font-size:13px;">Ticket Subject (AI-Summarized)</label>
+                                        <div style="display:flex;gap:6px;">
+                                            <input type="text" id="convertSubject" name="subject" class="form-control" required style="font-weight:600;">
+                                            <button type="button" id="btnAiGenerateSubject" class="btn btn-default btn-sm" title="Re-generate subject with AI">
+                                                <i class="fas fa-magic"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-5">
+                                    <div class="form-group">
+                                        <label style="font-weight:700;font-size:13px;">Support Department</label>
+                                        <select id="convertDeptId" name="dept_id" class="form-control">
+                                            <?php foreach ($departments as $d): ?>
+                                                <option value="<?php echo (int)$d->id; ?>" <?php echo ($d->id == $defaultDeptId) ? 'selected' : ''; ?>>
+                                                    <?php echo htmlspecialchars($d->name); ?>
+                                                </option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="row">
+                                <div class="col-md-4">
+                                    <div class="form-group">
+                                        <label style="font-weight:700;font-size:13px;">Ticket Priority</label>
+                                        <select id="convertPriority" name="priority" class="form-control">
+                                            <option value="Low">Low</option>
+                                            <option value="Medium" selected>Medium</option>
+                                            <option value="High">High</option>
+                                            <option value="Critical">Critical</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="form-group">
+                                        <label style="font-weight:700;font-size:13px;">Customer Name</label>
+                                        <input type="text" id="convertClientName" name="client_name" class="form-control">
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="form-group">
+                                        <label style="font-weight:700;font-size:13px;">Customer Email</label>
+                                        <input type="email" id="convertClientEmail" name="client_email" class="form-control">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label style="font-weight:700;font-size:13px;">Full Chat Transcript (Pre-formatted)</label>
+                                <textarea id="convertTranscriptPreview" class="form-control" rows="8" readonly style="font-family:monospace;font-size:11.5px;background:#f8fafc;"></textarea>
+                            </div>
+                        </form>
+                    </div>
+                    <div class="modal-footer" style="background:#f8fafc;border-top:1px solid #e2e8f0;padding:12px 20px;">
+                        <button type="button" class="btn btn-default" data-dismiss="modal">Cancel</button>
+                        <button type="button" id="btnSubmitConvertTicket" class="btn btn-primary" style="font-weight:700;">
+                            <i class="fas fa-check"></i> Create Ticket in WHMCS
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── LIVE CONSOLE CSS & JAVASCRIPT ENGINE ──────────────────────────── -->
+        <style>
+            @keyframes pulseDot { 0%,100%{opacity:1;} 50%{opacity:0.3;} }
+            @keyframes fadeIn { from{opacity:0;transform:translateY(4px);} to{opacity:1;transform:translateY(0);} }
+            .q-tab { background:#ffffff;border:1px solid #cbd5e1;padding:4px 10px;font-size:11.5px;font-weight:600;border-radius:4px;cursor:pointer;color:#475569;white-space:nowrap; }
+            .q-tab.active { background:#0f172a;color:#ffffff;border-color:#0f172a; }
+            .session-card { padding:10px 12px;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:8px;cursor:pointer;transition:all 0.15s ease;background:#ffffff; }
+            .session-card:hover { border-color:#94a3b8;background:#f8fafc; }
+            .session-card.selected { border-color:#3b82f6;background:#eff6ff;box-shadow:0 0 0 1px #3b82f6; }
+            .session-card.is-summoned { border-left:4px solid #ef4444;background:#fff1f2; }
+            .msg-bubble { max-width:75%;padding:10px 14px;border-radius:12px;font-size:13px;line-height:1.45;word-break:break-word;position:relative; }
+            .msg-user { align-self:flex-start;background:#ffffff;border:1px solid #cbd5e1;color:#0f172a;border-bottom-left-radius:3px;box-shadow:0 1px 2px rgba(0,0,0,0.04); }
+            .msg-assistant { align-self:flex-start;background:#f3e8ff;border:1px solid #e9d5ff;color:#581c87;border-bottom-left-radius:3px; }
+            .msg-staff { align-self:flex-end;background:#0284c7;color:#ffffff;border-bottom-right-radius:3px;box-shadow:0 2px 4px rgba(2,132,199,0.25); }
+            .msg-system { align-self:center;background:#f1f5f9;color:#64748b;font-size:11.5px;font-style:italic;padding:4px 12px;border-radius:20px;border:1px solid #e2e8f0;max-width:90%;text-align:center; }
+        </style>
+
+        <script>
+        (function() {
+            var AJAX_URL = '<?php echo $ajaxEndpoint; ?>';
+            var POLL_INTERVAL = <?php echo $pollInterval * 1000; ?>;
+            var SOUND_ENABLED = <?php echo $soundEnabled ? 'true' : 'false'; ?>;
+            var SOUND_TYPE = '<?php echo $soundType; ?>';
+            var CURRENT_ADMIN_ID = <?php echo $adminId; ?>;
+
+            var activeFilter = 'all';
+            var activeSessionUuid = null;
+            var activeSessionId = null;
+            var activeClientId = null;
+            var lastMsgId = 0;
+            var pollTimer = null;
+            var isPolling = false;
+            var knownSummons = {};
+            var docOriginalTitle = document.title;
+
+            // Audio Synthesis (Web Audio API - Zero External Files)
+            function playAlertSound(type) {
+                if (!SOUND_ENABLED) return;
+                try {
+                    var ctx = new (window.AudioContext || window.webkitAudioContext)();
+                    if (ctx.state === 'suspended') ctx.resume();
+                    var now = ctx.currentTime;
+                    var t = type || SOUND_TYPE;
+                    if (t === 'bell') {
+                        [523.25, 659.25, 783.99].forEach(function(freq, idx) {
+                            var osc = ctx.createOscillator();
+                            var gain = ctx.createGain();
+                            osc.type = 'sine';
+                            osc.frequency.setValueAtTime(freq, now + idx * 0.08);
+                            gain.gain.setValueAtTime(0.25, now + idx * 0.08);
+                            gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.08 + 0.6);
+                            osc.connect(gain);
+                            gain.connect(ctx.destination);
+                            osc.start(now + idx * 0.08);
+                            osc.stop(now + idx * 0.08 + 0.65);
+                        });
+                    } else if (t === 'ping') {
+                        var osc = ctx.createOscillator();
+                        var gain = ctx.createGain();
+                        osc.type = 'sine';
+                        osc.frequency.setValueAtTime(987.77, now);
+                        gain.gain.setValueAtTime(0.3, now);
+                        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+                        osc.connect(gain);
+                        gain.connect(ctx.destination);
+                        osc.start(now);
+                        osc.stop(now + 0.38);
+                    } else {
+                        // Modern dual-tone chime
+                        [587.33, 880.00].forEach(function(freq, idx) {
+                            var osc = ctx.createOscillator();
+                            var gain = ctx.createGain();
+                            osc.type = 'sine';
+                            osc.frequency.setValueAtTime(freq, now + idx * 0.12);
+                            gain.gain.setValueAtTime(0.3, now + idx * 0.12);
+                            gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.12 + 0.5);
+                            osc.connect(gain);
+                            gain.connect(ctx.destination);
+                            osc.start(now + idx * 0.12);
+                            osc.stop(now + idx * 0.12 + 0.55);
+                        });
+                    }
+                } catch (e) {
+                    console.warn('AudioContext failed:', e);
+                }
+            }
+
+            // Audio Toggle Controls
+            var toggleSoundBtn = document.getElementById('toggleSoundBtn');
+            var soundIcon = document.getElementById('soundIcon');
+            var soundText = document.getElementById('soundText');
+            if (toggleSoundBtn) {
+                toggleSoundBtn.addEventListener('click', function() {
+                    SOUND_ENABLED = !SOUND_ENABLED;
+                    if (SOUND_ENABLED) {
+                        soundIcon.className = 'fas fa-volume-up text-success';
+                        soundText.textContent = 'Sound On';
+                        playAlertSound();
+                    } else {
+                        soundIcon.className = 'fas fa-volume-mute text-danger';
+                        soundText.textContent = 'Muted';
+                    }
+                });
+            }
+
+            var testBtn = document.getElementById('triggerSoundTestBtn');
+            if (testBtn) {
+                testBtn.addEventListener('click', function() {
+                    playAlertSound();
+                });
+            }
+
+            // Pop Out Console
+            var popBtn = document.getElementById('popOutConsoleBtn');
+            if (popBtn) {
+                popBtn.addEventListener('click', function() {
+                    var w = window.open('<?php echo $moduleLink; ?>&action=live_console&standalone=1', 'SahdevLiveConsole', 'width=1380,height=860,resizable=yes,scrollbars=yes,status=no');
+                    if (w) w.focus();
+                });
+            }
+
+            // Queue Filters
+            var qTabs = document.querySelectorAll('.q-tab');
+            qTabs.forEach(function(btn) {
+                btn.addEventListener('click', function() {
+                    qTabs.forEach(function(b) { b.classList.remove('active'); });
+                    this.classList.add('active');
+                    activeFilter = this.getAttribute('data-filter') || 'all';
+                    doPoll(true);
+                });
+            });
+
+            // Queue Search Input
+            var searchInput = document.getElementById('queueSearch');
+            var searchTimer = null;
+            if (searchInput) {
+                searchInput.addEventListener('input', function() {
+                    clearTimeout(searchTimer);
+                    searchTimer = setTimeout(function() { doPoll(true); }, 300);
+                });
+            }
+
+            // Poll Backend
+            function doPoll(force) {
+                if (isPolling && !force) return;
+                isPolling = true;
+
+                var q = searchInput ? searchInput.value.trim() : '';
+                var url = AJAX_URL + '&action=admin_live_console_poll&filter=' + encodeURIComponent(activeFilter) + '&search=' + encodeURIComponent(q);
+                if (activeSessionUuid) {
+                    url += '&selected_uuid=' + encodeURIComponent(activeSessionUuid) + '&after_msg_id=' + lastMsgId;
+                }
+
+                fetch(url, { credentials: 'same-origin' })
+                    .then(function(res) { return res.json(); })
+                    .then(function(data) {
+                        isPolling = false;
+                        if (data.status === 'success') {
+                            renderQueue(data.sessions || []);
+                            if (data.selected_session && data.selected_session.uuid === activeSessionUuid) {
+                                renderSelectedSessionState(data.selected_session);
+                                if (data.messages && data.messages.length > 0) {
+                                    appendMessages(data.messages);
+                                }
+                            }
+                        }
+                    })
+                    .catch(function(err) {
+                        isPolling = false;
+                    });
+            }
+
+            // Render Queue List
+            function renderQueue(sessions) {
+                var container = document.getElementById('queueListContainer');
+                if (!container) return;
+
+                if (!sessions || sessions.length === 0) {
+                    container.innerHTML = '<div style="text-align:center;padding:30px 15px;color:#94a3b8;font-size:12.5px;">No conversations found in this filter.</div>';
+                    return;
+                }
+
+                var html = '';
+                var hasNewSummon = false;
+
+                sessions.forEach(function(s) {
+                    var isSelected = (s.uuid === activeSessionUuid);
+                    var isSummoned = (s.summon_status === 'requested');
+                    if (isSummoned && !knownSummons[s.uuid]) {
+                        knownSummons[s.uuid] = true;
+                        hasNewSummon = true;
+                    }
+
+                    var badgeColor = '#64748b';
+                    var badgeLabel = s.status;
+                    if (isSummoned) {
+                        badgeColor = '#ef4444';
+                        badgeLabel = '🚨 SUMMONED';
+                    } else if (s.status === 'taken_over') {
+                        badgeColor = '#0284c7';
+                        badgeLabel = 'Human Staff';
+                    } else if (s.status === 'active') {
+                        badgeColor = '#10b981';
+                        badgeLabel = 'AI Active';
+                    }
+
+                    var initials = (s.client_name || 'G').substring(0, 2).toUpperCase();
+                    var typingIndicator = '';
+                    if (s.typing_preview) {
+                        typingIndicator = '<div style="font-size:11px;color:#d97706;font-weight:600;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><i class="fas fa-keyboard fa-pulse"></i> typing: ' + escapeHtml(s.typing_preview) + '</div>';
+                    }
+
+                    html += '<div class="session-card ' + (isSelected ? 'selected ' : '') + (isSummoned ? 'is-summoned' : '') + '" data-uuid="' + s.uuid + '" data-id="' + s.id + '" data-client-id="' + s.client_id + '">';
+                    html += '  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">';
+                    html += '    <div style="font-weight:700;font-size:13px;color:#0f172a;display:flex;align-items:center;gap:6px;">';
+                    html += '      <span style="width:22px;height:22px;border-radius:50%;background:#e2e8f0;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;">' + initials + '</span>';
+                    html += '      ' + escapeHtml(s.client_name);
+                    html += '    </div>';
+                    html += '    <span style="font-size:10px;padding:1px 6px;border-radius:10px;background:' + badgeColor + ';color:#fff;font-weight:700;">' + badgeLabel + '</span>';
+                    html += '  </div>';
+
+                    html += '  <div style="font-size:11.5px;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + (s.last_message ? escapeHtml(s.last_message) : '<em>No messages yet</em>') + '</div>';
+                    html += typingIndicator;
+                    html += '  <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;font-size:10.5px;color:#94a3b8;">';
+                    html += '    <span><i class="fas fa-globe" style="font-size:10px;"></i> ' + escapeHtml(s.source_domain || 'WHMCS') + '</span>';
+                    html += '    <span>' + escapeHtml(s.last_message_at) + '</span>';
+                    html += '  </div>';
+                    html += '</div>';
+                });
+
+                container.innerHTML = html;
+
+                // Sound & Title alert on incoming summon
+                if (hasNewSummon) {
+                    playAlertSound();
+                    document.title = '🔴 (1) LIVE SUMMON - Sahdev Console';
+                }
+
+                // Attach Card Click Handlers
+                var cards = container.querySelectorAll('.session-card');
+                cards.forEach(function(c) {
+                    c.addEventListener('click', function() {
+                        var uuid = this.getAttribute('data-uuid');
+                        var id = this.getAttribute('data-id');
+                        var cid = this.getAttribute('data-client-id');
+                        selectSession(uuid, id, cid);
+                    });
+                });
+            }
+
+            // Select Session
+            function selectSession(uuid, id, clientId) {
+                activeSessionUuid = uuid;
+                activeSessionId = id;
+                activeClientId = clientId;
+                lastMsgId = 0;
+
+                // Highlight card in queue
+                var cards = document.querySelectorAll('.session-card');
+                cards.forEach(function(c) {
+                    if (c.getAttribute('data-uuid') === uuid) c.classList.add('selected');
+                    else c.classList.remove('selected');
+                });
+
+                // Clear message thread & show loading
+                var msgBox = document.getElementById('chatMessagesScroll');
+                if (msgBox) {
+                    msgBox.innerHTML = '<div style="margin:auto;text-align:center;color:#94a3b8;font-size:13px;"><i class="fas fa-spinner fa-spin"></i> Loading conversation...</div>';
+                }
+
+                document.getElementById('chatComposerContainer').style.display = 'flex';
+                document.title = docOriginalTitle;
+
+                // Fetch Account Info for Column 3
+                fetchAccountInfo(id, clientId);
+
+                // Immediate Poll
+                doPoll(true);
+            }
+
+            // Render Selected Session State & Header Actions
+            function renderSelectedSessionState(session) {
+                var headerDetails = document.getElementById('chatHeaderDetails');
+                var headerActions = document.getElementById('chatHeaderActions');
+                var sneakPeekBar = document.getElementById('typingSneakPeekBar');
+                var sneakPeekText = document.getElementById('typingSneakPeekText');
+
+                if (headerDetails) {
+                    var statusPill = (session.status === 'taken_over') ? '<span class="label label-info">Human Takeover</span>' : '<span class="label label-success">Autonomous AI</span>';
+                    if (session.summon_status === 'requested') statusPill = '<span class="label label-danger">🚨 Live Summon</span>';
+
+                    headerDetails.innerHTML = '<div style="font-weight:700;font-size:14px;color:#0f172a;">Session #' + session.id + ' (' + session.uuid.substring(0, 8) + '...) ' + statusPill + '</div>'
+                        + '<div style="font-size:11.5px;color:#64748b;"><i class="fas fa-link"></i> <a href="' + (session.source_page || '#') + '" target="_blank" style="color:#0284c7;">' + escapeHtml(session.source_domain || 'WHMCS') + '</a></div>';
+                }
+
+                if (headerActions) {
+                    headerActions.style.display = 'flex';
+                    var isAssignedToMe = (session.assigned_admin_id == CURRENT_ADMIN_ID && session.status === 'taken_over');
+
+                    var actHtml = '';
+                    if (session.status !== 'taken_over') {
+                        actHtml += '<select id="takeoverTimerSelect" class="form-control input-sm" style="width:130px;display:inline-block;font-size:11px;">';
+                        actHtml += '  <option value="0">Manual Release</option>';
+                        actHtml += '  <option value="2">2 min inactivity</option>';
+                        actHtml += '  <option value="5">5 min inactivity</option>';
+                        actHtml += '  <option value="10">10 min inactivity</option>';
+                        actHtml += '</select>';
+                        actHtml += '<button type="button" id="btnClaimTakeover" class="btn btn-sm btn-success" style="font-weight:700;"><i class="fas fa-hand-paper"></i> Takeover Chat</button>';
+                    } else if (isAssignedToMe) {
+                        actHtml += '<button type="button" id="btnReleaseTakeover" class="btn btn-sm btn-warning" style="font-weight:700;"><i class="fas fa-robot"></i> Release to AI</button>';
+                    } else {
+                        actHtml += '<span class="badge" style="background:#0284c7;">Taken by Admin #' + session.assigned_admin_id + '</span>';
+                    }
+
+                    actHtml += '<button type="button" id="btnOpenConvertModal" class="btn btn-sm btn-primary" style="font-weight:700;"><i class="fas fa-ticket-alt"></i> Convert to Ticket</button>';
+                    headerActions.innerHTML = actHtml;
+
+                    // Bind Takeover Handlers
+                    var btnTakeover = document.getElementById('btnClaimTakeover');
+                    if (btnTakeover) {
+                        btnTakeover.addEventListener('click', function() {
+                            var tSelect = document.getElementById('takeoverTimerSelect');
+                            var timeout = tSelect ? tSelect.value : 0;
+                            var fd = new FormData();
+                            fd.append('session_uuid', activeSessionUuid);
+                            fd.append('timeout_mins', timeout);
+                            fetch(AJAX_URL + '&action=admin_live_console_takeover', { method:'POST', body:fd, credentials:'same-origin' })
+                                .then(function(r) { return r.json(); })
+                                .then(function(d) { doPoll(true); });
+                        });
+                    }
+
+                    var btnRelease = document.getElementById('btnReleaseTakeover');
+                    if (btnRelease) {
+                        btnRelease.addEventListener('click', function() {
+                            var fd = new FormData();
+                            fd.append('session_uuid', activeSessionUuid);
+                            fetch(AJAX_URL + '&action=admin_live_console_release', { method:'POST', body:fd, credentials:'same-origin' })
+                                .then(function(r) { return r.json(); })
+                                .then(function(d) { doPoll(true); });
+                        });
+                    }
+
+                    var btnConvert = document.getElementById('btnOpenConvertModal');
+                    if (btnConvert) {
+                        btnConvert.addEventListener('click', function() {
+                            openTicketModal();
+                        });
+                    }
+                }
+
+                // Sneak-Peek Bar Update
+                if (sneakPeekBar && sneakPeekText) {
+                    if (session.typing_preview && session.typing_preview.trim().length > 0) {
+                        sneakPeekText.textContent = session.typing_preview;
+                        sneakPeekBar.style.display = 'flex';
+                    } else {
+                        sneakPeekBar.style.display = 'none';
+                    }
+                }
+            }
+
+            // Append messages into thread
+            function appendMessages(msgs) {
+                var container = document.getElementById('chatMessagesScroll');
+                if (!container) return;
+
+                if (lastMsgId === 0) {
+                    container.innerHTML = '';
+                }
+
+                msgs.forEach(function(m) {
+                    if (m.id > lastMsgId) lastMsgId = m.id;
+
+                    var bubbleClass = 'msg-user';
+                    var roleBadge = '';
+                    if (m.sender_type === 'assistant') {
+                        bubbleClass = 'msg-assistant';
+                        roleBadge = '<div style="font-size:10px;font-weight:700;color:#7e22ce;margin-bottom:3px;"><i class="fas fa-sparkles"></i> Sahdev AI</div>';
+                    } else if (m.sender_type === 'staff') {
+                        bubbleClass = 'msg-staff';
+                        roleBadge = '<div style="font-size:10px;font-weight:700;color:#bae6fd;margin-bottom:3px;"><i class="fas fa-user-shield"></i> ' + escapeHtml(m.sender_name) + '</div>';
+                    } else if (m.sender_type === 'system') {
+                        bubbleClass = 'msg-system';
+                    } else {
+                        roleBadge = '<div style="font-size:10px;font-weight:700;color:#0369a1;margin-bottom:3px;"><i class="fas fa-user"></i> ' + escapeHtml(m.sender_name) + '</div>';
+                    }
+
+                    var div = document.createElement('div');
+                    div.className = 'msg-bubble ' + bubbleClass;
+                    div.innerHTML = roleBadge + '<div>' + escapeHtml(m.text).replace(/\n/g, '<br>') + '</div>'
+                        + '<div style="text-align:right;font-size:10px;opacity:0.65;margin-top:4px;">' + escapeHtml(m.created_at) + '</div>';
+                    container.appendChild(div);
+                });
+
+                container.scrollTop = container.scrollHeight;
+            }
+
+            // Send Staff Message
+            var staffInput = document.getElementById('staffReplyInput');
+            var btnSend = document.getElementById('btnSendStaffReply');
+
+            function sendStaffMsg() {
+                if (!staffInput || !activeSessionUuid) return;
+                var text = staffInput.value.trim();
+                if (!text) return;
+
+                btnSend.disabled = true;
+                var fd = new FormData();
+                fd.append('session_uuid', activeSessionUuid);
+                fd.append('message', text);
+
+                fetch(AJAX_URL + '&action=admin_live_console_send', { method:'POST', body:fd, credentials:'same-origin' })
+                    .then(function(r) { return r.json(); })
+                    .then(function(res) {
+                        btnSend.disabled = false;
+                        if (res.status === 'success') {
+                            staffInput.value = '';
+                            doPoll(true);
+                        } else {
+                            alert(res.error || 'Failed to send message.');
+                        }
+                    })
+                    .catch(function(err) {
+                        btnSend.disabled = false;
+                        alert('Network error sending message.');
+                    });
+            }
+
+            if (btnSend) btnSend.addEventListener('click', sendStaffMsg);
+            if (staffInput) {
+                staffInput.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        sendStaffMsg();
+                    }
+                });
+            }
+
+            // AI Co-Pilot Suggest Reply Button
+            var btnAiSuggest = document.getElementById('btnAiSuggestReply');
+            if (btnAiSuggest) {
+                btnAiSuggest.addEventListener('click', function() {
+                    if (!activeSessionId) return;
+                    btnAiSuggest.disabled = true;
+                    btnAiSuggest.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating Co-Pilot Draft...';
+
+                    fetch(AJAX_URL + '&action=admin_live_console_suggest_reply&session_id=' + activeSessionId, { credentials:'same-origin' })
+                        .then(function(r) { return r.json(); })
+                        .then(function(res) {
+                            btnAiSuggest.disabled = false;
+                            btnAiSuggest.innerHTML = '<i class="fas fa-magic"></i> AI Co-Pilot Suggest Reply';
+                            if (res.status === 'success' && res.draft) {
+                                if (staffInput) {
+                                    staffInput.value = res.draft;
+                                    staffInput.focus();
+                                }
+                            } else {
+                                alert(res.error || 'Could not generate draft suggestion.');
+                            }
+                        })
+                        .catch(function() {
+                            btnAiSuggest.disabled = false;
+                            btnAiSuggest.innerHTML = '<i class="fas fa-magic"></i> AI Co-Pilot Suggest Reply';
+                        });
+                });
+            }
+
+            // Fetch Account Info for Column 3
+            function fetchAccountInfo(sessionId, clientId) {
+                var sideContainer = document.getElementById('sideWatcherContent');
+                if (!sideContainer) return;
+                sideContainer.innerHTML = '<div style="text-align:center;padding:30px;color:#94a3b8;"><i class="fas fa-spinner fa-spin"></i> Loading account telemetry...</div>';
+
+                var url = AJAX_URL + '&action=admin_live_console_account_info&session_id=' + sessionId;
+                if (clientId) url += '&client_id=' + clientId;
+
+                fetch(url, { credentials:'same-origin' })
+                    .then(function(r) { return r.json(); })
+                    .then(function(d) {
+                        if (d.status === 'success') {
+                            renderSideWatcher(d);
+                        }
+                    });
+            }
+
+            function renderSideWatcher(d) {
+                var c = document.getElementById('sideWatcherContent');
+                if (!c) return;
+
+                var html = '';
+
+                // Visitor telemetry card
+                if (d.session_info) {
+                    html += '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin-bottom:14px;font-size:12px;">';
+                    html += '  <div style="font-weight:700;color:#334155;margin-bottom:6px;"><i class="fas fa-globe-americas text-info"></i> Visitor Telemetry</div>';
+                    html += '  <div><strong>Origin:</strong> ' + escapeHtml(d.session_info.source_domain) + '</div>';
+                    html += '  <div style="margin-top:2px;"><strong>IP Address:</strong> ' + escapeHtml(d.session_info.ip_address) + '</div>';
+                    html += '  <div style="margin-top:2px;"><strong>Started:</strong> ' + escapeHtml(d.session_info.started_at) + '</div>';
+                    html += '</div>';
+                }
+
+                // If Client is authenticated/linked
+                if (d.is_client && d.client) {
+                    html += '<div style="background:#ffffff;border:1px solid #cbd5e1;border-radius:8px;padding:14px;margin-bottom:14px;box-shadow:0 1px 3px rgba(0,0,0,0.03);">';
+                    html += '  <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">';
+                    html += '    <div style="width:40px;height:40px;border-radius:50%;background:#0284c7;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;">' + d.client.name.substring(0, 2).toUpperCase() + '</div>';
+                    html += '    <div>';
+                    html += '      <div style="font-weight:700;font-size:13.5px;color:#0f172a;"><a href="clientssummary.php?userid=' + d.client.id + '" target="_blank" style="color:#0284c7;">' + escapeHtml(d.client.name) + '</a></div>';
+                    html += '      <div style="font-size:11.5px;color:#64748b;">' + escapeHtml(d.client.email) + '</div>';
+                    html += '    </div>';
+                    html += '  </div>';
+                    html += '  <div style="font-size:11.5px;border-top:1px solid #f1f5f9;padding-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:6px;">';
+                    html += '    <div><strong>Status:</strong> <span class="label label-success">' + escapeHtml(d.client.status) + '</span></div>';
+                    html += '    <div><strong>Credit:</strong> $' + escapeHtml(d.client.credit) + '</div>';
+                    html += '    <div><strong>Phone:</strong> ' + escapeHtml(d.client.phone) + '</div>';
+                    html += '    <div><strong>Country:</strong> ' + escapeHtml(d.client.country) + '</div>';
+                    html += '  </div>';
+                    html += '</div>';
+
+                    // Active Services
+                    html += '<div style="margin-bottom:14px;">';
+                    html += '  <div style="font-weight:700;font-size:12px;color:#334155;margin-bottom:6px;"><i class="fas fa-server text-primary"></i> Hosting Services (' + (d.services ? d.services.length : 0) + ')</div>';
+                    if (d.services && d.services.length > 0) {
+                        d.services.forEach(function(s) {
+                            html += '<div style="border:1px solid #e2e8f0;border-radius:6px;padding:8px 10px;margin-bottom:6px;font-size:11.5px;background:#f8fafc;">';
+                            html += '  <div style="font-weight:700;color:#0f172a;">' + escapeHtml(s.product) + '</div>';
+                            html += '  <div style="color:#0284c7;">' + escapeHtml(s.domain) + '</div>';
+                            html += '  <div style="display:flex;justify-content:space-between;color:#64748b;margin-top:2px;"><span>$' + s.amount + ' / ' + s.cycle + '</span><span class="label label-xs label-info">' + s.status + '</span></div>';
+                            html += '</div>';
+                        });
+                    } else {
+                        html += '<div style="font-size:11.5px;color:#94a3b8;">No active hosting products.</div>';
+                    }
+                    html += '</div>';
+
+                    // Recent Tickets
+                    html += '<div style="margin-bottom:14px;">';
+                    html += '  <div style="font-weight:700;font-size:12px;color:#334155;margin-bottom:6px;"><i class="fas fa-ticket-alt text-warning"></i> Recent Tickets (' + (d.tickets ? d.tickets.length : 0) + ')</div>';
+                    if (d.tickets && d.tickets.length > 0) {
+                        d.tickets.forEach(function(t) {
+                            html += '<div style="border:1px solid #e2e8f0;border-radius:6px;padding:6px 10px;margin-bottom:6px;font-size:11.5px;background:#f8fafc;">';
+                            html += '  <div style="font-weight:600;"><a href="supporttickets.php?action=view&id=' + t.id + '" target="_blank" style="color:#0284c7;">#' + t.tid + ' ' + escapeHtml(t.title) + '</a></div>';
+                            html += '  <div style="font-size:10.5px;color:#64748b;">Status: ' + t.status + ' &bull; ' + t.lastreply + '</div>';
+                            html += '</div>';
+                        });
+                    } else {
+                        html += '<div style="font-size:11.5px;color:#94a3b8;">No recent support tickets.</div>';
+                    }
+                    html += '</div>';
+                } else {
+                    // Guest visitor link account form
+                    html += '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:14px;margin-bottom:14px;">';
+                    html += '  <div style="font-weight:700;font-size:13px;color:#1e40af;margin-bottom:6px;"><i class="fas fa-link"></i> Link WHMCS Client Account</div>';
+                    html += '  <p style="font-size:11.5px;color:#2563eb;margin-bottom:10px;">Visitor is currently chatting as a Guest. Enter their WHMCS account email to link their services &amp; billing profile:</p>';
+                    html += '  <div class="input-group input-group-sm">';
+                    html += '    <input type="email" id="linkClientEmailInput" placeholder="client@domain.com" class="form-control">';
+                    html += '    <span class="input-group-btn"><button type="button" id="btnLinkClientEmail" class="btn btn-primary"><i class="fas fa-search"></i> Link</button></span>';
+                    html += '  </div>';
+                    html += '</div>';
+                }
+
+                c.innerHTML = html;
+
+                var btnLink = document.getElementById('btnLinkClientEmail');
+                if (btnLink) {
+                    btnLink.addEventListener('click', function() {
+                        var emailIn = document.getElementById('linkClientEmailInput');
+                        if (!emailIn || !emailIn.value.trim()) return;
+                        var fd = new FormData();
+                        fd.append('session_uuid', activeSessionUuid);
+                        fd.append('email', emailIn.value.trim());
+                        fetch(AJAX_URL + '&action=client_chat_link_email', { method:'POST', body:fd, credentials:'same-origin' })
+                            .then(function(r) { return r.json(); })
+                            .then(function(res) {
+                                if (res.success && res.client_found) {
+                                    alert('Linked to client: ' + res.client_name);
+                                    selectSession(activeSessionUuid, activeSessionId, res.client_id);
+                                } else {
+                                    alert(res.message || 'No registered client with this email.');
+                                }
+                            });
+                    });
+                }
+            }
+
+            // Ticket Conversion Modal Logic
+            function openTicketModal() {
+                if (!activeSessionUuid) return;
+                var subjInput = document.getElementById('convertSubject');
+                var transcriptBox = document.getElementById('convertTranscriptPreview');
+                var nameInput = document.getElementById('convertClientName');
+                var emailInput = document.getElementById('convertClientEmail');
+
+                document.getElementById('convertSessionUuid').value = activeSessionUuid;
+                document.getElementById('convertClientId').value = activeClientId || 0;
+
+                // Pre-fill transcript from current message bubbles
+                var bubbles = document.querySelectorAll('#chatMessagesScroll .msg-bubble');
+                var tText = "=== CHAT TRANSCRIPT ===\n";
+                bubbles.forEach(function(b) {
+                    tText += b.innerText.trim() + "\n\n";
+                });
+                if (transcriptBox) transcriptBox.value = tText;
+
+                // Auto AI Subject
+                if (subjInput) {
+                    subjInput.value = 'Live Support Chat Escalation - ' + (new Date()).toLocaleDateString();
+                }
+
+                $('#ticketConvertModal').modal('show');
+            }
+
+            // Submit Ticket Conversion
+            var btnSubmitTicket = document.getElementById('btnSubmitConvertTicket');
+            if (btnSubmitTicket) {
+                btnSubmitTicket.addEventListener('click', function() {
+                    var form = document.getElementById('convertTicketForm');
+                    var fd = new FormData(form);
+                    btnSubmitTicket.disabled = true;
+                    btnSubmitTicket.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating Ticket...';
+
+                    fetch(AJAX_URL + '&action=admin_live_console_convert_ticket', { method:'POST', body:fd, credentials:'same-origin' })
+                        .then(function(r) { return r.json(); })
+                        .then(function(res) {
+                            btnSubmitTicket.disabled = false;
+                            btnSubmitTicket.innerHTML = '<i class="fas fa-check"></i> Create Ticket in WHMCS';
+                            if (res.success) {
+                                $('#ticketConvertModal').modal('hide');
+                                alert('Success! Ticket #' + res.tid + ' opened.');
+                                doPoll(true);
+                            } else {
+                                alert(res.error || 'Failed to create ticket.');
+                            }
+                        })
+                        .catch(function() {
+                            btnSubmitTicket.disabled = false;
+                            btnSubmitTicket.innerHTML = '<i class="fas fa-check"></i> Create Ticket in WHMCS';
+                            alert('Network error submitting ticket.');
+                        });
+                });
+            }
+
+            function escapeHtml(str) {
+                if (!str) return '';
+                return String(str)
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#039;');
+            }
+
+            // Initial poll and recurring loop
+            doPoll(true);
+            pollTimer = setInterval(function() { doPoll(false); }, POLL_INTERVAL);
+
+            // Handle tab blur / focus for adaptive polling
+            window.addEventListener('blur', function() {
+                clearInterval(pollTimer);
+                pollTimer = setInterval(function() { doPoll(false); }, 5000); // Slow down to 5s when blurred
+            });
+            window.addEventListener('focus', function() {
+                clearInterval(pollTimer);
+                pollTimer = setInterval(function() { doPoll(false); }, POLL_INTERVAL);
+                doPoll(true);
+            });
+
+        })();
+        </script>
         <?php
         return ob_get_clean();
     }

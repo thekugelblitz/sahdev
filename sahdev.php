@@ -366,6 +366,10 @@ function sahdev_activate()
                     $table->string('client_chat_whatsapp_number', 50)->default('');
                     $table->text('client_chat_whatsapp_message')->nullable();
                     $table->boolean('client_chat_siri_orb_enabled')->default(1);
+                    $table->boolean('client_chat_human_takeover_enabled')->default(1);
+                    $table->boolean('client_chat_sound_admin_alert')->default(1);
+                    $table->text('client_chat_cors_origins')->nullable();
+                    $table->boolean('client_chat_external_embed_enabled')->default(1);
                     $table->timestamps(); // creates created_at, updated_at
                 }
             );

@@ -14,6 +14,45 @@ if (!defined("WHMCS")) {
     require_once dirname(__DIR__, 3) . '/init.php';
 }
 
+// ── Cross-Origin Resource Sharing (CORS) for External Embed ────────────────
+$origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+if (!empty($origin)) {
+    try {
+        $settings = Capsule::table('tblsahdev_settings')->first();
+        $embedEnabled = !empty($settings->client_chat_external_embed_enabled);
+        $allowedOrigins = trim((string)($settings->client_chat_cors_origins ?? '*'));
+        
+        $isAllowed = false;
+        if ($embedEnabled) {
+            if ($allowedOrigins === '*' || empty($allowedOrigins)) {
+                $isAllowed = true;
+            } else {
+                $originHost = parse_url($origin, PHP_URL_HOST) ?: $origin;
+                $allowedList = array_map('trim', explode(',', $allowedOrigins));
+                foreach ($allowedList as $allowed) {
+                    $allowedHost = parse_url($allowed, PHP_URL_HOST) ?: $allowed;
+                    if (strcasecmp($originHost, $allowedHost) === 0 || fnmatch($allowedHost, $originHost)) {
+                        $isAllowed = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if ($isAllowed) {
+            header("Access-Control-Allow-Origin: {$origin}");
+            header("Access-Control-Allow-Credentials: true");
+            header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
+            header("Access-Control-Allow-Headers: Content-Type, X-Requested-With, Authorization, visitor-token, X-Visitor-Token");
+            
+            if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+                http_response_code(200);
+                exit;
+            }
+        }
+    } catch (\Throwable $e) {}
+}
+
 // Always ensure JSON output for this endpoint
 header('Content-Type: application/json');
 if (ob_get_length()) ob_clean();
@@ -25,7 +64,8 @@ $action = isset($_REQUEST['action']) ? $_REQUEST['action'] : '';
 $isClientChatAction = in_array($action, [
     'client_chat_init', 'client_chat_message', 'client_chat_escalate',
     'client_chat_get_history', 'client_chat_load_session', 'client_chat_new_session',
-    'client_chat_poll', 'client_chat_kb_search'
+    'client_chat_poll', 'client_chat_kb_search', 'client_chat_typing',
+    'client_chat_summon', 'client_chat_link_email', 'client_chat_rate_message'
 ], true);
 
 if (!$adminId && !$isClientChatAction) {
@@ -60,23 +100,26 @@ if ($isClientChatAction) {
 
         // ── Security Barrier: Origin & CSRF Validation for Mutating Actions ──
         if (in_array($action, ['client_chat_message', 'client_chat_escalate', 'client_chat_new_session'], true)) {
-            $systemUrl = \Sahdev\Lib\ChatService::getWhmcsSystemUrl();
-            $whmcsHost = !empty($systemUrl) ? parse_url($systemUrl, PHP_URL_HOST) : ($_SERVER['HTTP_HOST'] ?? '');
-            
-            $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
-            $referer = $_SERVER['HTTP_REFERER'] ?? '';
-            $requestHost = '';
-            if (!empty($origin)) {
-                $requestHost = parse_url($origin, PHP_URL_HOST);
-            } elseif (!empty($referer)) {
-                $requestHost = parse_url($referer, PHP_URL_HOST);
-            }
+            $embedEnabled = !empty($settings->client_chat_external_embed_enabled);
+            if (!$embedEnabled) {
+                $systemUrl = \Sahdev\Lib\ChatService::getWhmcsSystemUrl();
+                $whmcsHost = !empty($systemUrl) ? parse_url($systemUrl, PHP_URL_HOST) : ($_SERVER['HTTP_HOST'] ?? '');
+                
+                $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+                $referer = $_SERVER['HTTP_REFERER'] ?? '';
+                $requestHost = '';
+                if (!empty($origin)) {
+                    $requestHost = parse_url($origin, PHP_URL_HOST);
+                } elseif (!empty($referer)) {
+                    $requestHost = parse_url($referer, PHP_URL_HOST);
+                }
 
-            if (!empty($whmcsHost) && !empty($requestHost) && strcasecmp($whmcsHost, $requestHost) !== 0) {
-                \Sahdev\Lib\ModuleLogger::warning('client_chat_security', "Cross-origin live chat request blocked from [{$requestHost}] (expected [{$whmcsHost}])");
-                header('HTTP/1.1 403 Forbidden');
-                echo json_encode(['status' => 'error', 'message' => 'Cross-origin requests are forbidden.']);
-                exit;
+                if (!empty($whmcsHost) && !empty($requestHost) && strcasecmp($whmcsHost, $requestHost) !== 0) {
+                    \Sahdev\Lib\ModuleLogger::warning('client_chat_security', "Cross-origin live chat request blocked from [{$requestHost}] (expected [{$whmcsHost}])");
+                    header('HTTP/1.1 403 Forbidden');
+                    echo json_encode(['status' => 'error', 'message' => 'Cross-origin requests are forbidden.']);
+                    exit;
+                }
             }
         }
 
@@ -352,6 +395,36 @@ if ($isClientChatAction) {
             echo json_encode(array_merge(['status' => ($res['success'] ?? false) ? 'success' : 'error'], $res));
             exit;
         }
+
+        if ($action === 'client_chat_typing') {
+            $sessionUuid = trim((string) ($_REQUEST['session_uuid'] ?? ''));
+            $text = (string) ($_REQUEST['text'] ?? '');
+            $res = \Sahdev\Lib\ChatService::updateTypingPreview($sessionUuid, $text, $visitorToken, $clientId);
+            echo json_encode(['status' => 'success', 'updated' => $res]);
+            exit;
+        }
+
+        if ($action === 'client_chat_summon') {
+            $sessionUuid = trim((string) ($_REQUEST['session_uuid'] ?? ''));
+            $reason = trim((string) ($_REQUEST['reason'] ?? 'User requested live human agent'));
+            $session = Capsule::table('tblsahdev_chat_sessions')->where('session_uuid', $sessionUuid)->first();
+            if ($session) {
+                \Sahdev\Lib\ChatService::triggerHumanSummon((int)$session->id, $reason);
+                echo json_encode(['status' => 'success', 'message' => 'Live human agent has been requested.']);
+            } else {
+                echo json_encode(['status' => 'error', 'message' => 'Session not found.']);
+            }
+            exit;
+        }
+
+        if ($action === 'client_chat_link_email') {
+            $sessionUuid = trim((string) ($_REQUEST['session_uuid'] ?? ''));
+            $email = trim((string) ($_REQUEST['email'] ?? ''));
+            $name = trim((string) ($_REQUEST['name'] ?? ''));
+            $res = \Sahdev\Lib\ChatService::linkVisitorEmail($sessionUuid, $email, $name);
+            echo json_encode($res);
+            exit;
+        }
     } catch (\Throwable $e) {
         \Sahdev\Lib\ModuleLogger::error('client_chat', "Fatal live chat endpoint error: " . $e->getMessage() . " in " . $e->getFile() . ":" . $e->getLine());
         header('HTTP/1.1 500 Internal Server Error');
@@ -367,7 +440,8 @@ if ($isClientChatAction) {
 $getAllowedActions = [
     'get_analytics_period', 'get_header_server_widget', 'server_sso',
     'copilot_stream', 'get_metrics_data', 'client_chat_init',
-    'client_chat_get_history', 'client_chat_load_session', 'client_chat_poll'
+    'client_chat_get_history', 'client_chat_load_session', 'client_chat_poll',
+    'admin_heartbeat', 'admin_live_console_poll', 'admin_live_console_account_info'
 ];
 $isGetAllowed = in_array($action, $getAllowedActions, true);
 
@@ -393,7 +467,12 @@ $allowedActions = [
     'chat_takeover', 'fetch_openrouter_models', 'get_metrics_data',
     'client_chat_init', 'client_chat_message', 'client_chat_escalate',
     'client_chat_get_history', 'client_chat_load_session', 'client_chat_new_session',
-    'client_chat_poll'
+    'client_chat_poll', 'client_chat_typing', 'client_chat_summon', 'client_chat_link_email',
+    'client_chat_rate_message',
+    // Live Agent Console & Global Alerts
+    'admin_heartbeat', 'admin_live_console_poll', 'admin_live_console_send',
+    'admin_live_console_takeover', 'admin_live_console_release', 'admin_live_console_suggest_reply',
+    'admin_live_console_convert_ticket', 'admin_live_console_account_info'
 ];
 if (!in_array($action, $allowedActions, true)) {
     header('HTTP/1.1 400 Bad Request');
@@ -416,7 +495,9 @@ if ($action === 'server_sso') {
     exit;
 }
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isGetAllowed && !$isClientChatAction) {
+$isConsoleAction = strpos($action, 'admin_live_console_') === 0 || $action === 'admin_heartbeat';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isGetAllowed && !$isClientChatAction && !$isConsoleAction) {
     $requestToken = (string) ($_REQUEST['token'] ?? '');
     if ($requestToken !== '' && strpos($requestToken, '<') !== false) {
         // Some callers may accidentally pass the full generate_token("form") HTML.
@@ -491,7 +572,11 @@ if ($intensity > 3) {
         'chat_takeover', 'fetch_openrouter_models', 'get_metrics_data',
         'client_chat_init', 'client_chat_message', 'client_chat_escalate',
         'client_chat_get_history', 'client_chat_load_session', 'client_chat_new_session',
-        'client_chat_poll'
+        'client_chat_poll', 'client_chat_typing', 'client_chat_summon', 'client_chat_link_email',
+        'client_chat_rate_message',
+        'admin_heartbeat', 'admin_live_console_poll', 'admin_live_console_send',
+        'admin_live_console_takeover', 'admin_live_console_release', 'admin_live_console_suggest_reply',
+        'admin_live_console_convert_ticket', 'admin_live_console_account_info'
     ];
     if (!$ticketId && !in_array($action, $ticketNotRequiredActions) && !$isGetAllowed) {
         header('HTTP/1.1 400 Bad Request');
@@ -1468,6 +1553,163 @@ try {
             'status'  => 'success',
             'metrics' => $metrics,
         ];
+    } elseif ($action === 'admin_heartbeat') {
+        $activeSessionId = (int)($_REQUEST['active_session_id'] ?? 0);
+        $res = \Sahdev\Lib\ChatService::adminHeartbeat((int)$adminId, $activeSessionId > 0 ? $activeSessionId : null);
+        $settings = Capsule::table('tblsahdev_settings')->first();
+        $res['sound_enabled'] = !empty($settings->client_chat_sound_admin_alert);
+        $res['sound_type'] = $settings->client_chat_sound_type ?? 'chime';
+        $response = $res;
+    } elseif ($action === 'admin_live_console_poll') {
+        \Sahdev\Lib\ChatService::checkTakeoverTimeouts();
+        \Sahdev\Lib\ChatService::adminHeartbeat((int)$adminId);
+
+        $filter = $_REQUEST['filter'] ?? 'all';
+        $search = trim((string)($_REQUEST['search'] ?? ''));
+        $selectedUuid = trim((string)($_REQUEST['selected_uuid'] ?? ''));
+        $afterMsgId = (int)($_REQUEST['after_msg_id'] ?? 0);
+
+        $q = Capsule::table('tblsahdev_chat_sessions')
+            ->where('session_type', 'client_livechat');
+
+        if ($filter === 'active') {
+            $q->where('status', 'active');
+        } elseif ($filter === 'summoned') {
+            $q->where('summon_status', 'requested');
+        } elseif ($filter === 'taken_over') {
+            $q->where('status', 'taken_over');
+        } elseif ($filter === 'closed') {
+            $q->whereIn('status', ['closed', 'escalated_ticket']);
+        }
+
+        if (!empty($search)) {
+            $q->where(function($sq) use ($search) {
+                $sq->where('session_uuid', 'LIKE', "%{$search}%")
+                   ->orWhere('title', 'LIKE', "%{$search}%")
+                   ->orWhere('source_domain', 'LIKE', "%{$search}%")
+                   ->orWhere('metadata_json', 'LIKE', "%{$search}%");
+            });
+        }
+
+        $sessions = $q->orderBy('last_message_at', 'desc')
+            ->orderBy('id', 'desc')
+            ->limit(50)
+            ->get();
+
+        $sessionList = [];
+        foreach ($sessions as $s) {
+            $clientName = 'Guest Visitor';
+            $clientEmail = '';
+            if ($s->client_id > 0) {
+                $cl = Capsule::table('tblclients')->where('id', $s->client_id)->first(['firstname', 'lastname', 'email']);
+                if ($cl) {
+                    $clientName = trim($cl->firstname . ' ' . $cl->lastname);
+                    $clientEmail = $cl->email;
+                }
+            } else {
+                $meta = json_decode($s->metadata_json ?? '', true) ?: [];
+                if (!empty($meta['name'])) $clientName = $meta['name'];
+                if (!empty($meta['email'])) $clientEmail = $meta['email'];
+            }
+
+            $lastMsg = Capsule::table('tblsahdev_chat_messages')
+                ->where('session_id', $s->id)
+                ->orderBy('id', 'desc')
+                ->first(['sender_type', 'sender_name', 'message_text', 'created_at']);
+
+            $sessionList[] = [
+                'id'                    => (int)$s->id,
+                'uuid'                  => $s->session_uuid,
+                'client_id'             => (int)$s->client_id,
+                'client_name'           => $clientName,
+                'client_email'          => $clientEmail,
+                'status'                => $s->status,
+                'summon_status'         => $s->summon_status,
+                'assigned_admin_id'     => (int)$s->assigned_admin_id,
+                'typing_preview'        => $s->typing_preview,
+                'typing_at'             => $s->typing_at,
+                'source_domain'         => $s->source_domain ?: 'WHMCS',
+                'source_page'           => $s->source_page,
+                'takeover_timeout_mins' => (int)$s->takeover_timeout_mins,
+                'last_message'          => $lastMsg ? mb_substr(strip_tags($lastMsg->message_text ?? ''), 0, 80) : '',
+                'last_sender_type'      => $lastMsg ? $lastMsg->sender_type : '',
+                'last_message_at'       => $s->last_message_at ? \Carbon\Carbon::parse($s->last_message_at)->diffForHumans() : 'N/A',
+                'raw_last_message_at'   => $s->last_message_at,
+            ];
+        }
+
+        $messages = [];
+        $selectedSession = null;
+        if (!empty($selectedUuid)) {
+            $sess = Capsule::table('tblsahdev_chat_sessions')->where('session_uuid', $selectedUuid)->first();
+            if ($sess) {
+                $selectedSession = [
+                    'id'                    => (int)$sess->id,
+                    'uuid'                  => $sess->session_uuid,
+                    'client_id'             => (int)$sess->client_id,
+                    'status'                => $sess->status,
+                    'summon_status'         => $sess->summon_status,
+                    'assigned_admin_id'     => (int)$sess->assigned_admin_id,
+                    'typing_preview'        => $sess->typing_preview,
+                    'typing_at'             => $sess->typing_at,
+                    'source_domain'         => $sess->source_domain ?: 'WHMCS',
+                    'source_page'           => $sess->source_page,
+                    'takeover_timeout_mins' => (int)$sess->takeover_timeout_mins,
+                ];
+
+                $mq = Capsule::table('tblsahdev_chat_messages')
+                    ->where('session_id', $sess->id);
+                if ($afterMsgId > 0) {
+                    $mq->where('id', '>', $afterMsgId);
+                }
+                $msgs = $mq->orderBy('id', 'asc')->get();
+                foreach ($msgs as $m) {
+                    $messages[] = [
+                        'id'          => (int)$m->id,
+                        'sender_type' => $m->sender_type,
+                        'sender_name' => $m->sender_name ?: ($m->sender_type === 'user' ? 'Visitor' : 'Sahdev AI'),
+                        'text'        => \Sahdev\Lib\ChatService::safeDisplayText((string)$m->message_text),
+                        'created_at'  => \Carbon\Carbon::parse($m->created_at)->format('g:i A'),
+                    ];
+                }
+            }
+        }
+
+        $response = [
+            'status'           => 'success',
+            'sessions'         => $sessionList,
+            'selected_session' => $selectedSession,
+            'messages'         => $messages,
+            'timestamp'        => time(),
+        ];
+    } elseif ($action === 'admin_live_console_send') {
+        $sessionUuid = trim((string)($_POST['session_uuid'] ?? ''));
+        $messageText = trim((string)($_POST['message'] ?? ''));
+        $res = \Sahdev\Lib\ChatService::recordStaffMessage($sessionUuid, (int)$adminId, $messageText);
+        $response = array_merge(['status' => ($res['success'] ?? false) ? 'success' : 'error'], $res);
+    } elseif ($action === 'admin_live_console_takeover') {
+        $sessionUuid = trim((string)($_POST['session_uuid'] ?? ''));
+        $timeoutMins = (int)($_POST['timeout_mins'] ?? 0);
+        $res = \Sahdev\Lib\ChatService::claimTakeover($sessionUuid, (int)$adminId, $timeoutMins);
+        $response = array_merge(['status' => ($res['success'] ?? false) ? 'success' : 'error'], $res);
+    } elseif ($action === 'admin_live_console_release') {
+        $sessionUuid = trim((string)($_POST['session_uuid'] ?? ''));
+        $res = \Sahdev\Lib\ChatService::releaseTakeover($sessionUuid, (int)$adminId);
+        $response = array_merge(['status' => ($res['success'] ?? false) ? 'success' : 'error'], $res);
+    } elseif ($action === 'admin_live_console_suggest_reply') {
+        $sessionId = (int)($_REQUEST['session_id'] ?? 0);
+        $res = \Sahdev\Lib\ChatService::suggestCoPilotReply($sessionId, (int)$adminId);
+        $response = array_merge(['status' => ($res['success'] ?? false) ? 'success' : 'error'], $res);
+    } elseif ($action === 'admin_live_console_convert_ticket') {
+        $sessionUuid = trim((string)($_POST['session_uuid'] ?? ''));
+        $res = \Sahdev\Lib\ChatService::convertChatToTicket($sessionUuid, (int)$adminId, $_POST);
+        $response = array_merge(['status' => ($res['success'] ?? false) ? 'success' : 'error'], $res);
+    } elseif ($action === 'admin_live_console_account_info') {
+        $sessionId = (int)($_REQUEST['session_id'] ?? 0);
+        $clientId = !empty($_REQUEST['client_id']) ? (int)$_REQUEST['client_id'] : null;
+        $visitorToken = !empty($_REQUEST['visitor_token']) ? (string)$_REQUEST['visitor_token'] : null;
+        $data = \Sahdev\Lib\ChatService::getVisitorAccountDetails($clientId, $visitorToken, $sessionId);
+        $response = array_merge(['status' => 'success'], $data);
     } else {
         // Default analyze_ticket (server-side generation)
         $response = $controller->getAnalysis($tone, $instruction, $forceRegenerate, $forceFallback, $intent, $useSummary, $includeHistory, $technicalContext, $overrideProviderId, $includeTools, $includeAdminNotes);

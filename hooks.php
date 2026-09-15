@@ -10757,6 +10757,9 @@ DISC;
             </div>
         </div>
         <div class="sdv-cl-controls">
+            <button type="button" class="sdv-cl-action-btn sdv-summon-agent-btn" id="sdv-btn-summon-agent" title="Request Live Human Agent" aria-label="Talk to Human" onclick="window.sdvSummonHuman && window.sdvSummonHuman();" style="font-size:11.5px;display:inline-flex;align-items:center;gap:4px;padding:3px 7px;border-radius:6px;background:rgba(255,255,255,0.16);color:inherit;font-weight:600;border:1px solid rgba(255,255,255,0.25);">
+                <span>🧑‍💼 Live Agent</span>
+            </button>
             {$hdrMenuHtml}
             <button type="button" class="sdv-cl-action-btn" id="sdv-cl-expand-btn" title="Expand / Minimize Window" aria-label="Expand" onclick="window.sdvToggleExpand && window.sdvToggleExpand(event);">
                 <svg id="sdv-expand-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
@@ -10767,10 +10770,19 @@ DISC;
 
     {$widgetTabsHtml}
 
+    <div id="sdv-cl-takeover-banner" class="sdv-cl-takeover-banner" style="display:none;background:#ecfdf5;border-bottom:1px solid #a7f3d0;padding:8px 14px;font-size:12px;color:#065f46;align-items:center;gap:7px;font-weight:600;">
+        <span>🧑‍💼</span>
+        <span id="sdv-cl-takeover-text">Live Support Agent is assisting you</span>
+    </div>
+
     <div class="sdv-tab-panel sdv-tab-panel-chat" id="sdv-panel-chat">
-        <div class="sdv-cl-escalate-bar">
-            <span>Need official staff assistance?</span>
-            <a href="javascript:void(0);" class="sdv-cl-escalate-btn" id="sdv-cl-escalate" onclick="window.sdvEscalateToTicket && window.sdvEscalateToTicket();">Convert to Ticket &rarr;</a>
+        <div class="sdv-cl-escalate-bar" style="display:flex;align-items:center;justify-content:space-between;padding:8px 14px;">
+            <span>Need live staff help?</span>
+            <div style="display:inline-flex;align-items:center;gap:8px;">
+                <a href="javascript:void(0);" class="sdv-cl-escalate-btn" onclick="window.sdvSummonHuman && window.sdvSummonHuman();" style="font-weight:600;">🧑‍💼 Talk to Human</a>
+                <span style="opacity:0.35;">|</span>
+                <a href="javascript:void(0);" class="sdv-cl-escalate-btn" id="sdv-cl-escalate" onclick="window.sdvEscalateToTicket && window.sdvEscalateToTicket();">Create Ticket &rarr;</a>
+            </div>
         </div>
         {$disclaimerHtml}
 
@@ -13309,6 +13321,59 @@ DISC;
         }
     };
 
+    // ── Real-time Sneak-Peek Keystroke Broadcaster (400ms Debounce) ─────────
+    var _typingBroadcastTimer = null;
+    function sdvDebouncedBroadcastTyping() {
+        if (!sessionUuid) return;
+        if (_typingBroadcastTimer) clearTimeout(_typingBroadcastTimer);
+        _typingBroadcastTimer = setTimeout(function() {
+            var input = document.getElementById('sdv-cl-input');
+            var txt = input ? input.value : '';
+            var form = new FormData();
+            form.append('action', 'client_chat_typing');
+            form.append('session_uuid', sessionUuid);
+            form.append('visitor_token', visitorToken);
+            form.append('preview', txt);
+            postAjaxWithFallback(form, function(){});
+        }, 400);
+    }
+    function sdvClearTypingPreview() {
+        if (_typingBroadcastTimer) clearTimeout(_typingBroadcastTimer);
+        if (!sessionUuid) return;
+        var form = new FormData();
+        form.append('action', 'client_chat_typing');
+        form.append('session_uuid', sessionUuid);
+        form.append('visitor_token', visitorToken);
+        form.append('preview', '');
+        postAjaxWithFallback(form, function(){});
+    }
+
+    // ── Live Human Agent Summon Handler (Hybrid Transition) ────────────────
+    window.sdvSummonHuman = function() {
+        // If guest without email, prompt via guest drawer to collect Name/Email
+        var storedEmail = sdvSafeGet('sdv_visitor_email', '');
+        if (!isLoggedIn && !storedEmail) {
+            var guestDrawer = document.getElementById('sdv-cl-guest-drawer');
+            if (guestDrawer) {
+                guestDrawer.classList.add('sdv-drawer-open');
+                var nameInp = document.getElementById('sdv-guest-name');
+                if (nameInp) nameInp.focus();
+                return;
+            }
+        }
+
+        var form = new FormData();
+        form.append('action', 'client_chat_summon');
+        form.append('session_uuid', sessionUuid || '');
+        form.append('visitor_token', visitorToken);
+        form.append('reason', 'Client requested live agent via chat widget');
+
+        postAjaxWithFallback(form, function(err, data) {
+            appendClMsg('bot', '🚨 I have notified our live support team! An agent has been alerted and will join shortly. In the interim, feel free to describe your issue or questions.', false, null, null, Date.now());
+            sdvPlayNotificationChime();
+        });
+    };
+
     // Attach listeners defensively to avoid missing events or double clicks
     function attachListeners() {
         var launcher = document.getElementById('sdv-client-chat-launcher');
@@ -13327,6 +13392,7 @@ DISC;
             sendBtn.removeAttribute('onclick');
             sendBtn.addEventListener('click', function(e) {
                 if (e && e.preventDefault) e.preventDefault();
+                sdvClearTypingPreview();
                 window.sdvSendMessage();
             });
         }
@@ -13344,10 +13410,14 @@ DISC;
         var inputEl = document.getElementById('sdv-cl-input');
         if (inputEl && !inputEl._sdvBound) {
             inputEl._sdvBound = true;
-            inputEl.addEventListener('input', sdvUpdateCharCounter);
+            inputEl.addEventListener('input', function() {
+                sdvUpdateCharCounter();
+                sdvDebouncedBroadcastTyping();
+            });
             inputEl.addEventListener('keydown', function(e) {
                 if (e.key === 'Enter') {
                     e.preventDefault();
+                    sdvClearTypingPreview();
                     window.sdvSendMessage();
                 }
             });
@@ -13402,5 +13472,322 @@ DISC;
 </script>
 HTML;
 }
+
+// ---------------------------------------------------------------------------
+// Sahdev Admin Live Chat Background Alert Listener & Audio Chime
+// ---------------------------------------------------------------------------
+add_hook('AdminAreaFooterOutput', 10, function ($vars) {
+    return sahdev_render_admin_live_chat_alert_listener(is_array($vars) ? $vars : []);
+});
+
+/**
+ * Global Admin Background Alert Listener:
+ * Checks for human summon requests, plays repeating Web Audio chime every 15s (up to 3x),
+ * displays floating toast alert with 1-click 'Accept & Open Console' button,
+ * and dynamically blinks page title.
+ */
+function sahdev_render_admin_live_chat_alert_listener(array $vars = []): string
+{
+    static $rendered = false;
+    if ($rendered) {
+        return '';
+    }
+    $rendered = true;
+
+    try {
+        require_once __DIR__ . '/lib/PermissionService.php';
+        $adminId = \Sahdev\Lib\PermissionService::resolveCurrentAdminId();
+        if ($adminId <= 0) {
+            return '';
+        }
+
+        // Check Support / Ticket AI permissions per grill-me decision
+        $hasPerm = \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_TICKET_AI)
+            || \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_CLIENT_CHAT_MANAGE)
+            || \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_SETTINGS_MANAGE);
+        if (!$hasPerm) {
+            return '';
+        }
+
+        if (!\WHMCS\Database\Capsule::schema()->hasTable('tblsahdev_settings')) {
+            return '';
+        }
+        $settings = \WHMCS\Database\Capsule::table('tblsahdev_settings')->first();
+        if (!$settings || empty($settings->client_chat_enabled)) {
+            return '';
+        }
+
+        $soundEnabled = !isset($settings->client_chat_sound_admin_alert) || !empty($settings->client_chat_sound_admin_alert);
+        $soundType = !empty($settings->client_chat_sound_type) ? (string) $settings->client_chat_sound_type : 'chime';
+
+        $ajaxUrl = 'addonmodules.php?module=sahdev&sahdev_act=ajax_handler';
+        $consoleUrl = 'addonmodules.php?module=sahdev&action=live_console';
+
+        $soundTypeJs = json_encode($soundType);
+        $soundEnabledJs = json_encode($soundEnabled);
+        $ajaxUrlJs = json_encode($ajaxUrl);
+        $consoleUrlJs = json_encode($consoleUrl);
+
+        return <<<HTML
+<!-- Sahdev Global Live Chat Alert Listener & Audio Synthesizer -->
+<div id="sdv-admin-global-toast-container" style="position:fixed;bottom:24px;right:24px;z-index:999999;display:flex;flex-direction:column;gap:12px;pointer-events:none;"></div>
+
+<script>
+(function() {
+    'use strict';
+    // If admin is already on the dedicated live console dashboard, yield to the dashboard poller
+    if (document.getElementById('sdv-live-console-app')) {
+        return;
+    }
+
+    var ajaxUrl = {$ajaxUrlJs};
+    var consoleUrl = {$consoleUrlJs};
+    var defaultSoundType = {$soundTypeJs};
+    var soundEnabled = {$soundEnabledJs};
+
+    var audioCtx = null;
+    function getAudioContext() {
+        if (!audioCtx) {
+            var AudioContextClass = window.AudioContext || window.webkitAudioContext;
+            if (AudioContextClass) audioCtx = new AudioContextClass();
+        }
+        if (audioCtx && audioCtx.state === 'suspended') {
+            audioCtx.resume().catch(function(){});
+        }
+        return audioCtx;
+    }
+
+    // Zero-dependency pure Web Audio API oscillator synthesis
+    function playSynthesizedSound(type) {
+        if (!soundEnabled) return;
+        try {
+            if (localStorage.getItem('sdv_admin_sound_muted') === '1') return;
+        } catch(e) {}
+
+        var ctx = getAudioContext();
+        if (!ctx) return;
+
+        var now = ctx.currentTime;
+        type = type || defaultSoundType || 'chime';
+
+        if (type === 'bell') {
+            [523.25, 659.25, 783.99].forEach(function(freq, idx) {
+                var osc = ctx.createOscillator();
+                var gain = ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(freq, now + (idx * 0.04));
+                gain.gain.setValueAtTime(0.22, now + (idx * 0.04));
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 1.2);
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start(now + (idx * 0.04));
+                osc.stop(now + 1.25);
+            });
+        } else if (type === 'ping') {
+            var osc = ctx.createOscillator();
+            var gain = ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(987.77, now);
+            gain.gain.setValueAtTime(0.28, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.55);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(now);
+            osc.stop(now + 0.6);
+        } else {
+            // Chime: 587.33Hz (D5) -> 880Hz (A5)
+            var osc1 = ctx.createOscillator();
+            var gain1 = ctx.createGain();
+            osc1.type = 'sine';
+            osc1.frequency.setValueAtTime(587.33, now);
+            gain1.gain.setValueAtTime(0.26, now);
+            gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+            osc1.connect(gain1);
+            gain1.connect(ctx.destination);
+            osc1.start(now);
+            osc1.stop(now + 0.48);
+
+            var osc2 = ctx.createOscillator();
+            var gain2 = ctx.createGain();
+            osc2.type = 'sine';
+            osc2.frequency.setValueAtTime(880.00, now + 0.18);
+            gain2.gain.setValueAtTime(0.3, now + 0.18);
+            gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.95);
+            osc2.connect(gain2);
+            gain2.connect(ctx.destination);
+            osc2.start(now + 0.18);
+            osc2.stop(now + 0.98);
+        }
+    }
+
+    // Title blinker
+    var origTitle = document.title;
+    var titleBlinkTimer = null;
+    function startTitleBlink(count) {
+        if (titleBlinkTimer) return;
+        var toggle = false;
+        titleBlinkTimer = setInterval(function() {
+            toggle = !toggle;
+            document.title = toggle ? ('🔴 (' + count + ') Live Support Request!') : origTitle;
+        }, 1000);
+    }
+    function stopTitleBlink() {
+        if (titleBlinkTimer) {
+            clearInterval(titleBlinkTimer);
+            titleBlinkTimer = null;
+            document.title = origTitle;
+        }
+    }
+
+    // Summon Alert Tracking & 15-second repeating chime
+    var activeSummonIds = {};
+    var repeatingChimeTimer = null;
+    var chimeRepeatCount = 0;
+
+    function renderToastNotification(summon) {
+        var container = document.getElementById('sdv-admin-global-toast-container');
+        if (!container) return;
+
+        var toastId = 'sdv-toast-' + summon.id;
+        if (document.getElementById(toastId)) return;
+
+        var toast = document.createElement('div');
+        toast.id = toastId;
+        toast.style.cssText = 'pointer-events:auto;width:340px;background:#ffffff;border-radius:12px;box-shadow:0 14px 35px -6px rgba(15,23,42,0.25),0 0 0 1px rgba(0,0,0,0.06);border-left:4px solid #ef4444;padding:14px 16px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;animation:sdvToastIn 0.28s cubic-bezier(0.16,1,0.3,1);position:relative;';
+
+        var clientName = summon.client_name || summon.visitor_name || 'Website Visitor';
+        var sourceDomain = summon.source_domain ? (' &bull; ' + summon.source_domain) : '';
+        var lastMsg = summon.last_message ? ('"' + String(summon.last_message).replace(/</g,'&lt;').substring(0, 80) + '"') : 'Requested human staff assistance.';
+
+        toast.innerHTML = `
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+                <div style="display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:#991b1b;">
+                    <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#ef4444;animation:sdvPulse 1.2s infinite;"></span>
+                    <span>🚨 Live Support Request</span>
+                </div>
+                <button type="button" class="sdv-toast-dismiss-btn" style="background:none;border:none;color:#94a3b8;font-size:16px;cursor:pointer;line-height:1;padding:2px 4px;" title="Dismiss">&times;</button>
+            </div>
+            <div style="font-size:13px;font-weight:600;color:#0f172a;margin-bottom:3px;">\${clientName}</div>
+            <div style="font-size:11.5px;color:#64748b;line-height:1.4;margin-bottom:10px;">\${lastMsg}\${sourceDomain}</div>
+            <div style="display:flex;gap:8px;">
+                <a href="\${consoleUrl}&session_uuid=\${encodeURIComponent(summon.session_uuid)}" class="sdv-toast-accept-btn" style="flex:1;text-align:center;text-decoration:none;background:#2563eb;color:#ffffff;font-size:12px;font-weight:600;padding:7px 10px;border-radius:6px;box-shadow:0 1px 2px rgba(37,99,235,0.2);">
+                    Accept &amp; Open Console &rarr;
+                </a>
+                <button type="button" class="sdv-toast-silence-btn" style="background:#f1f5f9;border:1px solid #cbd5e1;color:#475569;font-size:12px;padding:7px 10px;border-radius:6px;cursor:pointer;">
+                    Dismiss
+                </button>
+            </div>
+        `;
+
+        container.appendChild(toast);
+
+        // Dismiss action
+        function dismissToast() {
+            toast.style.opacity = '0';
+            toast.style.transform = 'translateY(10px)';
+            toast.style.transition = 'all 0.2s ease';
+            setTimeout(function() {
+                if (toast.parentNode) toast.parentNode.removeChild(toast);
+                delete activeSummonIds[summon.id];
+                if (Object.keys(activeSummonIds).length === 0) {
+                    stopTitleBlink();
+                    stopRepeatingChime();
+                }
+            }, 200);
+        }
+
+        toast.querySelector('.sdv-toast-dismiss-btn').addEventListener('click', dismissToast);
+        toast.querySelector('.sdv-toast-silence-btn').addEventListener('click', dismissToast);
+        toast.querySelector('.sdv-toast-accept-btn').addEventListener('click', function() {
+            dismissToast();
+        });
+    }
+
+    function startRepeatingChime(soundType) {
+        playSynthesizedSound(soundType);
+        chimeRepeatCount = 1;
+        if (repeatingChimeTimer) clearInterval(repeatingChimeTimer);
+
+        // Per grill-me decision: repeats every 15 seconds up to 3 times
+        repeatingChimeTimer = setInterval(function() {
+            if (chimeRepeatCount >= 3 || Object.keys(activeSummonIds).length === 0) {
+                stopRepeatingChime();
+                return;
+            }
+            chimeRepeatCount++;
+            playSynthesizedSound(soundType);
+        }, 15000);
+    }
+
+    function stopRepeatingChime() {
+        if (repeatingChimeTimer) {
+            clearInterval(repeatingChimeTimer);
+            repeatingChimeTimer = null;
+        }
+    }
+
+    // Micro-polling every 6 seconds to admin_heartbeat
+    var heartbeatTimer = null;
+    function pollAdminHeartbeat() {
+        var fd = new FormData();
+        fd.append('action', 'admin_heartbeat');
+
+        fetch(ajaxUrl, {
+            method: 'POST',
+            body: fd,
+            credentials: 'include'
+        }).then(function(r){ return r.json(); }).then(function(res){
+            if (!res || !res.success) return;
+
+            var summons = res.pending_summons || [];
+            if (summons.length > 0) {
+                var hasNewSummon = false;
+                summons.forEach(function(s) {
+                    if (!activeSummonIds[s.id]) {
+                        activeSummonIds[s.id] = s;
+                        hasNewSummon = true;
+                        renderToastNotification(s);
+                    }
+                });
+                if (hasNewSummon) {
+                    startTitleBlink(summons.length);
+                    startRepeatingChime(res.sound_type || defaultSoundType);
+                }
+            } else {
+                if (Object.keys(activeSummonIds).length > 0) {
+                    activeSummonIds = {};
+                    stopTitleBlink();
+                    stopRepeatingChime();
+                    var container = document.getElementById('sdv-admin-global-toast-container');
+                    if (container) container.innerHTML = '';
+                }
+            }
+        }).catch(function(){});
+    }
+
+    // Start background heartbeat
+    heartbeatTimer = setInterval(pollAdminHeartbeat, 6000);
+    // Initial kick after 1.5s
+    setTimeout(pollAdminHeartbeat, 1500);
+
+})();
+</script>
+<style>
+@keyframes sdvToastIn {
+    from { opacity: 0; transform: translateY(16px) scale(0.96); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes sdvPulse {
+    0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+    70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+    100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+}
+</style>
+HTML;
+    } catch (\Throwable $e) {
+        return '';
+    }
+}
+
 
 

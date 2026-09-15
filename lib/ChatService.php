@@ -473,6 +473,8 @@ class ChatService
         // 4. Create fresh session
         $uuid = 'chat_' . bin2hex(random_bytes(16));
         $title = !empty($metadata['name']) ? "Chat with {$metadata['name']}" : "Support Chat " . Carbon::now()->format('M j, g:i a');
+        $sourceDomain = !empty($metadata['source_domain']) ? trim($metadata['source_domain']) : (parse_url($_SERVER['HTTP_REFERER'] ?? '', PHP_URL_HOST) ?: 'Portal');
+        $sourcePage = !empty($metadata['page_url']) ? trim($metadata['page_url']) : ($_SERVER['HTTP_REFERER'] ?? '');
 
         $id = Capsule::table('tblsahdev_chat_sessions')->insertGetId([
             'session_uuid'    => $uuid,
@@ -482,6 +484,8 @@ class ChatService
             'visitor_token'   => $visitorToken,
             'status'          => 'active',
             'title'           => $title,
+            'source_domain'   => $sourceDomain,
+            'source_page'     => $sourcePage,
             'metadata_json'   => json_encode($metadata),
             'last_message_at' => Carbon::now(),
             'created_at'      => Carbon::now(),
@@ -604,17 +608,25 @@ class ChatService
         ]);
 
         Capsule::table('tblsahdev_chat_sessions')->where('id', $sessionId)->update([
+            'typing_preview'  => null,
+            'typing_at'       => null,
             'last_message_at' => Carbon::now(),
             'updated_at'      => Carbon::now(),
         ]);
 
+        // Auto-detect intent to summon a live human agent
+        if (self::detectHumanSummonIntent($messageText)) {
+            self::triggerHumanSummon($sessionId, 'Client requested human support in message');
+        }
+
         // 2. If staff has taken over this chat, do not let AI answer!
         if ($session['status'] === 'taken_over') {
             return [
-                'success'       => true,
-                'is_takeover'   => true,
-                'status'        => 'taken_over',
-                'message'       => 'Your message was delivered to our support agent.',
+                'success'         => true,
+                'is_takeover'     => true,
+                'status'          => 'taken_over',
+                'user_message_id' => $userMsgId,
+                'message'         => 'Your message was delivered to our support agent.',
             ];
         }
 
@@ -2000,11 +2012,22 @@ class ChatService
             ];
         }
 
+        $assignedAdminName = null;
+        if (!empty($session->assigned_admin_id)) {
+            $adm = Capsule::table('tbladmins')->where('id', $session->assigned_admin_id)->first(['firstname', 'lastname']);
+            if ($adm) {
+                $assignedAdminName = trim($adm->firstname . ' ' . $adm->lastname);
+            }
+        }
+
         return [
-            'success'      => true,
-            'session_uuid' => $session->session_uuid,
-            'status'       => $session->status,
-            'messages'     => $formatted,
+            'success'             => true,
+            'session_uuid'        => $session->session_uuid,
+            'status'              => $session->status,
+            'assigned_admin_id'   => (int)($session->assigned_admin_id ?? 0),
+            'assigned_admin_name' => $assignedAdminName,
+            'summon_status'       => $session->summon_status ?? 'none',
+            'messages'            => $formatted,
         ];
     }
 
@@ -2249,6 +2272,685 @@ class ChatService
                 'negative_ratings' => 0,
                 'csat_percent'     => null,
             ];
+        }
+    }
+
+    /**
+     * Update real-time typing preview (typing sneak-peek) for an active session.
+     */
+    public static function updateTypingPreview(string $sessionUuid, string $text, string $visitorToken, ?int $clientId = null): bool
+    {
+        try {
+            $session = Capsule::table('tblsahdev_chat_sessions')->where('session_uuid', $sessionUuid)->first();
+            if (!$session) {
+                return false;
+            }
+
+            // Authorization verification
+            if ($clientId && $clientId > 0) {
+                if ((int)$session->client_id !== (int)$clientId) {
+                    return false;
+                }
+            } else {
+                if (!empty($session->client_id) || $session->visitor_token !== $visitorToken) {
+                    return false;
+                }
+            }
+
+            $previewText = mb_substr(trim($text), 0, 500);
+
+            Capsule::table('tblsahdev_chat_sessions')->where('id', $session->id)->update([
+                'typing_preview' => !empty($previewText) ? $previewText : null,
+                'typing_at'      => !empty($previewText) ? Carbon::now() : null,
+                'updated_at'     => Carbon::now(),
+            ]);
+
+            return true;
+        } catch (\Throwable $e) {
+            return false;
+        }
+    }
+
+    /**
+     * Detect if user text expresses a desire to speak with a human support agent.
+     */
+    public static function detectHumanSummonIntent(string $text): bool
+    {
+        $pattern = '/\b(?:talk|speak|connect|transfer|switch|need|want|get|give)\s+(?:to\s+)?(?:a\s+)?(?:human|agent|person|representative|staff|operator|specialist|manager|someone)\b/i';
+        if (preg_match($pattern, $text)) {
+            return true;
+        }
+
+        $strictKeywords = [
+            'real person', 'live agent', 'live person', 'human please',
+            'customer service representative', 'talk to agent', 'speak to agent',
+            'human support', 'transfer to agent', 'representative please'
+        ];
+        $lower = mb_strtolower($text);
+        foreach ($strictKeywords as $kw) {
+            if (mb_strpos($lower, $kw) !== false) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Trigger a human agent summon alert for a live chat session.
+     */
+    public static function triggerHumanSummon(int $sessionId, string $reason = ''): bool
+    {
+        try {
+            $session = Capsule::table('tblsahdev_chat_sessions')->where('id', $sessionId)->first();
+            if (!$session || $session->summon_status === 'requested' || $session->status === 'taken_over') {
+                return false;
+            }
+
+            Capsule::table('tblsahdev_chat_sessions')->where('id', $sessionId)->update([
+                'summon_status' => 'requested',
+                'summoned_at'   => Carbon::now(),
+                'updated_at'    => Carbon::now(),
+            ]);
+
+            // Add notification message in the chat
+            Capsule::table('tblsahdev_chat_messages')->insert([
+                'session_id'   => $sessionId,
+                'sender_type'  => 'system',
+                'sender_id'    => 0,
+                'sender_name'  => 'System',
+                'message_text' => '🔔 A live human support agent has been notified and summoned to assist you. A team member will join shortly! You may continue chatting with our AI in the meantime.',
+                'created_at'   => Carbon::now(),
+            ]);
+
+            ModuleLogger::info('client_chat', "Human agent summoned for session #{$sessionId} (Reason: {$reason})");
+            return true;
+        } catch (\Throwable $e) {
+            return false;
+        }
+    }
+
+    /**
+     * Admin presence heartbeat & global alert listener.
+     */
+    public static function adminHeartbeat(int $adminId, ?int $activeSessionId = null): array
+    {
+        try {
+            $now = Carbon::now();
+            $admin = Capsule::table('tbladmins')->where('id', $adminId)->first(['firstname', 'lastname']);
+            $adminName = $admin ? trim($admin->firstname . ' ' . $admin->lastname) : "Admin #{$adminId}";
+
+            if (Capsule::schema()->hasTable('tblsahdev_admin_presence')) {
+                Capsule::table('tblsahdev_admin_presence')->updateOrInsert(
+                    ['admin_id' => $adminId],
+                    [
+                        'admin_name'        => $adminName,
+                        'last_seen_at'      => $now,
+                        'is_online'         => 1,
+                        'active_session_id' => $activeSessionId ?: 0,
+                        'updated_at'        => $now,
+                    ]
+                );
+            }
+
+            // Pending human summons
+            $summons = Capsule::table('tblsahdev_chat_sessions')
+                ->where('session_type', 'client_livechat')
+                ->where('summon_status', 'requested')
+                ->whereIn('status', ['active', 'taken_over'])
+                ->orderBy('summoned_at', 'desc')
+                ->limit(5)
+                ->get();
+
+            $summonList = [];
+            foreach ($summons as $s) {
+                $clientName = 'Guest Visitor';
+                if ($s->client_id > 0) {
+                    $cl = Capsule::table('tblclients')->where('id', $s->client_id)->first(['firstname', 'lastname']);
+                    if ($cl) $clientName = trim($cl->firstname . ' ' . $cl->lastname);
+                }
+                $summonList[] = [
+                    'id'           => (int)$s->id,
+                    'session_uuid' => $s->session_uuid,
+                    'client_name'  => $clientName,
+                    'summoned_at'  => $s->summoned_at ? Carbon::parse($s->summoned_at)->diffForHumans() : 'Just now',
+                    'title'        => $s->title,
+                ];
+            }
+
+            // Active chats count
+            $activeCount = Capsule::table('tblsahdev_chat_sessions')
+                ->where('session_type', 'client_livechat')
+                ->where('status', 'active')
+                ->count();
+
+            $takenOverCount = Capsule::table('tblsahdev_chat_sessions')
+                ->where('session_type', 'client_livechat')
+                ->where('status', 'taken_over')
+                ->count();
+
+            return [
+                'success'           => true,
+                'active_count'      => $activeCount,
+                'takeover_count'    => $takenOverCount,
+                'summon_count'      => count($summonList),
+                'summons'           => $summonList,
+                'sound_alert'       => count($summonList) > 0,
+                'timestamp'         => time(),
+            ];
+        } catch (\Throwable $e) {
+            return [
+                'success'        => false,
+                'active_count'   => 0,
+                'takeover_count' => 0,
+                'summon_count'   => 0,
+                'summons'        => [],
+                'sound_alert'    => false,
+            ];
+        }
+    }
+
+    /**
+     * Claim staff takeover of an active chat session.
+     */
+    public static function claimTakeover(string $sessionUuid, int $adminId, int $timeoutMins = 0): array
+    {
+        try {
+            $session = Capsule::table('tblsahdev_chat_sessions')->where('session_uuid', $sessionUuid)->first();
+            if (!$session) {
+                return ['success' => false, 'error' => 'Session not found.'];
+            }
+
+            $admin = Capsule::table('tbladmins')->where('id', $adminId)->first(['firstname', 'lastname']);
+            $adminName = $admin ? trim($admin->firstname . ' ' . $admin->lastname) : "Staff Member";
+
+            Capsule::table('tblsahdev_chat_sessions')->where('id', $session->id)->update([
+                'status'                => 'taken_over',
+                'assigned_admin_id'     => $adminId,
+                'summon_status'         => 'claimed',
+                'takeover_timeout_mins' => max(0, $timeoutMins),
+                'last_staff_message_at' => Carbon::now(),
+                'last_message_at'       => Carbon::now(),
+                'updated_at'            => Carbon::now(),
+            ]);
+
+            $timeoutNote = ($timeoutMins > 0) ? " (inactivity timer: {$timeoutMins}m)" : "";
+            Capsule::table('tblsahdev_chat_messages')->insert([
+                'session_id'   => $session->id,
+                'sender_type'  => 'system',
+                'sender_id'    => $adminId,
+                'sender_name'  => 'System',
+                'message_text' => "Staff member {$adminName} joined the chat{$timeoutNote}. Autonomous AI replies are paused.",
+                'created_at'   => Carbon::now(),
+            ]);
+
+            return ['success' => true, 'message' => "You have taken over session #{$session->id}."];
+        } catch (\Throwable $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * Release staff takeover back to the autonomous AI assistant.
+     */
+    public static function releaseTakeover(string $sessionUuid, int $adminId): array
+    {
+        try {
+            $session = Capsule::table('tblsahdev_chat_sessions')->where('session_uuid', $sessionUuid)->first();
+            if (!$session) {
+                return ['success' => false, 'error' => 'Session not found.'];
+            }
+
+            Capsule::table('tblsahdev_chat_sessions')->where('id', $session->id)->update([
+                'status'                => 'active',
+                'assigned_admin_id'     => 0,
+                'summon_status'         => 'none',
+                'takeover_timeout_mins' => 0,
+                'updated_at'            => Carbon::now(),
+            ]);
+
+            Capsule::table('tblsahdev_chat_messages')->insert([
+                'session_id'   => $session->id,
+                'sender_type'  => 'system',
+                'sender_id'    => 0,
+                'sender_name'  => 'System',
+                'message_text' => "Staff member released the chat. Autonomous AI Assistant is active.",
+                'created_at'   => Carbon::now(),
+            ]);
+
+            return ['success' => true, 'message' => "Chat released back to AI Assistant."];
+        } catch (\Throwable $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * Check for expired staff takeover sessions and auto-release them back to AI if idle.
+     */
+    public static function checkTakeoverTimeouts(): array
+    {
+        $released = [];
+        try {
+            $sessions = Capsule::table('tblsahdev_chat_sessions')
+                ->where('status', 'taken_over')
+                ->where('takeover_timeout_mins', '>', 0)
+                ->get();
+
+            foreach ($sessions as $s) {
+                $lastActivity = $s->last_staff_message_at ?: $s->updated_at;
+                $cutoff = Carbon::now()->subMinutes((int)$s->takeover_timeout_mins);
+                if (Carbon::parse($lastActivity)->lt($cutoff)) {
+                    Capsule::table('tblsahdev_chat_sessions')->where('id', $s->id)->update([
+                        'status'                => 'active',
+                        'assigned_admin_id'     => 0,
+                        'summon_status'         => 'none',
+                        'takeover_timeout_mins' => 0,
+                        'updated_at'            => Carbon::now(),
+                    ]);
+
+                    Capsule::table('tblsahdev_chat_messages')->insert([
+                        'session_id'   => $s->id,
+                        'sender_type'  => 'system',
+                        'sender_id'    => 0,
+                        'sender_name'  => 'System',
+                        'message_text' => "Staff session timed out due to {$s->takeover_timeout_mins} minutes of inactivity. Autonomous AI Assistant has resumed.",
+                        'created_at'   => Carbon::now(),
+                    ]);
+
+                    $released[] = $s->id;
+                }
+            }
+        } catch (\Throwable $e) {}
+
+        return $released;
+    }
+
+    /**
+     * Link visitor session with a registered WHMCS client by email.
+     */
+    public static function linkVisitorEmail(string $sessionUuid, string $email, string $name = ''): array
+    {
+        try {
+            $session = Capsule::table('tblsahdev_chat_sessions')->where('session_uuid', $sessionUuid)->first();
+            if (!$session) {
+                return ['success' => false, 'error' => 'Session not found.'];
+            }
+
+            $cleanEmail = trim(strtolower($email));
+            if (!filter_var($cleanEmail, FILTER_VALIDATE_EMAIL)) {
+                return ['success' => false, 'error' => 'Invalid email address.'];
+            }
+
+            $client = Capsule::table('tblclients')->where('email', $cleanEmail)->first();
+            if ($client) {
+                Capsule::table('tblsahdev_chat_sessions')->where('id', $session->id)->update([
+                    'client_id'  => $client->id,
+                    'title'      => "Live Chat - {$client->firstname} {$client->lastname}",
+                    'updated_at' => Carbon::now(),
+                ]);
+
+                return [
+                    'success'      => true,
+                    'client_found' => true,
+                    'client_id'    => (int)$client->id,
+                    'client_name'  => trim($client->firstname . ' ' . $client->lastname),
+                    'message'      => 'Client account successfully linked.',
+                ];
+            }
+
+            return [
+                'success'      => true,
+                'client_found' => false,
+                'message'      => 'Guest visitor email recorded.',
+            ];
+        } catch (\Throwable $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * Send a live staff message from an admin operator.
+     */
+    public static function recordStaffMessage(string $sessionUuid, int $adminId, string $messageText): array
+    {
+        try {
+            $session = Capsule::table('tblsahdev_chat_sessions')->where('session_uuid', $sessionUuid)->first();
+            if (!$session) {
+                return ['success' => false, 'error' => 'Session not found.'];
+            }
+
+            $admin = Capsule::table('tbladmins')->where('id', $adminId)->first(['firstname', 'lastname']);
+            $adminName = $admin ? trim($admin->firstname . ' ' . $admin->lastname) : "Support Specialist";
+
+            $cleanText = trim($messageText);
+            if (empty($cleanText)) {
+                return ['success' => false, 'error' => 'Message text cannot be empty.'];
+            }
+
+            $msgId = Capsule::table('tblsahdev_chat_messages')->insertGetId([
+                'session_id'   => $session->id,
+                'sender_type'  => 'staff',
+                'sender_id'    => $adminId,
+                'sender_name'  => $adminName,
+                'message_text' => self::safeStorageText($cleanText),
+                'created_at'   => Carbon::now(),
+            ]);
+
+            Capsule::table('tblsahdev_chat_sessions')->where('id', $session->id)->update([
+                'status'                => 'taken_over',
+                'assigned_admin_id'     => $adminId,
+                'typing_preview'        => null,
+                'typing_at'             => null,
+                'last_staff_message_at' => Carbon::now(),
+                'last_message_at'       => Carbon::now(),
+                'updated_at'            => Carbon::now(),
+            ]);
+
+            return [
+                'success'    => true,
+                'message_id' => $msgId,
+                'sender'     => $adminName,
+                'text'       => $cleanText,
+                'created_at' => Carbon::now()->format('g:i A'),
+            ];
+        } catch (\Throwable $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * Retrieve live account details for the Console Side Watcher.
+     */
+    public static function getVisitorAccountDetails(?int $clientId, ?string $visitorToken = null, ?int $sessionId = null): array
+    {
+        $data = [
+            'is_client'     => false,
+            'client'        => null,
+            'services'      => [],
+            'invoices'      => [],
+            'tickets'       => [],
+            'session_info'  => null,
+        ];
+
+        try {
+            if ($sessionId && $sessionId > 0) {
+                $sess = Capsule::table('tblsahdev_chat_sessions')->where('id', $sessionId)->first();
+                if ($sess) {
+                    $meta = !empty($sess->metadata_json) ? json_decode($sess->metadata_json, true) : [];
+                    $data['session_info'] = [
+                        'id'             => (int)$sess->id,
+                        'uuid'           => $sess->session_uuid,
+                        'status'         => $sess->status,
+                        'summon_status'  => $sess->summon_status,
+                        'typing_preview' => $sess->typing_preview,
+                        'typing_at'      => $sess->typing_at,
+                        'source_domain'  => $sess->source_domain ?: 'Portal',
+                        'source_page'    => $sess->source_page ?: ($meta['page_url'] ?? ''),
+                        'started_at'     => Carbon::parse($sess->created_at)->diffForHumans(),
+                        'last_activity'  => $sess->last_message_at ? Carbon::parse($sess->last_message_at)->diffForHumans() : 'N/A',
+                        'ip_address'     => $meta['ip'] ?? ($_SERVER['REMOTE_ADDR'] ?? 'Unknown'),
+                    ];
+                    if (empty($clientId) && !empty($sess->client_id)) {
+                        $clientId = (int)$sess->client_id;
+                    }
+                }
+            }
+
+            if ($clientId && $clientId > 0) {
+                $client = Capsule::table('tblclients')->where('id', $clientId)->first([
+                    'id', 'firstname', 'lastname', 'email', 'companyname', 'status', 'datecreated', 'credit', 'currency', 'phonenumber', 'country'
+                ]);
+                if ($client) {
+                    $data['is_client'] = true;
+                    $data['client'] = [
+                        'id'           => (int)$client->id,
+                        'name'         => trim($client->firstname . ' ' . $client->lastname),
+                        'email'        => $client->email,
+                        'company'      => $client->companyname ?: 'Individual',
+                        'status'       => $client->status,
+                        'credit'       => number_format((float)($client->credit ?? 0), 2),
+                        'phone'        => $client->phonenumber ?: 'N/A',
+                        'country'      => $client->country ?: 'N/A',
+                        'date_created' => Carbon::parse($client->datecreated)->format('M j, Y'),
+                    ];
+
+                    // Active services
+                    if (Capsule::schema()->hasTable('tblhosting')) {
+                        $services = Capsule::table('tblhosting')
+                            ->leftJoin('tblproducts', 'tblhosting.packageid', '=', 'tblproducts.id')
+                            ->where('tblhosting.userid', $clientId)
+                            ->whereIn('tblhosting.domainstatus', ['Active', 'Suspended', 'Pending'])
+                            ->orderBy('tblhosting.id', 'desc')
+                            ->limit(6)
+                            ->get([
+                                'tblhosting.id', 'tblhosting.domain', 'tblhosting.domainstatus', 'tblhosting.billingcycle',
+                                'tblhosting.amount', 'tblhosting.nextduedate', 'tblproducts.name as product_name'
+                            ]);
+
+                        foreach ($services as $srv) {
+                            $data['services'][] = [
+                                'id'          => (int)$srv->id,
+                                'product'     => $srv->product_name ?: 'Hosting Package',
+                                'domain'      => $srv->domain ?: 'No domain',
+                                'status'      => $srv->domainstatus,
+                                'cycle'       => $srv->billingcycle,
+                                'amount'      => number_format((float)$srv->amount, 2),
+                                'nextduedate' => $srv->nextduedate,
+                            ];
+                        }
+                    }
+
+                    // Recent Invoices
+                    if (Capsule::schema()->hasTable('tblinvoices')) {
+                        $invoices = Capsule::table('tblinvoices')
+                            ->where('userid', $clientId)
+                            ->orderBy('id', 'desc')
+                            ->limit(5)
+                            ->get(['id', 'date', 'duedate', 'total', 'status']);
+
+                        foreach ($invoices as $inv) {
+                            $data['invoices'][] = [
+                                'id'      => (int)$inv->id,
+                                'total'   => number_format((float)$inv->total, 2),
+                                'status'  => $inv->status,
+                                'duedate' => $inv->duedate,
+                            ];
+                        }
+                    }
+
+                    // Open / Recent Tickets
+                    if (Capsule::schema()->hasTable('tbltickets')) {
+                        $tickets = Capsule::table('tbltickets')
+                            ->where('userid', $clientId)
+                            ->orderBy('id', 'desc')
+                            ->limit(5)
+                            ->get(['id', 'tid', 'title', 'status', 'lastreply']);
+
+                        foreach ($tickets as $tkt) {
+                            $data['tickets'][] = [
+                                'id'        => (int)$tkt->id,
+                                'tid'       => $tkt->tid,
+                                'title'     => $tkt->title,
+                                'status'    => $tkt->status,
+                                'lastreply' => Carbon::parse($tkt->lastreply)->diffForHumans(),
+                            ];
+                        }
+                    }
+                }
+            }
+
+            return $data;
+        } catch (\Throwable $e) {
+            return $data;
+        }
+    }
+
+    /**
+     * Convert an active live chat into a formal WHMCS Support Ticket.
+     */
+    public static function convertChatToTicket(string $sessionUuid, int $adminId, array $ticketData): array
+    {
+        try {
+            $session = Capsule::table('tblsahdev_chat_sessions')->where('session_uuid', $sessionUuid)->first();
+            if (!$session) {
+                return ['success' => false, 'error' => 'Session not found.'];
+            }
+
+            $deptId = (int)($ticketData['dept_id'] ?? 1);
+            $subject = trim((string)($ticketData['subject'] ?? 'Live Chat Support Escalation'));
+            $priority = in_array($ticketData['priority'] ?? '', ['Low', 'Medium', 'High'], true) ? $ticketData['priority'] : 'Medium';
+
+            // Gather transcript
+            $messages = Capsule::table('tblsahdev_chat_messages')
+                ->where('session_id', $session->id)
+                ->orderBy('id', 'asc')
+                ->get();
+
+            $clientLabel = 'Guest Visitor';
+            $clientEmail = $ticketData['client_email'] ?? 'guest@visitor.local';
+            $clientName = $ticketData['client_name'] ?? 'Guest Visitor';
+
+            if ($session->client_id > 0) {
+                $cl = Capsule::table('tblclients')->where('id', $session->client_id)->first();
+                if ($cl) {
+                    $clientLabel = "{$cl->firstname} {$cl->lastname} <{$cl->email}> (Client ID #{$cl->id})";
+                    $clientEmail = $cl->email;
+                    $clientName = trim($cl->firstname . ' ' . $cl->lastname);
+                }
+            }
+
+            $transcript = "=======================================================\n";
+            $transcript .= " LIVE CHAT TRANSCRIPT CONVERTED TO TICKET\n";
+            $transcript .= " Chat Session UUID: {$session->session_uuid}\n";
+            $transcript .= " Customer: {$clientLabel}\n";
+            $transcript .= " Source Domain: " . ($session->source_domain ?: 'WHMCS Client Area') . "\n";
+            $transcript .= " Page URL: " . ($session->source_page ?: 'N/A') . "\n";
+            $transcript .= " Started: {$session->created_at}\n";
+            $transcript .= " Converted by Admin #{$adminId}\n";
+            $transcript .= "=======================================================\n\n";
+
+            foreach ($messages as $m) {
+                $time = Carbon::parse($m->created_at)->format('Y-m-d H:i:s');
+                $sender = strtoupper($m->sender_type);
+                $name = $m->sender_name ?: $sender;
+                $transcript .= "[{$time}] [{$name}] ({$sender}):\n";
+                $transcript .= trim($m->message_text) . "\n\n";
+            }
+            $transcript .= "--- END OF LIVE CHAT TRANSCRIPT ---";
+
+            // Open ticket via WHMCS LocalAPI
+            $apiValues = [
+                'deptid'   => $deptId,
+                'subject'  => $subject,
+                'message'  => $transcript,
+                'priority' => $priority,
+                'admin'    => true,
+            ];
+
+            if ($session->client_id > 0) {
+                $apiValues['clientid'] = (int)$session->client_id;
+            } else {
+                $apiValues['name']  = $clientName;
+                $apiValues['email'] = $clientEmail;
+            }
+
+            if (!function_exists('localAPI')) {
+                require_once dirname(__DIR__) . '/../../../init.php';
+            }
+
+            $apiResult = localAPI('OpenTicket', $apiValues);
+
+            if (isset($apiResult['result']) && $apiResult['result'] === 'success') {
+                $newTicketId = (int)($apiResult['id'] ?? ($apiResult['ticketid'] ?? 0));
+                $newTid = $apiResult['tid'] ?? (string)$newTicketId;
+
+                Capsule::table('tblsahdev_chat_sessions')->where('id', $session->id)->update([
+                    'status'        => 'escalated_ticket',
+                    'summon_status' => 'dismissed',
+                    'updated_at'    => Carbon::now(),
+                ]);
+
+                Capsule::table('tblsahdev_chat_messages')->insert([
+                    'session_id'   => $session->id,
+                    'sender_type'  => 'system',
+                    'sender_id'    => $adminId,
+                    'sender_name'  => 'System',
+                    'message_text' => "Ticket #{$newTid} was opened for this conversation. You can view it in the client support tickets area.",
+                    'created_at'   => Carbon::now(),
+                ]);
+
+                return [
+                    'success'   => true,
+                    'ticket_id' => $newTicketId,
+                    'tid'       => $newTid,
+                    'url'       => "supporttickets.php?action=view&id={$newTicketId}",
+                ];
+            } else {
+                $err = $apiResult['message'] ?? 'Failed to create ticket via WHMCS API.';
+                return ['success' => false, 'error' => $err];
+            }
+        } catch (\Throwable $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * AI Co-Pilot: Generate live response draft for an operator to review and send.
+     */
+    public static function suggestCoPilotReply(int $sessionId, int $adminId): array
+    {
+        try {
+            $session = Capsule::table('tblsahdev_chat_sessions')->where('id', $sessionId)->first();
+            if (!$session) {
+                return ['success' => false, 'error' => 'Session not found.'];
+            }
+
+            $messages = Capsule::table('tblsahdev_chat_messages')
+                ->where('session_id', $sessionId)
+                ->orderBy('id', 'desc')
+                ->limit(10)
+                ->get()
+                ->reverse();
+
+            $transcript = "";
+            foreach ($messages as $m) {
+                $sender = strtoupper($m->sender_type);
+                $name = $m->sender_name ?: $sender;
+                $transcript .= "[{$name}] ({$sender}): " . trim($m->message_text) . "\n";
+            }
+
+            $clientContext = self::getClientScopeSummary($session->client_id > 0 ? (int)$session->client_id : null);
+
+            $prompt = "You are an AI Co-Pilot assisting a human hosting support specialist in a live conversation.\n"
+                . "CLIENT CONTEXT:\n{$clientContext}\n\n"
+                . "CONVERSATION TRANSCRIPT:\n{$transcript}\n\n"
+                . "TASK: Draft a warm, consultative, and technically accurate reply for the human agent to send to the client. "
+                . "Do not introduce yourself as AI. Keep it concise, helpful, and ready to send. Provide ONLY the suggested reply text.";
+
+            $pRecord = null;
+            $provider = self::resolveChatProvider('client_livechat', $pRecord);
+            if (!$provider) {
+                return ['success' => false, 'error' => 'No active AI Provider configured.'];
+            }
+
+            $modelName = $pRecord->model_name ?? self::getChatSetting('client_chat_model_name', 'openai/gpt-4o-mini');
+            $resp = $provider->generateText([
+                ['role' => 'user', 'content' => $prompt]
+            ], [
+                'model'       => $modelName,
+                'max_tokens'  => 400,
+                'temperature' => 0.6,
+            ]);
+
+            if (empty($resp['text'])) {
+                return ['success' => false, 'error' => 'Could not generate reply draft.'];
+            }
+
+            return [
+                'success' => true,
+                'draft'   => trim($resp['text']),
+            ];
+        } catch (\Throwable $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
         }
     }
 }
