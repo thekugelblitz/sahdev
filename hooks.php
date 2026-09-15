@@ -6279,7 +6279,11 @@ HTML;
 
     $_hdrSummonItem = '<button type="button" class="sdv-hdr-menu-item" id="sdv-hmenu-summon" onclick="window.sdvSummonHuman&&window.sdvSummonHuman();window.sdvCloseHdrMenu();">' .
         '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg>' .
-        '<span>Talk to Human</span></button>';
+        '<span>Talk to Live Agent</span></button>';
+
+    $_hdrTicketItem = '<button type="button" class="sdv-hdr-menu-item" id="sdv-hmenu-ticket" onclick="window.sdvEscalateToTicket&&window.sdvEscalateToTicket();window.sdvCloseHdrMenu();">' .
+        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/><path d="M13 5v2"/><path d="M13 17v2"/><path d="M13 11v2"/></svg>' .
+        '<span>Submit Support Ticket</span></button>';
 
     $hdrMenuHtml = '<div class="sdv-hdr-menu-wrap" id="sdv-hdr-menu-wrap">' .
         '<button type="button" class="sdv-cl-action-btn sdv-hdr-dots-btn" id="sdv-hdr-dots" title="More options" aria-label="More options" onclick="window.sdvToggleHdrMenu&&window.sdvToggleHdrMenu(event);">' .
@@ -6287,6 +6291,7 @@ HTML;
         '</button>' .
         '<div class="sdv-hdr-menu" id="sdv-hdr-menu" style="display:none;">' .
             $_hdrSummonItem .
+            $_hdrTicketItem .
             $_hdrKbItem .
             $_hdrHistItem .
             $_hdrExportItem .
@@ -10752,10 +10757,10 @@ DISC;
         <div class="sdv-drawer-body" style="padding: 18px 16px; overflow-y: auto; flex: 1; display: flex; flex-direction: column;">
             <div class="sdv-guest-intro-card" style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px; margin-bottom: 16px;">
                 <div class="sdv-guest-intro-title" style="font-weight: 700; font-size: 13.5px; color: #1e293b; margin-bottom: 4px; display: flex; align-items: center; gap: 6px;">
-                    <span>🎫</span> Connect with Support Staff
+                    <span>🎫</span> Submit Support Ticket
                 </div>
                 <div class="sdv-guest-intro-desc" style="font-size: 12px; color: #64748b; line-height: 1.45;">
-                    Our support engineers will receive your complete live chat transcript. Please enter your contact details so our team can reply directly to your inbox.
+                    Submit your inquiry as a formal support ticket. Our technical support engineers will receive your complete chat transcript and follow up directly via email.
                 </div>
             </div>
 
@@ -10796,6 +10801,9 @@ DISC;
         <div class="sdv-cl-controls">
             <button type="button" class="sdv-cl-action-btn" id="sdv-btn-summon-agent" title="Connect with Live Agent" aria-label="Connect with Live Agent" onclick="window.sdvSummonHuman && window.sdvSummonHuman();">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg>
+            </button>
+            <button type="button" class="sdv-cl-action-btn" id="sdv-btn-open-ticket" title="Submit Support Ticket" aria-label="Submit Support Ticket" onclick="window.sdvEscalateToTicket && window.sdvEscalateToTicket();">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/><path d="M13 5v2"/><path d="M13 17v2"/><path d="M13 11v2"/></svg>
             </button>
             {$hdrMenuHtml}
             <button type="button" class="sdv-cl-action-btn" id="sdv-cl-expand-btn" title="Expand / Minimize Window" aria-label="Expand" onclick="window.sdvToggleExpand && window.sdvToggleExpand(event);">
@@ -11945,7 +11953,9 @@ DISC;
     window.sdvToggleHistory = function() {
         var drawer = document.getElementById('sdv-cl-history-drawer');
         var kbDrawer = document.getElementById('sdv-cl-kb-drawer');
+        var guestDrawer = document.getElementById('sdv-cl-guest-drawer');
         if (kbDrawer) kbDrawer.classList.remove('sdv-drawer-open');
+        if (guestDrawer) guestDrawer.classList.remove('sdv-drawer-open');
         if (drawer) {
             var isOpen = drawer.classList.toggle('sdv-drawer-open');
             if (isOpen && typeof loadHistoryList === 'function') {
@@ -13039,6 +13049,11 @@ DISC;
     };
 
     window.sdvOpenGuestDrawer = function() {
+        var histDrawer = document.getElementById('sdv-cl-history-drawer');
+        var kbDrawer = document.getElementById('sdv-cl-kb-drawer');
+        if (histDrawer) histDrawer.classList.remove('sdv-drawer-open');
+        if (kbDrawer) kbDrawer.classList.remove('sdv-drawer-open');
+
         var nameInput = document.getElementById('sdv-guest-name');
         var emailInput = document.getElementById('sdv-guest-email');
         if (nameInput && !nameInput.value) {
@@ -13052,6 +13067,9 @@ DISC;
 
         var dr = document.getElementById('sdv-cl-guest-drawer');
         if (dr) dr.classList.add('sdv-drawer-open');
+        if (nameInput) {
+            setTimeout(function() { try { nameInput.focus(); } catch(e) {} }, 100);
+        }
     };
 
     window.sdvSubmitGuestEscalation = function(e) {
@@ -13102,6 +13120,23 @@ DISC;
     };
 
     function performEscalate(customName, customEmail, callback) {
+        if (!sessionUuid) {
+            var formInit = new FormData();
+            formInit.append('action', 'client_chat_init');
+            formInit.append('visitor_token', visitorToken);
+            formInit.append('page_url', window.location.href);
+            postAjaxWithFallback(formInit, function(err, data) {
+                if (!err && data && data.session_uuid) {
+                    sessionUuid = data.session_uuid;
+                    sdvSafeSet(activeSessionKey, sessionUuid);
+                    performEscalate(customName, customEmail, callback);
+                } else {
+                    callback(err || new Error('Failed to initialize chat session for ticket creation.'));
+                }
+            });
+            return;
+        }
+
         var form = new FormData();
         form.append('action', 'client_chat_escalate');
         form.append('session_uuid', sessionUuid);
@@ -13115,17 +13150,33 @@ DISC;
     window.sdvEscalateToTicket = function() {
         var escalateBtn = document.getElementById('sdv-cl-escalate');
         if (!sessionUuid) {
-            alert('Please send a message before converting to a support ticket.');
+            var formInit = new FormData();
+            formInit.append('action', 'client_chat_init');
+            formInit.append('visitor_token', visitorToken);
+            formInit.append('page_url', window.location.href);
+            postAjaxWithFallback(formInit, function(err, data) {
+                if (!err && data && data.session_uuid) {
+                    sessionUuid = data.session_uuid;
+                    sdvSafeSet(activeSessionKey, sessionUuid);
+                    window.sdvEscalateToTicket();
+                } else {
+                    if (isLoggedIn) {
+                        alert('Please start a chat session before creating a support ticket.');
+                    } else {
+                        window.sdvOpenGuestDrawer();
+                    }
+                }
+            });
             return;
         }
 
         if (isLoggedIn) {
-            if (!confirm('Would you like our staff to assist you? This will convert your chat transcript into a support ticket.')) return;
+            if (!confirm('Would you like to submit your chat session as a formal support ticket? Our engineering team will review it and reply directly.')) return;
             if (escalateBtn) escalateBtn.textContent = 'Creating ticket...';
             performEscalate(clientNamePrefill, clientEmailPrefill, function(err, data) {
-                if (escalateBtn) escalateBtn.textContent = 'Convert to Ticket →';
+                if (escalateBtn) escalateBtn.textContent = 'Create Ticket →';
                 if (err || !(data.status === 'success' || data.success)) {
-                    alert('Escalation failed: ' + (err ? err.message : (data.message || data.error || 'Unknown error')));
+                    alert('Ticket creation failed: ' + (err ? err.message : (data.message || data.error || 'Unknown error')));
                     return;
                 }
                 renderTicketCreatedCard(data);
@@ -13134,6 +13185,7 @@ DISC;
             window.sdvOpenGuestDrawer();
         }
     };
+    window.sdvOpenTicketModal = window.sdvEscalateToTicket;
 
     // ── Ultra-Modern Conversation History Engine ──────────────────────────
     function renderHistoryItems(items) {
@@ -13499,16 +13551,19 @@ DISC;
 
     // ── Live Human Agent Summon Handler (Hybrid Transition) ────────────────
     window.sdvSummonHuman = function() {
-        // If guest without email, prompt via guest drawer to collect Name/Email
-        var storedEmail = sdvSafeGet('sdv_visitor_email', '');
-        if (!isLoggedIn && !storedEmail) {
-            var guestDrawer = document.getElementById('sdv-cl-guest-drawer');
-            if (guestDrawer) {
-                guestDrawer.classList.add('sdv-drawer-open');
-                var nameInp = document.getElementById('sdv-guest-name');
-                if (nameInp) nameInp.focus();
-                return;
-            }
+        if (!sessionUuid) {
+            var formInit = new FormData();
+            formInit.append('action', 'client_chat_init');
+            formInit.append('visitor_token', visitorToken);
+            formInit.append('page_url', window.location.href);
+            postAjaxWithFallback(formInit, function(err, data) {
+                if (!err && data && data.session_uuid) {
+                    sessionUuid = data.session_uuid;
+                    sdvSafeSet(activeSessionKey, sessionUuid);
+                    window.sdvSummonHuman();
+                }
+            });
+            return;
         }
 
         var form = new FormData();
@@ -13525,6 +13580,7 @@ DISC;
                 appendClMsg('system', sysMsg, false, summonMsgId, null, Date.now());
             }
             sdvPlayNotificationChime();
+            try { sdvStartLivePolling(); } catch(e) {}
         });
     };
 
