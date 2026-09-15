@@ -1405,21 +1405,10 @@ function sahdev_clientarea($vars)
     $action = $_REQUEST['action'] ?? '';
     $sahdevAct = $_REQUEST['sahdev_act'] ?? '';
 
-    // ── External Live Chat Embed Widget Serving ──────────────────────────────
+    // ── External Live Chat Embed Widget Serving (WHMCS-Synchronized) ─────────
     if ($action === 'embed_js' || $action === 'embed.js' || $sahdevAct === 'embed_js') {
-        while (ob_get_level() > 0) {
-            @ob_end_clean();
-        }
-        header('Content-Type: application/javascript; charset=utf-8');
-        header('Access-Control-Allow-Origin: *');
-        header('Access-Control-Allow-Methods: GET, OPTIONS');
-        header('Cache-Control: public, max-age=3600');
-        $embedPath = __DIR__ . '/embed.js';
-        if (file_exists($embedPath)) {
-            readfile($embedPath);
-        } else {
-            echo '/* Sahdev Live Chat: embed.js file not found */';
-        }
+        require_once __DIR__ . '/hooks.php';
+        sahdev_serve_embed_js();
         exit;
     }
 

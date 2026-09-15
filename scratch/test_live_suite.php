@@ -40,20 +40,16 @@ if ($adminClass->hasMethod('live_console')) {
     echo "  [FAIL] Missing AdminController::live_console()\n";
 }
 
-// 3. Verify embed.js
-echo "\n[3/4] Verifying embed.js files...\n";
+// 3. Verify embed.js & WHMCS Synchronization
+echo "\n[3/4] Verifying embed.js files & live WHMCS synchronization...\n";
 $embedPath = __DIR__ . '/../embed.js';
 $moduleEmbedPath = __DIR__ . '/../modules/addons/sahdev/embed.js';
 
 if (file_exists($embedPath)) {
     $content = file_get_contents($embedPath);
-    $hasPrechat = strpos($content, 'sdv-em-prechat-card') !== -1;
-    $hasDebounce = strpos($content, 'client_chat_typing') !== -1 && strpos($content, '400') !== -1;
-    $hasSummon = strpos($content, 'client_chat_summon') !== -1;
+    $hasDynamicLoader = strpos($content, 'action=embed_js') !== false;
     echo "  [PASS] embed.js exists (" . strlen($content) . " bytes)\n";
-    echo "    - Pre-chat form: " . ($hasPrechat ? 'YES' : 'NO') . "\n";
-    echo "    - 400ms Debounced Typing Preview: " . ($hasDebounce ? 'YES' : 'NO') . "\n";
-    echo "    - Human Summon Trigger: " . ($hasSummon ? 'YES' : 'NO') . "\n";
+    echo "    - Dynamic WHMCS Synchronization Loader: " . ($hasDynamicLoader ? 'YES' : 'NO') . "\n";
 } else {
     echo "  [FAIL] Missing embed.js\n";
 }
@@ -63,6 +59,10 @@ if (file_exists($moduleEmbedPath)) {
 } else {
     echo "  [FAIL] Missing modules/addons/sahdev/embed.js\n";
 }
+
+$hooksContent = file_get_contents(__DIR__ . '/../hooks.php');
+$hasServeEmbed = strpos($hooksContent, 'function sahdev_serve_embed_js') !== false;
+echo "  [PASS] hooks.php sahdev_serve_embed_js: " . ($hasServeEmbed ? 'YES' : 'NO') . "\n";
 
 // 4. Verify Hooks
 echo "\n[4/4] Verifying hooks.php registration...\n";

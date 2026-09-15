@@ -6048,7 +6048,7 @@ function sahdev_render_client_livechat_widget(array $vars): string
         }
 
         $clientId = !empty($_SESSION['uid']) ? (int) $_SESSION['uid'] : 0;
-        if (!empty($settings->client_chat_require_auth) && $clientId <= 0) {
+        if (!empty($settings->client_chat_require_auth) && $clientId <= 0 && empty($vars['is_embed'])) {
             return '';
         }
 
@@ -6212,6 +6212,8 @@ function sahdev_render_client_livechat_widget(array $vars): string
     $csatEnabledJs = json_encode($csatEnabled);
     $soundEnabledJs = json_encode($soundEnabled);
     $maxMsgAttr = $maxMsgChars > 0 ? 'maxlength="' . (int)$maxMsgChars . '"' : '';
+    $isEmbed = !empty($vars['is_embed']);
+    $isEmbedJs = json_encode($isEmbed);
 
     // Launcher markup based on style with robust inline onclick and keyboard handlers
     $launcherHtml = '';
@@ -12035,34 +12037,39 @@ DISC;
     } catch(e) {}
 
     // Build resilient endpoint list prioritizing native WHMCS module routing
+    var isEmbedMode = {$isEmbedJs};
     var candidates = [];
     if (nativeUrl) candidates.push(nativeUrl);
     if (systemUrl) candidates.push(systemUrl + '/index.php?m=sahdev&sahdev_act=ajax_handler');
 
-    var baseEl = document.querySelector('base');
-    if (baseEl && baseEl.href) {
-        var cleanBase = baseEl.href.replace(/\/+$/, '');
-        candidates.push(cleanBase + '/index.php?m=sahdev&sahdev_act=ajax_handler');
-        candidates.push(cleanBase + '/modules/addons/sahdev/ajax.php');
-    }
-
-    if (directUrl) candidates.push(directUrl);
-    if (systemUrl) candidates.push(systemUrl + '/modules/addons/sahdev/ajax.php');
-
-    var pathname = window.location.pathname;
-    var lastSlash = pathname.lastIndexOf('/');
-    if (lastSlash >= 0) {
-        var dir = pathname.substring(0, lastSlash);
-        if (dir && dir !== '/') {
-            candidates.push(window.location.origin + dir.replace(/\/+$/, '') + '/index.php?m=sahdev&sahdev_act=ajax_handler');
-            candidates.push(window.location.origin + dir.replace(/\/+$/, '') + '/modules/addons/sahdev/ajax.php');
+    if (!isEmbedMode) {
+        var baseEl = document.querySelector('base');
+        if (baseEl && baseEl.href) {
+            var cleanBase = baseEl.href.replace(/\/+$/, '');
+            candidates.push(cleanBase + '/index.php?m=sahdev&sahdev_act=ajax_handler');
+            candidates.push(cleanBase + '/modules/addons/sahdev/ajax.php');
         }
-    }
 
-    candidates.push('index.php?m=sahdev&sahdev_act=ajax_handler');
-    candidates.push('/index.php?m=sahdev&sahdev_act=ajax_handler');
-    candidates.push('modules/addons/sahdev/ajax.php');
-    candidates.push('/modules/addons/sahdev/ajax.php');
+        if (directUrl) candidates.push(directUrl);
+        if (systemUrl) candidates.push(systemUrl + '/modules/addons/sahdev/ajax.php');
+
+        var pathname = window.location.pathname;
+        var lastSlash = pathname.lastIndexOf('/');
+        if (lastSlash >= 0) {
+            var dir = pathname.substring(0, lastSlash);
+            if (dir && dir !== '/') {
+                candidates.push(window.location.origin + dir.replace(/\/+$/, '') + '/index.php?m=sahdev&sahdev_act=ajax_handler');
+                candidates.push(window.location.origin + dir.replace(/\/+$/, '') + '/modules/addons/sahdev/ajax.php');
+            }
+        }
+
+        candidates.push('index.php?m=sahdev&sahdev_act=ajax_handler');
+        candidates.push('/index.php?m=sahdev&sahdev_act=ajax_handler');
+        candidates.push('modules/addons/sahdev/ajax.php');
+        candidates.push('/modules/addons/sahdev/ajax.php');
+    } else {
+        if (systemUrl) candidates.push(systemUrl + '/modules/addons/sahdev/ajax.php');
+    }
 
     var uniqueEndpoints = [];
     candidates.forEach(function(u) {
@@ -12092,7 +12099,7 @@ DISC;
 
         var isMutating = (actionName === 'client_chat_message' || actionName === 'client_chat_new_session' || actionName === 'client_chat_escalate');
 
-        fetch(targetUrl, { method: 'POST', body: form })
+        fetch(targetUrl, { method: 'POST', body: form, credentials: 'include' })
         .then(function(r) {
             if (!r.ok) {
                 // If it's a 4xx client/auth error or if mutating action already hit server, don't cascade fallback
@@ -13935,6 +13942,106 @@ HTML;
         return '';
     }
 }
+
+/**
+ * Dynamically serve the live, WHMCS-synchronized embed script for external websites.
+ * Synchronizes the exact brand color, theme, title, logo/Siri orb, launcher style,
+ * WhatsApp departments, Knowledge Base, and live agent settings from WHMCS.
+ */
+function sahdev_serve_embed_js()
+{
+    while (ob_get_level() > 0) {
+        @ob_end_clean();
+    }
+    header('Content-Type: application/javascript; charset=utf-8');
+    header('Access-Control-Allow-Origin: *');
+    header('Access-Control-Allow-Methods: GET, OPTIONS');
+    header('Cache-Control: public, max-age=60');
+
+    require_once __DIR__ . '/lib/ChatService.php';
+
+    $systemUrl = \Sahdev\Lib\ChatService::getWhmcsSystemUrl();
+    $renderedWidget = sahdev_render_client_livechat_widget([
+        'systemurl' => $systemUrl,
+        'is_embed'  => true,
+    ]);
+
+    if (empty($renderedWidget)) {
+        echo '/* Sahdev Live Chat: Widget is currently disabled in WHMCS settings. */';
+        exit;
+    }
+
+    $jsonHtml = json_encode($renderedWidget);
+
+    echo <<<JS
+/**
+ * Sahdev AI Live Chat - Universal Synchronized Embed Widget
+ * Dynamically synchronized with your WHMCS theme, brand color, title, and settings.
+ */
+(function() {
+    'use strict';
+    if (window._sdvEmbedLoaded) return;
+    window._sdvEmbedLoaded = true;
+
+    var rawHtml = {$jsonHtml};
+
+    function initEmbedWidget() {
+        if (!document.body) {
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', initEmbedWidget);
+            } else {
+                window.addEventListener('load', initEmbedWidget);
+                setTimeout(initEmbedWidget, 80);
+            }
+            return;
+        }
+
+        if (document.getElementById('sdv-client-chat-launcher')) return;
+
+        var container = document.createElement('div');
+        container.id = 'sdv-embed-wrapper';
+        container.innerHTML = rawHtml;
+
+        // 1. Move and inject all <style> elements into <head>
+        var styles = container.querySelectorAll('style');
+        var targetHead = document.head || document.getElementsByTagName('head')[0] || document.documentElement;
+        styles.forEach(function(st) {
+            targetHead.appendChild(st);
+        });
+
+        // 2. Extract and remove all <script> elements so they execute in page context
+        var scripts = container.querySelectorAll('script');
+        var scriptContents = [];
+        scripts.forEach(function(sc) {
+            var code = sc.innerHTML || sc.textContent || '';
+            if (code.trim()) {
+                scriptContents.push(code);
+            }
+            sc.remove();
+        });
+
+        // 3. Append remaining DOM elements into <body>
+        while (container.firstChild) {
+            document.body.appendChild(container.firstChild);
+        }
+
+        // 4. Safely execute all widget scripts
+        scriptContents.forEach(function(code) {
+            try {
+                var runner = new Function(code);
+                runner();
+            } catch(err) {
+                console.error('[Sahdev Live Chat] Embed script execution error:', err);
+            }
+        });
+    }
+
+    initEmbedWidget();
+})();
+JS;
+    exit;
+}
+
 
 
 
