@@ -6787,6 +6787,53 @@ DISC;
 #sdv-client-chat-window * {
     box-sizing: border-box;
 }
+#sdv-client-chat-window button,
+#sdv-client-chat-launcher,
+.sdv-cl-action-btn,
+.sdv-msg-action-btn,
+.sdv-wtab-btn,
+.sdv-hdr-menu-item,
+.sdv-proactive-close,
+.sdv-disclaimer-close,
+.sdv-drawer-back-btn,
+.sdv-starter-chip,
+.sdv-code-copy-btn,
+.sdv-msg-menu-item,
+.sdv-font-pill,
+#sdv-cl-send {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+    text-transform: none !important;
+    letter-spacing: normal !important;
+    box-sizing: border-box !important;
+    -webkit-appearance: none !important;
+    appearance: none !important;
+    margin: 0 !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+}
+#sdv-client-chat-window svg {
+    box-sizing: content-box !important;
+    flex-shrink: 0 !important;
+}
+.sdv-msg-action-btn {
+    background: transparent !important;
+    border: none !important;
+    padding: 2px !important;
+    cursor: pointer !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    color: #94a3b8 !important;
+    line-height: 1 !important;
+    width: 22px !important;
+    height: 22px !important;
+    border-radius: 4px !important;
+    transition: color 0.15s, background 0.15s !important;
+}
+.sdv-msg-action-btn:hover {
+    color: #334155 !important;
+    background: rgba(0,0,0,0.06) !important;
+}
 #sdv-client-chat-window.sdv-open {
     display: flex !important;
     visibility: visible !important;
@@ -6870,6 +6917,9 @@ DISC;
     .sdv-cl-footer {
         padding: 10px 12px max(12px, env(safe-area-inset-bottom, 12px)) !important;
     }
+    .sdv-msg-actions {
+        opacity: 0.85 !important;
+    }
 }
 
 /* Header */
@@ -6922,18 +6972,22 @@ DISC;
     flex-shrink: 0;
 }
 .sdv-cl-action-btn {
-    background: transparent;
-    border: none;
-    color: rgba(255, 255, 255, 0.88);
-    font-size: 14px;
-    cursor: pointer;
-    line-height: 1;
-    padding: 6px 8px;
-    border-radius: 6px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    transition: background 0.15s, color 0.15s, transform 0.12s;
+    background: transparent !important;
+    border: none !important;
+    color: rgba(255, 255, 255, 0.88) !important;
+    font-size: 14px !important;
+    cursor: pointer !important;
+    line-height: 1 !important;
+    padding: 6px 8px !important;
+    border-radius: 6px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+    width: auto !important;
+    height: auto !important;
+    transition: background 0.15s, color 0.15s, transform 0.12s !important;
 }
 .sdv-cl-action-btn:hover { color: #ffffff; background: rgba(255, 255, 255, 0.2); }
 .sdv-cl-action-btn:active { transform: scale(0.92); }
@@ -7055,33 +7109,68 @@ DISC;
 }
 .sdv-cl-msg-staff {
     align-self: flex-start !important;
-    background: #f0f7ff !important;
+    background: #eff6ff !important;
     color: #1e3a8a !important;
     border-radius: 14px 14px 14px 2px !important;
     border: 1px solid #bfdbfe !important;
     box-shadow: 0 1px 4px rgba(37, 99, 235, 0.08) !important;
+    max-width: 86% !important;
+    padding: 11px 15px !important;
+    position: relative !important;
 }
 .sdv-staff-header-badge {
     display: inline-flex !important;
     align-items: center !important;
-    gap: 4px !important;
+    gap: 5px !important;
     font-size: 11px !important;
     font-weight: 700 !important;
     color: #2563eb !important;
-    margin-bottom: 4px !important;
+    margin-bottom: 5px !important;
+    letter-spacing: 0.2px !important;
+}
+.sdv-staff-msg-body {
+    font-size: 13.5px !important;
+    line-height: 1.5 !important;
+    word-break: break-word !important;
+    color: inherit !important;
 }
 .sdv-cl-msg-system {
     align-self: center !important;
-    background: rgba(0, 0, 0, 0.04) !important;
-    border: 1px solid rgba(0, 0, 0, 0.06) !important;
-    border-radius: 14px !important;
-    color: #64748b !important;
+    background: #f1f5f9 !important;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 20px !important;
+    color: #475569 !important;
     font-size: 11.5px !important;
-    padding: 4px 12px !important;
+    font-weight: 500 !important;
+    padding: 5px 14px !important;
     text-align: center !important;
-    max-width: 88% !important;
-    margin: 4px auto !important;
-    line-height: 1.4 !important;
+    max-width: 90% !important;
+    margin: 6px auto !important;
+    line-height: 1.45 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 6px !important;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.03) !important;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-cl-msg-staff,
+#sdv-client-chat-window.sdv-theme-terminal_cli .sdv-cl-msg-staff,
+#sdv-client-chat-window.sdv-theme-linear_geist .sdv-cl-msg-staff {
+    background: #172554 !important;
+    color: #bfdbfe !important;
+    border-color: #1e40af !important;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-staff-header-badge,
+#sdv-client-chat-window.sdv-theme-terminal_cli .sdv-staff-header-badge,
+#sdv-client-chat-window.sdv-theme-linear_geist .sdv-staff-header-badge {
+    color: #60a5fa !important;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-cl-msg-system,
+#sdv-client-chat-window.sdv-theme-terminal_cli .sdv-cl-msg-system,
+#sdv-client-chat-window.sdv-theme-linear_geist .sdv-cl-msg-system {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+    color: #94a3b8 !important;
 }
 .sdv-code-block {
     background: #1e293b;
@@ -7372,17 +7461,20 @@ DISC;
 #sdv-cl-send {
     background: {$brandColor};
     background: var(--sdv-brand, {$brandColor});
-    border: none;
-    color: #fff;
-    width: 38px;
-    height: 38px;
-    border-radius: 50%;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: opacity 0.15s, transform 0.15s;
-    flex-shrink: 0;
+    border: none !important;
+    color: #fff !important;
+    width: 38px !important;
+    height: 38px !important;
+    min-width: 38px !important;
+    min-height: 38px !important;
+    padding: 0 !important;
+    border-radius: 50% !important;
+    cursor: pointer !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    transition: opacity 0.15s, transform 0.15s !important;
+    flex-shrink: 0 !important;
 }
 #sdv-cl-send:hover { opacity: 0.92; transform: scale(1.05); }
 .sdv-cl-branding {
@@ -10841,8 +10933,8 @@ DISC;
                 <button type="button" class="sdv-cl-reply-close" id="sdv-cl-reply-close" title="Cancel Reply" onclick="window.sdvCancelReply && window.sdvCancelReply();">&times;</button>
             </div>
             <div class="sdv-cl-input-row">
-                <input type="text" id="sdv-cl-input" placeholder="Type your question here..." autocomplete="off" {$maxMsgAttr} />
-                <button type="button" id="sdv-cl-send" title="Send message" aria-label="Send message">
+                <input type="text" id="sdv-cl-input" placeholder="Type your question here..." autocomplete="off" {$maxMsgAttr} onkeydown="if(event.key==='Enter'){event.preventDefault();window.sdvSendMessage&&window.sdvSendMessage();}" />
+                <button type="button" id="sdv-cl-send" title="Send message" aria-label="Send message" onclick="window.sdvSendMessage&&window.sdvSendMessage();">
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" style="pointer-events:none;"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
                 </button>
             </div>
@@ -11011,6 +11103,8 @@ DISC;
         if (menu) menu.remove();
         var oldQuote = clone.querySelector('.sdv-msg-replied-quote');
         if (oldQuote) oldQuote.remove();
+        var staffBadge = clone.querySelector('.sdv-staff-header-badge');
+        if (staffBadge) staffBadge.remove();
 
         var fullText = (clone.innerText || clone.textContent || '').trim();
         if (!fullText) return;
@@ -11220,7 +11314,7 @@ DISC;
 
         // Smart positioning: open downwards unless near container bottom
         var btnRect = btn.getBoundingClientRect();
-        var chatContainer = document.getElementById('sdv-cl-messages') || document.body;
+        var chatContainer = document.getElementById('sdv-cl-msgs') || document.getElementById('sdv-cl-messages') || document.body;
         var chatRect = chatContainer.getBoundingClientRect();
         var spaceBelow = chatRect.bottom - btnRect.bottom;
         if (spaceBelow < 95) {
@@ -11527,7 +11621,9 @@ DISC;
         if (!el || el.querySelector('.sdv-msg-actions')) return;
 
         if (!role) {
-            role = el.classList.contains('sdv-cl-msg-user') ? 'user' : 'bot';
+            if (el.classList.contains('sdv-cl-msg-user')) role = 'user';
+            else if (el.classList.contains('sdv-cl-msg-staff')) role = 'staff';
+            else role = 'bot';
         }
 
         var actions = document.createElement('div');
@@ -11600,8 +11696,8 @@ DISC;
             editBtn.onclick = function(e) { if (e && e.stopPropagation) e.stopPropagation(); window.sdvEditUserMsg && window.sdvEditUserMsg(this); };
             actions.appendChild(editBtn);
 
-            // Retry/Regenerate button (for bot messages)
-            if (role !== 'user') {
+            // Retry/Regenerate button (for bot messages only)
+            if (role === 'bot') {
                 var retryBtn = document.createElement('button');
                 retryBtn.type = 'button';
                 retryBtn.className = 'sdv-msg-action-btn sdv-action-retry';
@@ -12472,7 +12568,7 @@ DISC;
             d.innerHTML = parseSimpleMarkdown(text);
         }
 
-        if (!isHtml && role !== 'system') {
+        if ((!isHtml || role === 'staff') && role !== 'system') {
             attachMsgActions(d, msgId, rating, role, timestamp);
         }
         msgsEl.appendChild(d);
@@ -12587,16 +12683,23 @@ DISC;
         }
     }
 
+    var currentAssignedStaffName = null;
     function sdvClearLimitState(isTakeover, adminName) {
         var inputEl = document.getElementById('sdv-cl-input');
         var sendBtn = document.getElementById('sdv-cl-send');
         var counterEl = document.getElementById('sdv-cl-char-counter');
         var escalateBar = document.querySelector('.sdv-cl-escalate-bar');
+        var summonHdrBtn = document.getElementById('sdv-btn-summon-agent');
+
+        if (adminName) {
+            currentAssignedStaffName = adminName;
+        }
 
         if (inputEl) {
             inputEl.disabled = false;
             if (isTakeover) {
-                inputEl.placeholder = adminName ? ('Message ' + adminName + '...') : 'Message support agent...';
+                var staffLabel = currentAssignedStaffName || adminName || 'Support Agent';
+                inputEl.placeholder = 'Message ' + staffLabel + '...';
             } else {
                 inputEl.placeholder = 'Type your message...';
             }
@@ -12606,11 +12709,36 @@ DISC;
         }
         if (sendBtn) {
             sendBtn.disabled = false;
-            sendBtn.style.opacity = '';
-            sendBtn.style.cursor = '';
+            sendBtn.style.opacity = '1';
+            sendBtn.style.cursor = 'pointer';
+            sendBtn.style.pointerEvents = 'auto';
         }
         if (escalateBar) {
-            escalateBar.style.display = 'none';
+            if (isTakeover) {
+                var staffDisplay = currentAssignedStaffName || adminName || 'Support Agent';
+                escalateBar.style.display = 'flex';
+                escalateBar.style.background = '#f0fdf4';
+                escalateBar.style.borderBottom = '1px solid #bbf7d0';
+                escalateBar.style.color = '#166534';
+                escalateBar.innerHTML = '<div style="display:flex;align-items:center;gap:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' +
+                    '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#16a34a;box-shadow:0 0 0 2px rgba(22,163,74,0.25);flex-shrink:0;"></span>' +
+                    '<span style="font-size:11.5px;font-weight:600;">Staff Connected: <strong style="color:#15803d;">' + sdvEscapeHtml(staffDisplay) + '</strong></span>' +
+                '</div>' +
+                '<div style="display:inline-flex;align-items:center;gap:6px;flex-shrink:0;">' +
+                    '<a href="javascript:void(0);" onclick="window.sdvEscalateToTicket&&window.sdvEscalateToTicket();" style="color:#15803d;text-decoration:none;font-size:11px;font-weight:600;padding:2px 8px;border-radius:5px;background:rgba(22,163,74,0.1);border:1px solid rgba(22,163,74,0.25);transition:background 0.15s;" title="Convert conversation into a formal ticket">Create Ticket &rarr;</a>' +
+                '</div>';
+            } else {
+                escalateBar.style.display = 'none';
+            }
+        }
+        if (summonHdrBtn) {
+            if (isTakeover) {
+                summonHdrBtn.title = 'Connected with Live Agent (' + (currentAssignedStaffName || 'Staff') + ')';
+                summonHdrBtn.style.color = '#10b981';
+            } else {
+                summonHdrBtn.title = 'Connect with Live Agent';
+                summonHdrBtn.style.color = '';
+            }
         }
         sdvUpdateCharCounter();
     }
@@ -12619,6 +12747,11 @@ DISC;
         var inputEl = document.getElementById('sdv-cl-input');
         var counterEl = document.getElementById('sdv-cl-char-counter');
         if (!inputEl || !counterEl || configuredMaxChars <= 0) return;
+
+        if (isHumanSessionActive || currentChatStatus === 'taken_over') {
+            counterEl.style.display = 'none';
+            return;
+        }
 
         var len = (inputEl.value || '').length;
         if (len === 0) {
@@ -12754,13 +12887,17 @@ DISC;
             var staffName = m.staff_name || m.sender_name || 'Support Agent';
             sdvClearLimitState(true, staffName);
             var staffHtml = '<div class="sdv-staff-header-badge"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> ' + sdvEscapeHtml(staffName) + '</div><div class="sdv-staff-msg-body">' + parseSimpleMarkdown(m.message_text) + '</div>';
-            appendClMsg('staff', staffHtml, true, m.id, null, m.created_at);
+            var staffEl = appendClMsg('staff', staffHtml, true, m.id, null, m.created_at);
+            if (staffEl) {
+                staffEl.setAttribute('data-msg-text', (m.message_text || '').trim());
+            }
             return;
         }
 
         // 9. System message rendering
         if (m.sender_type === 'system') {
-            var sysHtml = '<span>' + parseSimpleMarkdown(m.message_text) + '</span>';
+            var sysIcon = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;vertical-align:middle;margin-right:4px;"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>';
+            var sysHtml = '<span>' + sysIcon + parseSimpleMarkdown(m.message_text) + '</span>';
             appendClMsg('system', sysHtml, true, m.id, null, m.created_at);
             return;
         }
@@ -13832,7 +13969,7 @@ function sahdev_render_admin_live_chat_alert_listener(array $vars = []): string
     var loc = window.location;
     var adminBase = loc.origin + loc.pathname.substring(0, loc.pathname.lastIndexOf('/') + 1);
     var ajaxUrl = adminBase + 'addonmodules.php?module=sahdev&sahdev_act=ajax_handler';
-    var consoleUrl = adminBase + 'addonmodules.php?module=sahdev&action=live_console';
+    var consoleUrl = 'addonmodules.php?module=sahdev&action=live_console';
     var defaultSoundType = {$soundTypeJs};
     var soundEnabled = {$soundEnabledJs};
     var defaultAlertDuration = {$alertDurationJs};
@@ -14206,7 +14343,9 @@ function sahdev_render_admin_live_chat_alert_listener(array $vars = []): string
         toast.querySelector('.sdv-toast-silence-btn').addEventListener('click', function() {
             dismissToast(true);
         });
-        toast.querySelector('.sdv-toast-accept-btn').addEventListener('click', function() {
+        toast.querySelector('.sdv-toast-accept-btn').addEventListener('click', function(e) {
+            if (e && e.preventDefault) e.preventDefault();
+            if (e && e.stopPropagation) e.stopPropagation();
             stopAlertRing();
             stopTitleBlink();
             try {
@@ -14217,11 +14356,13 @@ function sahdev_render_admin_live_chat_alert_listener(array $vars = []): string
                     ts: Date.now()
                 }));
             } catch(e) {}
+            var targetUrl = consoleUrl + '&session_uuid=' + encodeURIComponent(summon.session_uuid) + '&auto_claim=1';
             var fdClaim = new FormData();
             fdClaim.append('action', 'admin_claim_summon');
             fdClaim.append('session_uuid', summon.session_uuid);
             fetch(ajaxUrl, { method: 'POST', body: fdClaim, credentials: 'include' }).catch(function(){});
             dismissToast(false);
+            window.location.href = targetUrl;
         });
     }
 

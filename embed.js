@@ -35,7 +35,7 @@
                 try {
                     var scriptUrl = new URL(scriptSrc, window.location.href);
                     whmcsBaseUrl = scriptUrl.origin + scriptUrl.pathname
-                        .replace(/\/modules\/addons\/sahdev\/embed\.js.*$/i, '')
+                        .replace(/\/(modules\/addons\/sahdev\/)?embed\.js.*$/i, '')
                         .replace(/\/index\.php.*$/i, '');
                 } catch (e) {
                     whmcsBaseUrl = '';
