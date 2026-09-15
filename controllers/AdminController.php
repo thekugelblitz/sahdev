@@ -12426,6 +12426,8 @@ class AdminController
             var lastMsgId = 0;
             var pollTimer = null;
             var isPolling = false;
+            var activePollSeq = 0;
+            var renderedMsgIds = {};
             var knownSummons = {};
             var docOriginalTitle = document.title;
 
@@ -12541,6 +12543,7 @@ class AdminController
                 if (isPolling && !force) return;
                 isPolling = true;
 
+                var thisSeq = ++activePollSeq;
                 var q = searchInput ? searchInput.value.trim() : '';
                 var url = AJAX_URL + '&action=admin_live_console_poll&filter=' + encodeURIComponent(activeFilter) + '&search=' + encodeURIComponent(q);
                 if (activeSessionUuid) {
@@ -12551,6 +12554,7 @@ class AdminController
                     .then(function(res) { return res.json(); })
                     .then(function(data) {
                         isPolling = false;
+                        if (thisSeq !== activePollSeq && !force) return;
                         if (data.status === 'success') {
                             renderQueue(data.sessions || []);
                             if (data.selected_session && data.selected_session.uuid === activeSessionUuid) {
@@ -12650,6 +12654,7 @@ class AdminController
                 activeSessionId = id;
                 activeClientId = clientId;
                 lastMsgId = 0;
+                renderedMsgIds = {};
 
                 // Highlight card in queue
                 var cards = document.querySelectorAll('.session-card');
@@ -12756,17 +12761,51 @@ class AdminController
                 }
             }
 
-            // Append messages into thread
+            // Append messages into thread with multi-layer deduplication
             function appendMessages(msgs) {
                 var container = document.getElementById('chatMessagesScroll');
                 if (!container) return;
 
                 if (lastMsgId === 0) {
                     container.innerHTML = '';
+                    renderedMsgIds = {};
                 }
 
+                var shouldScroll = false;
+
                 msgs.forEach(function(m) {
+                    if (!m) return;
+
+                    // 1. Strict ID deduplication: skip if already in DOM or recorded in ID map
+                    if (m.id) {
+                        if (renderedMsgIds[m.id] || document.getElementById('admin-msg-' + m.id)) {
+                            if (m.id > lastMsgId) lastMsgId = m.id;
+                            return;
+                        }
+                    }
+
+                    // 2. Sliding window content check against recent bubbles (last 6 bubbles)
+                    var rawText = (m.text || '').trim();
+                    var normText = rawText.replace(/\s+/g, ' ').toLowerCase();
+                    var bubbles = container.children;
+                    var startIdx = Math.max(0, bubbles.length - 6);
+                    for (var b = bubbles.length - 1; b >= startIdx; b--) {
+                        var bEl = bubbles[b];
+                        var bText = (bEl.getAttribute('data-msg-text') || bEl.innerText || bEl.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
+                        var bRole = bEl.getAttribute('data-sender-type') || '';
+                        if (bText && normText && bText === normText && bRole === m.sender_type) {
+                            // Exact duplicate already rendered, associate ID and skip
+                            if (m.id) {
+                                if (!bEl.id) bEl.id = 'admin-msg-' + m.id;
+                                renderedMsgIds[m.id] = true;
+                                if (m.id > lastMsgId) lastMsgId = m.id;
+                            }
+                            return;
+                        }
+                    }
+
                     if (m.id > lastMsgId) lastMsgId = m.id;
+                    if (m.id) renderedMsgIds[m.id] = true;
 
                     var bubbleClass = 'msg-user';
                     var roleBadge = '';
@@ -12784,12 +12823,18 @@ class AdminController
 
                     var div = document.createElement('div');
                     div.className = 'msg-bubble ' + bubbleClass;
+                    if (m.id) div.id = 'admin-msg-' + m.id;
+                    div.setAttribute('data-msg-text', rawText);
+                    div.setAttribute('data-sender-type', m.sender_type || '');
                     div.innerHTML = roleBadge + '<div>' + escapeHtml(m.text).replace(/\n/g, '<br>') + '</div>'
                         + '<div style="text-align:right;font-size:10px;opacity:0.65;margin-top:4px;">' + escapeHtml(m.created_at) + '</div>';
                     container.appendChild(div);
+                    shouldScroll = true;
                 });
 
-                container.scrollTop = container.scrollHeight;
+                if (shouldScroll) {
+                    container.scrollTop = container.scrollHeight;
+                }
             }
 
             // Send Staff Message

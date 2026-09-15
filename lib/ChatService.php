@@ -597,15 +597,28 @@ class ChatService
             ? (Capsule::table('tblclients')->where('id', $clientId)->value('firstname') ?: 'Client')
             : 'Visitor';
 
-        // 1. Record visitor message
-        $userMsgId = Capsule::table('tblsahdev_chat_messages')->insertGetId([
-            'session_id'   => $sessionId,
-            'sender_type'  => 'user',
-            'sender_id'    => $clientId ?: 0,
-            'sender_name'  => $senderName,
-            'message_text' => self::safeStorageText($messageText),
-            'created_at'   => Carbon::now(),
-        ]);
+        // 1. Record visitor message (with idempotency guard against rapid duplicate submissions)
+        $cleanStorageText = self::safeStorageText($messageText);
+        $recentDuplicate = Capsule::table('tblsahdev_chat_messages')
+            ->where('session_id', $sessionId)
+            ->where('sender_type', 'user')
+            ->where('message_text', $cleanStorageText)
+            ->where('created_at', '>=', Carbon::now()->subSeconds(3))
+            ->orderBy('id', 'desc')
+            ->first();
+
+        if ($recentDuplicate) {
+            $userMsgId = (int) $recentDuplicate->id;
+        } else {
+            $userMsgId = Capsule::table('tblsahdev_chat_messages')->insertGetId([
+                'session_id'   => $sessionId,
+                'sender_type'  => 'user',
+                'sender_id'    => $clientId ?: 0,
+                'sender_name'  => $senderName,
+                'message_text' => $cleanStorageText,
+                'created_at'   => Carbon::now(),
+            ]);
+        }
 
         Capsule::table('tblsahdev_chat_sessions')->where('id', $sessionId)->update([
             'typing_preview'  => null,
@@ -2643,14 +2656,27 @@ class ChatService
                 return ['success' => false, 'error' => 'Message text cannot be empty.'];
             }
 
-            $msgId = Capsule::table('tblsahdev_chat_messages')->insertGetId([
-                'session_id'   => $session->id,
-                'sender_type'  => 'staff',
-                'sender_id'    => $adminId,
-                'sender_name'  => $adminName,
-                'message_text' => self::safeStorageText($cleanText),
-                'created_at'   => Carbon::now(),
-            ]);
+            $storageText = self::safeStorageText($cleanText);
+            $recentStaffDuplicate = Capsule::table('tblsahdev_chat_messages')
+                ->where('session_id', $session->id)
+                ->where('sender_type', 'staff')
+                ->where('message_text', $storageText)
+                ->where('created_at', '>=', Carbon::now()->subSeconds(2))
+                ->orderBy('id', 'desc')
+                ->first();
+
+            if ($recentStaffDuplicate) {
+                $msgId = (int) $recentStaffDuplicate->id;
+            } else {
+                $msgId = Capsule::table('tblsahdev_chat_messages')->insertGetId([
+                    'session_id'   => $session->id,
+                    'sender_type'  => 'staff',
+                    'sender_id'    => $adminId,
+                    'sender_name'  => $adminName,
+                    'message_text' => $storageText,
+                    'created_at'   => Carbon::now(),
+                ]);
+            }
 
             Capsule::table('tblsahdev_chat_sessions')->where('id', $session->id)->update([
                 'status'                => 'taken_over',
