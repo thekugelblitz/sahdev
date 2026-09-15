@@ -623,8 +623,15 @@ class ChatService
         $clientContext = self::getClientScopeSummary($clientId);
 
         // 4. Products/Services & Domain Catalog Grounding (Local Determination)
-        require_once __DIR__ . '/ProductDomainCatalogService.php';
-        $catalogContext = ProductDomainCatalogService::determineContext($messageText, $clientId);
+        $catalogContext = '';
+        try {
+            require_once __DIR__ . '/ProductDomainCatalogService.php';
+            if (class_exists('Sahdev\Lib\ProductDomainCatalogService')) {
+                $catalogContext = ProductDomainCatalogService::determineContext($messageText, $clientId);
+            }
+        } catch (\Throwable $e) {
+            ModuleLogger::error('client_chat', "Catalog determination error: " . $e->getMessage());
+        }
 
         // Optional custom organization guidelines set in admin settings
         $customOrgPrompt = trim((string) self::getChatSetting('client_chat_system_prompt', ''));

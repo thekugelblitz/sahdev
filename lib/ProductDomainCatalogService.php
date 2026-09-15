@@ -1,6 +1,6 @@
 <?php
 
-namespace Sahdev;
+namespace Sahdev\Lib;
 
 use WHMCS\Database\Capsule;
 
