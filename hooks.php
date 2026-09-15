@@ -12801,26 +12801,51 @@ DISC;
                     }
                     if (data.user_message_id > highestMsgId) highestMsgId = data.user_message_id;
                 }
-                var replyText = data.reply || 'Message received.';
-                if (tempBot) {
-                    tempBot.innerHTML = parseSimpleMarkdown(replyText);
-                    if (data.message_id) {
-                        tempBot.id = 'sdv-msg-' + data.message_id;
-                        if (data.message_id > highestMsgId) highestMsgId = data.message_id;
+
+                // If chat is in Live Staff Takeover mode (AI paused)
+                if (data.is_takeover || data.status === 'taken_over') {
+                    // Remove optimistic AI typing bubble since human staff is handling this chat
+                    if (tempBot && tempBot.parentNode) {
+                        tempBot.parentNode.removeChild(tempBot);
                     }
-                    attachMsgActions(tempBot, data.message_id, 0, 'bot', Date.now());
+                    // Update live takeover banner
+                    var tb = document.getElementById('sdv-cl-takeover-banner');
+                    var tt = document.getElementById('sdv-cl-takeover-text');
+                    if (tb) tb.style.display = 'flex';
+                    if (tt) tt.textContent = '🧑‍💼 Live Support Agent is connected & reviewing your message';
+                    // Start live polling to fetch the human agent's response
+                    sdvStartLivePolling();
+                    return;
                 }
-                sdvPlayNotificationChime();
-                if (data.session_uuid && data.session_uuid !== sessionUuid) {
-                    sessionUuid = data.session_uuid;
-                    sdvSafeSet(activeSessionKey, sessionUuid);
+
+                // Normal AI Assistant response
+                if (data.reply) {
+                    var replyText = data.reply;
+                    if (tempBot) {
+                        tempBot.innerHTML = parseSimpleMarkdown(replyText);
+                        if (data.message_id) {
+                            tempBot.id = 'sdv-msg-' + data.message_id;
+                            if (data.message_id > highestMsgId) highestMsgId = data.message_id;
+                        }
+                        attachMsgActions(tempBot, data.message_id, 0, 'bot', Date.now());
+                    }
+                    sdvPlayNotificationChime();
+                    if (data.session_uuid && data.session_uuid !== sessionUuid) {
+                        sessionUuid = data.session_uuid;
+                        sdvSafeSet(activeSessionKey, sessionUuid);
+                    }
+                    broadcastLiveSync('new_message', {
+                        session_uuid: sessionUuid,
+                        role: 'bot',
+                        text: replyText,
+                        msg_id: data.message_id || 0
+                    });
+                } else {
+                    // Clean up temporary bubble if no direct reply returned
+                    if (tempBot && tempBot.parentNode) {
+                        tempBot.parentNode.removeChild(tempBot);
+                    }
                 }
-                broadcastLiveSync('new_message', {
-                    session_uuid: sessionUuid,
-                    role: 'bot',
-                    text: replyText,
-                    msg_id: data.message_id || 0
-                });
             } else {
                 if (tempBot) tempBot.innerHTML = '⚠️ ' + (data.message || data.error || 'Could not send message.');
             }

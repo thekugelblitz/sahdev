@@ -619,8 +619,17 @@ class ChatService
             self::triggerHumanSummon($sessionId, 'Client requested human support in message');
         }
 
-        // 2. If staff has taken over this chat, do not let AI answer!
-        if ($session['status'] === 'taken_over') {
+        // Auto-release any idle/expired staff takeovers back to AI before evaluating takeover status
+        self::checkTakeoverTimeouts();
+
+        // Refresh session record from DB to get updated status
+        $freshSession = Capsule::table('tblsahdev_chat_sessions')->where('id', $sessionId)->first();
+        if ($freshSession) {
+            $session = (array) $freshSession;
+        }
+
+        // 2. If staff has actively taken over this chat, deliver message to staff and pause AI auto-reply
+        if (($session['status'] ?? '') === 'taken_over') {
             return [
                 'success'         => true,
                 'is_takeover'     => true,
@@ -2532,12 +2541,16 @@ class ChatService
         try {
             $sessions = Capsule::table('tblsahdev_chat_sessions')
                 ->where('status', 'taken_over')
-                ->where('takeover_timeout_mins', '>', 0)
                 ->get();
 
             foreach ($sessions as $s) {
+                $timeoutMins = (int)$s->takeover_timeout_mins;
+                // Default safety timeout: if set to 0 (manual) but staff has been silent for 15 minutes, auto-release
+                if ($timeoutMins <= 0) {
+                    $timeoutMins = 15;
+                }
                 $lastActivity = $s->last_staff_message_at ?: $s->updated_at;
-                $cutoff = Carbon::now()->subMinutes((int)$s->takeover_timeout_mins);
+                $cutoff = Carbon::now()->subMinutes($timeoutMins);
                 if (Carbon::parse($lastActivity)->lt($cutoff)) {
                     Capsule::table('tblsahdev_chat_sessions')->where('id', $s->id)->update([
                         'status'                => 'active',
@@ -2552,7 +2565,7 @@ class ChatService
                         'sender_type'  => 'system',
                         'sender_id'    => 0,
                         'sender_name'  => 'System',
-                        'message_text' => "Staff session timed out due to {$s->takeover_timeout_mins} minutes of inactivity. Autonomous AI Assistant has resumed.",
+                        'message_text' => "Staff session idle for {$timeoutMins} minutes. Autonomous AI Assistant has resumed.",
                         'created_at'   => Carbon::now(),
                     ]);
 

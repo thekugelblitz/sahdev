@@ -589,6 +589,15 @@
                 sessionUuid = d.session_uuid;
                 sdvSet('sdv_embed_session_uuid', sessionUuid);
             }
+            if (d && (d.is_takeover || d.status === 'taken_over')) {
+                if (!isStaffTakeover) {
+                    isStaffTakeover = true;
+                    takeoverBanner.style.display = 'flex';
+                    takeoverText.textContent = 'Support Agent is reviewing your message';
+                }
+                startPolling();
+                return;
+            }
             if (d && d.reply) {
                 appendMsg('bot', d.reply);
             }
