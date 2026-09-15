@@ -502,31 +502,7 @@ class ChatService
     {
         self::ensureUtf8mb4Connection();
 
-        // Active Input Sanitization & Dynamic Payload Bounding
-        $maxMsgChars = (int) self::getChatSetting('client_chat_max_msg_chars', 1000);
-        $sanitizeMax = $maxMsgChars > 0 ? max(2000, $maxMsgChars * 2) : 2000;
-        $messageText = self::sanitizeClientInput($messageText, $sanitizeMax);
-        if (empty(trim($messageText))) {
-            return ['success' => false, 'error' => 'Message cannot be empty.'];
-        }
-
-        // Active Sensitive Data & PII Redaction (OWASP LLM06)
-        if ((bool) self::getChatSetting('client_chat_pii_masking', 1)) {
-            $messageText = self::maskSensitivePiiData($messageText);
-        }
-
-        // Check single message character limit before processing
-        $preQuota = self::checkChatQuota($visitorToken, $clientId, null, $messageText);
-        if (!$preQuota['allowed'] && $preQuota['reason'] === 'max_msg_chars') {
-            return [
-                'success'       => false,
-                'error'         => $preQuota['message'],
-                'limit_reached' => true,
-                'limit_reason'  => 'max_msg_chars',
-                'can_escalate'  => true,
-            ];
-        }
-
+        // Retrieve or create active session first to determine whether human staff is involved
         $session = self::getOrCreateClientSession($visitorToken, $clientId, [], $sessionUuid);
         $sessionId = (int) $session['id'];
 
@@ -544,53 +520,93 @@ class ChatService
             }
         }
 
-        // Active Quota & Token Drain Protection Check (Client periodic limit, guest limit, session total chars)
-        $quota = self::checkChatQuota($visitorToken, $clientId, $sessionId, $messageText);
-        if (!$quota['allowed']) {
-            $senderName = $clientId > 0
-                ? (Capsule::table('tblclients')->where('id', $clientId)->value('firstname') ?: 'Client')
-                : 'Visitor';
+        // Check for expired staff takeover sessions and auto-release them back to AI if idle
+        self::checkTakeoverTimeouts();
 
-            // Record visitor message so their inquiry is saved in transcript
-            Capsule::table('tblsahdev_chat_messages')->insert([
-                'session_id'   => $sessionId,
-                'sender_type'  => 'user',
-                'sender_id'    => $clientId ?: 0,
-                'sender_name'  => $senderName,
-                'message_text' => self::safeStorageText($messageText),
-                'created_at'   => Carbon::now(),
-            ]);
-
-            // Record graceful refusal / ticket escalation prompt in transcript
-            self::recordAssistantMessage($sessionId, $quota['message']);
-
-            Capsule::table('tblsahdev_chat_sessions')->where('id', $sessionId)->update([
-                'last_message_at' => Carbon::now(),
-                'updated_at'      => Carbon::now(),
-            ]);
-
-            ModuleLogger::info('client_chat', "Quota limit enforced [{$quota['reason']}] for session {$sessionId} (client: " . ($clientId ?: 'guest') . ")");
-
-            // Return gracefully without calling LLM API (saving tokens and cost)
-            return [
-                'success'       => true,
-                'limit_reached' => true,
-                'limit_reason'  => $quota['reason'],
-                'reply'         => $quota['message'],
-                'can_escalate'  => true,
-            ];
+        // Refresh session record after timeout check
+        $freshSession = Capsule::table('tblsahdev_chat_sessions')->where('id', $sessionId)->first();
+        if ($freshSession) {
+            $session = (array) $freshSession;
         }
 
-        // Active Prompt Injection Defense
-        if (self::detectPromptInjection($messageText)) {
-            ModuleLogger::warning('client_chat_security', "Prompt injection detected & blocked in session {$sessionId} (visitor: " . substr($visitorToken, 0, 8) . "...)");
-            $safeRefusal = "I am configured to assist with official hosting inquiries, active services, domains, and billing. How can I help you with your account today?";
-            self::recordAssistantMessage($sessionId, $safeRefusal);
-            return [
-                'success'      => true,
-                'reply'        => $safeRefusal,
-                'can_escalate' => true,
-            ];
+        $isHuman = self::isHumanAgentSession($session);
+
+        // Active Input Sanitization: allow up to 20,000 chars for human staff chats (logs, code, configs)
+        $maxMsgChars = (int) self::getChatSetting('client_chat_max_msg_chars', 1000);
+        $sanitizeMax = $isHuman ? 20000 : ($maxMsgChars > 0 ? max(2000, $maxMsgChars * 2) : 2000);
+        $messageText = self::sanitizeClientInput($messageText, $sanitizeMax);
+        if (empty(trim($messageText))) {
+            return ['success' => false, 'error' => 'Message cannot be empty.'];
+        }
+
+        // Active Sensitive Data & PII Redaction (OWASP LLM06)
+        if ((bool) self::getChatSetting('client_chat_pii_masking', 1)) {
+            $messageText = self::maskSensitivePiiData($messageText);
+        }
+
+        // Quota & Rate Limiting: ONLY APPLIED TO AUTONOMOUS AI CONVERSATIONS!
+        // Human agent conversations are completely exempt from message count and character quotas.
+        if (!$isHuman) {
+            // Check single message character limit before processing
+            $preQuota = self::checkChatQuota($visitorToken, $clientId, $sessionId, $messageText);
+            if (!$preQuota['allowed'] && $preQuota['reason'] === 'max_msg_chars') {
+                return [
+                    'success'       => false,
+                    'error'         => $preQuota['message'],
+                    'limit_reached' => true,
+                    'limit_reason'  => 'max_msg_chars',
+                    'can_escalate'  => true,
+                ];
+            }
+
+            // Active Quota & Token Drain Protection Check (Client periodic limit, guest limit, session total chars)
+            $quota = self::checkChatQuota($visitorToken, $clientId, $sessionId, $messageText);
+            if (!$quota['allowed']) {
+                $senderName = $clientId > 0
+                    ? (Capsule::table('tblclients')->where('id', $clientId)->value('firstname') ?: 'Client')
+                    : 'Visitor';
+
+                // Record visitor message so their inquiry is saved in transcript
+                Capsule::table('tblsahdev_chat_messages')->insert([
+                    'session_id'   => $sessionId,
+                    'sender_type'  => 'user',
+                    'sender_id'    => $clientId ?: 0,
+                    'sender_name'  => $senderName,
+                    'message_text' => self::safeStorageText($messageText),
+                    'created_at'   => Carbon::now(),
+                ]);
+
+                // Record graceful refusal / ticket escalation prompt in transcript
+                self::recordAssistantMessage($sessionId, $quota['message']);
+
+                Capsule::table('tblsahdev_chat_sessions')->where('id', $sessionId)->update([
+                    'last_message_at' => Carbon::now(),
+                    'updated_at'      => Carbon::now(),
+                ]);
+
+                ModuleLogger::info('client_chat', "Quota limit enforced [{$quota['reason']}] for session {$sessionId} (client: " . ($clientId ?: 'guest') . ")");
+
+                // Return gracefully without calling LLM API (saving tokens and cost)
+                return [
+                    'success'       => true,
+                    'limit_reached' => true,
+                    'limit_reason'  => $quota['reason'],
+                    'reply'         => $quota['message'],
+                    'can_escalate'  => true,
+                ];
+            }
+
+            // Active Prompt Injection Defense
+            if (self::detectPromptInjection($messageText)) {
+                ModuleLogger::warning('client_chat_security', "Prompt injection detected & blocked in session {$sessionId} (visitor: " . substr($visitorToken, 0, 8) . "...)");
+                $safeRefusal = "I am configured to assist with official hosting inquiries, active services, domains, and billing. How can I help you with your account today?";
+                self::recordAssistantMessage($sessionId, $safeRefusal);
+                return [
+                    'success'      => true,
+                    'reply'        => $safeRefusal,
+                    'can_escalate' => true,
+                ];
+            }
         }
 
         $senderName = $clientId > 0
@@ -627,18 +643,14 @@ class ChatService
             'updated_at'      => Carbon::now(),
         ]);
 
-        // Auto-detect intent to summon a live human agent
-        if (self::detectHumanSummonIntent($messageText)) {
+        // Auto-detect intent to summon a live human agent (only if not already human)
+        if (!$isHuman && self::detectHumanSummonIntent($messageText)) {
             self::triggerHumanSummon($sessionId, 'Client requested human support in message');
-        }
-
-        // Auto-release any idle/expired staff takeovers back to AI before evaluating takeover status
-        self::checkTakeoverTimeouts();
-
-        // Refresh session record from DB to get updated status
-        $freshSession = Capsule::table('tblsahdev_chat_sessions')->where('id', $sessionId)->first();
-        if ($freshSession) {
-            $session = (array) $freshSession;
+            $freshSession = Capsule::table('tblsahdev_chat_sessions')->where('id', $sessionId)->first();
+            if ($freshSession) {
+                $session = (array) $freshSession;
+                $isHuman = self::isHumanAgentSession($session);
+            }
         }
 
         // 2. If staff has actively taken over this chat, deliver message to staff and pause AI auto-reply
@@ -649,6 +661,17 @@ class ChatService
                 'status'          => 'taken_over',
                 'user_message_id' => $userMsgId,
                 'message'         => 'Your message was delivered to our support agent.',
+            ];
+        }
+
+        // 2.5 If customer summoned a human agent and is awaiting staff pickup
+        if (in_array(($session['summon_status'] ?? ''), ['requested', 'claimed'], true)) {
+            return [
+                'success'         => true,
+                'is_summoned'     => true,
+                'status'          => $session['status'] ?? 'active',
+                'user_message_id' => $userMsgId,
+                'reply'           => '🔔 Your message has been received by our support team. An agent will join this conversation shortly!',
             ];
         }
 
@@ -1478,9 +1501,41 @@ class ChatService
     }
 
     /**
+     * Determine if a chat session represents an active human agent conversation
+     * (staff taken over, summoned by visitor, or admin assigned).
+     *
+     * In human agent conversations, rate limits and AI chat quotas do not apply.
+     *
+     * @param array|object|int|string $session Session array/object, session ID, or session UUID.
+     * @return bool
+     */
+    public static function isHumanAgentSession($session): bool
+    {
+        if (is_int($session) || (is_string($session) && ctype_digit((string)$session))) {
+            $session = Capsule::table('tblsahdev_chat_sessions')->where('id', (int)$session)->first();
+        } elseif (is_string($session) && strlen($session) > 10) {
+            $session = Capsule::table('tblsahdev_chat_sessions')->where('session_uuid', $session)->first();
+        }
+
+        if (!$session) {
+            return false;
+        }
+
+        $status = is_array($session) ? ($session['status'] ?? '') : ($session->status ?? '');
+        $summonStatus = is_array($session) ? ($session['summon_status'] ?? '') : ($session->summon_status ?? '');
+        $assignedAdminId = is_array($session) ? (int)($session['assigned_admin_id'] ?? 0) : (int)($session->assigned_admin_id ?? 0);
+
+        return ($status === 'taken_over')
+            || in_array($summonStatus, ['requested', 'claimed'], true)
+            || ($assignedAdminId > 0);
+    }
+
+    /**
      * AI Quota, Token Drain Defense & Rate Limiting Engine.
      * Enforces single-request char limits, cumulative session char limits,
      * authenticated client periodic quotas (daily/weekly/monthly), and guest visitor daily limits.
+     *
+     * In human agent conversations, rate limits and AI chat quotas do NOT apply.
      *
      * @param string $visitorToken Unique visitor cookie/token
      * @param int|null $clientId WHMCS client ID (or null/0 for guest)
@@ -1503,6 +1558,22 @@ class ChatService
     {
         try {
             $clientId = ($clientId && (int)$clientId > 0) ? (int)$clientId : null;
+
+            // 0. Human Agent Exemption: Rate limits & AI inquiry quotas do NOT apply to human agent conversations
+            if ($sessionId && (int)$sessionId > 0) {
+                if (self::isHumanAgentSession((int)$sessionId)) {
+                    return [
+                        'allowed'       => true,
+                        'limit_reached' => false,
+                        'reason'        => null,
+                        'message'       => '',
+                        'can_escalate'  => true,
+                        'is_human'      => true,
+                        'chars_limit'   => 0,
+                    ];
+                }
+            }
+
             $incomingLen = mb_strlen($incomingText, 'UTF-8');
 
             // 1. Single-Message Character Limit
@@ -2046,6 +2117,8 @@ class ChatService
             }
         }
 
+        $quotaStatus = self::checkClientChatLimits($visitorToken, $clientId, (int)$session->id);
+
         return [
             'success'             => true,
             'session_uuid'        => $session->session_uuid,
@@ -2053,6 +2126,7 @@ class ChatService
             'assigned_admin_id'   => (int)($session->assigned_admin_id ?? 0),
             'assigned_admin_name' => $assignedAdminName,
             'summon_status'       => $session->summon_status ?? 'none',
+            'limit_status'        => $quotaStatus,
             'messages'            => $formatted,
         ];
     }

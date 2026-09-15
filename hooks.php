@@ -12189,6 +12189,8 @@ DISC;
 
     var sessionUuid = sdvSafeGet(activeSessionKey, null);
     var isInitialized = false;
+    var isHumanSessionActive = false;
+    var currentChatStatus = 'active';
 
     function sdvDecodeEntities(str) {
         if (!str) return '';
@@ -12544,6 +12546,11 @@ DISC;
     }
 
     function sdvApplyLimitState(limitInfo) {
+        if (isHumanSessionActive || (limitInfo && (limitInfo.is_human || limitInfo.limit_reached === false))) {
+            sdvClearLimitState(true, null);
+            return;
+        }
+
         var inputEl = document.getElementById('sdv-cl-input');
         var sendBtn = document.getElementById('sdv-cl-send');
         var counterEl = document.getElementById('sdv-cl-char-counter');
@@ -12578,6 +12585,34 @@ DISC;
             escalateBtn.style.borderRadius = '12px';
             escalateBtn.style.textDecoration = 'none';
         }
+    }
+
+    function sdvClearLimitState(isTakeover, adminName) {
+        var inputEl = document.getElementById('sdv-cl-input');
+        var sendBtn = document.getElementById('sdv-cl-send');
+        var counterEl = document.getElementById('sdv-cl-char-counter');
+        var escalateBar = document.querySelector('.sdv-cl-escalate-bar');
+
+        if (inputEl) {
+            inputEl.disabled = false;
+            if (isTakeover) {
+                inputEl.placeholder = adminName ? ('Message ' + adminName + '...') : 'Message support agent...';
+            } else {
+                inputEl.placeholder = 'Type your message...';
+            }
+            inputEl.style.background = '';
+            inputEl.style.color = '';
+            inputEl.style.cursor = '';
+        }
+        if (sendBtn) {
+            sendBtn.disabled = false;
+            sendBtn.style.opacity = '';
+            sendBtn.style.cursor = '';
+        }
+        if (escalateBar) {
+            escalateBar.style.display = 'none';
+        }
+        sdvUpdateCharCounter();
     }
 
     function sdvUpdateCharCounter() {
@@ -12706,13 +12741,18 @@ DISC;
         )) {
             var cardHtml = renderLimitNoticeCardHtml(m.message_text);
             appendClMsg('bot', cardHtml, true, m.id);
-            sdvApplyLimitState();
+            if (!isHumanSessionActive) {
+                sdvApplyLimitState();
+            }
             return;
         }
 
         // 8. Staff message rendering
         if (m.sender_type === 'staff') {
+            isHumanSessionActive = true;
+            currentChatStatus = 'taken_over';
             var staffName = m.staff_name || m.sender_name || 'Support Agent';
+            sdvClearLimitState(true, staffName);
             var staffHtml = '<div class="sdv-staff-header-badge"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> ' + sdvEscapeHtml(staffName) + '</div><div class="sdv-staff-msg-body">' + parseSimpleMarkdown(m.message_text) + '</div>';
             appendClMsg('staff', staffHtml, true, m.id, null, m.created_at);
             return;
@@ -12773,13 +12813,21 @@ DISC;
                     }
                 }
 
-                if (data.limit_status && data.limit_status.limit_reached) {
+                currentChatStatus = data.status_chat || data.status || 'active';
+                if (currentChatStatus === 'taken_over' || (data.limit_status && data.limit_status.is_human)) {
+                    isHumanSessionActive = true;
+                    sdvClearLimitState(true, null);
+                } else if (data.limit_status && data.limit_status.limit_reached) {
+                    isHumanSessionActive = false;
                     sdvApplyLimitState(data.limit_status);
                     var msgsEl = document.getElementById('sdv-cl-msgs');
                     if (msgsEl && (!data.messages || data.messages.length === 0)) {
                         var cardHtml = renderLimitNoticeCardHtml(data.limit_status.message);
                         appendClMsg('bot', cardHtml, true);
                     }
+                } else {
+                    isHumanSessionActive = false;
+                    sdvClearLimitState(false, null);
                 }
 
                 if (data.starter_chips && Array.isArray(data.starter_chips)) {
@@ -12820,7 +12868,7 @@ DISC;
             return;
         }
 
-        if (configuredMaxChars > 0 && text.length > configuredMaxChars) {
+        if (!isHumanSessionActive && currentChatStatus !== 'taken_over' && configuredMaxChars > 0 && text.length > configuredMaxChars) {
             alert('Your message exceeds the limit of ' + configuredMaxChars + ' characters. Please shorten your message or submit a support ticket.');
             return;
         }
@@ -12892,30 +12940,34 @@ DISC;
             }
 
             if (data.limit_reached) {
-                if (data.user_message_id) {
-                    if (userMsgEl) {
-                        userMsgEl.id = 'sdv-msg-' + data.user_message_id;
-                        userMsgEl.removeAttribute('data-pending-user');
-                    }
-                    if (data.user_message_id > highestMsgId) highestMsgId = data.user_message_id;
-                }
-                var limitNoticeText = data.reply || data.message || 'Inquiry limit reached. Please convert this discussion to a support ticket.';
-                if (tempBot) {
-                    tempBot.innerHTML = renderLimitNoticeCardHtml(limitNoticeText);
+                if (isHumanSessionActive || data.is_human) {
+                    sdvClearLimitState(true, null);
                 } else {
-                    appendClMsg('bot', renderLimitNoticeCardHtml(limitNoticeText), true);
+                    if (data.user_message_id) {
+                        if (userMsgEl) {
+                            userMsgEl.id = 'sdv-msg-' + data.user_message_id;
+                            userMsgEl.removeAttribute('data-pending-user');
+                        }
+                        if (data.user_message_id > highestMsgId) highestMsgId = data.user_message_id;
+                    }
+                    var limitNoticeText = data.reply || data.message || 'Inquiry limit reached. Please convert this discussion to a support ticket.';
+                    if (tempBot) {
+                        tempBot.innerHTML = renderLimitNoticeCardHtml(limitNoticeText);
+                    } else {
+                        appendClMsg('bot', renderLimitNoticeCardHtml(limitNoticeText), true);
+                    }
+                    sdvApplyLimitState(data);
+                    if (data.session_uuid && data.session_uuid !== sessionUuid) {
+                        sessionUuid = data.session_uuid;
+                        sdvSafeSet(activeSessionKey, sessionUuid);
+                    }
+                    broadcastLiveSync('new_message', {
+                        session_uuid: sessionUuid,
+                        role: 'bot',
+                        text: limitNoticeText
+                    });
+                    return;
                 }
-                sdvApplyLimitState(data);
-                if (data.session_uuid && data.session_uuid !== sessionUuid) {
-                    sessionUuid = data.session_uuid;
-                    sdvSafeSet(activeSessionKey, sessionUuid);
-                }
-                broadcastLiveSync('new_message', {
-                    session_uuid: sessionUuid,
-                    role: 'bot',
-                    text: limitNoticeText
-                });
-                return;
             }
 
             inputEl.disabled = false;
@@ -12933,11 +12985,27 @@ DISC;
 
                 // If chat is in Live Staff Takeover mode (AI paused)
                 if (data.is_takeover || data.status === 'taken_over') {
+                    isHumanSessionActive = true;
+                    currentChatStatus = 'taken_over';
+                    sdvClearLimitState(true, null);
                     // Remove optimistic AI typing bubble since human staff is handling this chat
                     if (tempBot && tempBot.parentNode) {
                         tempBot.parentNode.removeChild(tempBot);
                     }
                     // Start live polling to fetch the human agent's response
+                    sdvStartLivePolling();
+                    return;
+                }
+
+                // If customer summoned a human agent and is awaiting staff pickup
+                if (data.is_summoned) {
+                    isHumanSessionActive = true;
+                    sdvClearLimitState(false, null);
+                    if (tempBot) {
+                        tempBot.removeAttribute('data-pending-bot');
+                        tempBot.innerHTML = parseSimpleMarkdown(data.reply || '🔔 An agent will join this conversation shortly!');
+                        attachMsgActions(tempBot, data.message_id || 0, 0, 'system', Date.now());
+                    }
                     sdvStartLivePolling();
                     return;
                 }
@@ -13017,6 +13085,20 @@ DISC;
         postAjaxWithFallback(form, function(err, res) {
             isPolling = false;
             if (err || !res || !res.success) return;
+
+            // Synchronize takeover / human agent status & limit state
+            currentChatStatus = res.status || currentChatStatus;
+            if (res.status === 'taken_over' || res.summon_status === 'requested' || res.summon_status === 'claimed' || (res.limit_status && res.limit_status.is_human)) {
+                isHumanSessionActive = true;
+                sdvClearLimitState(res.status === 'taken_over', res.assigned_admin_name);
+            } else if (res.status === 'active' && (!res.summon_status || res.summon_status === 'none')) {
+                isHumanSessionActive = false;
+                if (res.limit_status && res.limit_status.limit_reached) {
+                    sdvApplyLimitState(res.limit_status);
+                } else {
+                    sdvClearLimitState(false, null);
+                }
+            }
 
             if (res.messages && res.messages.length > 0) {
                 var msgsEl = document.getElementById('sdv-cl-msgs');
@@ -13546,6 +13628,8 @@ DISC;
         form.append('reason', 'Client requested live agent via chat widget');
 
         postAjaxWithFallback(form, function(err, data) {
+            isHumanSessionActive = true;
+            sdvClearLimitState(false, null);
             var summonMsgId = (data && data.message_id) ? data.message_id : null;
             var sysMsg = '🔔 A live human support agent has been notified and summoned to assist you. A team member will join shortly!';
             var existingSys = document.querySelector('#sdv-cl-msgs .sdv-cl-msg-system');

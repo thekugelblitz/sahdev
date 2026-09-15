@@ -267,19 +267,6 @@ if ($isClientChatAction) {
                 exit;
             }
 
-            // ── Active Rate Limiting: 10 messages per minute per IP / visitor ─
-            $rateKey = 'msg_' . md5($clientIp . '_' . $visitorToken);
-            $rl = \Sahdev\Lib\ChatService::checkRateLimit($rateKey, 'message', 10, 60);
-            if (!$rl['allowed']) {
-                header('HTTP/1.1 429 Too Many Requests');
-                header('Retry-After: ' . $rl['retry_after']);
-                echo json_encode([
-                    'status'  => 'error',
-                    'message' => "You are sending messages too quickly. Please wait {$rl['retry_after']} seconds before sending another message."
-                ]);
-                exit;
-            }
-
             $messageText = html_entity_decode(trim((string) ($_POST['message'] ?? '')), ENT_QUOTES | ENT_HTML5, 'UTF-8');
             $sessionUuid = trim((string) ($_POST['session_uuid'] ?? ''));
 
@@ -287,6 +274,27 @@ if ($isClientChatAction) {
                 header('HTTP/1.1 400 Bad Request');
                 echo json_encode(['status' => 'error', 'message' => 'Message cannot be empty.']);
                 exit;
+            }
+
+            // ── Rate Limiting: 10 messages per minute per IP / visitor ONLY for AI conversations ─
+            // Human agent conversations (staff takeover, summoned, or assigned admin) are exempt from rate limiting
+            $isHumanSession = false;
+            if (!empty($sessionUuid)) {
+                $isHumanSession = \Sahdev\Lib\ChatService::isHumanAgentSession($sessionUuid);
+            }
+
+            if (!$isHumanSession) {
+                $rateKey = 'msg_' . md5($clientIp . '_' . $visitorToken);
+                $rl = \Sahdev\Lib\ChatService::checkRateLimit($rateKey, 'message', 10, 60);
+                if (!$rl['allowed']) {
+                    header('HTTP/1.1 429 Too Many Requests');
+                    header('Retry-After: ' . $rl['retry_after']);
+                    echo json_encode([
+                        'status'  => 'error',
+                        'message' => "You are sending messages too quickly. Please wait {$rl['retry_after']} seconds before sending another message."
+                    ]);
+                    exit;
+                }
             }
 
             $preview = strlen($messageText) > 60 ? substr($messageText, 0, 60) . '...' : $messageText;
