@@ -2505,6 +2505,11 @@ class ChatService
                 ];
             }
 
+            $settings = Capsule::table('tblsahdev_settings')->first();
+            $alertDuration = max(3, min(120, (int)($settings->client_chat_alert_duration ?? 15)));
+            $soundType = !empty($settings->client_chat_sound_type) ? (string)$settings->client_chat_sound_type : 'chime';
+            $soundAlertEnabled = !isset($settings->client_chat_sound_admin_alert) || !empty($settings->client_chat_sound_admin_alert);
+
             // Active chats count
             $activeCount = Capsule::table('tblsahdev_chat_sessions')
                 ->where('session_type', 'client_livechat')
@@ -2516,6 +2521,40 @@ class ChatService
                 ->where('status', 'taken_over')
                 ->count();
 
+            // Check for new incoming customer messages in chats taken over by this admin (within last 30s)
+            $activeAssignedMessages = [];
+            if ($adminId > 0) {
+                $takenSessions = Capsule::table('tblsahdev_chat_sessions')
+                    ->where('session_type', 'client_livechat')
+                    ->where('status', 'taken_over')
+                    ->where('assigned_admin_id', $adminId)
+                    ->where('last_message_at', '>=', Carbon::now()->subSeconds(30))
+                    ->get(['id', 'session_uuid', 'client_id', 'last_message_at', 'source_domain', 'title']);
+
+                foreach ($takenSessions as $ts) {
+                    $lastMsg = Capsule::table('tblsahdev_chat_messages')
+                        ->where('session_id', $ts->id)
+                        ->orderBy('id', 'desc')
+                        ->first(['id', 'sender_type', 'message_text', 'created_at']);
+
+                    if ($lastMsg && $lastMsg->sender_type === 'user' && Carbon::parse($lastMsg->created_at)->gte(Carbon::now()->subSeconds(25))) {
+                        $clientName = 'Guest Visitor';
+                        if ($ts->client_id > 0) {
+                            $cl = Capsule::table('tblclients')->where('id', $ts->client_id)->first(['firstname', 'lastname']);
+                            if ($cl) $clientName = trim($cl->firstname . ' ' . $cl->lastname);
+                        }
+                        $activeAssignedMessages[] = [
+                            'session_id'    => (int)$ts->id,
+                            'session_uuid'  => $ts->session_uuid,
+                            'client_name'   => $clientName,
+                            'message_text'  => mb_substr(strip_tags((string)$lastMsg->message_text), 0, 90),
+                            'created_at'    => Carbon::parse($lastMsg->created_at)->diffForHumans(),
+                            'source_domain' => $ts->source_domain ?: '',
+                        ];
+                    }
+                }
+            }
+
             return [
                 'success'           => true,
                 'active_count'      => $activeCount,
@@ -2523,7 +2562,10 @@ class ChatService
                 'summon_count'      => count($summonList),
                 'summons'           => $summonList,
                 'pending_summons'   => $summonList,
-                'sound_alert'       => count($summonList) > 0,
+                'new_messages'      => $activeAssignedMessages,
+                'alert_duration'    => $alertDuration,
+                'sound_type'        => $soundType,
+                'sound_alert'       => $soundAlertEnabled && (count($summonList) > 0 || count($activeAssignedMessages) > 0),
                 'timestamp'         => time(),
             ];
         } catch (\Throwable $e) {
@@ -2533,8 +2575,39 @@ class ChatService
                 'takeover_count' => 0,
                 'summon_count'   => 0,
                 'summons'        => [],
+                'pending_summons'=> [],
+                'new_messages'   => [],
+                'alert_duration' => 15,
+                'sound_type'     => 'chime',
                 'sound_alert'    => false,
             ];
+        }
+    }
+
+    /**
+     * Dismiss a human agent summon request without taking over the chat.
+     */
+    public static function dismissSummon(string $sessionUuid, int $adminId): array
+    {
+        try {
+            $session = Capsule::table('tblsahdev_chat_sessions')->where('session_uuid', $sessionUuid)->first();
+            if (!$session) {
+                return ['success' => false, 'error' => 'Session not found.'];
+            }
+
+            Capsule::table('tblsahdev_chat_sessions')->where('id', $session->id)->update([
+                'summon_status' => 'dismissed',
+                'updated_at'    => Carbon::now(),
+            ]);
+
+            $admin = Capsule::table('tbladmins')->where('id', $adminId)->first(['firstname', 'lastname']);
+            $adminName = $admin ? trim($admin->firstname . ' ' . $admin->lastname) : "Staff Member";
+
+            ModuleLogger::info('client_chat', "Staff member {$adminName} (#{$adminId}) dismissed summon for session #{$session->id}");
+
+            return ['success' => true, 'message' => "Summon request dismissed."];
+        } catch (\Throwable $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
         }
     }
 
@@ -2741,7 +2814,7 @@ class ChatService
                 ]);
             }
 
-            Capsule::table('tblsahdev_chat_sessions')->where('id', $session->id)->update([
+            $updatePayload = [
                 'status'                => 'taken_over',
                 'assigned_admin_id'     => $adminId,
                 'typing_preview'        => null,
@@ -2749,7 +2822,11 @@ class ChatService
                 'last_staff_message_at' => Carbon::now(),
                 'last_message_at'       => Carbon::now(),
                 'updated_at'            => Carbon::now(),
-            ]);
+            ];
+            if (($session->summon_status ?? '') === 'requested') {
+                $updatePayload['summon_status'] = 'claimed';
+            }
+            Capsule::table('tblsahdev_chat_sessions')->where('id', $session->id)->update($updatePayload);
 
             return [
                 'success'    => true,

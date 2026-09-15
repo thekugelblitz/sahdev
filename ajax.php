@@ -1576,6 +1576,7 @@ try {
         $settings = Capsule::table('tblsahdev_settings')->first();
         $res['sound_enabled'] = !empty($settings->client_chat_sound_admin_alert);
         $res['sound_type'] = $settings->client_chat_sound_type ?? 'chime';
+        $res['alert_duration'] = max(3, min(120, (int)($settings->client_chat_alert_duration ?? 15)));
         $response = $res;
     } elseif ($action === 'admin_live_console_poll') {
         \Sahdev\Lib\ChatService::checkTakeoverTimeouts();
@@ -1692,13 +1693,26 @@ try {
             }
         }
 
+        $settings = Capsule::table('tblsahdev_settings')->first();
         $response = [
             'status'           => 'success',
             'sessions'         => $sessionList,
             'selected_session' => $selectedSession,
             'messages'         => $messages,
+            'sound_type'       => $settings->client_chat_sound_type ?? 'chime',
+            'sound_enabled'    => !empty($settings->client_chat_sound_admin_alert),
+            'alert_duration'   => max(3, min(120, (int)($settings->client_chat_alert_duration ?? 15))),
             'timestamp'        => time(),
         ];
+    } elseif ($action === 'admin_claim_summon') {
+        $sessionUuid = trim((string)($_POST['session_uuid'] ?? ''));
+        $timeoutMins = (int)($_POST['timeout_mins'] ?? 0);
+        $res = \Sahdev\Lib\ChatService::claimTakeover($sessionUuid, (int)$adminId, $timeoutMins);
+        $response = array_merge(['status' => ($res['success'] ?? false) ? 'success' : 'error'], $res);
+    } elseif ($action === 'admin_dismiss_summon' || $action === 'admin_live_console_dismiss_summon') {
+        $sessionUuid = trim((string)($_POST['session_uuid'] ?? ''));
+        $res = \Sahdev\Lib\ChatService::dismissSummon($sessionUuid, (int)$adminId);
+        $response = array_merge(['status' => ($res['success'] ?? false) ? 'success' : 'error'], $res);
     } elseif ($action === 'admin_live_console_send') {
         $sessionUuid = trim((string)($_POST['session_uuid'] ?? ''));
         $messageText = trim((string)($_POST['message'] ?? ''));

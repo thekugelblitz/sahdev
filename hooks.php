@@ -13091,12 +13091,25 @@ DISC;
             if (res.status === 'taken_over' || res.summon_status === 'requested' || res.summon_status === 'claimed' || (res.limit_status && res.limit_status.is_human)) {
                 isHumanSessionActive = true;
                 sdvClearLimitState(res.status === 'taken_over', res.assigned_admin_name);
-            } else if (res.status === 'active' && (!res.summon_status || res.summon_status === 'none')) {
+            } else if (res.status === 'active' && (!res.summon_status || res.summon_status === 'none' || res.summon_status === 'dismissed')) {
                 isHumanSessionActive = false;
                 if (res.limit_status && res.limit_status.limit_reached) {
                     sdvApplyLimitState(res.limit_status);
                 } else {
                     sdvClearLimitState(false, null);
+                }
+            }
+
+            // Dynamically update client widget status bar
+            var statusEl = document.querySelector('#sdv-client-chat-window .sdv-cl-status');
+            if (statusEl) {
+                if (res.status === 'taken_over' || res.summon_status === 'claimed') {
+                    var aName = res.assigned_admin_name || 'Staff Agent';
+                    statusEl.innerHTML = '<span class="sdv-cl-status-dot" style="background:#3b82f6;"></span> Connected with ' + sdvEscapeHtml(aName);
+                } else if (res.summon_status === 'requested') {
+                    statusEl.innerHTML = '<span class="sdv-cl-status-dot" style="background:#f59e0b;animation:sdvPulse 1.5s infinite;"></span> Summoning Agent...';
+                } else {
+                    statusEl.innerHTML = '<span class="sdv-cl-status-dot"></span> Online &bull; Self-Help AI';
                 }
             }
 
@@ -13630,6 +13643,10 @@ DISC;
         postAjaxWithFallback(form, function(err, data) {
             isHumanSessionActive = true;
             sdvClearLimitState(false, null);
+            var statusEl = document.querySelector('#sdv-client-chat-window .sdv-cl-status');
+            if (statusEl) {
+                statusEl.innerHTML = '<span class="sdv-cl-status-dot" style="background:#f59e0b;animation:sdvPulse 1.5s infinite;"></span> Summoning Agent...';
+            }
             var summonMsgId = (data && data.message_id) ? data.message_id : null;
             var sysMsg = '🔔 A live human support agent has been notified and summoned to assist you. A team member will join shortly!';
             var existingSys = document.querySelector('#sdv-cl-msgs .sdv-cl-msg-system');
@@ -13787,9 +13804,11 @@ function sahdev_render_admin_live_chat_alert_listener(array $vars = []): string
 
         $soundEnabled = !isset($settings->client_chat_sound_admin_alert) || !empty($settings->client_chat_sound_admin_alert);
         $soundType = !empty($settings->client_chat_sound_type) ? (string) $settings->client_chat_sound_type : 'chime';
+        $alertDuration = max(3, min(120, (int)($settings->client_chat_alert_duration ?? 15)));
 
         $soundTypeJs = json_encode($soundType);
         $soundEnabledJs = json_encode($soundEnabled);
+        $alertDurationJs = json_encode($alertDuration);
 
         return <<<HTML
 <!-- Sahdev Global Live Chat Alert Listener & Audio Synthesizer -->
@@ -13799,7 +13818,7 @@ function sahdev_render_admin_live_chat_alert_listener(array $vars = []): string
 (function() {
     'use strict';
     // If admin is already on the dedicated live console dashboard, yield to the dashboard poller
-    if (document.getElementById('sdv-live-console-app')) {
+    if (document.getElementById('liveConsoleApp') || document.getElementById('sdv-live-console-app')) {
         return;
     }
 
@@ -13809,6 +13828,7 @@ function sahdev_render_admin_live_chat_alert_listener(array $vars = []): string
     var consoleUrl = adminBase + 'addonmodules.php?module=sahdev&action=live_console';
     var defaultSoundType = {$soundTypeJs};
     var soundEnabled = {$soundEnabledJs};
+    var defaultAlertDuration = {$alertDurationJs};
 
     function sdvEscapeHtml(str) {
         if (!str) return '';
@@ -13914,10 +13934,65 @@ function sahdev_render_admin_live_chat_alert_listener(array $vars = []): string
         }
     }
 
-    // Summon Alert Tracking & repeating chime
+    // Summon Alert Tracking, Mindful Repeating Chime & Cross-Tab Broadcast
     var activeSummonIds = {};
-    var repeatingChimeTimer = null;
-    var chimeRepeatCount = 0;
+    var alertRingTimer = null;
+    var alertRingTimeout = null;
+    var isRinging = false;
+
+    function startAlertRing(soundType, durationSec) {
+        stopAlertRing();
+        var dur = (durationSec || defaultAlertDuration || 15) * 1000;
+        isRinging = true;
+        playSynthesizedSound(soundType || defaultSoundType);
+        alertRingTimer = setInterval(function() {
+            playSynthesizedSound(soundType || defaultSoundType);
+        }, 2800); // 2.8 second gentle chime loop
+        alertRingTimeout = setTimeout(function() {
+            stopAlertRing();
+        }, dur);
+    }
+
+    function stopAlertRing() {
+        if (alertRingTimer) {
+            clearInterval(alertRingTimer);
+            alertRingTimer = null;
+        }
+        if (alertRingTimeout) {
+            clearTimeout(alertRingTimeout);
+            alertRingTimeout = null;
+        }
+        isRinging = false;
+    }
+
+    // Cross-tab synchronization: dismiss toasts and silence audio when handled in another tab
+    window.addEventListener('storage', function(e) {
+        if (e.key === 'sdv_summon_claimed_or_dismissed') {
+            try {
+                var d = JSON.parse(e.newValue || '{}');
+                if (d) {
+                    if (d.id) {
+                        var t = document.getElementById('sdv-toast-' + d.id);
+                        if (t && t.parentNode) t.parentNode.removeChild(t);
+                        delete activeSummonIds[d.id];
+                    }
+                    if (d.uuid) {
+                        var tEl = document.querySelector('#sdv-admin-global-toast-container [data-uuid="' + d.uuid + '"]');
+                        if (tEl && tEl.parentNode) tEl.parentNode.removeChild(tEl);
+                        Object.keys(activeSummonIds).forEach(function(k) {
+                            if (activeSummonIds[k] && activeSummonIds[k].session_uuid === d.uuid) {
+                                delete activeSummonIds[k];
+                            }
+                        });
+                    }
+                    if (Object.keys(activeSummonIds).length === 0) {
+                        stopTitleBlink();
+                        stopAlertRing();
+                    }
+                }
+            } catch(err) {}
+        }
+    });
 
     function renderToastNotification(summon) {
         var container = document.getElementById('sdv-admin-global-toast-container');
@@ -13933,6 +14008,7 @@ function sahdev_render_admin_live_chat_alert_listener(array $vars = []): string
 
         var toast = document.createElement('div');
         toast.id = toastId;
+        toast.setAttribute('data-uuid', summon.session_uuid || '');
         toast.style.cssText = 'pointer-events:auto;width:360px;background:#ffffff;border-radius:12px;box-shadow:0 14px 40px -4px rgba(15,23,42,0.35),0 0 0 1px rgba(0,0,0,0.08);border-left:5px solid #ef4444;padding:16px 18px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;animation:sdvToastIn 0.28s cubic-bezier(0.16,1,0.3,1);position:relative;';
 
         var clientName = summon.client_name || summon.visitor_name || 'Website Visitor';
@@ -13954,7 +14030,7 @@ function sahdev_render_admin_live_chat_alert_listener(array $vars = []): string
             sdvEscapeHtml(lastMsg) + (sourceDomain ? ('<div style="font-size:10.5px;color:#94a3b8;margin-top:3px;">Source: ' + sdvEscapeHtml(summon.source_domain) + '</div>') : '') +
         '</div>' +
         '<div style="display:flex;gap:8px;align-items:center;">' +
-            '<a href="' + consoleUrl + '&session_uuid=' + encodeURIComponent(summon.session_uuid) + '" class="sdv-toast-accept-btn" style="flex:1;text-align:center;text-decoration:none;background:#2563eb;color:#ffffff;font-size:12.5px;font-weight:600;padding:8px 12px;border-radius:6px;box-shadow:0 1px 3px rgba(37,99,235,0.3);transition:background 0.2s ease;">' +
+            '<a href="' + consoleUrl + '&session_uuid=' + encodeURIComponent(summon.session_uuid) + '&auto_claim=1" class="sdv-toast-accept-btn" style="flex:1;text-align:center;text-decoration:none;background:#2563eb;color:#ffffff;font-size:12.5px;font-weight:600;padding:8px 12px;border-radius:6px;box-shadow:0 1px 3px rgba(37,99,235,0.3);transition:background 0.2s ease;">' +
                 'Accept &amp; Open Live Console &rarr;' +
             '</a>' +
             '<button type="button" class="sdv-toast-silence-btn" style="background:#f1f5f9;border:1px solid #cbd5e1;color:#475569;font-size:12px;font-weight:500;padding:8px 12px;border-radius:6px;cursor:pointer;">' +
@@ -13965,8 +14041,24 @@ function sahdev_render_admin_live_chat_alert_listener(array $vars = []): string
         toast.innerHTML = html;
         container.appendChild(toast);
 
-        function dismissToast() {
+        function dismissToast(shouldNotifyServer) {
             try { sessionStorage.setItem(dismissedKey, '1'); } catch(e) {}
+            try {
+                localStorage.setItem('sdv_summon_claimed_or_dismissed', JSON.stringify({
+                    uuid: summon.session_uuid,
+                    id: summon.id,
+                    action: 'dismissed',
+                    ts: Date.now()
+                }));
+            } catch(e) {}
+
+            if (shouldNotifyServer) {
+                var fdDismiss = new FormData();
+                fdDismiss.append('action', 'admin_dismiss_summon');
+                fdDismiss.append('session_uuid', summon.session_uuid);
+                fetch(ajaxUrl, { method: 'POST', body: fdDismiss, credentials: 'include' }).catch(function(){});
+            }
+
             toast.style.opacity = '0';
             toast.style.transform = 'translateY(10px)';
             toast.style.transition = 'all 0.2s ease';
@@ -13975,38 +14067,34 @@ function sahdev_render_admin_live_chat_alert_listener(array $vars = []): string
                 delete activeSummonIds[summon.id];
                 if (Object.keys(activeSummonIds).length === 0) {
                     stopTitleBlink();
-                    stopRepeatingChime();
+                    stopAlertRing();
                 }
             }, 200);
         }
 
-        toast.querySelector('.sdv-toast-dismiss-btn').addEventListener('click', dismissToast);
-        toast.querySelector('.sdv-toast-silence-btn').addEventListener('click', dismissToast);
-        toast.querySelector('.sdv-toast-accept-btn').addEventListener('click', function() {
-            dismissToast();
+        toast.querySelector('.sdv-toast-dismiss-btn').addEventListener('click', function() {
+            dismissToast(true);
         });
-    }
-
-    function startRepeatingChime(soundType) {
-        playSynthesizedSound(soundType);
-        chimeRepeatCount = 1;
-        if (repeatingChimeTimer) clearInterval(repeatingChimeTimer);
-
-        repeatingChimeTimer = setInterval(function() {
-            if (chimeRepeatCount >= 3 || Object.keys(activeSummonIds).length === 0) {
-                stopRepeatingChime();
-                return;
-            }
-            chimeRepeatCount++;
-            playSynthesizedSound(soundType);
-        }, 20000);
-    }
-
-    function stopRepeatingChime() {
-        if (repeatingChimeTimer) {
-            clearInterval(repeatingChimeTimer);
-            repeatingChimeTimer = null;
-        }
+        toast.querySelector('.sdv-toast-silence-btn').addEventListener('click', function() {
+            dismissToast(true);
+        });
+        toast.querySelector('.sdv-toast-accept-btn').addEventListener('click', function() {
+            stopAlertRing();
+            stopTitleBlink();
+            try {
+                localStorage.setItem('sdv_summon_claimed_or_dismissed', JSON.stringify({
+                    uuid: summon.session_uuid,
+                    id: summon.id,
+                    action: 'claimed',
+                    ts: Date.now()
+                }));
+            } catch(e) {}
+            var fdClaim = new FormData();
+            fdClaim.append('action', 'admin_claim_summon');
+            fdClaim.append('session_uuid', summon.session_uuid);
+            fetch(ajaxUrl, { method: 'POST', body: fdClaim, credentials: 'include' }).catch(function(){});
+            dismissToast(false);
+        });
     }
 
     var heartbeatTimer = null;
@@ -14033,13 +14121,13 @@ function sahdev_render_admin_live_chat_alert_listener(array $vars = []): string
                 });
                 if (hasNewSummon) {
                     startTitleBlink(summons.length);
-                    startRepeatingChime(res.sound_type || defaultSoundType);
+                    startAlertRing(res.sound_type || defaultSoundType, res.alert_duration || defaultAlertDuration);
                 }
             } else {
                 if (Object.keys(activeSummonIds).length > 0) {
                     activeSummonIds = {};
                     stopTitleBlink();
-                    stopRepeatingChime();
+                    stopAlertRing();
                     var container = document.getElementById('sdv-admin-global-toast-container');
                     if (container) container.innerHTML = '';
                 }

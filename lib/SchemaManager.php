@@ -174,6 +174,7 @@ class SchemaManager
                 'client_chat_human_takeover_enabled' => ['type' => 'boolean', 'default' => 1],
                 'client_chat_sound_admin_alert'      => ['type' => 'boolean', 'default' => 1],
                 'client_chat_sound_type'             => ['type' => 'string', 'length' => 32, 'default' => 'chime'],
+                'client_chat_alert_duration'         => ['type' => 'integer', 'default' => 15],
                 'client_chat_console_poll_interval'  => ['type' => 'integer', 'default' => 2],
                 'client_chat_cors_origins'           => ['type' => 'text'],
                 'client_chat_external_embed_enabled' => ['type' => 'boolean', 'default' => 1],

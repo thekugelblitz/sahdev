@@ -8790,6 +8790,7 @@ class AdminController
                     'client_chat_human_takeover_enabled' => !empty($_POST['client_chat_human_takeover_enabled']) ? 1 : 0,
                     'client_chat_sound_admin_alert'      => !empty($_POST['client_chat_sound_admin_alert']) ? 1 : 0,
                     'client_chat_sound_type'             => in_array($_POST['client_chat_sound_type'] ?? '', ['chime', 'bell', 'ping'], true) ? $_POST['client_chat_sound_type'] : 'chime',
+                    'client_chat_alert_duration'         => max(3, min(120, (int)($_POST['client_chat_alert_duration'] ?? 15))),
                     'client_chat_console_poll_interval'  => max(1, min(10, (int)($_POST['client_chat_console_poll_interval'] ?? 2))),
                     'client_chat_cors_origins'           => trim($_POST['client_chat_cors_origins'] ?? '*'),
                     'client_chat_external_embed_enabled' => !empty($_POST['client_chat_external_embed_enabled']) ? 1 : 0,
@@ -11438,7 +11439,7 @@ class AdminController
                                             </div>
 
                                             <div class="row">
-                                                <div class="col-md-6 form-group">
+                                                <div class="col-md-4 form-group">
                                                     <label style="font-size: 12px; font-weight: 600;">Alert Sound Tone</label>
                                                     <div style="display: flex; gap: 8px;">
                                                         <select name="client_chat_sound_type" id="soundTypeSelect" class="form-control input-sm" style="font-weight: 600;">
@@ -11451,13 +11452,26 @@ class AdminController
                                                         </button>
                                                     </div>
                                                 </div>
-                                                <div class="col-md-6 form-group">
+                                                <div class="col-md-4 form-group">
+                                                    <label style="font-size: 12px; font-weight: 600;">Notification Ring Duration</label>
+                                                    <select name="client_chat_alert_duration" id="alertDurationSelect" class="form-control input-sm" style="font-weight: 600;">
+                                                        <option value="5" <?php echo ((int)($settings->client_chat_alert_duration ?? 15) === 5) ? 'selected' : ''; ?>>5 seconds (Brief)</option>
+                                                        <option value="10" <?php echo ((int)($settings->client_chat_alert_duration ?? 15) === 10) ? 'selected' : ''; ?>>10 seconds</option>
+                                                        <option value="15" <?php echo ((int)($settings->client_chat_alert_duration ?? 15) === 15) ? 'selected' : ''; ?>>15 seconds (Recommended)</option>
+                                                        <option value="20" <?php echo ((int)($settings->client_chat_alert_duration ?? 15) === 20) ? 'selected' : ''; ?>>20 seconds</option>
+                                                        <option value="30" <?php echo ((int)($settings->client_chat_alert_duration ?? 15) === 30) ? 'selected' : ''; ?>>30 seconds (Persistent)</option>
+                                                        <option value="45" <?php echo ((int)($settings->client_chat_alert_duration ?? 15) === 45) ? 'selected' : ''; ?>>45 seconds</option>
+                                                        <option value="60" <?php echo ((int)($settings->client_chat_alert_duration ?? 15) === 60) ? 'selected' : ''; ?>>60 seconds (1 minute max)</option>
+                                                    </select>
+                                                    <span class="help-block" style="font-size: 10.5px; margin-top: 2px;">Audio rings for X seconds when a summon or inactive message arrives, then automatically silences.</span>
+                                                </div>
+                                                <div class="col-md-4 form-group">
                                                     <label style="font-size: 12px; font-weight: 600;">Console Refresh Polling</label>
                                                     <div style="display: flex; align-items: center; gap: 10px;">
                                                         <input type="range" name="client_chat_console_poll_interval" min="1" max="5" step="1" value="<?php echo (int)($settings->client_chat_console_poll_interval ?? 2); ?>" id="pollIntervalRange" style="flex: 1;">
                                                         <span id="pollIntervalDisplay" style="font-weight: 700; font-size: 13px; min-width: 35px;"><?php echo (int)($settings->client_chat_console_poll_interval ?? 2); ?>s</span>
                                                     </div>
-                                                    <span class="help-block" style="font-size: 10.5px; margin-top: 2px;">2s recommended for shared hosting (adaptive 5s when tab blurred).</span>
+                                                    <span class="help-block" style="font-size: 10.5px; margin-top: 2px;">2s recommended for shared hosting (adaptive 12s when tab blurred).</span>
                                                 </div>
                                             </div>
                                         </div>
@@ -12160,11 +12174,15 @@ class AdminController
         $admin = Capsule::table('tbladmins')->where('id', $adminId)->first(['firstname', 'lastname', 'username', 'email']);
         $adminName = $admin ? trim($admin->firstname . ' ' . $admin->lastname) : "Staff Agent";
         $settings = Capsule::table('tblsahdev_settings')->first();
-        $pollInterval = max(4, min(15, (int)($settings->client_chat_console_poll_interval ?? 5)));
+        $pollInterval = max(1, min(10, (int)($settings->client_chat_console_poll_interval ?? 2)));
         $soundType = $settings->client_chat_sound_type ?? 'chime';
         $soundEnabled = !empty($settings->client_chat_sound_admin_alert ?? 1);
+        $alertDuration = max(3, min(120, (int)($settings->client_chat_alert_duration ?? 15)));
         $moduleLink = htmlspecialchars($this->moduleVars['modulelink']);
         $ajaxEndpoint = 'addonmodules.php?module=sahdev&sahdev_act=ajax_handler';
+
+        $initialSessionUuid = trim((string)($_GET['session_uuid'] ?? ''));
+        $autoClaim = !empty($_GET['auto_claim']);
 
         // Fetch support departments for ticket conversion modal
         $departments = Capsule::table('tblticketdepartments')->orderBy('order', 'asc')->get(['id', 'name']);
@@ -12411,6 +12429,9 @@ class AdminController
             var SOUND_ENABLED = <?php echo $soundEnabled ? 'true' : 'false'; ?>;
             var SOUND_TYPE = '<?php echo $soundType; ?>';
             var CURRENT_ADMIN_ID = <?php echo $adminId; ?>;
+            var ALERT_DURATION = <?php echo (int)$alertDuration; ?>;
+            var INITIAL_SESSION_UUID = '<?php echo addslashes($initialSessionUuid); ?>';
+            var AUTO_CLAIM = <?php echo $autoClaim ? 'true' : 'false'; ?>;
 
             var activeFilter = 'all';
             var activeSessionUuid = null;
@@ -12422,14 +12443,34 @@ class AdminController
             var activePollSeq = 0;
             var renderedMsgIds = {};
             var knownSummons = {};
+            var knownLastMsgTimestamps = {};
+            var initialSessionHandled = false;
             var docOriginalTitle = document.title;
 
+            // Tab activity tracking
+            var isTabActive = !document.hidden;
+            var ringInterval = null;
+            var ringTimeout = null;
+            var isRinging = false;
+
             // Audio Synthesis (Web Audio API - Zero External Files)
+            var audioCtx = null;
+            function getAudioContext() {
+                if (!audioCtx) {
+                    var AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                    if (AudioContextClass) audioCtx = new AudioContextClass();
+                }
+                if (audioCtx && audioCtx.state === 'suspended') {
+                    audioCtx.resume().catch(function(){});
+                }
+                return audioCtx;
+            }
+
             function playAlertSound(type) {
                 if (!SOUND_ENABLED) return;
                 try {
-                    var ctx = new (window.AudioContext || window.webkitAudioContext)();
-                    if (ctx.state === 'suspended') ctx.resume();
+                    var ctx = getAudioContext();
+                    if (!ctx) return;
                     var now = ctx.currentTime;
                     var t = type || SOUND_TYPE;
                     if (t === 'bell') {
@@ -12450,7 +12491,7 @@ class AdminController
                         var gain = ctx.createGain();
                         osc.type = 'sine';
                         osc.frequency.setValueAtTime(987.77, now);
-                        gain.gain.setValueAtTime(0.3, now);
+                        gain.gain.setValueAtTime(0.25, now);
                         gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
                         osc.connect(gain);
                         gain.connect(ctx.destination);
@@ -12463,7 +12504,7 @@ class AdminController
                             var gain = ctx.createGain();
                             osc.type = 'sine';
                             osc.frequency.setValueAtTime(freq, now + idx * 0.12);
-                            gain.gain.setValueAtTime(0.3, now + idx * 0.12);
+                            gain.gain.setValueAtTime(0.28, now + idx * 0.12);
                             gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.12 + 0.5);
                             osc.connect(gain);
                             gain.connect(ctx.destination);
@@ -12475,6 +12516,66 @@ class AdminController
                     console.warn('AudioContext failed:', e);
                 }
             }
+
+            // Mindful Alert Ring Controller: rings every 2.8s for exactly X seconds then auto-silences
+            function startAlertRing(type, durationSec) {
+                if (!SOUND_ENABLED) return;
+                stopAlertRing();
+                var dur = (durationSec || ALERT_DURATION || 15) * 1000;
+                isRinging = true;
+                playAlertSound(type || SOUND_TYPE);
+                ringInterval = setInterval(function() {
+                    playAlertSound(type || SOUND_TYPE);
+                }, 2800);
+                ringTimeout = setTimeout(function() {
+                    stopAlertRing();
+                }, dur);
+            }
+
+            function stopAlertRing() {
+                if (ringInterval) { clearInterval(ringInterval); ringInterval = null; }
+                if (ringTimeout) { clearTimeout(ringTimeout); ringTimeout = null; }
+                isRinging = false;
+            }
+
+            // Tab activity & user interaction listeners to silence rings
+            document.addEventListener('visibilitychange', function() {
+                isTabActive = !document.hidden;
+                if (isTabActive && isRinging) {
+                    stopAlertRing();
+                    document.title = docOriginalTitle;
+                }
+            });
+            window.addEventListener('focus', function() {
+                isTabActive = true;
+                if (isRinging) {
+                    stopAlertRing();
+                    document.title = docOriginalTitle;
+                }
+            });
+            window.addEventListener('blur', function() {
+                isTabActive = false;
+            });
+            document.addEventListener('click', function() {
+                if (isRinging) {
+                    stopAlertRing();
+                    document.title = docOriginalTitle;
+                }
+            });
+
+            // Cross-tab broadcast listener: when summon is claimed or dismissed in another tab
+            window.addEventListener('storage', function(e) {
+                if (e.key === 'sdv_summon_claimed_or_dismissed') {
+                    try {
+                        var d = JSON.parse(e.newValue || '{}');
+                        if (d && (d.uuid || d.id)) {
+                            stopAlertRing();
+                            document.title = docOriginalTitle;
+                            doPoll(true);
+                        }
+                    } catch(err) {}
+                }
+            });
 
             // Audio Toggle Controls
             var toggleSoundBtn = document.getElementById('toggleSoundBtn');
@@ -12488,6 +12589,7 @@ class AdminController
                         soundText.textContent = 'Sound On';
                         playAlertSound();
                     } else {
+                        stopAlertRing();
                         soundIcon.className = 'fas fa-volume-mute text-danger';
                         soundText.textContent = 'Muted';
                     }
@@ -12497,7 +12599,7 @@ class AdminController
             var testBtn = document.getElementById('triggerSoundTestBtn');
             if (testBtn) {
                 testBtn.addEventListener('click', function() {
-                    playAlertSound();
+                    startAlertRing(SOUND_TYPE, 6); // brief 6-second demo ring
                 });
             }
 
@@ -12549,6 +12651,8 @@ class AdminController
                         isPolling = false;
                         if (thisSeq !== activePollSeq && !force) return;
                         if (data.status === 'success') {
+                            if (data.alert_duration) ALERT_DURATION = data.alert_duration;
+                            if (data.sound_type) SOUND_TYPE = data.sound_type;
                             renderQueue(data.sessions || []);
                             if (data.selected_session && data.selected_session.uuid === activeSessionUuid) {
                                 renderSelectedSessionState(data.selected_session);
@@ -12575,13 +12679,29 @@ class AdminController
 
                 var html = '';
                 var hasNewSummon = false;
+                var activeSummonsNow = {};
+                var hasNewBackgroundMsg = false;
 
                 sessions.forEach(function(s) {
                     var isSelected = (s.uuid === activeSessionUuid);
                     var isSummoned = (s.summon_status === 'requested');
-                    if (isSummoned && !knownSummons[s.uuid]) {
-                        knownSummons[s.uuid] = true;
-                        hasNewSummon = true;
+                    if (isSummoned) {
+                        activeSummonsNow[s.uuid] = true;
+                        if (!knownSummons[s.uuid]) {
+                            knownSummons[s.uuid] = true;
+                            hasNewSummon = true;
+                        }
+                    }
+
+                    // Check for new visitor message in unselected sessions
+                    if (s.last_sender_type === 'user' && s.raw_last_message_at) {
+                        var prevTime = knownLastMsgTimestamps[s.uuid];
+                        if (prevTime && s.raw_last_message_at > prevTime) {
+                            if (!isTabActive || activeSessionUuid !== s.uuid) {
+                                hasNewBackgroundMsg = true;
+                            }
+                        }
+                        knownLastMsgTimestamps[s.uuid] = s.raw_last_message_at;
                     }
 
                     var badgeColor = '#64748b';
@@ -12589,7 +12709,7 @@ class AdminController
                     if (isSummoned) {
                         badgeColor = '#ef4444';
                         badgeLabel = '🚨 SUMMONED';
-                    } else if (s.status === 'taken_over') {
+                    } else if (s.summon_status === 'claimed' || s.status === 'taken_over') {
                         badgeColor = '#0284c7';
                         badgeLabel = 'Human Staff';
                     } else if (s.status === 'active') {
@@ -12616,12 +12736,37 @@ class AdminController
                     html += '</div>';
                 });
 
+                // Clear summons that are no longer requested
+                Object.keys(knownSummons).forEach(function(uuid) {
+                    if (!activeSummonsNow[uuid]) {
+                        delete knownSummons[uuid];
+                    }
+                });
+
                 container.innerHTML = html;
 
-                // Sound & Title alert on incoming summon
+                // Sound & Title alert on incoming summon or background new message
                 if (hasNewSummon) {
-                    playAlertSound();
-                    document.title = '🔴 (1) LIVE SUMMON - Sahdev Console';
+                    startAlertRing('chime', ALERT_DURATION);
+                    document.title = '🚨 (1) LIVE SUMMON - Sahdev Console';
+                } else if (hasNewBackgroundMsg) {
+                    startAlertRing('chime', ALERT_DURATION);
+                    document.title = '💬 New Message in Queue - Sahdev Console';
+                }
+
+                // Handle initial session selection & auto-claim from query string
+                if (!initialSessionHandled && INITIAL_SESSION_UUID) {
+                    var found = sessions.find(function(s) { return s.uuid === INITIAL_SESSION_UUID; });
+                    if (found) {
+                        initialSessionHandled = true;
+                        selectSession(found.uuid, found.id, found.client_id);
+                        if (AUTO_CLAIM && found.status !== 'taken_over') {
+                            setTimeout(function() {
+                                var btn = document.getElementById('btnClaimTakeover');
+                                if (btn) btn.click();
+                            }, 350);
+                        }
+                    }
                 }
 
                 // Attach Card Click Handlers
@@ -12638,6 +12783,8 @@ class AdminController
 
             // Select Session
             function selectSession(uuid, id, clientId) {
+                stopAlertRing();
+                document.title = docOriginalTitle;
                 activeSessionUuid = uuid;
                 activeSessionId = id;
                 activeClientId = clientId;
@@ -12658,7 +12805,6 @@ class AdminController
                 }
 
                 document.getElementById('chatComposerContainer').style.display = 'flex';
-                document.title = docOriginalTitle;
 
                 // Fetch Account Info for Column 3
                 fetchAccountInfo(id, clientId);
@@ -12671,12 +12817,16 @@ class AdminController
             function renderSelectedSessionState(session) {
                 var headerDetails = document.getElementById('chatHeaderDetails');
                 var headerActions = document.getElementById('chatHeaderActions');
-                var sneakPeekBar = document.getElementById('typingSneakPeekBar');
-                var sneakPeekText = document.getElementById('typingSneakPeekText');
 
                 if (headerDetails) {
-                    var statusPill = (session.status === 'taken_over') ? '<span class="label label-info">Human Takeover</span>' : '<span class="label label-success">Autonomous AI</span>';
-                    if (session.summon_status === 'requested') statusPill = '<span class="label label-danger">🚨 Live Summon</span>';
+                    var statusPill = (session.status === 'taken_over') ? '<span class="label label-info"><i class="fas fa-user-shield"></i> Human Takeover</span>' : '<span class="label label-success">Autonomous AI</span>';
+                    if (session.summon_status === 'requested') {
+                        statusPill = '<span class="label label-danger" style="animation:pulseDot 1.5s infinite;">🚨 Live Summon Requested</span>';
+                    } else if (session.summon_status === 'claimed') {
+                        statusPill = '<span class="label label-info"><i class="fas fa-user-shield"></i> Summon Claimed</span>';
+                    } else if (session.summon_status === 'dismissed') {
+                        statusPill = '<span class="label label-default">AI Active (Dismissed)</span>';
+                    }
 
                     headerDetails.innerHTML = '<div style="font-weight:700;font-size:14px;color:#0f172a;">Session #' + session.id + ' (' + session.uuid.substring(0, 8) + '...) ' + statusPill + '</div>'
                         + '<div style="font-size:11.5px;color:#64748b;"><i class="fas fa-link"></i> <a href="' + (session.source_page || '#') + '" target="_blank" style="color:#0284c7;">' + escapeHtml(session.source_domain || 'WHMCS') + '</a></div>';
@@ -12695,6 +12845,9 @@ class AdminController
                         actHtml += '  <option value="10">10 min inactivity</option>';
                         actHtml += '</select>';
                         actHtml += '<button type="button" id="btnClaimTakeover" class="btn btn-sm btn-success" style="font-weight:700;"><i class="fas fa-hand-paper"></i> Takeover Chat</button>';
+                        if (session.summon_status === 'requested') {
+                            actHtml += '<button type="button" id="btnDismissSummon" class="btn btn-sm btn-default" style="color:#ef4444;border-color:#fca5a5;font-weight:600;"><i class="fas fa-times-circle"></i> Dismiss Summon</button>';
+                        }
                     } else if (isAssignedToMe) {
                         actHtml += '<button type="button" id="btnReleaseTakeover" class="btn btn-sm btn-warning" style="font-weight:700;"><i class="fas fa-robot"></i> Release to AI</button>';
                     } else {
@@ -12708,12 +12861,41 @@ class AdminController
                     var btnTakeover = document.getElementById('btnClaimTakeover');
                     if (btnTakeover) {
                         btnTakeover.addEventListener('click', function() {
+                            stopAlertRing();
+                            delete knownSummons[activeSessionUuid];
+                            try {
+                                localStorage.setItem('sdv_summon_claimed_or_dismissed', JSON.stringify({
+                                    uuid: activeSessionUuid,
+                                    action: 'claimed',
+                                    ts: Date.now()
+                                }));
+                            } catch(e) {}
                             var tSelect = document.getElementById('takeoverTimerSelect');
                             var timeout = tSelect ? tSelect.value : 0;
                             var fd = new FormData();
                             fd.append('session_uuid', activeSessionUuid);
                             fd.append('timeout_mins', timeout);
                             fetch(AJAX_URL + '&action=admin_live_console_takeover', { method:'POST', body:fd, credentials:'same-origin' })
+                                .then(function(r) { return r.json(); })
+                                .then(function(d) { doPoll(true); });
+                        });
+                    }
+
+                    var btnDismiss = document.getElementById('btnDismissSummon');
+                    if (btnDismiss) {
+                        btnDismiss.addEventListener('click', function() {
+                            stopAlertRing();
+                            delete knownSummons[activeSessionUuid];
+                            try {
+                                localStorage.setItem('sdv_summon_claimed_or_dismissed', JSON.stringify({
+                                    uuid: activeSessionUuid,
+                                    action: 'dismissed',
+                                    ts: Date.now()
+                                }));
+                            } catch(e) {}
+                            var fd = new FormData();
+                            fd.append('session_uuid', activeSessionUuid);
+                            fetch(AJAX_URL + '&action=admin_live_console_dismiss_summon', { method:'POST', body:fd, credentials:'same-origin' })
                                 .then(function(r) { return r.json(); })
                                 .then(function(d) { doPoll(true); });
                         });
@@ -12744,12 +12926,14 @@ class AdminController
                 var container = document.getElementById('chatMessagesScroll');
                 if (!container) return;
 
-                if (lastMsgId === 0) {
+                var isFirstLoad = (lastMsgId === 0);
+                if (isFirstLoad) {
                     container.innerHTML = '';
                     renderedMsgIds = {};
                 }
 
                 var shouldScroll = false;
+                var hasNewVisitorMsg = false;
 
                 msgs.forEach(function(m) {
                     if (!m) return;
@@ -12785,6 +12969,10 @@ class AdminController
                     if (m.id > lastMsgId) lastMsgId = m.id;
                     if (m.id) renderedMsgIds[m.id] = true;
 
+                    if (m.sender_type === 'user') {
+                        hasNewVisitorMsg = true;
+                    }
+
                     var bubbleClass = 'msg-user';
                     var roleBadge = '';
                     if (m.sender_type === 'assistant') {
@@ -12813,6 +13001,18 @@ class AdminController
                 if (shouldScroll) {
                     container.scrollTop = container.scrollHeight;
                 }
+
+                // Notification Sound handling for incoming visitor messages in active chat
+                if (hasNewVisitorMsg && !isFirstLoad) {
+                    if (!isTabActive) {
+                        // Inactive tab: ring for X seconds then auto-silence
+                        startAlertRing('chime', ALERT_DURATION);
+                        document.title = '💬 New Visitor Message - Sahdev Console';
+                    } else {
+                        // Focused and active tab: single gentle pip
+                        playAlertSound('ping');
+                    }
+                }
             }
 
             // Send Staff Message
@@ -12825,6 +13025,15 @@ class AdminController
                 if (!text) return;
 
                 btnSend.disabled = true;
+                stopAlertRing();
+                try {
+                    localStorage.setItem('sdv_summon_claimed_or_dismissed', JSON.stringify({
+                        uuid: activeSessionUuid,
+                        action: 'claimed',
+                        ts: Date.now()
+                    }));
+                } catch(e) {}
+
                 var fd = new FormData();
                 fd.append('session_uuid', activeSessionUuid);
                 fd.append('message', text);
@@ -13074,12 +13283,16 @@ class AdminController
             doPoll(true);
             pollTimer = setInterval(function() { doPoll(false); }, POLL_INTERVAL);
 
-            // Handle tab blur / focus for adaptive polling
+            // Handle tab blur / focus for adaptive polling & audio ring silencing
             window.addEventListener('blur', function() {
+                isTabActive = false;
                 clearInterval(pollTimer);
                 pollTimer = setInterval(function() { doPoll(false); }, 12000); // Relax to 12s when blurred
             });
             window.addEventListener('focus', function() {
+                isTabActive = true;
+                stopAlertRing();
+                document.title = docOriginalTitle;
                 clearInterval(pollTimer);
                 pollTimer = setInterval(function() { doPoll(false); }, POLL_INTERVAL);
                 doPoll(true);
