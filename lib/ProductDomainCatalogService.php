@@ -257,14 +257,19 @@ class ProductDomainCatalogService
             }
         }
 
-        // 6. Default Fallback: Provide concise active catalog overview (max 4 plans)
+        // 6. Do not inject random catalog plans on unrelated questions (e.g. email setup, invoices, greetings)
         if (empty($matchedProducts)) {
-            $matchedReason = "Available active catalog overview";
-            $matchedProducts = array_slice($allProducts, 0, 4, true);
+            $isGeneralInquiry = preg_match('/\b(what do you (have|offer)|show me|catalog|services|options|hosting plans|products)\b/i', $text);
+            if ($isGeneralInquiry) {
+                $matchedReason = "Active catalog overview";
+                $matchedProducts = array_slice($allProducts, 0, 3, true);
+            } else {
+                return '';
+            }
         }
 
-        // Cap to max 6 products to prevent prompt bloat while giving rich details
-        $productsToFormat = array_slice($matchedProducts, 0, 6, true);
+        // Cap to max 4 products to prevent prompt bloat while giving rich details
+        $productsToFormat = array_slice($matchedProducts, 0, 4, true);
 
         return self::formatProductsContext($productsToFormat, $currency, $systemUrl, $matchedReason);
     }

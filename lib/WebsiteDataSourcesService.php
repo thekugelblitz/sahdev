@@ -292,12 +292,20 @@ class WebsiteDataSourcesService
         $name = !empty($source->name) ? $source->name : 'Official Website';
         $url = !empty($source->source_url) ? $source->source_url : '';
 
+        // Decode HTML entities (e.g. &quot;, &#039;) which frequently occur in cached scraped content
+        $cleanedRaw = html_entity_decode(html_entity_decode((string) $raw, ENT_QUOTES, 'UTF-8'), ENT_QUOTES, 'UTF-8');
+
         // Attempt JSON parse
-        $data = json_decode($raw, true);
+        $data = json_decode($cleanedRaw, true);
         if (json_last_error() !== JSON_ERROR_NONE || !is_array($data)) {
-            // Plain text / Markdown fallback
+            $data = json_decode((string) $raw, true);
+        }
+
+        if (json_last_error() !== JSON_ERROR_NONE || !is_array($data)) {
+            // Plain text / Markdown fallback - cap to 800 chars to avoid prompt bloat
             $header = "WEBSITE KNOWLEDGE SOURCE: {$name}" . ($url ? " ({$url})" : "");
-            return "{$header}\n" . trim($raw);
+            $safeSnippet = mb_substr(trim($cleanedRaw), 0, 800);
+            return "{$header}\n" . $safeSnippet;
         }
 
         return self::formatStructuredJsonSummary($name, $url, $data);
@@ -305,7 +313,7 @@ class WebsiteDataSourcesService
 
     /**
      * Parses structured AI summary JSON (supporting schemas like hostingspell.com/ai-summary)
-     * and compiles a rich, token-efficient Markdown digest.
+     * and compiles a lean, token-efficient Markdown digest (essential company profile, infrastructure, guarantees).
      */
     private static function formatStructuredJsonSummary(string $sourceName, string $sourceUrl, array $data): string
     {
@@ -313,7 +321,7 @@ class WebsiteDataSourcesService
 
         $siteTitle = $data['name'] ?? $sourceName;
         $siteUrl = $data['url'] ?? $sourceUrl;
-        $sections[] = "=== OFFICIAL WEBSITE AI SUMMARY: {$siteTitle}" . ($siteUrl ? " ({$siteUrl})" : "") . " ===";
+        $sections[] = "=== OFFICIAL WEBSITE SUMMARY: {$siteTitle}" . ($siteUrl ? " ({$siteUrl})" : "") . " ===";
 
         // 1. Company Profile & Trust
         if (!empty($data['company']) && is_array($data['company'])) {
@@ -362,119 +370,59 @@ class WebsiteDataSourcesService
             $sections[] = implode("\n", $iLines);
         }
 
-        // 3. Key Highlights & Features
+        // 3. Key Highlights & Guarantees
         if (!empty($data['key_features']) && is_array($data['key_features'])) {
-            $featList = array_slice($data['key_features'], 0, 12);
+            $featList = array_slice($data['key_features'], 0, 6);
             $sections[] = "CORE ADVANTAGES & GUARANTEES:\n- " . implode("\n- ", $featList);
         }
 
-        // 4. Hosting Products & Packages
+        // 4. Hosting Categories Overview (High-level summary without duplicating WHMCS catalog)
         if (!empty($data['hosting_products']) && is_array($data['hosting_products'])) {
-            $pLines = ["HOSTING PRODUCTS & SPECIFICATIONS:"];
+            $cats = [];
             foreach ($data['hosting_products'] as $pKey => $pGroup) {
                 if (!is_array($pGroup)) continue;
                 $pTitle = $pGroup['title'] ?? ucfirst(str_replace('_', ' ', $pKey));
-                $pDesc = $pGroup['description'] ?? '';
-                $pLines[] = "• [Product Category: {$pTitle}]" . ($pDesc ? " — {$pDesc}" : "");
-
-                // Plans list if directly under product
-                if (!empty($pGroup['plans']) && is_array($pGroup['plans'])) {
-                    foreach ($pGroup['plans'] as $plan) {
-                        $pName = $plan['name'] ?? 'Plan';
-                        $specs = [];
-                        if (!empty($plan['specs']) && is_array($plan['specs'])) {
-                            foreach ($plan['specs'] as $sk => $sv) {
-                                $specs[] = "{$sk}: {$sv}";
-                            }
-                        }
-                        $pricingStr = '';
-                        if (!empty($plan['pricing']) && is_array($plan['pricing'])) {
-                            $priceParts = [];
-                            foreach ($plan['pricing'] as $curr => $rates) {
-                                if (is_array($rates)) {
-                                    $m = $rates['monthly'] ?? ($rates['annual'] ?? null);
-                                    if ($m) $priceParts[] = "{$curr} {$m}" . (isset($rates['monthly']) ? '/mo' : '/yr');
-                                }
-                            }
-                            if (!empty($priceParts)) {
-                                $pricingStr = " | Pricing: " . implode(' / ', $priceParts);
-                            }
-                        }
-                        $orderUrl = !empty($plan['order_url']) ? " | Order Link: {$plan['order_url']}" : '';
-                        $specStr = !empty($specs) ? " (" . implode(', ', array_slice($specs, 0, 6)) . ")" : '';
-                        $pLines[] = "  - {$pName}{$specStr}{$pricingStr}{$orderUrl}";
-                    }
-                }
-
-                // Nested tiers (e.g. reseller hosting standard vs cloud, or combo hosting regions)
-                if (!empty($pGroup['tiers']) && is_array($pGroup['tiers'])) {
-                    foreach ($pGroup['tiers'] as $tKey => $tier) {
-                        $tTitle = $tier['title'] ?? ucfirst($tKey);
-                        $pLines[] = "  * Tier: {$tTitle}";
-                        if (!empty($tier['plans']) && is_array($tier['plans'])) {
-                            foreach ($tier['plans'] as $plan) {
-                                $pName = $plan['name'] ?? 'Plan';
-                                $orderUrl = !empty($plan['order_url']) ? " [{$plan['order_url']}]" : '';
-                                $pLines[] = "    - {$pName}{$orderUrl}";
-                            }
-                        }
-                    }
-                }
+                $cats[] = $pTitle;
             }
-            $sections[] = implode("\n", $pLines);
+            if (!empty($cats)) {
+                $sections[] = "HOSTING OFFERINGS: " . implode(', ', $cats);
+            }
         }
 
-        // 5. Domains & Registration
-        if (!empty($data['domains']) && is_array($data['domains'])) {
-            $dom = $data['domains'];
-            $dLines = ["DOMAIN REGISTRATION & OFFERS:"];
-            if (!empty($dom['free_domain_offer'])) $dLines[] = "- Free Domain Promotion: {$dom['free_domain_offer']}";
-            if (!empty($dom['register_url'])) $dLines[] = "- Domain Cart Link: {$dom['register_url']}";
-            if (!empty($dom['popular_tlds']) && is_array($dom['popular_tlds'])) {
-                $tlds = [];
-                foreach ($dom['popular_tlds'] as $t) {
-                    $tlds[] = is_array($t) ? ($t['tld'] . (isset($t['note']) ? " ({$t['note']})" : "")) : $t;
-                }
-                $dLines[] = "- Popular TLDs: " . implode(', ', array_slice($tlds, 0, 8));
-            }
-            $sections[] = implode("\n", $dLines);
-        }
-
-        // 6. Billing, Payment & Guarantees
+        // 5. Billing, Payment & Guarantees
         if (!empty($data['billing_and_payment']) && is_array($data['billing_and_payment'])) {
             $bp = $data['billing_and_payment'];
-            $bLines = ["BILLING, PAYMENT & MONEY-BACK TERMS:"];
-            if (!empty($bp['refund_policy'])) $bLines[] = "- Refund Policy: {$bp['refund_policy']}";
-            if (!empty($bp['refund_process'])) $bLines[] = "- Refund Process: {$bp['refund_process']}";
+            $bLines = ["BILLING & GUARANTEES:"];
+            if (!empty($bp['refund_policy'])) $bLines[] = "- Guarantee: {$bp['refund_policy']}";
+            if (!empty($bp['free_migration'])) $bLines[] = "- Migration: {$bp['free_migration']}";
             if (!empty($bp['payment_methods']) && is_array($bp['payment_methods'])) {
-                $bLines[] = "- Accepted Payment Methods: " . implode(', ', $bp['payment_methods']);
+                $bLines[] = "- Payment Methods: " . implode(', ', array_slice($bp['payment_methods'], 0, 6));
             }
-            if (!empty($bp['available_cycles']) && is_array($bp['available_cycles'])) {
-                $bLines[] = "- Available Billing Cycles: " . implode(', ', $bp['available_cycles']);
-            }
-            if (!empty($bp['free_migration'])) $bLines[] = "- Free Migration: {$bp['free_migration']}";
-            if (!empty($bp['discount_programs'])) $bLines[] = "- Discounts: {$bp['discount_programs']}";
             $sections[] = implode("\n", $bLines);
         }
 
-        // 7. Policies
+        // 6. Policy Directives
         if (!empty($data['policies']) && is_array($data['policies'])) {
             $pol = $data['policies'];
-            $polLines = ["POLICY DIRECTIVES:"];
-            if (!empty($pol['refund'])) $polLines[] = "- Money Back: {$pol['refund']}";
-            if (!empty($pol['prohibited_content'])) $polLines[] = "- Prohibited Content: {$pol['prohibited_content']}";
-            if (!empty($pol['allowed_content'])) $polLines[] = "- Allowed Content: {$pol['allowed_content']}";
+            $polLines = ["POLICIES:"];
+            if (!empty($pol['refund'])) $polLines[] = "- Refund: {$pol['refund']}";
+            if (!empty($pol['prohibited_content'])) $polLines[] = "- Prohibited: {$pol['prohibited_content']}";
             $sections[] = implode("\n", $polLines);
         }
 
-        // 8. Frequently Asked Questions (Top FAQs)
+        // 7. Frequently Asked Questions (Top 3 FAQs only)
         if (!empty($data['faqs']) && is_array($data['faqs'])) {
-            $faqLines = ["FREQUENTLY ASKED QUESTIONS (Official Answers):"];
+            $faqLines = ["FREQUENTLY ASKED QUESTIONS:"];
+            $count = 0;
             foreach ($data['faqs'] as $faq) {
                 if (empty($faq['question']) || empty($faq['answer'])) continue;
                 $faqLines[] = "Q: {$faq['question']}\nA: {$faq['answer']}";
+                $count++;
+                if ($count >= 3) break;
             }
-            $sections[] = implode("\n\n", $faqLines);
+            if ($count > 0) {
+                $sections[] = implode("\n", $faqLines);
+            }
         }
 
         // 9. Generic key fallback for keys not covered above

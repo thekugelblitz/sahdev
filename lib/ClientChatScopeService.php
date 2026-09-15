@@ -131,10 +131,11 @@ class ClientChatScopeService
                         ]);
                     }
 
-                    $services = $query->orderBy('tblhosting.id', 'desc')->limit(10)->get();
+                    $services = $query->orderBy('tblhosting.id', 'desc')->limit(12)->get();
 
                     $activeSvcs = [];
-                    $inactiveSvcs = [];
+                    $suspendedSvcs = [];
+                    $cancelledCount = 0;
 
                     foreach ($services as $s) {
                         $pName = $s->product_name ?: 'Hosting Service';
@@ -143,35 +144,38 @@ class ClientChatScopeService
                         $cycle = $s->billingcycle ? "[{$s->billingcycle}]" : '';
                         $retiredNote = !empty($s->product_retired) ? ' [Grandfathered/Retired Plan]' : '';
 
-                        $nsInfo = '';
-                        if ($includeNameservers && !empty($s->nameserver1)) {
-                            $nsList = array_filter([$s->nameserver1, $s->nameserver2, $s->nameserver3 ?? null, $s->nameserver4 ?? null]);
-                            $nsInfo = ' | Nameservers: ' . implode(', ', $nsList);
-                            if (!empty($s->server_hostname)) {
-                                $nsInfo .= " (Server: {$s->server_hostname})";
+                        $statusLower = strtolower((string) $s->domainstatus);
+                        if ($statusLower === 'active') {
+                            $nsInfo = '';
+                            if ($includeNameservers && !empty($s->nameserver1)) {
+                                $nsList = array_filter([$s->nameserver1, $s->nameserver2, $s->nameserver3 ?? null, $s->nameserver4 ?? null]);
+                                $nsInfo = ' | Nameservers: ' . implode(', ', $nsList);
+                                if (!empty($s->server_hostname)) {
+                                    $nsInfo .= " (Server: {$s->server_hostname})";
+                                }
                             }
-                        }
-
-                        $line = "- Service #{$s->id}: {$pName}{$retiredNote} | Domain: {$dom} | Status: {$s->domainstatus} {$cycle} {$due}{$nsInfo}";
-
-                        if (strcasecmp((string) $s->domainstatus, 'Active') === 0) {
-                            $activeSvcs[] = $line;
+                            $activeSvcs[] = "- Service #{$s->id}: {$pName}{$retiredNote} | Domain: {$dom} | Status: Active {$cycle} {$due}{$nsInfo}";
+                        } elseif (in_array($statusLower, ['suspended', 'pending'], true)) {
+                            $suspendedSvcs[] = "- Service #{$s->id}: {$pName} | Domain: {$dom} | Status: " . ucfirst($statusLower) . " (Direct to billing or awaiting setup)";
                         } else {
-                            $inactiveSvcs[] = $line;
+                            $cancelledCount++;
                         }
                     }
 
                     $svcText = "CLIENT ACTIVE SERVICES (Eligible for Support & Technical Guidance):\n"
                         . (!empty($activeSvcs) ? implode("\n", $activeSvcs) : "No currently active services.");
-                    if (!empty($inactiveSvcs)) {
-                        $svcText .= "\n\nCLIENT INACTIVE / SUSPENDED / PENDING SERVICES (Direct client to pay unpaid invoices or wait for provisioning; do NOT debug tech issues):\n"
-                            . implode("\n", $inactiveSvcs);
+                    if (!empty($suspendedSvcs)) {
+                        $svcText .= "\n\nCLIENT SUSPENDED / PENDING SERVICES (Direct client to pay unpaid invoices or wait for provisioning):\n"
+                            . implode("\n", $suspendedSvcs);
+                    }
+                    if ($cancelledCount > 0) {
+                        $svcText .= "\n(Account History: {$cancelledCount} inactive/cancelled legacy service(s) on file; details omitted)";
                     }
                     $sections[] = $svcText;
                 } catch (\Throwable $e) {}
             }
 
-            // 2. Hosting Addons
+            // 2. Hosting Addons (Active addons only)
             if (self::isSourceEnabled('client_chat_ds_hosting_addons', true)
                 && Capsule::schema()->hasTable('tblhostingaddons')
                 && Capsule::schema()->hasTable('tbladdons')
@@ -181,6 +185,7 @@ class ClientChatScopeService
                         ->join('tblhosting as h', 'h.id', '=', 'ha.hostingid')
                         ->join('tbladdons as a', 'a.id', '=', 'ha.addonid')
                         ->where('h.userid', $clientId)
+                        ->where('ha.status', 'Active')
                         ->select([
                             'a.name as addon_name',
                             'h.domain as service_domain',
@@ -189,7 +194,7 @@ class ClientChatScopeService
                             'ha.nextduedate'
                         ])
                         ->orderBy('ha.id', 'desc')
-                        ->limit(8)
+                        ->limit(5)
                         ->get();
 
                     if (self::hasItems($addons)) {
@@ -197,7 +202,7 @@ class ClientChatScopeService
                         foreach ($addons as $ad) {
                             $dom = $ad->service_domain ? " for {$ad->service_domain}" : '';
                             $due = ($ad->nextduedate && $ad->nextduedate !== '0000-00-00') ? " (Next Due: {$ad->nextduedate})" : '';
-                            $lines[] = "- Addon: {$ad->addon_name}{$dom} | Status: {$ad->addon_status} [{$ad->billingcycle}]{$due}";
+                            $lines[] = "- Addon: {$ad->addon_name}{$dom} | Status: Active [{$ad->billingcycle}]{$due}";
                         }
                         $sections[] = implode("\n", $lines);
                     }
@@ -224,7 +229,7 @@ class ClientChatScopeService
                             'pcos.optionname as selected_value'
                         ])
                         ->orderBy('h.id', 'desc')
-                        ->limit(10)
+                        ->limit(6)
                         ->get();
 
                     if (self::hasItems($cfgOptions)) {
@@ -240,15 +245,16 @@ class ClientChatScopeService
                 } catch (\Throwable $e) {}
             }
 
-            // 4. SSL Certificates
+            // 4. SSL Certificates (Active only)
             if (self::isSourceEnabled('client_chat_ds_ssl_orders', true)) {
                 $sslTable = Capsule::schema()->hasTable('tblsslorders') ? 'tblsslorders' : (Capsule::schema()->hasTable('tblssl') ? 'tblssl' : null);
                 if ($sslTable) {
                     try {
                         $sslOrders = Capsule::table($sslTable)
                             ->where('userid', $clientId)
+                            ->whereIn('status', ['Active', 'Completed'])
                             ->orderBy('id', 'desc')
-                            ->limit(4)
+                            ->limit(3)
                             ->get();
 
                         if (self::hasItems($sslOrders)) {
@@ -264,7 +270,7 @@ class ClientChatScopeService
                 }
             }
 
-            // 5. Registered Domains & Features
+            // 5. Registered Domains & Features (Active or Recent Grace Period only)
             if (self::isSourceEnabled('client_chat_ds_domains', true) && Capsule::schema()->hasTable('tbldomains')) {
                 try {
                     $checkAddons = self::isSourceEnabled('client_chat_ds_domain_addons', true);
@@ -286,7 +292,8 @@ class ClientChatScopeService
                         ->get($fields);
 
                     $activeDoms = [];
-                    $inactiveDoms = [];
+                    $expiringSoon = [];
+                    $inactiveCount = 0;
 
                     foreach ($domains as $d) {
                         $exp = ($d->expirydate && $d->expirydate !== '0000-00-00') ? "Expires: {$d->expirydate}" : '';
@@ -298,62 +305,71 @@ class ClientChatScopeService
                         if (!empty($d->emailforwarding)) $addons[] = 'Email Forwarding';
                         $addonStr = !empty($addons) ? ' (' . implode(', ', $addons) . ' Active)' : '';
 
-                        $line = "- Domain: {$d->domain} | Status: {$d->status} {$renew} {$exp}{$addonStr}";
-
-                        if (strcasecmp((string) $d->status, 'Active') === 0) {
-                            $activeDoms[] = $line;
+                        $stLower = strtolower((string) $d->status);
+                        if ($stLower === 'active') {
+                            $activeDoms[] = "- Domain: {$d->domain} | Status: Active {$renew} {$exp}{$addonStr}";
+                        } elseif ($stLower === 'expired' && !empty($d->expirydate) && $d->expirydate >= date('Y-m-d', strtotime('-30 days'))) {
+                            $expiringSoon[] = "- Domain: {$d->domain} | Status: Expired ({$exp}) - In Renewal Grace Period";
                         } else {
-                            $inactiveDoms[] = $line;
+                            $inactiveCount++;
                         }
                     }
 
                     $domText = "CLIENT ACTIVE DOMAINS (Eligible for DNS Management Assistance):\n"
                         . (!empty($activeDoms) ? implode("\n", $activeDoms) : "No active domains registered.");
-                    if (!empty($inactiveDoms)) {
-                        $domText .= "\n\nCLIENT INACTIVE / EXPIRED / PENDING DOMAINS (Direct to domain renewal):\n"
-                            . implode("\n", $inactiveDoms);
+                    if (!empty($expiringSoon)) {
+                        $domText .= "\n\nDOMAINS REQUIRING RENEWAL:\n" . implode("\n", $expiringSoon);
+                    }
+                    if ($inactiveCount > 0) {
+                        $domText .= "\n(Account History: {$inactiveCount} expired/cancelled legacy domain(s) on file)";
                     }
                     $sections[] = $domText;
                 } catch (\Throwable $e) {}
             }
 
-            // 6. Invoices
+            // 6. Invoices (High-Signal: Outstanding Unpaid Invoices Only)
             if (self::isSourceEnabled('client_chat_ds_invoices', true) && Capsule::schema()->hasTable('tblinvoices')) {
                 try {
-                    $invoices = Capsule::table('tblinvoices')
+                    $unpaidInvoices = Capsule::table('tblinvoices')
                         ->where('userid', $clientId)
-                        ->orderBy('id', 'desc')
-                        ->limit(5)
+                        ->whereIn('status', ['Unpaid', 'Payment Pending'])
+                        ->orderBy('duedate', 'asc')
+                        ->limit(3)
                         ->get(['id', 'invoicenum', 'total', 'status', 'duedate']);
 
-                    $invLines = [];
-                    foreach ($invoices as $inv) {
-                        $num = !empty($inv->invoicenum) ? $inv->invoicenum : '#' . $inv->id;
-                        $amt = self::formatMoney($inv->total, $currency);
-                        $invLines[] = "- Invoice {$num}: Total {$amt} | Status: {$inv->status} | Due: {$inv->duedate}";
+                    if (self::hasItems($unpaidInvoices)) {
+                        $invLines = ["CLIENT OUTSTANDING INVOICES (Require Payment):"];
+                        foreach ($unpaidInvoices as $inv) {
+                            $num = !empty($inv->invoicenum) ? $inv->invoicenum : '#' . $inv->id;
+                            $amt = self::formatMoney($inv->total, $currency);
+                            $invLines[] = "- Invoice {$num}: Total {$amt} | Status: Unpaid | Due: {$inv->duedate}";
+                        }
+                        $sections[] = implode("\n", $invLines);
+                    } else {
+                        $sections[] = "CLIENT BILLING STATUS: All invoices paid / No outstanding unpaid invoices.";
                     }
-
-                    $sections[] = "RECENT INVOICES (Read-Only):\n"
-                        . (!empty($invLines) ? implode("\n", $invLines) : "No recent invoices.");
                 } catch (\Throwable $e) {}
             }
 
-            // 7. Support Tickets
+            // 7. Support Tickets (High-Signal: Open / In-Progress Tickets Only)
             if (self::isSourceEnabled('client_chat_ds_tickets', true) && Capsule::schema()->hasTable('tbltickets')) {
                 try {
-                    $tickets = Capsule::table('tbltickets')
+                    $openTickets = Capsule::table('tbltickets')
                         ->where('userid', $clientId)
-                        ->orderBy('id', 'desc')
-                        ->limit(5)
+                        ->whereNotIn('status', ['Closed', 'Resolved'])
+                        ->orderBy('lastreply', 'desc')
+                        ->limit(3)
                         ->get(['id', 'tid', 'title', 'status', 'lastreply']);
 
-                    $tktLines = [];
-                    foreach ($tickets as $t) {
-                        $tktLines[] = "- Ticket #{$t->tid}: {$t->title} | Status: {$t->status} | Last Activity: {$t->lastreply}";
+                    if (self::hasItems($openTickets)) {
+                        $tktLines = ["ACTIVE SUPPORT TICKETS (In-Progress with Staff):"];
+                        foreach ($openTickets as $t) {
+                            $tktLines[] = "- Ticket #{$t->tid}: {$t->title} | Status: {$t->status} | Last Activity: {$t->lastreply}";
+                        }
+                        $sections[] = implode("\n", $tktLines);
+                    } else {
+                        $sections[] = "SUPPORT TICKETS: No open support tickets.";
                     }
-
-                    $sections[] = "RECENT TICKETS (Read-Only):\n"
-                        . (!empty($tktLines) ? implode("\n", $tktLines) : "No recent tickets.");
                 } catch (\Throwable $e) {}
             }
 

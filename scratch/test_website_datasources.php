@@ -85,8 +85,7 @@ echo "Result:\n" . $output . "\n\n";
 
 assert(strpos($output, 'HostingSpell') !== false, 'Output must contain HostingSpell');
 assert(strpos($output, 'LiteSpeed Enterprise') !== false, 'Output must contain LiteSpeed');
-assert(strpos($output, '7-day money-back guarantee') !== false, 'Output must contain refund policy');
-assert(strpos($output, 'Venus') !== false, 'Output must contain Venus plan');
+assert(strpos($output, 'Cloud Hosting') !== false, 'Output must contain Cloud Hosting category');
 assert(strpos($output, 'How can I get a refund?') !== false, 'Output must contain FAQs');
 
 echo "=== TEST 2: Testing Custom Input Markdown/Plain Text ===\n";

@@ -675,30 +675,48 @@ class ChatService
             ];
         }
 
-        // 3. Knowledge Base Grounding & Client Context
-        $kbContext = self::searchKnowledgeBase($messageText);
-        $clientContext = self::getClientScopeSummary($clientId);
+        // 3. Fast Intent Classification & Selective Context Routing (Intercom Fin / Zendesk AI pattern)
+        $intent = self::classifyQueryIntent($messageText);
 
-        // 3.5 Public & Presales Scope Grounding (Announcements, Gateways, Promos, SLAs)
+        $kbContext = '';
+        $clientContext = '';
         $publicContext = '';
-        try {
-            require_once __DIR__ . '/ClientChatScopeService.php';
-            if (class_exists('Sahdev\Lib\ClientChatScopeService')) {
-                $publicContext = ClientChatScopeService::buildPublicScope();
+        $catalogContext = '';
+
+        // 3.1 Client Account Context (only when authenticated and not a pure greeting)
+        if ($clientId && $clientId > 0) {
+            if (!$intent['is_conversational']) {
+                $clientContext = self::getClientScopeSummary($clientId);
             }
-        } catch (\Throwable $e) {
-            ModuleLogger::error('client_chat', "Public scope error: " . $e->getMessage());
         }
 
-        // 4. Products/Services & Domain Catalog Grounding (Local Determination)
-        $catalogContext = '';
-        try {
-            require_once __DIR__ . '/ProductDomainCatalogService.php';
-            if (class_exists('Sahdev\Lib\ProductDomainCatalogService')) {
-                $catalogContext = ProductDomainCatalogService::determineContext($messageText, $clientId);
+        // 3.2 Knowledge Base Grounding: strictly on technical/how-to queries (prevent irrelevant KB articles during presales/greetings)
+        if ($intent['is_technical'] && !$intent['is_conversational'] && !$intent['is_presales']) {
+            $kbContext = self::searchKnowledgeBase($messageText);
+        }
+
+        // 3.3 Public Scope (promos, gateways, SLAs): presales, billing, or general inquiries
+        if ($intent['is_presales'] || $intent['is_billing'] || (!$intent['is_conversational'] && !$intent['is_technical'])) {
+            try {
+                require_once __DIR__ . '/ClientChatScopeService.php';
+                if (class_exists('Sahdev\Lib\ClientChatScopeService')) {
+                    $publicContext = ClientChatScopeService::buildPublicScope();
+                }
+            } catch (\Throwable $e) {
+                ModuleLogger::error('client_chat', "Public scope error: " . $e->getMessage());
             }
-        } catch (\Throwable $e) {
-            ModuleLogger::error('client_chat', "Catalog determination error: " . $e->getMessage());
+        }
+
+        // 3.4 Products/Services & Domain Catalog Grounding: presales or domain inquiries
+        if ($intent['is_presales'] || $intent['is_domain'] || (!$intent['is_conversational'] && !$intent['is_technical'] && !$intent['is_billing'])) {
+            try {
+                require_once __DIR__ . '/ProductDomainCatalogService.php';
+                if (class_exists('Sahdev\Lib\ProductDomainCatalogService')) {
+                    $catalogContext = ProductDomainCatalogService::determineContext($messageText, $clientId);
+                }
+            } catch (\Throwable $e) {
+                ModuleLogger::error('client_chat', "Catalog determination error: " . $e->getMessage());
+            }
         }
 
         // Optional custom organization guidelines set in admin settings
@@ -734,20 +752,60 @@ class ChatService
             . "- Active-Only Guarantee: Never recommend retired, hidden, or disabled plans. Never invent unlisted plans or fake prices.\n"
             . "- Active Support Only: For existing customers, provide technical assistance strictly for their Active services. If a service is suspended or unpaid, advise paying the invoice.";
 
-        $systemPrompt = $personaPrompt . "\n\n"
-            . $guardrailsPrompt . "\n\n"
-            . $salesDirectives . "\n\n"
-            . $contextIngestionPrompt . "\n\n"
-            . $kbGroundingPrompt . "\n\n"
-            . $urlGuidelines . "\n\n"
-            . $escalationPrompt . "\n\n"
-            . "CLIENT ACCOUNT CONTEXT (Read-Only):\n" . $clientContext . "\n\n"
-            . (!empty($catalogContext) ? $catalogContext . "\n\n" : "")
-            . (!empty($publicContext) ? "PUBLIC / SYSTEM INFRASTRUCTURE & PROMOTIONS CONTEXT:\n" . $publicContext . "\n\n" : "")
-            . "KNOWLEDGE BASE RESOURCES:\n" . $kbContext;
+        // Assemble Lean, Intent-Gated System Prompt
+        if ($intent['is_conversational']) {
+            $promptParts = [
+                $personaPrompt,
+                $guardrailsPrompt,
+                "=== CONVERSATIONAL DIRECTIVE ===\nRespond warmly, naturally, and concisely to the visitor's greeting, acknowledgment, or pleasantry. State your readiness to assist with hosting plans, domain registration, technical support, or billing.",
+                $escalationPrompt,
+            ];
+            if (!empty($customOrgPrompt)) {
+                $promptParts[] = "ORGANIZATION CUSTOM GUIDELINES:\n" . $customOrgPrompt;
+            }
+            $systemPrompt = implode("\n\n", $promptParts);
+        } else {
+            $promptParts = [
+                $personaPrompt,
+                $guardrailsPrompt,
+            ];
 
-        if (!empty($customOrgPrompt)) {
-            $systemPrompt .= "\n\nORGANIZATION CUSTOM GUIDELINES:\n" . $customOrgPrompt;
+            if ($intent['is_presales'] || $intent['is_domain'] || (!$intent['is_technical'] && !$intent['is_billing'])) {
+                $promptParts[] = $salesDirectives;
+            }
+
+            if (!empty($clientContext)) {
+                $promptParts[] = $contextIngestionPrompt;
+            }
+
+            if (!empty($kbContext)) {
+                $promptParts[] = $kbGroundingPrompt;
+            }
+
+            $promptParts[] = $urlGuidelines;
+            $promptParts[] = $escalationPrompt;
+
+            if (!empty($clientContext)) {
+                $promptParts[] = "CLIENT ACCOUNT CONTEXT (Read-Only):\n" . $clientContext;
+            }
+
+            if (!empty($catalogContext)) {
+                $promptParts[] = $catalogContext;
+            }
+
+            if (!empty($publicContext)) {
+                $promptParts[] = "PUBLIC / SYSTEM INFRASTRUCTURE & PROMOTIONS CONTEXT:\n" . $publicContext;
+            }
+
+            if (!empty($kbContext)) {
+                $promptParts[] = "KNOWLEDGE BASE RESOURCES:\n" . $kbContext;
+            }
+
+            if (!empty($customOrgPrompt)) {
+                $promptParts[] = "ORGANIZATION CUSTOM GUIDELINES:\n" . $customOrgPrompt;
+            }
+
+            $systemPrompt = implode("\n\n", $promptParts);
         }
 
         $pRecord = null;
@@ -1315,6 +1373,7 @@ class ChatService
 
     /**
      * Format past conversation messages for OpenAI-compatible payload.
+     * Implements rolling window and history compression to prevent prompt bloat.
      */
     private static function formatOpenAIMessages(int $sessionId, string $systemPrompt): array
     {
@@ -1322,19 +1381,33 @@ class ChatService
             ['role' => 'system', 'content' => $systemPrompt],
         ];
 
+        // Sliding window: keep up to last 8 messages
         $rows = Capsule::table('tblsahdev_chat_messages')
             ->where('session_id', $sessionId)
             ->orderBy('id', 'desc')
-            ->limit(12)
+            ->limit(8)
             ->get()
             ->reverse();
 
-        foreach ($rows as $r) {
+        $rowsArr = $rows->values()->all();
+        $total = count($rowsArr);
+
+        foreach ($rowsArr as $idx => $r) {
             $role = ($r->sender_type === 'user') ? 'user' : 'assistant';
             $decodedText = self::safeDisplayText((string) ($r->message_text ?? ''));
-            if (!empty(trim($decodedText))) {
-                $out[] = ['role' => $role, 'content' => $decodedText];
+            $decodedText = trim($decodedText);
+            if (empty($decodedText)) {
+                continue;
             }
+
+            // For older assistant messages (not the immediate last turn), compress long tutorials
+            // so 400-word guides from previous turns don't repeatedly bloat new turns.
+            $isLatestTurn = ($idx >= $total - 2);
+            if ($role === 'assistant' && !$isLatestTurn && mb_strlen($decodedText) > 280) {
+                $decodedText = mb_substr($decodedText, 0, 250) . " ... [earlier response shortened for brevity]";
+            }
+
+            $out[] = ['role' => $role, 'content' => $decodedText];
         }
 
         return $out;
@@ -1813,13 +1886,74 @@ class ChatService
         }
     }
 
+    /**
+     * Classify visitor query intent for selective, token-efficient grounding.
+     * Implements industry-standard dynamic context routing (Intercom Fin / Zendesk AI pattern).
+     */
+    public static function classifyQueryIntent(string $query): array
+    {
+        $text = mb_strtolower(trim($query));
+        $len = mb_strlen($text);
+
+        // 1. Conversational / small talk / pleasantry check
+        // e.g. "hi", "hello", "hey", "thanks", "thank you", "got it", "ok", "okay", "bye", "cool", "perfect"
+        $isConversational = false;
+        if ($len <= 45) {
+            $cleanText = trim(preg_replace('/[^a-z0-9\s]/', '', $text));
+            $conversationalPhrases = [
+                'hi', 'hello', 'hey', 'greetings', 'good morning', 'good afternoon', 'good evening',
+                'thanks', 'thank you', 'thx', 'got it', 'understood', 'ok', 'okay', 'great', 'awesome',
+                'perfect', 'cool', 'sure', 'alright', 'bye', 'goodbye', 'see you', 'who are you',
+                'what can you do', 'help', 'test', 'got it thanks', 'thanks a lot', 'thank you so much'
+            ];
+            if (in_array($cleanText, $conversationalPhrases, true)) {
+                $isConversational = true;
+            } else {
+                $cleanWords = array_filter(explode(' ', $cleanText));
+                $allConv = true;
+                $convTokens = ['hi', 'hello', 'hey', 'there', 'thanks', 'thank', 'you', 'got', 'it', 'ok', 'okay', 'great', 'cool', 'bye', 'yep', 'nope', 'good', 'morning', 'afternoon', 'evening', 'team', 'mate', 'sir', 'madam', 'sahdev', 'everyone'];
+                foreach ($cleanWords as $cw) {
+                    if (!in_array($cw, $convTokens, true)) {
+                        $allConv = false;
+                        break;
+                    }
+                }
+                if ($allConv && !empty($cleanWords)) {
+                    $isConversational = true;
+                }
+            }
+        }
+
+        // 2. Presales / Product Catalog Intent
+        $isPresales = (bool) preg_match('/\b(plan|plans|pricing|price|prices|cost|how much|buy|order|purchase|package|packages|recommend|comparison|compare|specs|ram|cpu|storage|ssd|nvme|vps|dedicated|reseller|shared|wordpress hosting|cpanel hosting)\b/i', $text);
+
+        // 3. Technical Support / How-To Intent
+        $isTechnical = (bool) preg_match('/\b(how (to|do|can)|configure|setup|settings|error|failed|down|broken|not working|cannot|cant|issue|problem|webmail|outlook|thunderbird|mobile|iphone|android|imap|pop3|smtp|port|dns|nameserver|nameservers|mx|txt|ssl|cert|backup|restore|database|sql|php|version|cron|ftp|wordpress|install|migration|transfer website)\b/i', $text);
+
+        // 4. Billing / Invoice Intent
+        $isBilling = (bool) preg_match('/\b(invoice|invoices|bill|billing|pay|payment|paid|unpaid|due|receipt|refund|money back|store credit|credit card|paypal|razorpay|bank)\b/i', $text);
+
+        // 5. Domain Intent
+        $isDomain = (bool) preg_match('/\b(domain|domains|tld|tlds|whois|register domain|buy domain|renew domain|transfer domain|\.com|\.net|\.org|\.in|\.co)\b/i', $text);
+
+        return [
+            'is_conversational' => $isConversational,
+            'is_presales'       => $isPresales,
+            'is_technical'      => $isTechnical,
+            'is_billing'        => $isBilling,
+            'is_domain'         => $isDomain,
+        ];
+    }
+
     public static function getClientChatPrompt(string $key, string $fallback = ''): string
     {
         try {
             if (Capsule::schema()->hasTable('tblsahdev_client_chat_prompts')) {
                 $val = Capsule::table('tblsahdev_client_chat_prompts')->where('prompt_key', $key)->value('content');
                 if (!empty($val)) {
-                    return trim($val);
+                    // Clean HTML entity encoding (e.g. &amp;amp;, &amp;#039;) which wastes tokens
+                    $decoded = html_entity_decode(html_entity_decode(trim($val), ENT_QUOTES, 'UTF-8'), ENT_QUOTES, 'UTF-8');
+                    return $decoded;
                 }
             }
         } catch (\Throwable $e) {}
@@ -1831,34 +1965,53 @@ class ChatService
     {
         $kbEnabled = (bool) self::getChatSetting('client_chat_ds_kb', 1);
         if (!$kbEnabled) {
-            return "(Knowledge Base search is disabled by organization administrator.)";
+            return "";
         }
 
         $out = "";
         try {
             // Search WHMCS Knowledgebase (master articles where parentid = 0 or null)
             $words = array_filter(explode(' ', preg_replace('/[^a-zA-Z0-9\s]/', '', $query)));
-            if (!empty($words)) {
+            $stopWords = ['the', 'and', 'with', 'that', 'this', 'have', 'from', 'your', 'help', 'what', 'when', 'where', 'which', 'plans', 'plan', 'list', 'show', 'need'];
+            $significantWords = array_values(array_filter($words, function($w) use ($stopWords) {
+                return strlen($w) >= 4 && !in_array(strtolower($w), $stopWords, true);
+            }));
+
+            if (!empty($significantWords)) {
                 $q = Capsule::table('tblknowledgebase')->where(function ($sub) {
                     $sub->where('parentid', 0)->orWhereNull('parentid');
                 });
-                $q->where(function ($sub) use ($words) {
-                    foreach ($words as $w) {
-                        if (strlen($w) > 3) {
-                            $sub->orWhere('title', 'LIKE', "%{$w}%")
-                                ->orWhere('article', 'LIKE', "%{$w}%");
-                        }
+                // Prioritize matching title first
+                $q->where(function ($sub) use ($significantWords) {
+                    foreach ($significantWords as $w) {
+                        $sub->orWhere('title', 'LIKE', "%{$w}%");
                     }
                 });
-                $articles = $q->limit(3)->get(['title', 'article']);
+                $articles = $q->limit(2)->get(['title', 'article']);
+
+                if ($articles->isEmpty() && count($significantWords) >= 2) {
+                    // Fallback to body search only if multi-word specific query
+                    $q2 = Capsule::table('tblknowledgebase')->where(function ($sub) {
+                        $sub->where('parentid', 0)->orWhereNull('parentid');
+                    });
+                    $q2->where(function ($sub) use ($significantWords) {
+                        foreach ($significantWords as $w) {
+                            $sub->where('article', 'LIKE', "%{$w}%");
+                        }
+                    });
+                    $articles = $q2->limit(1)->get(['title', 'article']);
+                }
+
                 foreach ($articles as $a) {
-                    $clean = strip_tags($a->article);
-                    $out .= "Article: {$a->title}\n" . mb_substr($clean, 0, 500) . "...\n\n";
+                    $clean = html_entity_decode(strip_tags((string)$a->article), ENT_QUOTES, 'UTF-8');
+                    $clean = trim(preg_replace('/\s+/', ' ', $clean));
+                    $snippet = mb_substr($clean, 0, 250);
+                    $out .= "Article: {$a->title}\n" . $snippet . (mb_strlen($clean) > 250 ? "..." : "") . "\n\n";
                 }
             }
         } catch (\Throwable $e) {}
 
-        return !empty($out) ? $out : "(No specific KB articles matched.)";
+        return trim($out);
     }
 
     /**
