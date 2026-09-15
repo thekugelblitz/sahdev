@@ -34,7 +34,7 @@ function sahdev_config()
         // Default language
         'language' => 'english',
         // Version number
-        'version' => '3.1.2',
+        'version' => '4.0',
         'fields' => [
             // Settings are handled in a custom admin UI built in sahdev_output,
             // but we can define standard WHMCS module settings here if we want them rendered automatically.
