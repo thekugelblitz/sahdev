@@ -193,17 +193,6 @@
         .sdv-em-btn:hover {
             background: rgba(255, 255, 255, 0.22);
         }
-        .sdv-em-takeover-banner {
-            background: #ecfdf5;
-            color: #065f46;
-            border-bottom: 1px solid #a7f3d0;
-            padding: 8px 14px;
-            font-size: 12px;
-            display: none;
-            align-items: center;
-            gap: 6px;
-            font-weight: 600;
-        }
         .sdv-em-messages {
             flex: 1;
             overflow-y: auto;
@@ -382,13 +371,11 @@
                 </div>
             </div>
             <div class="sdv-em-actions">
-                <button type="button" class="sdv-em-btn" id="sdv-em-summon-btn" title="Request Live Staff">🧑‍💼 Human</button>
+                <button type="button" class="sdv-em-btn" id="sdv-em-summon-btn" title="Request Live Agent" aria-label="Request Live Agent">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg>
+                </button>
                 <button type="button" class="sdv-em-btn" id="sdv-em-close-btn" title="Minimize">&minus;</button>
             </div>
-        </div>
-        <div class="sdv-em-takeover-banner" id="sdv-em-takeover-banner">
-            <span>🧑‍💼</span>
-            <span id="sdv-em-takeover-text">Live Support Staff has joined the conversation</span>
         </div>
         <div class="sdv-em-messages" id="sdv-em-msgs"></div>
         <div class="sdv-em-footer">
@@ -408,8 +395,6 @@
     var sendBtn = document.getElementById('sdv-em-send');
     var summonBtn = document.getElementById('sdv-em-summon-btn');
     var closeBtn = document.getElementById('sdv-em-close-btn');
-    var takeoverBanner = document.getElementById('sdv-em-takeover-banner');
-    var takeoverText = document.getElementById('sdv-em-takeover-text');
 
     // 5. Render Pre-Chat Form if Not Identified
     function renderPreChatForm() {
@@ -526,13 +511,38 @@
         }).catch(function(){});
     }
 
-    function appendMsg(role, text, staffName) {
+    function appendMsg(role, text, staffName, msgId) {
+        if (!text) return null;
+        var rawText = String(text).trim();
+        if (!rawText) return null;
+
+        if (msgId && document.getElementById('sdv-em-msg-' + msgId)) {
+            return document.getElementById('sdv-em-msg-' + msgId);
+        }
+
+        // Deduplication against recent messages
+        var norm = rawText.replace(/\s+/g, ' ').toLowerCase();
+        var bubbles = msgsEl ? msgsEl.children : [];
+        var start = Math.max(0, bubbles.length - 8);
+        for (var i = bubbles.length - 1; i >= start; i--) {
+            var b = bubbles[i];
+            var bText = (b.getAttribute('data-msg-text') || b.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
+            if (bText && bText === norm) {
+                if (msgId && !b.id) b.id = 'sdv-em-msg-' + msgId;
+                return b;
+            }
+        }
+
         var msg = document.createElement('div');
         msg.className = 'sdv-em-msg ' + (role === 'user' ? 'sdv-em-msg-user' : (role === 'staff' ? 'sdv-em-msg-staff' : 'sdv-em-msg-bot'));
-        if (role === 'staff' && staffName) {
-            msg.innerHTML = '<div class="sdv-em-msg-staff-badge">🧑‍💼 ' + escapeHtml(staffName) + ' (Staff)</div>' + escapeHtml(text).replace(/\n/g, '<br/>');
+        msg.setAttribute('data-msg-text', rawText);
+        if (msgId) msg.id = 'sdv-em-msg-' + msgId;
+
+        if (role === 'staff') {
+            var name = staffName || 'Support Agent';
+            msg.innerHTML = '<div class="sdv-em-msg-staff-badge"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> ' + escapeHtml(name) + '</div>' + escapeHtml(rawText).replace(/\n/g, '<br/>');
         } else {
-            msg.innerHTML = escapeHtml(text).replace(/\n/g, '<br/>');
+            msg.innerHTML = escapeHtml(rawText).replace(/\n/g, '<br/>');
         }
         msgsEl.appendChild(msg);
         msgsEl.scrollTop = msgsEl.scrollHeight;
@@ -540,9 +550,18 @@
     }
 
     function appendSystemNote(text) {
+        var rawText = String(text || '').trim();
+        if (!rawText) return;
+        var norm = rawText.replace(/\s+/g, ' ').toLowerCase();
+        var bubbles = msgsEl ? msgsEl.querySelectorAll('.sdv-em-system-note') : [];
+        for (var i = bubbles.length - 1; i >= 0 && i >= bubbles.length - 3; i--) {
+            if ((bubbles[i].textContent || '').replace(/\s+/g, ' ').trim().toLowerCase() === norm) {
+                return;
+            }
+        }
         var note = document.createElement('div');
         note.className = 'sdv-em-system-note';
-        note.textContent = text;
+        note.textContent = rawText;
         msgsEl.appendChild(note);
         msgsEl.scrollTop = msgsEl.scrollHeight;
     }
@@ -590,16 +609,12 @@
                 sdvSet('sdv_embed_session_uuid', sessionUuid);
             }
             if (d && (d.is_takeover || d.status === 'taken_over')) {
-                if (!isStaffTakeover) {
-                    isStaffTakeover = true;
-                    takeoverBanner.style.display = 'flex';
-                    takeoverText.textContent = 'Support Agent is reviewing your message';
-                }
+                isStaffTakeover = true;
                 startPolling();
                 return;
             }
             if (d && d.reply) {
-                appendMsg('bot', d.reply);
+                appendMsg('bot', d.reply, null, d.message_id || 0);
             }
         }).catch(function(err){
             isSending = false;
@@ -626,7 +641,7 @@
             body: fd,
             credentials: 'include'
         }).then(function(r){ return r.json(); }).then(function(d){
-            appendSystemNote('🚨 A live support agent has been notified and will join shortly. Please feel free to describe your issue while you wait.');
+            appendSystemNote('🔔 A live support agent has been notified and will join shortly. Feel free to describe your inquiry in the interim.');
         }).catch(function(){});
     }
 
@@ -647,23 +662,27 @@
             }).then(function(r){ return r.json(); }).then(function(d){
                 if (!d || !d.success) return;
                 // Handle new incoming staff messages
+                if (d.messages && d.messages.length > 0) {
+                    d.messages.forEach(function(m) {
+                        if (m.sender_type === 'staff') {
+                            appendMsg('staff', m.message_text, m.sender_name || 'Support Agent', m.id);
+                        } else if (m.sender_type === 'system') {
+                            appendSystemNote(m.message_text);
+                        }
+                    });
+                }
                 if (d.new_messages && d.new_messages.length > 0) {
                     d.new_messages.forEach(function(m) {
                         if (m.sender_role === 'staff' || m.is_staff) {
-                            appendMsg('staff', m.message_content, m.admin_name || 'Support Agent');
+                            appendMsg('staff', m.message_content || m.message_text, m.admin_name || m.sender_name || 'Support Agent', m.id);
                         }
                     });
                 }
                 // Handle takeover status change
                 if (d.status === 'live_takeover' || (d.takeover_admin_id && d.takeover_admin_id > 0)) {
-                    if (!isStaffTakeover) {
-                        isStaffTakeover = true;
-                        takeoverBanner.style.display = 'flex';
-                        takeoverText.textContent = (d.takeover_admin_name || 'Live Support Agent') + ' is assisting you live';
-                    }
+                    isStaffTakeover = true;
                 } else if (isStaffTakeover && d.status !== 'live_takeover') {
                     isStaffTakeover = false;
-                    takeoverBanner.style.display = 'none';
                 }
             }).catch(function(){});
         }, 3000);

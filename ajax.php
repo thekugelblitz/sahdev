@@ -409,8 +409,13 @@ if ($isClientChatAction) {
             $reason = trim((string) ($_REQUEST['reason'] ?? 'User requested live human agent'));
             $session = Capsule::table('tblsahdev_chat_sessions')->where('session_uuid', $sessionUuid)->first();
             if ($session) {
-                \Sahdev\Lib\ChatService::triggerHumanSummon((int)$session->id, $reason);
-                echo json_encode(['status' => 'success', 'message' => 'Live human agent has been requested.']);
+                $summonRes = \Sahdev\Lib\ChatService::triggerHumanSummon((int)$session->id, $reason);
+                $msgId = is_numeric($summonRes) ? (int)$summonRes : 0;
+                echo json_encode([
+                    'status'     => 'success',
+                    'message'    => 'Live human agent has been requested.',
+                    'message_id' => $msgId,
+                ]);
             } else {
                 echo json_encode(['status' => 'error', 'message' => 'Session not found.']);
             }

@@ -720,11 +720,13 @@ class ChatService
             ModuleLogger::warning('client_chat', 'No active AI Provider could be resolved for Client Live Chat. Please assign an AI Provider in Addons > Sahdev > AI Providers.');
             $fallback = "Thank you for reaching out! Our team is currently reviewing your message. You can also open a support ticket for immediate assistance.";
             $fallback = self::normalizeMarkdownLinks($fallback);
-            self::recordAssistantMessage($sessionId, $fallback);
+            $msgId = self::recordAssistantMessage($sessionId, $fallback);
             return [
-                'success'    => true,
-                'reply'      => $fallback,
-                'debug_hint' => 'No active AI Provider configured for client live chat.',
+                'success'         => true,
+                'message_id'      => $msgId,
+                'user_message_id' => $userMsgId ?? null,
+                'reply'           => $fallback,
+                'debug_hint'      => 'No active AI Provider configured for client live chat.',
             ];
         }
 
@@ -793,12 +795,14 @@ class ChatService
             }
 
             $errReply = self::normalizeMarkdownLinks($errReply);
-            self::recordAssistantMessage($sessionId, $errReply);
+            $msgId = self::recordAssistantMessage($sessionId, $errReply);
             return [
-                'success'      => true,
-                'reply'        => $errReply,
-                'can_escalate' => true,
-                'error'        => $e->getMessage(),
+                'success'         => true,
+                'message_id'      => $msgId,
+                'user_message_id' => $userMsgId ?? null,
+                'reply'           => $errReply,
+                'can_escalate'    => true,
+                'error'           => $e->getMessage(),
             ];
         }
     }
@@ -2347,7 +2351,7 @@ class ChatService
     /**
      * Trigger a human agent summon alert for a live chat session.
      */
-    public static function triggerHumanSummon(int $sessionId, string $reason = ''): bool
+    public static function triggerHumanSummon(int $sessionId, string $reason = '')
     {
         try {
             $session = Capsule::table('tblsahdev_chat_sessions')->where('id', $sessionId)->first();
@@ -2362,7 +2366,7 @@ class ChatService
             ]);
 
             // Add notification message in the chat
-            Capsule::table('tblsahdev_chat_messages')->insert([
+            $msgId = Capsule::table('tblsahdev_chat_messages')->insertGetId([
                 'session_id'   => $sessionId,
                 'sender_type'  => 'system',
                 'sender_id'    => 0,
@@ -2372,7 +2376,7 @@ class ChatService
             ]);
 
             ModuleLogger::info('client_chat', "Human agent summoned for session #{$sessionId} (Reason: {$reason})");
-            return true;
+            return $msgId ?: true;
         } catch (\Throwable $e) {
             return false;
         }

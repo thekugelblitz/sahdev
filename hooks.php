@@ -6275,15 +6275,20 @@ HTML;
           '<span id="sdv-sound-label">Sound On</span></button>'
         : '';
 
+    $_hdrSummonItem = '<button type="button" class="sdv-hdr-menu-item" id="sdv-hmenu-summon" onclick="window.sdvSummonHuman&&window.sdvSummonHuman();window.sdvCloseHdrMenu();">' .
+        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg>' .
+        '<span>Talk to Human</span></button>';
+
     $hdrMenuHtml = '<div class="sdv-hdr-menu-wrap" id="sdv-hdr-menu-wrap">' .
         '<button type="button" class="sdv-cl-action-btn sdv-hdr-dots-btn" id="sdv-hdr-dots" title="More options" aria-label="More options" onclick="window.sdvToggleHdrMenu&&window.sdvToggleHdrMenu(event);">' .
         '<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" style="pointer-events:none;"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>' .
         '</button>' .
         '<div class="sdv-hdr-menu" id="sdv-hdr-menu" style="display:none;">' .
+            $_hdrSummonItem .
             $_hdrKbItem .
             $_hdrHistItem .
             $_hdrExportItem .
-            (($_hdrKbItem || $_hdrHistItem || $_hdrExportItem) && $_hdrSoundItem ? '<div class="sdv-hdr-menu-divider"></div>' : '') .
+            '<div class="sdv-hdr-menu-divider"></div>' .
             $_hdrSoundItem .
         '</div>' .
         '</div>';
@@ -7040,6 +7045,36 @@ DISC;
     border-radius: 14px 14px 14px 2px;
     border: 1px solid #e2e8f0;
     box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+}
+.sdv-cl-msg-staff {
+    align-self: flex-start !important;
+    background: #f0f7ff !important;
+    color: #1e3a8a !important;
+    border-radius: 14px 14px 14px 2px !important;
+    border: 1px solid #bfdbfe !important;
+    box-shadow: 0 1px 4px rgba(37, 99, 235, 0.08) !important;
+}
+.sdv-staff-header-badge {
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 4px !important;
+    font-size: 11px !important;
+    font-weight: 700 !important;
+    color: #2563eb !important;
+    margin-bottom: 4px !important;
+}
+.sdv-cl-msg-system {
+    align-self: center !important;
+    background: rgba(0, 0, 0, 0.04) !important;
+    border: 1px solid rgba(0, 0, 0, 0.06) !important;
+    border-radius: 14px !important;
+    color: #64748b !important;
+    font-size: 11.5px !important;
+    padding: 4px 12px !important;
+    text-align: center !important;
+    max-width: 88% !important;
+    margin: 4px auto !important;
+    line-height: 1.4 !important;
 }
 .sdv-code-block {
     background: #1e293b;
@@ -10757,8 +10792,8 @@ DISC;
             </div>
         </div>
         <div class="sdv-cl-controls">
-            <button type="button" class="sdv-cl-action-btn sdv-summon-agent-btn" id="sdv-btn-summon-agent" title="Request Live Human Agent" aria-label="Talk to Human" onclick="window.sdvSummonHuman && window.sdvSummonHuman();" style="font-size:11.5px;display:inline-flex;align-items:center;gap:4px;padding:3px 7px;border-radius:6px;background:rgba(255,255,255,0.16);color:inherit;font-weight:600;border:1px solid rgba(255,255,255,0.25);">
-                <span>🧑‍💼 Live Agent</span>
+            <button type="button" class="sdv-cl-action-btn" id="sdv-btn-summon-agent" title="Connect with Live Agent" aria-label="Connect with Live Agent" onclick="window.sdvSummonHuman && window.sdvSummonHuman();">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg>
             </button>
             {$hdrMenuHtml}
             <button type="button" class="sdv-cl-action-btn" id="sdv-cl-expand-btn" title="Expand / Minimize Window" aria-label="Expand" onclick="window.sdvToggleExpand && window.sdvToggleExpand(event);">
@@ -10770,16 +10805,11 @@ DISC;
 
     {$widgetTabsHtml}
 
-    <div id="sdv-cl-takeover-banner" class="sdv-cl-takeover-banner" style="display:none;background:#ecfdf5;border-bottom:1px solid #a7f3d0;padding:8px 14px;font-size:12px;color:#065f46;align-items:center;gap:7px;font-weight:600;">
-        <span>🧑‍💼</span>
-        <span id="sdv-cl-takeover-text">Live Support Agent is assisting you</span>
-    </div>
-
     <div class="sdv-tab-panel sdv-tab-panel-chat" id="sdv-panel-chat">
         <div class="sdv-cl-escalate-bar" style="display:flex;align-items:center;justify-content:space-between;padding:8px 14px;">
-            <span>Need live staff help?</span>
+            <span>Need staff assistance?</span>
             <div style="display:inline-flex;align-items:center;gap:8px;">
-                <a href="javascript:void(0);" class="sdv-cl-escalate-btn" onclick="window.sdvSummonHuman && window.sdvSummonHuman();" style="font-weight:600;">🧑‍💼 Talk to Human</a>
+                <a href="javascript:void(0);" class="sdv-cl-escalate-btn" onclick="window.sdvSummonHuman && window.sdvSummonHuman();" style="font-weight:600;">Live Agent</a>
                 <span style="opacity:0.35;">|</span>
                 <a href="javascript:void(0);" class="sdv-cl-escalate-btn" id="sdv-cl-escalate" onclick="window.sdvEscalateToTicket && window.sdvEscalateToTicket();">Create Ticket &rarr;</a>
             </div>
@@ -12388,21 +12418,42 @@ DISC;
 
         var msgsEl = document.getElementById('sdv-cl-msgs');
         if (!msgsEl) return null;
+
+        if (msgId && document.getElementById('sdv-msg-' + msgId)) {
+            return document.getElementById('sdv-msg-' + msgId);
+        }
+
         var d = document.createElement('div');
-        d.className = 'sdv-cl-msg ' + (role === 'user' ? 'sdv-cl-msg-user' : 'sdv-cl-msg-bot');
+        var roleClass = 'sdv-cl-msg-bot';
+        if (role === 'user') roleClass = 'sdv-cl-msg-user';
+        else if (role === 'staff') roleClass = 'sdv-cl-msg-staff';
+        else if (role === 'system') roleClass = 'sdv-cl-msg-system';
+        d.className = 'sdv-cl-msg ' + roleClass;
+
+        var rawText = (typeof text === 'string') ? text.trim() : '';
+        if (rawText && !isHtml) {
+            d.setAttribute('data-msg-text', rawText);
+        }
+
         if (msgId) {
             d.id = 'sdv-msg-' + msgId;
             if (msgId > highestMsgId) highestMsgId = msgId;
-        } else if (role === 'user') {
-            d.setAttribute('data-pending-user', '1');
-            d.setAttribute('data-msg-text', String(text).trim());
+        } else {
+            if (role === 'user') {
+                d.setAttribute('data-pending-user', '1');
+                if (rawText) d.setAttribute('data-msg-text', rawText);
+            } else if (role === 'bot') {
+                d.setAttribute('data-pending-bot', '1');
+            }
         }
+
         if (isHtml) {
             d.innerHTML = text;
         } else {
             d.innerHTML = parseSimpleMarkdown(text);
         }
-        if (!isHtml) {
+
+        if (!isHtml && role !== 'system') {
             attachMsgActions(d, msgId, rating, role, timestamp);
         }
         msgsEl.appendChild(d);
@@ -12546,26 +12597,70 @@ DISC;
             return;
         }
 
+        // 1. Strict ID deduplication: If DOM already has this message ID, never re-render!
         if (m.id && document.getElementById('sdv-msg-' + m.id)) {
             return;
         }
 
-        // Deduplication: Correlate pending optimistic user message instead of appending a duplicate
-        if (m.sender_type === 'user' && m.id) {
-            var pendingEls = document.querySelectorAll('.sdv-cl-msg-user[data-pending-user="1"], .sdv-cl-msg-user:not([id])');
+        var normIncoming = textContent.replace(/\s+/g, ' ').trim().toLowerCase();
+
+        // 2. Correlate Pending Optimistic User Message
+        if (m.sender_type === 'user') {
+            var pendingEls = document.querySelectorAll('#sdv-cl-msgs .sdv-cl-msg-user[data-pending-user="1"], #sdv-cl-msgs .sdv-cl-msg-user:not([id])');
             for (var p = 0; p < pendingEls.length; p++) {
                 var pEl = pendingEls[p];
-                var pText = (pEl.getAttribute('data-msg-text') || pEl.innerText || pEl.textContent || '').trim();
-                if (pText === textContent || pText.replace(/^([\uD800-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF]|\S)\s*/, '') === textContent) {
-                    pEl.id = 'sdv-msg-' + m.id;
+                var pText = (pEl.getAttribute('data-msg-text') || pEl.innerText || pEl.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
+                if (pText === normIncoming || (normIncoming && pText.indexOf(normIncoming) > -1) || (pText && normIncoming.indexOf(pText) > -1)) {
+                    if (m.id) {
+                        pEl.id = 'sdv-msg-' + m.id;
+                        if (m.id > highestMsgId) highestMsgId = m.id;
+                    }
                     pEl.removeAttribute('data-pending-user');
-                    if (m.id > highestMsgId) highestMsgId = m.id;
+                    pEl.setAttribute('data-msg-text', textContent);
                     return;
                 }
             }
         }
 
-        // Check if message is an escalation confirmation card
+        // 3. Correlate Pending Bot / Typing Wave Message
+        if (m.sender_type === 'assistant' || m.sender_type === 'bot') {
+            var typingEl = document.querySelector('#sdv-cl-msgs [data-pending-bot="1"], #sdv-cl-msgs .sdv-typing-wave');
+            if (typingEl) {
+                var bubble = typingEl.classList.contains('sdv-cl-msg') ? typingEl : typingEl.closest('.sdv-cl-msg');
+                if (bubble) {
+                    bubble.removeAttribute('data-pending-bot');
+                    if (m.id) {
+                        bubble.id = 'sdv-msg-' + m.id;
+                        if (m.id > highestMsgId) highestMsgId = m.id;
+                    }
+                    bubble.setAttribute('data-msg-text', textContent);
+                    bubble.innerHTML = parseSimpleMarkdown(textContent);
+                    attachMsgActions(bubble, m.id, m.rating, 'bot', m.created_at || Date.now());
+                    return;
+                }
+            }
+        }
+
+        // 4. Content Deduplication across recent messages (last 8 bubbles)
+        var msgsEl = document.getElementById('sdv-cl-msgs');
+        if (msgsEl) {
+            var allBubbles = msgsEl.children;
+            var startIdx = Math.max(0, allBubbles.length - 8);
+            for (var b = allBubbles.length - 1; b >= startIdx; b--) {
+                var bubbleEl = allBubbles[b];
+                var bRaw = (bubbleEl.getAttribute('data-msg-text') || bubbleEl.innerText || bubbleEl.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
+                if (bRaw && normIncoming && (bRaw === normIncoming || bRaw.indexOf(normIncoming) > -1 || normIncoming.indexOf(bRaw) > -1)) {
+                    // Match found! If this incoming message has an ID and existing bubble doesn't, stamp it
+                    if (m.id) {
+                        if (!bubbleEl.id) bubbleEl.id = 'sdv-msg-' + m.id;
+                        if (m.id > highestMsgId) highestMsgId = m.id;
+                    }
+                    return;
+                }
+            }
+        }
+
+        // 5. Check if message is an escalation confirmation card
         if (m.action_card && m.action_card.type === 'ticket_escalated') {
             var cardHtml = renderEscalateSuccessCardHtml(m.action_card);
             appendClMsg('bot', cardHtml, true, m.id);
@@ -12574,7 +12669,7 @@ DISC;
             return;
         }
 
-        // Fallback: detect if plain text is an escalation message
+        // 6. Fallback: detect if plain text is an escalation message
         if (m.message_text && m.message_text.indexOf('Support Ticket #') > -1 && m.message_text.indexOf('escalated to staff') > -1) {
             var matchTid = m.message_text.match(/Support Ticket #([^\s:]+)/);
             var tid = matchTid ? matchTid[1] : '';
@@ -12585,7 +12680,7 @@ DISC;
             return;
         }
 
-        // Detect if message is a quota / limit notice
+        // 7. Detect if message is a quota / limit notice
         if (m.sender_type !== 'user' && m.message_text && (
             m.message_text.indexOf('inquiry limit') > -1 ||
             m.message_text.indexOf('cumulative discussion limit') > -1 ||
@@ -12598,8 +12693,24 @@ DISC;
             return;
         }
 
+        // 8. Staff message rendering
+        if (m.sender_type === 'staff') {
+            var staffName = m.staff_name || m.sender_name || 'Support Agent';
+            var staffHtml = '<div class="sdv-staff-header-badge"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> ' + sdvEscapeHtml(staffName) + '</div><div class="sdv-staff-msg-body">' + parseSimpleMarkdown(m.message_text) + '</div>';
+            appendClMsg('staff', staffHtml, true, m.id, null, m.created_at);
+            return;
+        }
+
+        // 9. System message rendering
+        if (m.sender_type === 'system') {
+            var sysHtml = '<span>' + parseSimpleMarkdown(m.message_text) + '</span>';
+            appendClMsg('system', sysHtml, true, m.id, null, m.created_at);
+            return;
+        }
+
+        // 10. Default user / bot rendering
         var role = (m.sender_type === 'user') ? 'user' : 'bot';
-        appendClMsg(role, m.message_text, false, m.id, m.rating);
+        appendClMsg(role, m.message_text, false, m.id, m.rating, m.created_at);
     }
 
     window.sdvInitChat = function() {
@@ -12638,6 +12749,7 @@ DISC;
                     var msgsEl = document.getElementById('sdv-cl-msgs');
                     if (msgsEl) {
                         msgsEl.innerHTML = '';
+                        highestMsgId = 0;
                         data.messages.forEach(function(m) {
                             renderSingleMessage(m);
                         });
@@ -12808,11 +12920,6 @@ DISC;
                     if (tempBot && tempBot.parentNode) {
                         tempBot.parentNode.removeChild(tempBot);
                     }
-                    // Update live takeover banner
-                    var tb = document.getElementById('sdv-cl-takeover-banner');
-                    var tt = document.getElementById('sdv-cl-takeover-text');
-                    if (tb) tb.style.display = 'flex';
-                    if (tt) tt.textContent = '🧑‍💼 Live Support Agent is connected & reviewing your message';
                     // Start live polling to fetch the human agent's response
                     sdvStartLivePolling();
                     return;
@@ -12821,13 +12928,22 @@ DISC;
                 // Normal AI Assistant response
                 if (data.reply) {
                     var replyText = data.reply;
-                    if (tempBot) {
+                    if (data.message_id && document.getElementById('sdv-msg-' + data.message_id)) {
+                        // Already rendered by polling! Clean up tempBot if it exists
+                        if (tempBot && tempBot.parentNode && tempBot.id !== ('sdv-msg-' + data.message_id)) {
+                            tempBot.parentNode.removeChild(tempBot);
+                        }
+                    } else if (tempBot) {
+                        tempBot.removeAttribute('data-pending-bot');
+                        tempBot.setAttribute('data-msg-text', replyText);
                         tempBot.innerHTML = parseSimpleMarkdown(replyText);
                         if (data.message_id) {
                             tempBot.id = 'sdv-msg-' + data.message_id;
                             if (data.message_id > highestMsgId) highestMsgId = data.message_id;
                         }
                         attachMsgActions(tempBot, data.message_id, 0, 'bot', Date.now());
+                    } else {
+                        appendClMsg('bot', replyText, false, data.message_id);
                     }
                     sdvPlayNotificationChime();
                     if (data.session_uuid && data.session_uuid !== sessionUuid) {
@@ -13132,6 +13248,7 @@ DISC;
                     escalateBar.style.display = 'flex';
                 }
 
+                highestMsgId = 0;
                 if (data.messages && data.messages.length > 0) {
                     data.messages.forEach(function(m) {
                         renderSingleMessage(m);
@@ -13394,7 +13511,12 @@ DISC;
         form.append('reason', 'Client requested live agent via chat widget');
 
         postAjaxWithFallback(form, function(err, data) {
-            appendClMsg('bot', '🚨 I have notified our live support team! An agent has been alerted and will join shortly. In the interim, feel free to describe your issue or questions.', false, null, null, Date.now());
+            var summonMsgId = (data && data.message_id) ? data.message_id : null;
+            var sysMsg = '🔔 A live human support agent has been notified and summoned to assist you. A team member will join shortly!';
+            var existingSys = document.querySelector('#sdv-cl-msgs .sdv-cl-msg-system');
+            if (!existingSys) {
+                appendClMsg('system', sysMsg, false, summonMsgId, null, Date.now());
+            }
             sdvPlayNotificationChime();
         });
     };
