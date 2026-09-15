@@ -5,9 +5,8 @@
  *  - Exact Brand Color, Theme, and Custom Sizing
  *  - Custom Organization Title & Logo / Siri Orb
  *  - Launcher Style (Pill / Circle) & Text
- *  - WhatsApp Multi-Department Hub & Knowledge Base Search
- *  - Live Human Agent Takeover & Typing Sneak-Peek
- *  - Audio Chimes, CSAT Ratings & Markdown Formatter
+ *  - Live Human Agent Takeover & Audio Chimes
+ *  - CSAT Ratings & Markdown Formatter
  */
 (function() {
     'use strict';

@@ -2302,39 +2302,12 @@ class ChatService
     }
 
     /**
-     * Update real-time typing preview (typing sneak-peek) for an active session.
+    /**
+     * Legacy typing preview stub - typing sneak-peek disabled per system configuration.
      */
     public static function updateTypingPreview(string $sessionUuid, string $text, string $visitorToken, ?int $clientId = null): bool
     {
-        try {
-            $session = Capsule::table('tblsahdev_chat_sessions')->where('session_uuid', $sessionUuid)->first();
-            if (!$session) {
-                return false;
-            }
-
-            // Authorization verification
-            if ($clientId && $clientId > 0) {
-                if ((int)$session->client_id !== (int)$clientId) {
-                    return false;
-                }
-            } else {
-                if (!empty($session->client_id) || $session->visitor_token !== $visitorToken) {
-                    return false;
-                }
-            }
-
-            $previewText = mb_substr(trim($text), 0, 500);
-
-            Capsule::table('tblsahdev_chat_sessions')->where('id', $session->id)->update([
-                'typing_preview' => !empty($previewText) ? $previewText : null,
-                'typing_at'      => !empty($previewText) ? Carbon::now() : null,
-                'updated_at'     => Carbon::now(),
-            ]);
-
-            return true;
-        } catch (\Throwable $e) {
-            return false;
-        }
+        return true;
     }
 
     /**
@@ -2434,12 +2407,27 @@ class ChatService
                     $cl = Capsule::table('tblclients')->where('id', $s->client_id)->first(['firstname', 'lastname']);
                     if ($cl) $clientName = trim($cl->firstname . ' ' . $cl->lastname);
                 }
+
+                $lastUserMsg = !empty($s->last_message) ? (string)$s->last_message : '';
+                if (empty($lastUserMsg)) {
+                    $lastMsgRow = Capsule::table('tblsahdev_chat_messages')
+                        ->where('session_id', $s->id)
+                        ->where('sender_type', 'user')
+                        ->orderBy('id', 'desc')
+                        ->first(['message_text']);
+                    if ($lastMsgRow) {
+                        $lastUserMsg = (string)$lastMsgRow->message_text;
+                    }
+                }
+
                 $summonList[] = [
-                    'id'           => (int)$s->id,
-                    'session_uuid' => $s->session_uuid,
-                    'client_name'  => $clientName,
-                    'summoned_at'  => $s->summoned_at ? Carbon::parse($s->summoned_at)->diffForHumans() : 'Just now',
-                    'title'        => $s->title,
+                    'id'            => (int)$s->id,
+                    'session_uuid'  => $s->session_uuid,
+                    'client_name'   => $clientName,
+                    'summoned_at'   => $s->summoned_at ? Carbon::parse($s->summoned_at)->diffForHumans() : 'Just now',
+                    'title'         => $s->title ?: 'Live Support Request',
+                    'last_message'  => $lastUserMsg ?: 'Client requested human staff assistance.',
+                    'source_domain' => $s->source_domain ?: '',
                 ];
             }
 
@@ -2460,6 +2448,7 @@ class ChatService
                 'takeover_count'    => $takenOverCount,
                 'summon_count'      => count($summonList),
                 'summons'           => $summonList,
+                'pending_summons'   => $summonList,
                 'sound_alert'       => count($summonList) > 0,
                 'timestamp'         => time(),
             ];

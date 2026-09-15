@@ -404,10 +404,7 @@ if ($isClientChatAction) {
         }
 
         if ($action === 'client_chat_typing') {
-            $sessionUuid = trim((string) ($_REQUEST['session_uuid'] ?? ''));
-            $text = (string) ($_REQUEST['text'] ?? '');
-            $res = \Sahdev\Lib\ChatService::updateTypingPreview($sessionUuid, $text, $visitorToken, $clientId);
-            echo json_encode(['status' => 'success', 'updated' => $res]);
+            echo json_encode(['status' => 'success', 'updated' => true]);
             exit;
         }
 

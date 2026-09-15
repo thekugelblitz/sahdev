@@ -68,13 +68,13 @@ echo "  [PASS] hooks.php sahdev_serve_embed_js: " . ($hasServeEmbed ? 'YES' : 'N
 echo "\n[4/4] Verifying hooks.php registration...\n";
 $hooksContent = file_get_contents(__DIR__ . '/../hooks.php');
 $hasAdminListener = strpos($hooksContent, 'sahdev_render_admin_live_chat_alert_listener') !== false;
-$hasTypingBroadcaster = strpos($hooksContent, 'sdvDebouncedBroadcastTyping') !== false;
+$hasTypingBroadcasterRemoved = strpos($hooksContent, 'sdvDebouncedBroadcastTyping') === false;
 $hasSummonBtn = strpos($hooksContent, 'sdv-btn-summon-agent') !== false;
 $hasNoTakeoverBanner = strpos($hooksContent, 'sdv-cl-takeover-banner') === false;
 $hasStaffBadge = strpos($hooksContent, 'sdv-staff-header-badge') !== false;
 
 echo "  - Admin Area Alert Listener Hook: " . ($hasAdminListener ? 'PASS' : 'FAIL') . "\n";
-echo "  - Debounced Keystroke Broadcaster: " . ($hasTypingBroadcaster ? 'PASS' : 'FAIL') . "\n";
+echo "  - Typing Sneak-Peek Removed: " . ($hasTypingBroadcasterRemoved ? 'PASS' : 'FAIL') . "\n";
 echo "  - Client Live Agent Summon Button: " . ($hasSummonBtn ? 'PASS' : 'FAIL') . "\n";
 echo "  - Cringe Takeover Announcement Banner Removed: " . ($hasNoTakeoverBanner ? 'PASS' : 'FAIL') . "\n";
 echo "  - Staff Header Badge & Styling: " . ($hasStaffBadge ? 'PASS' : 'FAIL') . "\n";

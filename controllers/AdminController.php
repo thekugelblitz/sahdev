@@ -11423,7 +11423,7 @@ class AdminController
                                                     Enable Live Human Agent Participation &amp; Summoning
                                                 </label>
                                                 <span class="help-block" style="font-size: 11px; margin-top: 2px;">
-                                                    Allows visitors to request a human agent, enables typing sneak-peek, and permits staff to take over conversations.
+                                                    Allows visitors to request a live human agent and permits staff to take over conversations in real time.
                                                 </span>
                                             </div>
 
@@ -12160,7 +12160,7 @@ class AdminController
         $admin = Capsule::table('tbladmins')->where('id', $adminId)->first(['firstname', 'lastname', 'username', 'email']);
         $adminName = $admin ? trim($admin->firstname . ' ' . $admin->lastname) : "Staff Agent";
         $settings = Capsule::table('tblsahdev_settings')->first();
-        $pollInterval = max(1, min(10, (int)($settings->client_chat_console_poll_interval ?? 2)));
+        $pollInterval = max(4, min(15, (int)($settings->client_chat_console_poll_interval ?? 5)));
         $soundType = $settings->client_chat_sound_type ?? 'chime';
         $soundEnabled = !empty($settings->client_chat_sound_admin_alert ?? 1);
         $moduleLink = htmlspecialchars($this->moduleVars['modulelink']);
@@ -12268,13 +12268,6 @@ class AdminController
                             <i class="fas fa-comments" style="font-size:36px;color:#cbd5e1;margin-bottom:10px;"></i>
                             <div>No conversation selected</div>
                         </div>
-                    </div>
-
-                    <!-- Real-Time Client Typing Sneak-Peek Bar (Pinned above composer) -->
-                    <div id="typingSneakPeekBar" style="display:none;background:#fffbeb;border-top:1px solid #fde68a;padding:8px 16px;font-size:12px;color:#92400e;align-items:center;gap:8px;animation:fadeIn 0.2s ease;">
-                        <i class="fas fa-keyboard fa-pulse" style="color:#d97706;"></i>
-                        <strong>Sneak-Peek Preview:</strong>
-                        <span id="typingSneakPeekText" style="font-style:italic;color:#78350f;word-break:break-all;"></span>
                     </div>
 
                     <!-- Staff Reply Composer -->
@@ -12605,10 +12598,6 @@ class AdminController
                     }
 
                     var initials = (s.client_name || 'G').substring(0, 2).toUpperCase();
-                    var typingIndicator = '';
-                    if (s.typing_preview) {
-                        typingIndicator = '<div style="font-size:11px;color:#d97706;font-weight:600;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><i class="fas fa-keyboard fa-pulse"></i> typing: ' + escapeHtml(s.typing_preview) + '</div>';
-                    }
 
                     html += '<div class="session-card ' + (isSelected ? 'selected ' : '') + (isSummoned ? 'is-summoned' : '') + '" data-uuid="' + s.uuid + '" data-id="' + s.id + '" data-client-id="' + s.client_id + '">';
                     html += '  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">';
@@ -12620,7 +12609,6 @@ class AdminController
                     html += '  </div>';
 
                     html += '  <div style="font-size:11.5px;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + (s.last_message ? escapeHtml(s.last_message) : '<em>No messages yet</em>') + '</div>';
-                    html += typingIndicator;
                     html += '  <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;font-size:10.5px;color:#94a3b8;">';
                     html += '    <span><i class="fas fa-globe" style="font-size:10px;"></i> ' + escapeHtml(s.source_domain || 'WHMCS') + '</span>';
                     html += '    <span>' + escapeHtml(s.last_message_at) + '</span>';
@@ -12747,16 +12735,6 @@ class AdminController
                         btnConvert.addEventListener('click', function() {
                             openTicketModal();
                         });
-                    }
-                }
-
-                // Sneak-Peek Bar Update
-                if (sneakPeekBar && sneakPeekText) {
-                    if (session.typing_preview && session.typing_preview.trim().length > 0) {
-                        sneakPeekText.textContent = session.typing_preview;
-                        sneakPeekBar.style.display = 'flex';
-                    } else {
-                        sneakPeekBar.style.display = 'none';
                     }
                 }
             }
@@ -13099,7 +13077,7 @@ class AdminController
             // Handle tab blur / focus for adaptive polling
             window.addEventListener('blur', function() {
                 clearInterval(pollTimer);
-                pollTimer = setInterval(function() { doPoll(false); }, 5000); // Slow down to 5s when blurred
+                pollTimer = setInterval(function() { doPoll(false); }, 12000); // Relax to 12s when blurred
             });
             window.addEventListener('focus', function() {
                 clearInterval(pollTimer);

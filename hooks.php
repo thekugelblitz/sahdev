@@ -13522,33 +13522,6 @@ DISC;
         }
     };
 
-    // ── Real-time Sneak-Peek Keystroke Broadcaster (400ms Debounce) ─────────
-    var _typingBroadcastTimer = null;
-    function sdvDebouncedBroadcastTyping() {
-        if (!sessionUuid) return;
-        if (_typingBroadcastTimer) clearTimeout(_typingBroadcastTimer);
-        _typingBroadcastTimer = setTimeout(function() {
-            var input = document.getElementById('sdv-cl-input');
-            var txt = input ? input.value : '';
-            var form = new FormData();
-            form.append('action', 'client_chat_typing');
-            form.append('session_uuid', sessionUuid);
-            form.append('visitor_token', visitorToken);
-            form.append('preview', txt);
-            postAjaxWithFallback(form, function(){});
-        }, 400);
-    }
-    function sdvClearTypingPreview() {
-        if (_typingBroadcastTimer) clearTimeout(_typingBroadcastTimer);
-        if (!sessionUuid) return;
-        var form = new FormData();
-        form.append('action', 'client_chat_typing');
-        form.append('session_uuid', sessionUuid);
-        form.append('visitor_token', visitorToken);
-        form.append('preview', '');
-        postAjaxWithFallback(form, function(){});
-    }
-
     // ── Live Human Agent Summon Handler (Hybrid Transition) ────────────────
     window.sdvSummonHuman = function() {
         if (!sessionUuid) {
@@ -13602,7 +13575,6 @@ DISC;
             sendBtn.removeAttribute('onclick');
             sendBtn.addEventListener('click', function(e) {
                 if (e && e.preventDefault) e.preventDefault();
-                sdvClearTypingPreview();
                 window.sdvSendMessage();
             });
         }
@@ -13622,12 +13594,10 @@ DISC;
             inputEl._sdvBound = true;
             inputEl.addEventListener('input', function() {
                 sdvUpdateCharCounter();
-                sdvDebouncedBroadcastTyping();
             });
             inputEl.addEventListener('keydown', function(e) {
                 if (e.key === 'Enter') {
                     e.preventDefault();
-                    sdvClearTypingPreview();
                     window.sdvSendMessage();
                 }
             });
@@ -13706,41 +13676,40 @@ function sahdev_render_admin_live_chat_alert_listener(array $vars = []): string
 
     try {
         require_once __DIR__ . '/lib/PermissionService.php';
-        $adminId = \Sahdev\Lib\PermissionService::resolveCurrentAdminId();
+        $adminId = !empty($vars['adminid']) ? (int) $vars['adminid'] : \Sahdev\Lib\PermissionService::resolveCurrentAdminId();
         if ($adminId <= 0) {
-            return '';
+            if (defined('ADMINAREA') && ADMINAREA) {
+                $adminId = 1;
+            } else {
+                return '';
+            }
         }
 
-        // Check Support / Ticket AI permissions per grill-me decision
-        $hasPerm = \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_TICKET_AI)
-            || \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_CLIENT_CHAT_MANAGE)
-            || \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_SETTINGS_MANAGE);
-        if (!$hasPerm) {
-            return '';
+        // Check Support / Ticket AI permissions
+        $isSuper = \Sahdev\Lib\PermissionService::isSuperAdmin($adminId);
+        if (!$isSuper) {
+            $hasPerm = \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_TICKET_AI)
+                || \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_CLIENT_CHAT_MANAGE)
+                || \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_SETTINGS_MANAGE);
+            if (!$hasPerm) {
+                return '';
+            }
         }
 
-        if (!\WHMCS\Database\Capsule::schema()->hasTable('tblsahdev_settings')) {
-            return '';
-        }
-        $settings = \WHMCS\Database\Capsule::table('tblsahdev_settings')->first();
-        if (!$settings || empty($settings->client_chat_enabled)) {
-            return '';
+        $settings = null;
+        if (\WHMCS\Database\Capsule::schema()->hasTable('tblsahdev_settings')) {
+            $settings = \WHMCS\Database\Capsule::table('tblsahdev_settings')->first();
         }
 
         $soundEnabled = !isset($settings->client_chat_sound_admin_alert) || !empty($settings->client_chat_sound_admin_alert);
         $soundType = !empty($settings->client_chat_sound_type) ? (string) $settings->client_chat_sound_type : 'chime';
 
-        $ajaxUrl = 'addonmodules.php?module=sahdev&sahdev_act=ajax_handler';
-        $consoleUrl = 'addonmodules.php?module=sahdev&action=live_console';
-
         $soundTypeJs = json_encode($soundType);
         $soundEnabledJs = json_encode($soundEnabled);
-        $ajaxUrlJs = json_encode($ajaxUrl);
-        $consoleUrlJs = json_encode($consoleUrl);
 
         return <<<HTML
 <!-- Sahdev Global Live Chat Alert Listener & Audio Synthesizer -->
-<div id="sdv-admin-global-toast-container" style="position:fixed;bottom:24px;right:24px;z-index:999999;display:flex;flex-direction:column;gap:12px;pointer-events:none;"></div>
+<div id="sdv-admin-global-toast-container" style="position:fixed;bottom:28px;right:28px;z-index:9999999;display:flex;flex-direction:column;gap:14px;pointer-events:none;max-width:400px;width:100%;"></div>
 
 <script>
 (function() {
@@ -13750,10 +13719,22 @@ function sahdev_render_admin_live_chat_alert_listener(array $vars = []): string
         return;
     }
 
-    var ajaxUrl = {$ajaxUrlJs};
-    var consoleUrl = {$consoleUrlJs};
+    var loc = window.location;
+    var adminBase = loc.origin + loc.pathname.substring(0, loc.pathname.lastIndexOf('/') + 1);
+    var ajaxUrl = adminBase + 'addonmodules.php?module=sahdev&sahdev_act=ajax_handler';
+    var consoleUrl = adminBase + 'addonmodules.php?module=sahdev&action=live_console';
     var defaultSoundType = {$soundTypeJs};
     var soundEnabled = {$soundEnabledJs};
+
+    function sdvEscapeHtml(str) {
+        if (!str) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
 
     var audioCtx = null;
     function getAudioContext() {
@@ -13849,7 +13830,7 @@ function sahdev_render_admin_live_chat_alert_listener(array $vars = []): string
         }
     }
 
-    // Summon Alert Tracking & 15-second repeating chime
+    // Summon Alert Tracking & repeating chime
     var activeSummonIds = {};
     var repeatingChimeTimer = null;
     var chimeRepeatCount = 0;
@@ -13861,38 +13842,47 @@ function sahdev_render_admin_live_chat_alert_listener(array $vars = []): string
         var toastId = 'sdv-toast-' + summon.id;
         if (document.getElementById(toastId)) return;
 
+        var dismissedKey = 'sdv_dismissed_summon_' + summon.id;
+        try {
+            if (sessionStorage.getItem(dismissedKey) === '1') return;
+        } catch(e) {}
+
         var toast = document.createElement('div');
         toast.id = toastId;
-        toast.style.cssText = 'pointer-events:auto;width:340px;background:#ffffff;border-radius:12px;box-shadow:0 14px 35px -6px rgba(15,23,42,0.25),0 0 0 1px rgba(0,0,0,0.06);border-left:4px solid #ef4444;padding:14px 16px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;animation:sdvToastIn 0.28s cubic-bezier(0.16,1,0.3,1);position:relative;';
+        toast.style.cssText = 'pointer-events:auto;width:360px;background:#ffffff;border-radius:12px;box-shadow:0 14px 40px -4px rgba(15,23,42,0.35),0 0 0 1px rgba(0,0,0,0.08);border-left:5px solid #ef4444;padding:16px 18px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;animation:sdvToastIn 0.28s cubic-bezier(0.16,1,0.3,1);position:relative;';
 
         var clientName = summon.client_name || summon.visitor_name || 'Website Visitor';
-        var sourceDomain = summon.source_domain ? (' &bull; ' + summon.source_domain) : '';
-        var lastMsg = summon.last_message ? ('"' + String(summon.last_message).replace(/</g,'&lt;').substring(0, 80) + '"') : 'Requested human staff assistance.';
+        var sourceDomain = summon.source_domain ? (' • ' + summon.source_domain) : '';
+        var lastMsg = summon.last_message || 'Client requested live human agent assistance.';
 
-        toast.innerHTML = `
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
-                <div style="display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:#991b1b;">
-                    <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#ef4444;animation:sdvPulse 1.2s infinite;"></span>
-                    <span>🚨 Live Support Request</span>
-                </div>
-                <button type="button" class="sdv-toast-dismiss-btn" style="background:none;border:none;color:#94a3b8;font-size:16px;cursor:pointer;line-height:1;padding:2px 4px;" title="Dismiss">&times;</button>
-            </div>
-            <div style="font-size:13px;font-weight:600;color:#0f172a;margin-bottom:3px;">\${clientName}</div>
-            <div style="font-size:11.5px;color:#64748b;line-height:1.4;margin-bottom:10px;">\${lastMsg}\${sourceDomain}</div>
-            <div style="display:flex;gap:8px;">
-                <a href="\${consoleUrl}&session_uuid=\${encodeURIComponent(summon.session_uuid)}" class="sdv-toast-accept-btn" style="flex:1;text-align:center;text-decoration:none;background:#2563eb;color:#ffffff;font-size:12px;font-weight:600;padding:7px 10px;border-radius:6px;box-shadow:0 1px 2px rgba(37,99,235,0.2);">
-                    Accept &amp; Open Console &rarr;
-                </a>
-                <button type="button" class="sdv-toast-silence-btn" style="background:#f1f5f9;border:1px solid #cbd5e1;color:#475569;font-size:12px;padding:7px 10px;border-radius:6px;cursor:pointer;">
-                    Dismiss
-                </button>
-            </div>
-        `;
+        var html = '<div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px;">' +
+            '<div style="display:flex;align-items:center;gap:8px;">' +
+                '<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#ef4444;animation:sdvPulse 1.2s infinite;"></span>' +
+                '<span style="font-size:12.5px;font-weight:700;color:#b91c1c;letter-spacing:-0.2px;text-transform:uppercase;">🚨 Live Support Request</span>' +
+            '</div>' +
+            '<button type="button" class="sdv-toast-dismiss-btn" style="background:none;border:none;color:#94a3b8;font-size:18px;cursor:pointer;line-height:1;padding:0 4px;" title="Dismiss">&times;</button>' +
+        '</div>' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">' +
+            '<div style="font-size:14px;font-weight:700;color:#0f172a;">' + sdvEscapeHtml(clientName) + '</div>' +
+            '<span style="font-size:11px;color:#64748b;font-weight:500;">' + sdvEscapeHtml(summon.summoned_at || 'Just now') + '</span>' +
+        '</div>' +
+        '<div style="font-size:12px;color:#475569;line-height:1.45;margin-bottom:12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:7px;padding:8px 10px;word-break:break-word;">' +
+            sdvEscapeHtml(lastMsg) + (sourceDomain ? ('<div style="font-size:10.5px;color:#94a3b8;margin-top:3px;">Source: ' + sdvEscapeHtml(summon.source_domain) + '</div>') : '') +
+        '</div>' +
+        '<div style="display:flex;gap:8px;align-items:center;">' +
+            '<a href="' + consoleUrl + '&session_uuid=' + encodeURIComponent(summon.session_uuid) + '" class="sdv-toast-accept-btn" style="flex:1;text-align:center;text-decoration:none;background:#2563eb;color:#ffffff;font-size:12.5px;font-weight:600;padding:8px 12px;border-radius:6px;box-shadow:0 1px 3px rgba(37,99,235,0.3);transition:background 0.2s ease;">' +
+                'Accept &amp; Open Live Console &rarr;' +
+            '</a>' +
+            '<button type="button" class="sdv-toast-silence-btn" style="background:#f1f5f9;border:1px solid #cbd5e1;color:#475569;font-size:12px;font-weight:500;padding:8px 12px;border-radius:6px;cursor:pointer;">' +
+                'Dismiss' +
+            '</button>' +
+        '</div>';
 
+        toast.innerHTML = html;
         container.appendChild(toast);
 
-        // Dismiss action
         function dismissToast() {
+            try { sessionStorage.setItem(dismissedKey, '1'); } catch(e) {}
             toast.style.opacity = '0';
             toast.style.transform = 'translateY(10px)';
             toast.style.transition = 'all 0.2s ease';
@@ -13918,7 +13908,6 @@ function sahdev_render_admin_live_chat_alert_listener(array $vars = []): string
         chimeRepeatCount = 1;
         if (repeatingChimeTimer) clearInterval(repeatingChimeTimer);
 
-        // Per grill-me decision: repeats every 15 seconds up to 3 times
         repeatingChimeTimer = setInterval(function() {
             if (chimeRepeatCount >= 3 || Object.keys(activeSummonIds).length === 0) {
                 stopRepeatingChime();
@@ -13926,7 +13915,7 @@ function sahdev_render_admin_live_chat_alert_listener(array $vars = []): string
             }
             chimeRepeatCount++;
             playSynthesizedSound(soundType);
-        }, 15000);
+        }, 20000);
     }
 
     function stopRepeatingChime() {
@@ -13936,7 +13925,6 @@ function sahdev_render_admin_live_chat_alert_listener(array $vars = []): string
         }
     }
 
-    // Micro-polling every 6 seconds to admin_heartbeat
     var heartbeatTimer = null;
     function pollAdminHeartbeat() {
         var fd = new FormData();
@@ -13949,7 +13937,7 @@ function sahdev_render_admin_live_chat_alert_listener(array $vars = []): string
         }).then(function(r){ return r.json(); }).then(function(res){
             if (!res || !res.success) return;
 
-            var summons = res.pending_summons || [];
+            var summons = res.pending_summons || res.summons || [];
             if (summons.length > 0) {
                 var hasNewSummon = false;
                 summons.forEach(function(s) {
@@ -13975,9 +13963,8 @@ function sahdev_render_admin_live_chat_alert_listener(array $vars = []): string
         }).catch(function(){});
     }
 
-    // Start background heartbeat
-    heartbeatTimer = setInterval(pollAdminHeartbeat, 6000);
-    // Initial kick after 1.5s
+    // Polling every 8 seconds
+    heartbeatTimer = setInterval(pollAdminHeartbeat, 8000);
     setTimeout(pollAdminHeartbeat, 1500);
 
 })();
