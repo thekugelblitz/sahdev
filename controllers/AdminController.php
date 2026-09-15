@@ -9119,7 +9119,8 @@ class AdminController
         $filterRating = trim((string)($_GET['rating'] ?? ''));
         $filterDate   = trim((string)($_GET['date_range'] ?? ''));
         $filterSort   = trim((string)($_GET['sort'] ?? 'newest'));
-        $perPage      = in_array((int)($_GET['limit'] ?? 25), [15, 25, 50, 100], true) ? (int)$_GET['limit'] : 25;
+        $limitParam   = (int)($_GET['limit'] ?? 25);
+        $perPage      = in_array($limitParam, [15, 25, 50, 100], true) ? $limitParam : 25;
         $page         = max(1, (int)($_GET['p'] ?? 1));
 
         $sessionsQuery = Capsule::table('tblsahdev_chat_sessions')
@@ -9184,11 +9185,11 @@ class AdminController
         }
 
         $totalFilteredSessions = $sessionsQuery->count();
-        $totalPages = max(1, (int)ceil($totalFilteredSessions / $perPage));
+        $totalPages = max(1, (int)ceil($totalFilteredSessions / max(1, $perPage)));
         if ($page > $totalPages) {
             $page = $totalPages;
         }
-        $offset = ($page - 1) * $perPage;
+        $offset = ($page - 1) * max(1, $perPage);
 
         $sessionsQuery->select([
             'tblsahdev_chat_sessions.*',
