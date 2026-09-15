@@ -11481,7 +11481,7 @@ class AdminController
 
                                             <?php 
                                             $systemUrl = \Sahdev\Lib\ChatService::getWhmcsSystemUrl();
-                                            $embedJsUrl = rtrim($systemUrl, '/') . '/modules/addons/sahdev/embed.js';
+                                            $embedJsUrl = rtrim($systemUrl, '/') . '/index.php?m=sahdev&action=embed_js';
                                             $embedSnippet = '<!-- Sahdev AI + Human Live Chat Widget -->' . "\n" . '<script src="' . htmlspecialchars($embedJsUrl) . '" async defer></script>';
                                             ?>
 

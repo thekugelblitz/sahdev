@@ -1,8 +1,10 @@
 /**
  * Sahdev AI Live Chat - Universal Embed Widget (embed.js)
  *
- * Embeddable on any external website (e.g. hostingspell.com, landing pages).
+ * Embeddable on any external website (e.g. hostingspell.com, landing pages, WHMCS, custom apps).
  * Features:
+ *  - Native WHMCS Addon endpoint resolution (robust against .htaccess & server firewalls)
+ *  - Cloudflare Rocket Loader & async/defer lifecycle resilience (DOMContentLoaded / load fallbacks)
  *  - Pre-chat identification form (Name & Email) to link with WHMCS accounts
  *  - Real-time AI chat + Live Human Agent Takeover
  *  - Real-time keystroke typing sneak-peek (debounced at 400ms)
@@ -16,34 +18,45 @@
     if (window._sdvEmbedLoaded) return;
     window._sdvEmbedLoaded = true;
 
-    // 1. Resolve WHMCS Endpoint Base URL
-    var currentScript = document.currentScript || (function() {
+    // ── 1. Resolve WHMCS Endpoint Base URL & Script Element ─────────────────────
+    var scriptTag = document.currentScript || (function() {
         var scripts = document.getElementsByTagName('script');
         for (var i = scripts.length - 1; i >= 0; i--) {
-            if (scripts[i].src && scripts[i].src.indexOf('embed.js') !== -1) {
-                return scripts[i];
+            var s = scripts[i];
+            var src = s.getAttribute('src') || s.src || '';
+            if (src && (src.indexOf('embed_js') !== -1 || src.indexOf('embed.js') !== -1 || src.indexOf('sahdev') !== -1 || s.hasAttribute('data-whmcs-url'))) {
+                return s;
             }
         }
         return null;
     })();
 
     var whmcsBaseUrl = '';
-    if (currentScript) {
-        whmcsBaseUrl = currentScript.getAttribute('data-whmcs-url') || '';
-        if (!whmcsBaseUrl && currentScript.src) {
-            try {
-                var scriptUrl = new URL(currentScript.src);
-                whmcsBaseUrl = scriptUrl.origin + scriptUrl.pathname.replace(/\/modules\/addons\/sahdev\/embed\.js.*$/, '');
-            } catch (e) {
-                whmcsBaseUrl = '';
+    if (scriptTag) {
+        whmcsBaseUrl = scriptTag.getAttribute('data-whmcs-url') || '';
+        if (!whmcsBaseUrl) {
+            var scriptSrc = scriptTag.getAttribute('src') || scriptTag.src || '';
+            if (scriptSrc) {
+                try {
+                    var scriptUrl = new URL(scriptSrc, window.location.href);
+                    whmcsBaseUrl = scriptUrl.origin + scriptUrl.pathname
+                        .replace(/\/modules\/addons\/sahdev\/embed\.js.*$/i, '')
+                        .replace(/\/index\.php.*$/i, '');
+                } catch (e) {
+                    whmcsBaseUrl = '';
+                }
             }
         }
     }
-    whmcsBaseUrl = (whmcsBaseUrl || '').replace(/\/+$/, '');
+    if (!whmcsBaseUrl) {
+        whmcsBaseUrl = window.location.origin;
+    }
+    whmcsBaseUrl = whmcsBaseUrl.replace(/\/+$/, '');
 
-    var endpointUrl = whmcsBaseUrl ? (whmcsBaseUrl + '/modules/addons/sahdev/ajax.php') : '/modules/addons/sahdev/ajax.php';
+    // Native WHMCS Module Action Router (Universal Compatibility across all hostings & firewalls)
+    var endpointUrl = whmcsBaseUrl + '/index.php?m=sahdev';
 
-    // 2. Storage Helpers
+    // ── 2. Storage Helpers ──────────────────────────────────────────────────────
     function sdvGet(key, fallback) {
         try {
             var v = localStorage.getItem(key);
@@ -64,23 +77,32 @@
     var visitorName = sdvGet('sdv_embed_visitor_name', '');
     var visitorEmail = sdvGet('sdv_embed_visitor_email', '');
 
-    // State
+    // ── State ───────────────────────────────────────────────────────────────────
     var isOpen = false;
     var isIdentified = Boolean(visitorEmail && visitorName);
     var isTypingDebounceTimer = null;
     var pollTimer = null;
     var isSending = false;
-    var activeStaffName = null;
     var isStaffTakeover = false;
+    var lastMsgId = 0;
 
-    // 3. Inject CSS Styles
+    // DOM Elements (assigned on mount)
+    var launcherEl = null;
+    var containerEl = null;
+    var msgsEl = null;
+    var inputEl = null;
+    var sendBtn = null;
+    var summonBtn = null;
+    var closeBtn = null;
+
+    // ── 3. CSS Styles ───────────────────────────────────────────────────────────
     var css = `
         #sdv-embed-launcher {
             position: fixed;
             bottom: 24px;
             right: 24px;
-            width: 60px;
-            height: 60px;
+            width: 58px;
+            height: 58px;
             border-radius: 50%;
             background: linear-gradient(135deg, #2563eb, #1d4ed8);
             color: #ffffff;
@@ -92,6 +114,7 @@
             z-index: 2147483646;
             transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s ease;
             user-select: none;
+            -webkit-tap-highlight-color: transparent;
         }
         #sdv-embed-launcher:hover {
             transform: scale(1.06);
@@ -99,12 +122,12 @@
         }
         #sdv-embed-container {
             position: fixed;
-            bottom: 96px;
+            bottom: 94px;
             right: 24px;
-            width: 400px;
+            width: 390px;
             max-width: calc(100vw - 32px);
-            height: 620px;
-            max-height: calc(100vh - 120px);
+            height: 610px;
+            max-height: calc(100vh - 116px);
             background: #ffffff;
             border-radius: 16px;
             box-shadow: 0 20px 50px -10px rgba(15, 23, 42, 0.28), 0 0 0 1px rgba(0, 0, 0, 0.06);
@@ -144,12 +167,12 @@
             width: 36px;
             height: 36px;
             border-radius: 50%;
-            background: #3b82f6;
+            background: #2563eb;
             display: flex;
             align-items: center;
             justify-content: center;
             font-weight: 700;
-            font-size: 14px;
+            font-size: 13px;
             color: #fff;
             flex-shrink: 0;
         }
@@ -157,6 +180,7 @@
             font-size: 14px;
             font-weight: 700;
             color: #f8fafc;
+            line-height: 1.2;
         }
         .sdv-em-status {
             font-size: 11px;
@@ -164,6 +188,7 @@
             display: flex;
             align-items: center;
             gap: 5px;
+            margin-top: 2px;
         }
         .sdv-em-status-dot {
             width: 7px;
@@ -238,7 +263,7 @@
             font-size: 11px;
             font-weight: 700;
             color: #2563eb;
-            margin-bottom: 3px;
+            margin-bottom: 4px;
         }
         .sdv-em-footer {
             padding: 12px;
@@ -277,7 +302,6 @@
         .sdv-em-send:hover {
             background: #1d4ed8;
         }
-        /* Pre-Chat Form Card */
         .sdv-em-prechat-card {
             background: #ffffff;
             border: 1px solid #e2e8f0;
@@ -348,57 +372,126 @@
         }
     `;
 
-    var styleEl = document.createElement('style');
-    styleEl.innerHTML = css;
-    document.head.appendChild(styleEl);
+    // ── 4. Markup Creation ──────────────────────────────────────────────────────
+    function createWidgetMarkup() {
+        launcherEl = document.createElement('div');
+        launcherEl.id = 'sdv-embed-launcher';
+        launcherEl.setAttribute('role', 'button');
+        launcherEl.setAttribute('aria-label', 'Open Live Support Chat');
+        launcherEl.innerHTML = '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>';
 
-    // 4. Inject Markup
-    var launcherEl = document.createElement('div');
-    launcherEl.id = 'sdv-embed-launcher';
-    launcherEl.setAttribute('role', 'button');
-    launcherEl.setAttribute('aria-label', 'Open Live Support Chat');
-    launcherEl.innerHTML = '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>';
-
-    var containerEl = document.createElement('div');
-    containerEl.id = 'sdv-embed-container';
-    containerEl.innerHTML = `
-        <div class="sdv-em-header">
-            <div class="sdv-em-header-left">
-                <div class="sdv-em-avatar">AI</div>
-                <div>
-                    <div class="sdv-em-title">Live Hosting Support</div>
-                    <div class="sdv-em-status"><span class="sdv-em-status-dot"></span> Online &bull; AI Assistant</div>
+        containerEl = document.createElement('div');
+        containerEl.id = 'sdv-embed-container';
+        containerEl.innerHTML = `
+            <div class="sdv-em-header">
+                <div class="sdv-em-header-left">
+                    <div class="sdv-em-avatar">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                    </div>
+                    <div>
+                        <div class="sdv-em-title">Live Hosting Support</div>
+                        <div class="sdv-em-status"><span class="sdv-em-status-dot"></span> Online &bull; Live Assistant</div>
+                    </div>
+                </div>
+                <div class="sdv-em-actions">
+                    <button type="button" class="sdv-em-btn" id="sdv-em-summon-btn" title="Request Live Agent" aria-label="Request Live Agent">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                        <span>Live Agent</span>
+                    </button>
+                    <button type="button" class="sdv-em-btn" id="sdv-em-close-btn" title="Minimize" aria-label="Minimize">&minus;</button>
                 </div>
             </div>
-            <div class="sdv-em-actions">
-                <button type="button" class="sdv-em-btn" id="sdv-em-summon-btn" title="Request Live Agent" aria-label="Request Live Agent">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg>
+            <div class="sdv-em-messages" id="sdv-em-msgs"></div>
+            <div class="sdv-em-footer">
+                <input type="text" class="sdv-em-input" id="sdv-em-input" placeholder="Type your message..." autocomplete="off" />
+                <button type="button" class="sdv-em-send" id="sdv-em-send" title="Send message" aria-label="Send message">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
                 </button>
-                <button type="button" class="sdv-em-btn" id="sdv-em-close-btn" title="Minimize">&minus;</button>
             </div>
-        </div>
-        <div class="sdv-em-messages" id="sdv-em-msgs"></div>
-        <div class="sdv-em-footer">
-            <input type="text" class="sdv-em-input" id="sdv-em-input" placeholder="Type your message..." autocomplete="off" />
-            <button type="button" class="sdv-em-send" id="sdv-em-send" title="Send message">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
-            </button>
-        </div>
-        <div class="sdv-em-branding">Powered by Sahdev AI Live Suite</div>
-    `;
+            <div class="sdv-em-branding">Powered by Sahdev AI Live Suite</div>
+        `;
+    }
 
-    document.body.appendChild(launcherEl);
-    document.body.appendChild(containerEl);
+    // ── 5. Resilient Mounting ───────────────────────────────────────────────────
+    function mountWidget() {
+        if (!document.body) {
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', mountWidget);
+            } else {
+                window.addEventListener('load', mountWidget);
+                setTimeout(mountWidget, 100);
+            }
+            return;
+        }
 
-    var msgsEl = document.getElementById('sdv-em-msgs');
-    var inputEl = document.getElementById('sdv-em-input');
-    var sendBtn = document.getElementById('sdv-em-send');
-    var summonBtn = document.getElementById('sdv-em-summon-btn');
-    var closeBtn = document.getElementById('sdv-em-close-btn');
+        if (document.getElementById('sdv-embed-launcher')) return;
 
-    // 5. Render Pre-Chat Form if Not Identified
+        // Styles injection
+        var targetHead = document.head || document.getElementsByTagName('head')[0] || document.documentElement;
+        if (targetHead && !document.getElementById('sdv-embed-styles')) {
+            var styleEl = document.createElement('style');
+            styleEl.id = 'sdv-embed-styles';
+            styleEl.innerHTML = css;
+            targetHead.appendChild(styleEl);
+        }
+
+        // Markup injection
+        createWidgetMarkup();
+        document.body.appendChild(launcherEl);
+        document.body.appendChild(containerEl);
+
+        // Elements cache
+        msgsEl = document.getElementById('sdv-em-msgs');
+        inputEl = document.getElementById('sdv-em-input');
+        sendBtn = document.getElementById('sdv-em-send');
+        summonBtn = document.getElementById('sdv-em-summon-btn');
+        closeBtn = document.getElementById('sdv-em-close-btn');
+
+        bindEvents();
+    }
+
+    // ── 6. Event Binding ────────────────────────────────────────────────────────
+    function bindEvents() {
+        if (!launcherEl) return;
+
+        launcherEl.addEventListener('click', function(e) {
+            e.preventDefault();
+            toggleChat();
+        });
+
+        closeBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            toggleChat(false);
+        });
+
+        summonBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            summonHuman();
+        });
+
+        sendBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            sendMessage();
+        });
+
+        inputEl.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+
+        inputEl.addEventListener('input', function() {
+            if (isTypingDebounceTimer) clearTimeout(isTypingDebounceTimer);
+            isTypingDebounceTimer = setTimeout(function() {
+                broadcastTypingPreview(inputEl.value || '');
+            }, 400);
+        });
+    }
+
+    // ── 7. Pre-Chat Form ────────────────────────────────────────────────────────
     function renderPreChatForm() {
-        if (isIdentified) return;
+        if (isIdentified || !msgsEl) return;
         var existingCard = document.getElementById('sdv-em-prechat-card');
         if (existingCard) return;
 
@@ -438,7 +531,6 @@
             card.remove();
             appendMsg('bot', 'Hi ' + name + '! How can we assist you with your hosting, domains, or billing today?');
 
-            // Link email to backend session
             linkVisitorEmail(name, email);
         });
     }
@@ -467,12 +559,12 @@
             credentials: 'include'
         }).then(function(r){ return r.json(); }).then(function(d){
             if (d && d.client_id) {
-                appendSystemNote('Linked to your WHMCS client account (' + (d.client_name || email) + '). Live telemetry enabled.');
+                appendSystemNote('Account verified: ' + (d.client_name || email));
             }
         }).catch(function(){});
     }
 
-    // 6. Network Request Helpers
+    // ── 8. Networking & Messaging ───────────────────────────────────────────────
     function initSession(callback) {
         var fd = new FormData();
         fd.append('action', 'client_chat_init');
@@ -489,6 +581,17 @@
             if (d && d.session_uuid) {
                 sessionUuid = d.session_uuid;
                 sdvSet('sdv_embed_session_uuid', sessionUuid);
+            }
+            if (d && d.messages && d.messages.length > 0) {
+                d.messages.forEach(function(m) {
+                    if (m.sender_role === 'user' || m.sender_type === 'client') {
+                        appendMsg('user', m.message_content || m.message_text, null, m.id);
+                    } else if (m.sender_role === 'staff' || m.sender_type === 'staff') {
+                        appendMsg('staff', m.message_content || m.message_text, m.admin_name || m.sender_name, m.id);
+                    } else {
+                        appendMsg('bot', m.message_content || m.message_text, null, m.id);
+                    }
+                });
             }
             if (typeof callback === 'function') callback(d);
         }).catch(function(err){
@@ -512,17 +615,20 @@
     }
 
     function appendMsg(role, text, staffName, msgId) {
-        if (!text) return null;
+        if (!text || !msgsEl) return null;
         var rawText = String(text).trim();
         if (!rawText) return null;
 
-        if (msgId && document.getElementById('sdv-em-msg-' + msgId)) {
-            return document.getElementById('sdv-em-msg-' + msgId);
+        if (msgId) {
+            lastMsgId = Math.max(lastMsgId, parseInt(msgId, 10) || 0);
+            if (document.getElementById('sdv-em-msg-' + msgId)) {
+                return document.getElementById('sdv-em-msg-' + msgId);
+            }
         }
 
         // Deduplication against recent messages
         var norm = rawText.replace(/\s+/g, ' ').toLowerCase();
-        var bubbles = msgsEl ? msgsEl.children : [];
+        var bubbles = msgsEl.children;
         var start = Math.max(0, bubbles.length - 8);
         for (var i = bubbles.length - 1; i >= start; i--) {
             var b = bubbles[i];
@@ -550,10 +656,11 @@
     }
 
     function appendSystemNote(text) {
+        if (!msgsEl) return;
         var rawText = String(text || '').trim();
         if (!rawText) return;
         var norm = rawText.replace(/\s+/g, ' ').toLowerCase();
-        var bubbles = msgsEl ? msgsEl.querySelectorAll('.sdv-em-system-note') : [];
+        var bubbles = msgsEl.querySelectorAll('.sdv-em-system-note');
         for (var i = bubbles.length - 1; i >= 0 && i >= bubbles.length - 3; i--) {
             if ((bubbles[i].textContent || '').replace(/\s+/g, ' ').trim().toLowerCase() === norm) {
                 return;
@@ -571,9 +678,8 @@
         return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
 
-    // 7. Messaging Logic
     function sendMessage() {
-        if (isSending) return;
+        if (isSending || !inputEl) return;
         var text = (inputEl.value || '').trim();
         if (!text) return;
 
@@ -585,7 +691,7 @@
 
         isSending = true;
         inputEl.value = '';
-        broadcastTypingPreview(''); // Clear typing peek
+        broadcastTypingPreview('');
 
         appendMsg('user', text);
 
@@ -618,15 +724,14 @@
             }
         }).catch(function(err){
             isSending = false;
-            appendMsg('bot', 'Thank you for your message! Our team has received your inquiry.');
+            appendMsg('bot', 'Thank you for your message! Our support team has received your inquiry.');
         });
     }
 
-    // 8. Human Summon Trigger
     function summonHuman() {
         if (!isIdentified) {
             renderPreChatForm();
-            appendSystemNote('Please provide your name & email so our support staff can review your account services.');
+            appendSystemNote('Please introduce yourself with your name & email so our support staff can review your account.');
             return;
         }
 
@@ -641,11 +746,10 @@
             body: fd,
             credentials: 'include'
         }).then(function(r){ return r.json(); }).then(function(d){
-            appendSystemNote('🔔 A live support agent has been notified and will join shortly. Feel free to describe your inquiry in the interim.');
+            appendSystemNote('🔔 A live support engineer has been summoned and will join this conversation shortly.');
         }).catch(function(){});
     }
 
-    // 9. Real-time Live Polling Engine
     function startPolling() {
         if (pollTimer) clearInterval(pollTimer);
         pollTimer = setInterval(function() {
@@ -654,6 +758,7 @@
             fd.append('action', 'client_chat_poll');
             fd.append('session_uuid', sessionUuid);
             fd.append('visitor_token', visitorToken);
+            if (lastMsgId > 0) fd.append('after_id', lastMsgId);
 
             fetch(endpointUrl, {
                 method: 'POST',
@@ -661,24 +766,24 @@
                 credentials: 'include'
             }).then(function(r){ return r.json(); }).then(function(d){
                 if (!d || !d.success) return;
-                // Handle new incoming staff messages
+                // Incoming staff or system messages
                 if (d.messages && d.messages.length > 0) {
                     d.messages.forEach(function(m) {
-                        if (m.sender_type === 'staff') {
-                            appendMsg('staff', m.message_text, m.sender_name || 'Support Agent', m.id);
+                        if (m.sender_type === 'staff' || m.sender_role === 'staff') {
+                            appendMsg('staff', m.message_text || m.message_content, m.sender_name || m.admin_name, m.id);
                         } else if (m.sender_type === 'system') {
-                            appendSystemNote(m.message_text);
+                            appendSystemNote(m.message_text || m.message_content);
                         }
                     });
                 }
                 if (d.new_messages && d.new_messages.length > 0) {
                     d.new_messages.forEach(function(m) {
                         if (m.sender_role === 'staff' || m.is_staff) {
-                            appendMsg('staff', m.message_content || m.message_text, m.admin_name || m.sender_name || 'Support Agent', m.id);
+                            appendMsg('staff', m.message_content || m.message_text, m.admin_name || m.sender_name, m.id);
                         }
                     });
                 }
-                // Handle takeover status change
+                // Takeover status update
                 if (d.status === 'live_takeover' || (d.takeover_admin_id && d.takeover_admin_id > 0)) {
                     isStaffTakeover = true;
                 } else if (isStaffTakeover && d.status !== 'live_takeover') {
@@ -688,63 +793,38 @@
         }, 3000);
     }
 
-    // 10. Event Listeners & Initialization
     function toggleChat(open) {
+        if (!containerEl) return;
         isOpen = (typeof open === 'boolean') ? open : !isOpen;
         if (isOpen) {
             containerEl.classList.add('sdv-embed-open');
             if (!sessionUuid) {
-                initSession(function(){
-                    if (!isIdentified) renderPreChatForm();
-                    else appendMsg('bot', 'Hi ' + (visitorName || 'there') + '! How can we help you today?');
+                initSession(function(d){
+                    if (!isIdentified) {
+                        renderPreChatForm();
+                    } else {
+                        var greeting = (d && d.greeting) ? d.greeting : ('Hi ' + (visitorName || 'there') + '! How can we help you today?');
+                        if (msgsEl && msgsEl.children.length === 0) {
+                            appendMsg('bot', greeting);
+                        }
+                    }
                 });
             } else {
-                if (!isIdentified) renderPreChatForm();
-                else if (msgsEl.children.length === 0) {
+                if (!isIdentified) {
+                    renderPreChatForm();
+                } else if (msgsEl && msgsEl.children.length === 0) {
                     appendMsg('bot', 'Hi ' + (visitorName || 'there') + '! How can we help you today?');
                 }
             }
             startPolling();
-            setTimeout(function(){ inputEl.focus(); }, 100);
+            setTimeout(function(){ if (inputEl) inputEl.focus(); }, 120);
         } else {
             containerEl.classList.remove('sdv-embed-open');
             if (pollTimer) clearInterval(pollTimer);
         }
     }
 
-    launcherEl.addEventListener('click', function(e) {
-        e.preventDefault();
-        toggleChat();
-    });
-
-    closeBtn.addEventListener('click', function(e) {
-        e.preventDefault();
-        toggleChat(false);
-    });
-
-    summonBtn.addEventListener('click', function(e) {
-        e.preventDefault();
-        summonHuman();
-    });
-
-    sendBtn.addEventListener('click', function(e) {
-        e.preventDefault();
-        sendMessage();
-    });
-
-    inputEl.addEventListener('keydown', function(e) {
-        if (e.key === 'Enter') {
-            e.preventDefault();
-            sendMessage();
-        }
-    });
-
-    // 400ms Keystroke Sneak-Peek Debounce
-    inputEl.addEventListener('input', function() {
-        if (isTypingDebounceTimer) clearTimeout(isTypingDebounceTimer);
-        isTypingDebounceTimer = setTimeout(function() {
-            broadcastTypingPreview(inputEl.value || '');
-        }, 400);
-    });
+    // ── 9. Start Mounting ───────────────────────────────────────────────────────
+    mountWidget();
 
 })();

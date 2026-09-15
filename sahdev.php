@@ -1405,10 +1405,30 @@ function sahdev_clientarea($vars)
     $action = $_REQUEST['action'] ?? '';
     $sahdevAct = $_REQUEST['sahdev_act'] ?? '';
 
+    // ── External Live Chat Embed Widget Serving ──────────────────────────────
+    if ($action === 'embed_js' || $action === 'embed.js' || $sahdevAct === 'embed_js') {
+        while (ob_get_level() > 0) {
+            @ob_end_clean();
+        }
+        header('Content-Type: application/javascript; charset=utf-8');
+        header('Access-Control-Allow-Origin: *');
+        header('Access-Control-Allow-Methods: GET, OPTIONS');
+        header('Cache-Control: public, max-age=3600');
+        $embedPath = __DIR__ . '/embed.js';
+        if (file_exists($embedPath)) {
+            readfile($embedPath);
+        } else {
+            echo '/* Sahdev Live Chat: embed.js file not found */';
+        }
+        exit;
+    }
+
     $clientActions = [
         'client_chat_init', 'client_chat_message', 'client_chat_escalate',
         'client_chat_get_history', 'client_chat_load_session', 'client_chat_new_session',
-        'client_chat_poll', 'client_chat_feedback', 'visitor_heartbeat'
+        'client_chat_poll', 'client_chat_feedback', 'visitor_heartbeat',
+        'client_chat_kb_search', 'client_chat_typing', 'client_chat_summon',
+        'client_chat_link_email', 'client_chat_rate_message'
     ];
     if ($sahdevAct === 'ajax_handler' || in_array($action, $clientActions, true) || !empty($action)) {
         while (ob_get_level() > 0) {

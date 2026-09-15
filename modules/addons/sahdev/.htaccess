@@ -1,0 +1,12 @@
+# Sahdev Live Chat Addon - Permit Public Static Embed Assets
+<IfModule mod_authz_core.c>
+    <FilesMatch "\.(js|css|png|jpg|jpeg|gif|svg|ico|woff|woff2|ttf|eot)$">
+        Require all granted
+    </FilesMatch>
+</IfModule>
+<IfModule !mod_authz_core.c>
+    <FilesMatch "\.(js|css|png|jpg|jpeg|gif|svg|ico|woff|woff2|ttf|eot)$">
+        Order Allow,Deny
+        Allow from all
+    </FilesMatch>
+</IfModule>
