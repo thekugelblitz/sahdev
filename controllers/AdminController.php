@@ -8788,15 +8788,26 @@ class AdminController
             // 2. Save Data Sources & Scope
             if (isset($_POST['save_client_chat_datasources'])) {
                 Capsule::table('tblsahdev_settings')->where('id', $settingsId)->update([
-                    'client_chat_ds_services'       => !empty($_POST['client_chat_ds_services']) ? 1 : 0,
-                    'client_chat_ds_domains'        => !empty($_POST['client_chat_ds_domains']) ? 1 : 0,
-                    'client_chat_ds_invoices'       => !empty($_POST['client_chat_ds_invoices']) ? 1 : 0,
-                    'client_chat_ds_tickets'        => !empty($_POST['client_chat_ds_tickets']) ? 1 : 0,
-                    'client_chat_ds_kb'             => !empty($_POST['client_chat_ds_kb']) ? 1 : 0,
-                    'client_chat_ds_network_issues' => !empty($_POST['client_chat_ds_network_issues']) ? 1 : 0,
-                    'client_chat_ds_catalog'        => !empty($_POST['client_chat_ds_catalog']) ? 1 : 0,
-                    'client_chat_ds_domain_pricing' => !empty($_POST['client_chat_ds_domain_pricing']) ? 1 : 0,
-                    'updated_at'                    => \Carbon\Carbon::now(),
+                    'client_chat_ds_services'           => !empty($_POST['client_chat_ds_services']) ? 1 : 0,
+                    'client_chat_ds_server_nameservers' => !empty($_POST['client_chat_ds_server_nameservers']) ? 1 : 0,
+                    'client_chat_ds_hosting_addons'     => !empty($_POST['client_chat_ds_hosting_addons']) ? 1 : 0,
+                    'client_chat_ds_config_options'     => !empty($_POST['client_chat_ds_config_options']) ? 1 : 0,
+                    'client_chat_ds_ssl_orders'         => !empty($_POST['client_chat_ds_ssl_orders']) ? 1 : 0,
+                    'client_chat_ds_domains'            => !empty($_POST['client_chat_ds_domains']) ? 1 : 0,
+                    'client_chat_ds_domain_addons'      => !empty($_POST['client_chat_ds_domain_addons']) ? 1 : 0,
+                    'client_chat_ds_invoices'           => !empty($_POST['client_chat_ds_invoices']) ? 1 : 0,
+                    'client_chat_ds_credit_balance'     => !empty($_POST['client_chat_ds_credit_balance']) ? 1 : 0,
+                    'client_chat_ds_tickets'            => !empty($_POST['client_chat_ds_tickets']) ? 1 : 0,
+                    'client_chat_ds_quotes'             => !empty($_POST['client_chat_ds_quotes']) ? 1 : 0,
+                    'client_chat_ds_kb'                 => !empty($_POST['client_chat_ds_kb']) ? 1 : 0,
+                    'client_chat_ds_network_issues'     => !empty($_POST['client_chat_ds_network_issues']) ? 1 : 0,
+                    'client_chat_ds_catalog'            => !empty($_POST['client_chat_ds_catalog']) ? 1 : 0,
+                    'client_chat_ds_domain_pricing'     => !empty($_POST['client_chat_ds_domain_pricing']) ? 1 : 0,
+                    'client_chat_ds_announcements'      => !empty($_POST['client_chat_ds_announcements']) ? 1 : 0,
+                    'client_chat_ds_promotions'         => !empty($_POST['client_chat_ds_promotions']) ? 1 : 0,
+                    'client_chat_ds_payment_gateways'   => !empty($_POST['client_chat_ds_payment_gateways']) ? 1 : 0,
+                    'client_chat_ds_departments'        => !empty($_POST['client_chat_ds_departments']) ? 1 : 0,
+                    'updated_at'                        => \Carbon\Carbon::now(),
                 ]);
                 $successMessage = "Self-Help Data Source permissions updated successfully.";
                 $currentTab = 'datasources';
@@ -10013,186 +10024,519 @@ class AdminController
 
             <!-- ── TAB 3: DATA SOURCES & SELF-HELP SCOPE ───────────────────────── -->
             <?php if ($currentTab === 'datasources'): ?>
-                <div class="panel panel-default" style="border-radius: 8px; margin-bottom: 20px;">
-                    <div class="panel-heading" style="background: #fff; padding: 16px 20px;">
-                        <strong style="font-size: 15px;"><i class="fas fa-shield-alt text-success"></i> Customer Account Data Sources & Tenant Isolation</strong>
+                <form method="post" action="<?php echo $baseActionUrl; ?>&tab=datasources">
+                    <?php echo $csrfToken; ?>
+                    <input type="hidden" name="save_client_chat_datasources" value="1">
+
+                    <!-- Security & Isolation Architecture Guarantee -->
+                    <div class="alert alert-info" style="border-radius: 8px; font-size: 13px; line-height: 1.6; margin-bottom: 25px; border-left: 5px solid #0284c7; background: #f0f9ff; color: #0369a1;">
+                        <h4 style="margin: 0 0 8px 0; font-size: 15px; font-weight: 700; color: #0369a1;">
+                            <i class="fas fa-shield-alt"></i> Enterprise Data Security, Privacy &amp; Multi-Tenant Isolation
+                        </h4>
+                        <p style="margin: 0 0 6px 0;">
+                            <strong>Client-Level Isolation:</strong> Every account query executing for customer live chat strictly enforces <code>userid = :client_id</code>. Non-authenticated guests receive <em>zero</em> customer account records.
+                        </p>
+                        <p style="margin: 0 0 6px 0;">
+                            <strong>Service-Level Isolation:</strong> Server nameservers, addons, and hardware specs are joined strictly through the customer's owned services (<code>tblhosting.userid = :client_id</code>). Sensitive secrets—including server root passwords, IP access hashes, payment gateway API keys, and staff internal ticket notes—are completely excluded from projection pipelines.
+                        </p>
+                        <p style="margin: 0;">
+                            <strong>Read-Only Projections:</strong> The AI Assistant operates exclusively on read-only projections. No database mutation is allowed through chat context.
+                        </p>
                     </div>
-                    <div class="panel-body" style="padding: 20px;">
-                        <div class="alert alert-success" style="font-size: 12.5px; margin-bottom: 20px;">
-                            <strong><i class="fas fa-lock"></i> Strict Multi-Tenant Data Isolation Guarantee:</strong>
-                            Every database query executing for customer live chat strictly enforces <code>userid = :client_id</code>. Guests and non-logged-in visitors receive zero account data. Mutation is technically impossible—the AI operates solely on a read-only projection of the customer's profile.
-                        </div>
 
-                        <form method="post" action="<?php echo $baseActionUrl; ?>&tab=datasources">
-                            <?php echo $csrfToken; ?>
-                            <input type="hidden" name="save_client_chat_datasources" value="1">
-
-                            <div class="list-group" style="margin-bottom: 25px;">
-                                <!-- 1. Services -->
-                                <div class="list-group-item" style="padding: 16px;">
-                                    <div class="row">
-                                        <div class="col-md-9">
-                                            <h4 class="list-group-item-heading" style="font-size: 14px; font-weight: 700; color: #1e293b;">
-                                                <i class="fas fa-server text-primary"></i> Active Hosting & Services
-                                            </h4>
-                                            <p class="list-group-item-text text-muted" style="font-size: 12.5px; margin-top: 4px;">
-                                                Provides the AI with package names, domain bindings, IP addresses, renewal dates, and statuses for the client's products. Never exposes server root passwords or credentials.
-                                            </p>
-                                        </div>
-                                        <div class="col-md-3 text-right">
-                                            <label class="switch" style="margin: 5px 0 0 0;">
-                                                <input type="checkbox" name="client_chat_ds_services" value="1" <?php echo !empty($settings->client_chat_ds_services ?? 1) ? 'checked' : ''; ?>>
-                                                <span class="btn btn-sm <?php echo !empty($settings->client_chat_ds_services ?? 1) ? 'btn-success' : 'btn-default'; ?>">Enabled</span>
-                                            </label>
-                                        </div>
-                                    </div>
+                    <!-- CARD 1: AUTHENTICATED CLIENT-ISOLATED DATA SOURCES -->
+                    <div class="panel panel-default" style="border-radius: 8px; margin-bottom: 25px; box-shadow: 0 1px 4px rgba(0,0,0,0.04); overflow: hidden;">
+                        <div class="panel-heading" style="background: linear-gradient(to right, #f8fafc, #ffffff); padding: 16px 20px; border-bottom: 1px solid #e2e8f0;">
+                            <div class="row" style="display: flex; align-items: center;">
+                                <div class="col-xs-8">
+                                    <strong style="font-size: 15px; color: #0f172a;">
+                                        <i class="fas fa-user-lock text-success" style="margin-right: 6px;"></i> Authenticated Customer-Isolated Data Scope
+                                    </strong>
+                                    <span class="badge" style="background: #10b981; color: #fff; font-size: 11px; margin-left: 8px; padding: 4px 8px;">client_id &gt; 0 Only</span>
                                 </div>
-
-                                <!-- 2. Domains -->
-                                <div class="list-group-item" style="padding: 16px;">
-                                    <div class="row">
-                                        <div class="col-md-9">
-                                            <h4 class="list-group-item-heading" style="font-size: 14px; font-weight: 700; color: #1e293b;">
-                                                <i class="fas fa-globe text-info"></i> Registered Domains & DNS Status
-                                            </h4>
-                                            <p class="list-group-item-text text-muted" style="font-size: 12.5px; margin-top: 4px;">
-                                                Allows the AI to answer domain status, expiration date, registrar status, and nameserver guidance for domains owned by the client.
-                                            </p>
-                                        </div>
-                                        <div class="col-md-3 text-right">
-                                            <label class="switch" style="margin: 5px 0 0 0;">
-                                                <input type="checkbox" name="client_chat_ds_domains" value="1" <?php echo !empty($settings->client_chat_ds_domains ?? 1) ? 'checked' : ''; ?>>
-                                                <span class="btn btn-sm <?php echo !empty($settings->client_chat_ds_domains ?? 1) ? 'btn-success' : 'btn-default'; ?>">Enabled</span>
-                                            </label>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <!-- 3. Invoices -->
-                                <div class="list-group-item" style="padding: 16px;">
-                                    <div class="row">
-                                        <div class="col-md-9">
-                                            <h4 class="list-group-item-heading" style="font-size: 14px; font-weight: 700; color: #1e293b;">
-                                                <i class="fas fa-file-invoice-dollar text-warning"></i> Recent Invoices & Billing Due Status
-                                            </h4>
-                                            <p class="list-group-item-text text-muted" style="font-size: 12.5px; margin-top: 4px;">
-                                                Enables the assistant to inform the client of unpaid invoice balances, invoice numbers, and due dates with direct links to pay securely.
-                                            </p>
-                                        </div>
-                                        <div class="col-md-3 text-right">
-                                            <label class="switch" style="margin: 5px 0 0 0;">
-                                                <input type="checkbox" name="client_chat_ds_invoices" value="1" <?php echo !empty($settings->client_chat_ds_invoices ?? 1) ? 'checked' : ''; ?>>
-                                                <span class="btn btn-sm <?php echo !empty($settings->client_chat_ds_invoices ?? 1) ? 'btn-success' : 'btn-default'; ?>">Enabled</span>
-                                            </label>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <!-- 4. Tickets -->
-                                <div class="list-group-item" style="padding: 16px;">
-                                    <div class="row">
-                                        <div class="col-md-9">
-                                            <h4 class="list-group-item-heading" style="font-size: 14px; font-weight: 700; color: #1e293b;">
-                                                <i class="fas fa-ticket-alt text-danger"></i> Recent Support Tickets
-                                            </h4>
-                                            <p class="list-group-item-text text-muted" style="font-size: 12.5px; margin-top: 4px;">
-                                                Shares ticket numbers, subject lines, and open/answered statuses. Staff-only internal notes are strictly excluded from client live chat context.
-                                            </p>
-                                        </div>
-                                        <div class="col-md-3 text-right">
-                                            <label class="switch" style="margin: 5px 0 0 0;">
-                                                <input type="checkbox" name="client_chat_ds_tickets" value="1" <?php echo !empty($settings->client_chat_ds_tickets ?? 1) ? 'checked' : ''; ?>>
-                                                <span class="btn btn-sm <?php echo !empty($settings->client_chat_ds_tickets ?? 1) ? 'btn-success' : 'btn-default'; ?>">Enabled</span>
-                                            </label>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <!-- 5. Knowledgebase -->
-                                <div class="list-group-item" style="padding: 16px;">
-                                    <div class="row">
-                                        <div class="col-md-9">
-                                            <h4 class="list-group-item-heading" style="font-size: 14px; font-weight: 700; color: #1e293b;">
-                                                <i class="fas fa-book text-success"></i> Public Knowledge Base Grounding
-                                            </h4>
-                                            <p class="list-group-item-text text-muted" style="font-size: 12.5px; margin-top: 4px;">
-                                                Performs keyword searches on your public WHMCS knowledge base to ground AI troubleshooting answers directly in your official tutorials.
-                                            </p>
-                                        </div>
-                                        <div class="col-md-3 text-right">
-                                            <label class="switch" style="margin: 5px 0 0 0;">
-                                                <input type="checkbox" name="client_chat_ds_kb" value="1" <?php echo !empty($settings->client_chat_ds_kb ?? 1) ? 'checked' : ''; ?>>
-                                                <span class="btn btn-sm <?php echo !empty($settings->client_chat_ds_kb ?? 1) ? 'btn-success' : 'btn-default'; ?>">Enabled</span>
-                                            </label>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <!-- 6. Network Issues -->
-                                <div class="list-group-item" style="padding: 16px;">
-                                    <div class="row">
-                                        <div class="col-md-9">
-                                            <h4 class="list-group-item-heading" style="font-size: 14px; font-weight: 700; color: #1e293b;">
-                                                <i class="fas fa-satellite-dish text-info"></i> Active Network & Server Incident Broadcasts
-                                            </h4>
-                                            <p class="list-group-item-text text-muted" style="font-size: 12.5px; margin-top: 4px;">
-                                                Injects active incidents from WHMCS Network Issues into chat context so the AI proactively reassures customers during ongoing maintenance or outages.
-                                            </p>
-                                        </div>
-                                        <div class="col-md-3 text-right">
-                                            <label class="switch" style="margin: 5px 0 0 0;">
-                                                <input type="checkbox" name="client_chat_ds_network_issues" value="1" <?php echo !empty($settings->client_chat_ds_network_issues ?? 1) ? 'checked' : ''; ?>>
-                                                <span class="btn btn-sm <?php echo !empty($settings->client_chat_ds_network_issues ?? 1) ? 'btn-success' : 'btn-default'; ?>">Enabled</span>
-                                            </label>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <!-- 7. Active Products & Services Catalog -->
-                                <div class="list-group-item" style="padding: 16px;">
-                                    <div class="row">
-                                        <div class="col-md-9">
-                                            <h4 class="list-group-item-heading" style="font-size: 14px; font-weight: 700; color: #1e293b;">
-                                                <i class="fas fa-cubes text-primary"></i> Active Products &amp; Services Catalog (Presales &amp; Tech Sales)
-                                            </h4>
-                                            <p class="list-group-item-text text-muted" style="font-size: 12.5px; margin-top: 4px;">
-                                                Enables the AI to answer presales, plan recommendations, and technical queries regarding your active hosting plans, cloud servers, and specifications. Automatically excludes hidden, retired, or disabled products and includes direct 1-click cart order links.
-                                            </p>
-                                        </div>
-                                        <div class="col-md-3 text-right">
-                                            <label class="switch" style="margin: 5px 0 0 0;">
-                                                <input type="checkbox" name="client_chat_ds_catalog" value="1" <?php echo !empty($settings->client_chat_ds_catalog ?? 1) ? 'checked' : ''; ?>>
-                                                <span class="btn btn-sm <?php echo !empty($settings->client_chat_ds_catalog ?? 1) ? 'btn-success' : 'btn-default'; ?>">Enabled</span>
-                                            </label>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <!-- 8. Domain Pricing & TLD Registration Search -->
-                                <div class="list-group-item" style="padding: 16px;">
-                                    <div class="row">
-                                        <div class="col-md-9">
-                                            <h4 class="list-group-item-heading" style="font-size: 14px; font-weight: 700; color: #1e293b;">
-                                                <i class="fas fa-search-dollar text-success"></i> Domain Pricing, TLD Extensions &amp; Registration
-                                            </h4>
-                                            <p class="list-group-item-text text-muted" style="font-size: 12.5px; margin-top: 4px;">
-                                                Allows the AI to answer domain pricing, supported TLD extensions, registration and transfer queries, with direct cart registration links.
-                                            </p>
-                                        </div>
-                                        <div class="col-md-3 text-right">
-                                            <label class="switch" style="margin: 5px 0 0 0;">
-                                                <input type="checkbox" name="client_chat_ds_domain_pricing" value="1" <?php echo !empty($settings->client_chat_ds_domain_pricing ?? 1) ? 'checked' : ''; ?>>
-                                                <span class="btn btn-sm <?php echo !empty($settings->client_chat_ds_domain_pricing ?? 1) ? 'btn-success' : 'btn-default'; ?>">Enabled</span>
-                                            </label>
-                                        </div>
-                                    </div>
+                                <div class="col-xs-4 text-right">
+                                    <small class="text-muted" style="font-size: 11.5px;"><i class="fas fa-fingerprint"></i> Strict Tenant Isolation</small>
                                 </div>
                             </div>
+                        </div>
+                        <div class="panel-body" style="padding: 0;">
+                            <div class="list-group" style="margin-bottom: 0;">
 
-                            <button type="submit" class="btn btn-primary btn-lg"><i class="fas fa-save"></i> Save Data Source Rules</button>
-                        </form>
+                                <!-- 1. Active Services -->
+                                <div class="list-group-item" style="padding: 16px 20px; border-left: none; border-right: none;">
+                                    <div class="row" style="display: flex; align-items: center;">
+                                        <div class="col-sm-10 col-xs-9">
+                                            <div style="font-weight: 700; font-size: 14px; color: #1e293b; margin-bottom: 4px;">
+                                                <i class="fas fa-server text-primary" style="width: 20px;"></i> Active Hosting &amp; Cloud Services
+                                                <span class="label label-success" style="margin-left: 6px; font-weight: 500; font-size: 10px;">Client Isolated</span>
+                                            </div>
+                                            <div class="text-muted" style="font-size: 12.5px; line-height: 1.5;">
+                                                Provides package names, primary domains, statuses, billing cycles, and next renewal dates for services owned by the authenticated client. Server passwords and access credentials are strictly omitted.
+                                            </div>
+                                        </div>
+                                        <div class="col-sm-2 col-xs-3 text-right">
+                                            <label style="position: relative; display: inline-block; width: 46px; height: 24px; margin: 0; cursor: pointer; vertical-align: middle;">
+                                                <input type="checkbox" name="client_chat_ds_services" value="1" <?php echo !empty($settings->client_chat_ds_services ?? 1) ? 'checked' : ''; ?> style="position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer; z-index: 2;" onchange="var s=this.nextElementSibling; var k=s.firstElementChild; if(this.checked){ s.style.backgroundColor='#10b981'; k.style.left='24px'; }else{ s.style.backgroundColor='#cbd5e1'; k.style.left='3px'; }">
+                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: <?php echo !empty($settings->client_chat_ds_services ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
+                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_services ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: #fff; transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
+                                                </span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 2. Server Nameservers -->
+                                <div class="list-group-item" style="padding: 16px 20px; border-left: none; border-right: none;">
+                                    <div class="row" style="display: flex; align-items: center;">
+                                        <div class="col-sm-10 col-xs-9">
+                                            <div style="font-weight: 700; font-size: 14px; color: #1e293b; margin-bottom: 4px;">
+                                                <i class="fas fa-network-wired text-info" style="width: 20px;"></i> Assigned Server Nameservers &amp; Hostname
+                                                <span class="label label-success" style="margin-left: 6px; font-weight: 500; font-size: 10px;">Service Level</span>
+                                            </div>
+                                            <div class="text-muted" style="font-size: 12.5px; line-height: 1.5;">
+                                                Inspects <code>tblservers</code> strictly for servers hosting the client's active services. Allows the AI to provide correct DNS nameservers (e.g. <code>ns1/ns2.host.com</code>) and server hostname. Access hashes and root credentials are never queried.
+                                            </div>
+                                        </div>
+                                        <div class="col-sm-2 col-xs-3 text-right">
+                                            <label style="position: relative; display: inline-block; width: 46px; height: 24px; margin: 0; cursor: pointer; vertical-align: middle;">
+                                                <input type="checkbox" name="client_chat_ds_server_nameservers" value="1" <?php echo !empty($settings->client_chat_ds_server_nameservers ?? 1) ? 'checked' : ''; ?> style="position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer; z-index: 2;" onchange="var s=this.nextElementSibling; var k=s.firstElementChild; if(this.checked){ s.style.backgroundColor='#10b981'; k.style.left='24px'; }else{ s.style.backgroundColor='#cbd5e1'; k.style.left='3px'; }">
+                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: <?php echo !empty($settings->client_chat_ds_server_nameservers ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
+                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_server_nameservers ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: #fff; transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
+                                                </span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 3. Hosting Addons -->
+                                <div class="list-group-item" style="padding: 16px 20px; border-left: none; border-right: none;">
+                                    <div class="row" style="display: flex; align-items: center;">
+                                        <div class="col-sm-10 col-xs-9">
+                                            <div style="font-weight: 700; font-size: 14px; color: #1e293b; margin-bottom: 4px;">
+                                                <i class="fas fa-puzzle-piece text-warning" style="width: 20px;"></i> Hosting Addons &amp; Extra Subscriptions
+                                                <span class="label label-success" style="margin-left: 6px; font-weight: 500; font-size: 10px;">Service Level</span>
+                                            </div>
+                                            <div class="text-muted" style="font-size: 12.5px; line-height: 1.5;">
+                                                Reads active addons attached to the client's hosting packages (e.g. Dedicated IP, cPanel Backup, SpamExperts) via <code>tblhostingaddons</code> linked to the client's service IDs.
+                                            </div>
+                                        </div>
+                                        <div class="col-sm-2 col-xs-3 text-right">
+                                            <label style="position: relative; display: inline-block; width: 46px; height: 24px; margin: 0; cursor: pointer; vertical-align: middle;">
+                                                <input type="checkbox" name="client_chat_ds_hosting_addons" value="1" <?php echo !empty($settings->client_chat_ds_hosting_addons ?? 1) ? 'checked' : ''; ?> style="position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer; z-index: 2;" onchange="var s=this.nextElementSibling; var k=s.firstElementChild; if(this.checked){ s.style.backgroundColor='#10b981'; k.style.left='24px'; }else{ s.style.backgroundColor='#cbd5e1'; k.style.left='3px'; }">
+                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: <?php echo !empty($settings->client_chat_ds_hosting_addons ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
+                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_hosting_addons ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: #fff; transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
+                                                </span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 4. Configurable Options -->
+                                <div class="list-group-item" style="padding: 16px 20px; border-left: none; border-right: none;">
+                                    <div class="row" style="display: flex; align-items: center;">
+                                        <div class="col-sm-10 col-xs-9">
+                                            <div style="font-weight: 700; font-size: 14px; color: #1e293b; margin-bottom: 4px;">
+                                                <i class="fas fa-microchip text-primary" style="width: 20px;"></i> Configurable Options &amp; Resource Upgrades
+                                                <span class="label label-success" style="margin-left: 6px; font-weight: 500; font-size: 10px;">Service Level</span>
+                                            </div>
+                                            <div class="text-muted" style="font-size: 12.5px; line-height: 1.5;">
+                                                Provides selected hardware specs (e.g., RAM, vCPU cores, SSD storage, bandwidth allocations) via <code>tblhostingconfigoptions</code> so the AI accurately describes the customer's server build.
+                                            </div>
+                                        </div>
+                                        <div class="col-sm-2 col-xs-3 text-right">
+                                            <label style="position: relative; display: inline-block; width: 46px; height: 24px; margin: 0; cursor: pointer; vertical-align: middle;">
+                                                <input type="checkbox" name="client_chat_ds_config_options" value="1" <?php echo !empty($settings->client_chat_ds_config_options ?? 1) ? 'checked' : ''; ?> style="position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer; z-index: 2;" onchange="var s=this.nextElementSibling; var k=s.firstElementChild; if(this.checked){ s.style.backgroundColor='#10b981'; k.style.left='24px'; }else{ s.style.backgroundColor='#cbd5e1'; k.style.left='3px'; }">
+                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: <?php echo !empty($settings->client_chat_ds_config_options ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
+                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_config_options ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: #fff; transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
+                                                </span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 5. SSL Orders -->
+                                <div class="list-group-item" style="padding: 16px 20px; border-left: none; border-right: none;">
+                                    <div class="row" style="display: flex; align-items: center;">
+                                        <div class="col-sm-10 col-xs-9">
+                                            <div style="font-weight: 700; font-size: 14px; color: #1e293b; margin-bottom: 4px;">
+                                                <i class="fas fa-lock text-success" style="width: 20px;"></i> SSL Certificate Orders &amp; Validation Status
+                                                <span class="label label-success" style="margin-left: 6px; font-weight: 500; font-size: 10px;">Client Isolated</span>
+                                            </div>
+                                            <div class="text-muted" style="font-size: 12.5px; line-height: 1.5;">
+                                                Shares certificate type, validity status, and expiration date from <code>tblsslorders</code> strictly for the customer's userid. Private keys and CSR data are never accessed.
+                                            </div>
+                                        </div>
+                                        <div class="col-sm-2 col-xs-3 text-right">
+                                            <label style="position: relative; display: inline-block; width: 46px; height: 24px; margin: 0; cursor: pointer; vertical-align: middle;">
+                                                <input type="checkbox" name="client_chat_ds_ssl_orders" value="1" <?php echo !empty($settings->client_chat_ds_ssl_orders ?? 1) ? 'checked' : ''; ?> style="position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer; z-index: 2;" onchange="var s=this.nextElementSibling; var k=s.firstElementChild; if(this.checked){ s.style.backgroundColor='#10b981'; k.style.left='24px'; }else{ s.style.backgroundColor='#cbd5e1'; k.style.left='3px'; }">
+                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: <?php echo !empty($settings->client_chat_ds_ssl_orders ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
+                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_ssl_orders ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: #fff; transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
+                                                </span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 6. Domains -->
+                                <div class="list-group-item" style="padding: 16px 20px; border-left: none; border-right: none;">
+                                    <div class="row" style="display: flex; align-items: center;">
+                                        <div class="col-sm-10 col-xs-9">
+                                            <div style="font-weight: 700; font-size: 14px; color: #1e293b; margin-bottom: 4px;">
+                                                <i class="fas fa-globe text-info" style="width: 20px;"></i> Registered Domains &amp; Renewal Status
+                                                <span class="label label-success" style="margin-left: 6px; font-weight: 500; font-size: 10px;">Client Isolated</span>
+                                            </div>
+                                            <div class="text-muted" style="font-size: 12.5px; line-height: 1.5;">
+                                                Allows the AI to confirm domain statuses, expiry dates, registration periods, and auto-renewal settings for domains registered under the client's account.
+                                            </div>
+                                        </div>
+                                        <div class="col-sm-2 col-xs-3 text-right">
+                                            <label style="position: relative; display: inline-block; width: 46px; height: 24px; margin: 0; cursor: pointer; vertical-align: middle;">
+                                                <input type="checkbox" name="client_chat_ds_domains" value="1" <?php echo !empty($settings->client_chat_ds_domains ?? 1) ? 'checked' : ''; ?> style="position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer; z-index: 2;" onchange="var s=this.nextElementSibling; var k=s.firstElementChild; if(this.checked){ s.style.backgroundColor='#10b981'; k.style.left='24px'; }else{ s.style.backgroundColor='#cbd5e1'; k.style.left='3px'; }">
+                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: <?php echo !empty($settings->client_chat_ds_domains ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
+                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_domains ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: #fff; transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
+                                                </span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 7. Domain Addons -->
+                                <div class="list-group-item" style="padding: 16px 20px; border-left: none; border-right: none;">
+                                    <div class="row" style="display: flex; align-items: center;">
+                                        <div class="col-sm-10 col-xs-9">
+                                            <div style="font-weight: 700; font-size: 14px; color: #1e293b; margin-bottom: 4px;">
+                                                <i class="fas fa-shield-virus text-info" style="width: 20px;"></i> Domain Privacy &amp; DNS Addons
+                                                <span class="label label-success" style="margin-left: 6px; font-weight: 500; font-size: 10px;">Service Level</span>
+                                            </div>
+                                            <div class="text-muted" style="font-size: 12.5px; line-height: 1.5;">
+                                                Reads active domain feature flags (WHOIS ID Protection, DNS Management, and Email Forwarding) so the AI can answer domain feature inquiries accurately.
+                                            </div>
+                                        </div>
+                                        <div class="col-sm-2 col-xs-3 text-right">
+                                            <label style="position: relative; display: inline-block; width: 46px; height: 24px; margin: 0; cursor: pointer; vertical-align: middle;">
+                                                <input type="checkbox" name="client_chat_ds_domain_addons" value="1" <?php echo !empty($settings->client_chat_ds_domain_addons ?? 1) ? 'checked' : ''; ?> style="position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer; z-index: 2;" onchange="var s=this.nextElementSibling; var k=s.firstElementChild; if(this.checked){ s.style.backgroundColor='#10b981'; k.style.left='24px'; }else{ s.style.backgroundColor='#cbd5e1'; k.style.left='3px'; }">
+                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: <?php echo !empty($settings->client_chat_ds_domain_addons ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
+                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_domain_addons ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: #fff; transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
+                                                </span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 8. Invoices -->
+                                <div class="list-group-item" style="padding: 16px 20px; border-left: none; border-right: none;">
+                                    <div class="row" style="display: flex; align-items: center;">
+                                        <div class="col-sm-10 col-xs-9">
+                                            <div style="font-weight: 700; font-size: 14px; color: #1e293b; margin-bottom: 4px;">
+                                                <i class="fas fa-file-invoice-dollar text-warning" style="width: 20px;"></i> Recent Invoices &amp; Billing Due Status
+                                                <span class="label label-success" style="margin-left: 6px; font-weight: 500; font-size: 10px;">Client Isolated</span>
+                                            </div>
+                                            <div class="text-muted" style="font-size: 12.5px; line-height: 1.5;">
+                                                Provides invoice numbers, outstanding amounts, and due dates for the client's invoices with direct links to pay securely in the client area.
+                                            </div>
+                                        </div>
+                                        <div class="col-sm-2 col-xs-3 text-right">
+                                            <label style="position: relative; display: inline-block; width: 46px; height: 24px; margin: 0; cursor: pointer; vertical-align: middle;">
+                                                <input type="checkbox" name="client_chat_ds_invoices" value="1" <?php echo !empty($settings->client_chat_ds_invoices ?? 1) ? 'checked' : ''; ?> style="position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer; z-index: 2;" onchange="var s=this.nextElementSibling; var k=s.firstElementChild; if(this.checked){ s.style.backgroundColor='#10b981'; k.style.left='24px'; }else{ s.style.backgroundColor='#cbd5e1'; k.style.left='3px'; }">
+                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: <?php echo !empty($settings->client_chat_ds_invoices ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
+                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_invoices ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: #fff; transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
+                                                </span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 9. Store Credit Balance -->
+                                <div class="list-group-item" style="padding: 16px 20px; border-left: none; border-right: none;">
+                                    <div class="row" style="display: flex; align-items: center;">
+                                        <div class="col-sm-10 col-xs-9">
+                                            <div style="font-weight: 700; font-size: 14px; color: #1e293b; margin-bottom: 4px;">
+                                                <i class="fas fa-coins text-warning" style="width: 20px;"></i> Account Store Credit Balance
+                                                <span class="label label-success" style="margin-left: 6px; font-weight: 500; font-size: 10px;">Client Isolated</span>
+                                            </div>
+                                            <div class="text-muted" style="font-size: 12.5px; line-height: 1.5;">
+                                                Grounds the client's available account credit balance formatted with their native currency symbol. Enables the assistant to notify clients if they have credit available to apply toward unpaid invoices.
+                                            </div>
+                                        </div>
+                                        <div class="col-sm-2 col-xs-3 text-right">
+                                            <label style="position: relative; display: inline-block; width: 46px; height: 24px; margin: 0; cursor: pointer; vertical-align: middle;">
+                                                <input type="checkbox" name="client_chat_ds_credit_balance" value="1" <?php echo !empty($settings->client_chat_ds_credit_balance ?? 1) ? 'checked' : ''; ?> style="position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer; z-index: 2;" onchange="var s=this.nextElementSibling; var k=s.firstElementChild; if(this.checked){ s.style.backgroundColor='#10b981'; k.style.left='24px'; }else{ s.style.backgroundColor='#cbd5e1'; k.style.left='3px'; }">
+                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: <?php echo !empty($settings->client_chat_ds_credit_balance ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
+                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_credit_balance ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: #fff; transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
+                                                </span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 10. Support Tickets -->
+                                <div class="list-group-item" style="padding: 16px 20px; border-left: none; border-right: none;">
+                                    <div class="row" style="display: flex; align-items: center;">
+                                        <div class="col-sm-10 col-xs-9">
+                                            <div style="font-weight: 700; font-size: 14px; color: #1e293b; margin-bottom: 4px;">
+                                                <i class="fas fa-ticket-alt text-danger" style="width: 20px;"></i> Recent Support Tickets
+                                                <span class="label label-success" style="margin-left: 6px; font-weight: 500; font-size: 10px;">Client Isolated</span>
+                                            </div>
+                                            <div class="text-muted" style="font-size: 12.5px; line-height: 1.5;">
+                                                Shares ticket masks, subject titles, and current status for tickets submitted by the client. Staff-only internal ticket notes (<code>tblticketnotes</code>) are strictly excluded.
+                                            </div>
+                                        </div>
+                                        <div class="col-sm-2 col-xs-3 text-right">
+                                            <label style="position: relative; display: inline-block; width: 46px; height: 24px; margin: 0; cursor: pointer; vertical-align: middle;">
+                                                <input type="checkbox" name="client_chat_ds_tickets" value="1" <?php echo !empty($settings->client_chat_ds_tickets ?? 1) ? 'checked' : ''; ?> style="position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer; z-index: 2;" onchange="var s=this.nextElementSibling; var k=s.firstElementChild; if(this.checked){ s.style.backgroundColor='#10b981'; k.style.left='24px'; }else{ s.style.backgroundColor='#cbd5e1'; k.style.left='3px'; }">
+                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: <?php echo !empty($settings->client_chat_ds_tickets ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
+                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_tickets ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: #fff; transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
+                                                </span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 11. Sales Quotes -->
+                                <div class="list-group-item" style="padding: 16px 20px; border-left: none; border-right: none;">
+                                    <div class="row" style="display: flex; align-items: center;">
+                                        <div class="col-sm-10 col-xs-9">
+                                            <div style="font-weight: 700; font-size: 14px; color: #1e293b; margin-bottom: 4px;">
+                                                <i class="fas fa-file-contract text-primary" style="width: 20px;"></i> Formal Sales Quotes &amp; Proformas
+                                                <span class="label label-success" style="margin-left: 6px; font-weight: 500; font-size: 10px;">Client Isolated</span>
+                                            </div>
+                                            <div class="text-muted" style="font-size: 12.5px; line-height: 1.5;">
+                                                Shares active pricing proposals and formal sales quotes generated for the customer (<code>tblquotes</code>) including quote subject, total, and status (Delivered, Accepted, Dead).
+                                            </div>
+                                        </div>
+                                        <div class="col-sm-2 col-xs-3 text-right">
+                                            <label style="position: relative; display: inline-block; width: 46px; height: 24px; margin: 0; cursor: pointer; vertical-align: middle;">
+                                                <input type="checkbox" name="client_chat_ds_quotes" value="1" <?php echo !empty($settings->client_chat_ds_quotes ?? 1) ? 'checked' : ''; ?> style="position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer; z-index: 2;" onchange="var s=this.nextElementSibling; var k=s.firstElementChild; if(this.checked){ s.style.backgroundColor='#10b981'; k.style.left='24px'; }else{ s.style.backgroundColor='#cbd5e1'; k.style.left='3px'; }">
+                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: <?php echo !empty($settings->client_chat_ds_quotes ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
+                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_quotes ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: #fff; transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
+                                                </span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+
+                            </div>
+                        </div>
                     </div>
-                </div>
+
+                    <!-- CARD 2: PUBLIC GROUNDING & PRESALES DATA SOURCES -->
+                    <div class="panel panel-default" style="border-radius: 8px; margin-bottom: 25px; box-shadow: 0 1px 4px rgba(0,0,0,0.04); overflow: hidden;">
+                        <div class="panel-heading" style="background: linear-gradient(to right, #f8fafc, #ffffff); padding: 16px 20px; border-bottom: 1px solid #e2e8f0;">
+                            <div class="row" style="display: flex; align-items: center;">
+                                <div class="col-xs-8">
+                                    <strong style="font-size: 15px; color: #0f172a;">
+                                        <i class="fas fa-globe text-info" style="margin-right: 6px;"></i> Public Knowledge &amp; Presales Grounding Scope
+                                    </strong>
+                                    <span class="badge" style="background: #0284c7; color: #fff; font-size: 11px; margin-left: 8px; padding: 4px 8px;">Presales &amp; Guests Safe</span>
+                                </div>
+                                <div class="col-xs-4 text-right">
+                                    <small class="text-muted" style="font-size: 11.5px;"><i class="fas fa-lock"></i> Zero Private Account Data</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="panel-body" style="padding: 0;">
+                            <div class="list-group" style="margin-bottom: 0;">
+
+                                <!-- 12. Knowledge Base -->
+                                <div class="list-group-item" style="padding: 16px 20px; border-left: none; border-right: none;">
+                                    <div class="row" style="display: flex; align-items: center;">
+                                        <div class="col-sm-10 col-xs-9">
+                                            <div style="font-weight: 700; font-size: 14px; color: #1e293b; margin-bottom: 4px;">
+                                                <i class="fas fa-book text-success" style="width: 20px;"></i> Public Knowledge Base Grounding
+                                                <span class="label label-info" style="margin-left: 6px; font-weight: 500; font-size: 10px;">Public Grounding</span>
+                                            </div>
+                                            <div class="text-muted" style="font-size: 12.5px; line-height: 1.5;">
+                                                Performs keyword searches against your public WHMCS knowledge base to ground AI troubleshooting answers directly in your official tutorials.
+                                            </div>
+                                        </div>
+                                        <div class="col-sm-2 col-xs-3 text-right">
+                                            <label style="position: relative; display: inline-block; width: 46px; height: 24px; margin: 0; cursor: pointer; vertical-align: middle;">
+                                                <input type="checkbox" name="client_chat_ds_kb" value="1" <?php echo !empty($settings->client_chat_ds_kb ?? 1) ? 'checked' : ''; ?> style="position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer; z-index: 2;" onchange="var s=this.nextElementSibling; var k=s.firstElementChild; if(this.checked){ s.style.backgroundColor='#10b981'; k.style.left='24px'; }else{ s.style.backgroundColor='#cbd5e1'; k.style.left='3px'; }">
+                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: <?php echo !empty($settings->client_chat_ds_kb ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
+                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_kb ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: #fff; transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
+                                                </span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 13. Active Products Catalog -->
+                                <div class="list-group-item" style="padding: 16px 20px; border-left: none; border-right: none;">
+                                    <div class="row" style="display: flex; align-items: center;">
+                                        <div class="col-sm-10 col-xs-9">
+                                            <div style="font-weight: 700; font-size: 14px; color: #1e293b; margin-bottom: 4px;">
+                                                <i class="fas fa-cubes text-primary" style="width: 20px;"></i> Active Products &amp; Services Catalog (Presales &amp; Tech Sales)
+                                                <span class="label label-info" style="margin-left: 6px; font-weight: 500; font-size: 10px;">Public Grounding</span>
+                                            </div>
+                                            <div class="text-muted" style="font-size: 12.5px; line-height: 1.5;">
+                                                Enables the AI to answer presales, plan recommendations, and technical queries regarding active hosting plans, cloud servers, and specifications. Retired and hidden plans are excluded; 1-click cart order links are included.
+                                            </div>
+                                        </div>
+                                        <div class="col-sm-2 col-xs-3 text-right">
+                                            <label style="position: relative; display: inline-block; width: 46px; height: 24px; margin: 0; cursor: pointer; vertical-align: middle;">
+                                                <input type="checkbox" name="client_chat_ds_catalog" value="1" <?php echo !empty($settings->client_chat_ds_catalog ?? 1) ? 'checked' : ''; ?> style="position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer; z-index: 2;" onchange="var s=this.nextElementSibling; var k=s.firstElementChild; if(this.checked){ s.style.backgroundColor='#10b981'; k.style.left='24px'; }else{ s.style.backgroundColor='#cbd5e1'; k.style.left='3px'; }">
+                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: <?php echo !empty($settings->client_chat_ds_catalog ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
+                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_catalog ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: #fff; transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
+                                                </span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 14. Domain Pricing -->
+                                <div class="list-group-item" style="padding: 16px 20px; border-left: none; border-right: none;">
+                                    <div class="row" style="display: flex; align-items: center;">
+                                        <div class="col-sm-10 col-xs-9">
+                                            <div style="font-weight: 700; font-size: 14px; color: #1e293b; margin-bottom: 4px;">
+                                                <i class="fas fa-search-dollar text-success" style="width: 20px;"></i> Domain Pricing, TLD Extensions &amp; Registration
+                                                <span class="label label-info" style="margin-left: 6px; font-weight: 500; font-size: 10px;">Public Grounding</span>
+                                            </div>
+                                            <div class="text-muted" style="font-size: 12.5px; line-height: 1.5;">
+                                                Allows the AI to answer domain pricing, supported TLD extensions, registration, and transfer queries with direct cart registration links.
+                                            </div>
+                                        </div>
+                                        <div class="col-sm-2 col-xs-3 text-right">
+                                            <label style="position: relative; display: inline-block; width: 46px; height: 24px; margin: 0; cursor: pointer; vertical-align: middle;">
+                                                <input type="checkbox" name="client_chat_ds_domain_pricing" value="1" <?php echo !empty($settings->client_chat_ds_domain_pricing ?? 1) ? 'checked' : ''; ?> style="position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer; z-index: 2;" onchange="var s=this.nextElementSibling; var k=s.firstElementChild; if(this.checked){ s.style.backgroundColor='#10b981'; k.style.left='24px'; }else{ s.style.backgroundColor='#cbd5e1'; k.style.left='3px'; }">
+                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: <?php echo !empty($settings->client_chat_ds_domain_pricing ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
+                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_domain_pricing ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: #fff; transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
+                                                </span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 15. Network Issues -->
+                                <div class="list-group-item" style="padding: 16px 20px; border-left: none; border-right: none;">
+                                    <div class="row" style="display: flex; align-items: center;">
+                                        <div class="col-sm-10 col-xs-9">
+                                            <div style="font-weight: 700; font-size: 14px; color: #1e293b; margin-bottom: 4px;">
+                                                <i class="fas fa-satellite-dish text-info" style="width: 20px;"></i> Active Network &amp; Server Incident Broadcasts
+                                                <span class="label label-info" style="margin-left: 6px; font-weight: 500; font-size: 10px;">Public Grounding</span>
+                                            </div>
+                                            <div class="text-muted" style="font-size: 12.5px; line-height: 1.5;">
+                                                Injects active incidents from WHMCS Network Issues into chat context so the AI proactively reassures visitors during ongoing maintenance or unscheduled outages.
+                                            </div>
+                                        </div>
+                                        <div class="col-sm-2 col-xs-3 text-right">
+                                            <label style="position: relative; display: inline-block; width: 46px; height: 24px; margin: 0; cursor: pointer; vertical-align: middle;">
+                                                <input type="checkbox" name="client_chat_ds_network_issues" value="1" <?php echo !empty($settings->client_chat_ds_network_issues ?? 1) ? 'checked' : ''; ?> style="position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer; z-index: 2;" onchange="var s=this.nextElementSibling; var k=s.firstElementChild; if(this.checked){ s.style.backgroundColor='#10b981'; k.style.left='24px'; }else{ s.style.backgroundColor='#cbd5e1'; k.style.left='3px'; }">
+                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: <?php echo !empty($settings->client_chat_ds_network_issues ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
+                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_network_issues ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: #fff; transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
+                                                </span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 16. Announcements -->
+                                <div class="list-group-item" style="padding: 16px 20px; border-left: none; border-right: none;">
+                                    <div class="row" style="display: flex; align-items: center;">
+                                        <div class="col-sm-10 col-xs-9">
+                                            <div style="font-weight: 700; font-size: 14px; color: #1e293b; margin-bottom: 4px;">
+                                                <i class="fas fa-bullhorn text-warning" style="width: 20px;"></i> Official Company Announcements &amp; News Updates
+                                                <span class="label label-info" style="margin-left: 6px; font-weight: 500; font-size: 10px;">Public Grounding</span>
+                                            </div>
+                                            <div class="text-muted" style="font-size: 12.5px; line-height: 1.5;">
+                                                Grounds published announcements from <code>tblannouncements</code> (published=1). Keeps the assistant informed of platform upgrades, policy announcements, and new feature launches.
+                                            </div>
+                                        </div>
+                                        <div class="col-sm-2 col-xs-3 text-right">
+                                            <label style="position: relative; display: inline-block; width: 46px; height: 24px; margin: 0; cursor: pointer; vertical-align: middle;">
+                                                <input type="checkbox" name="client_chat_ds_announcements" value="1" <?php echo !empty($settings->client_chat_ds_announcements ?? 1) ? 'checked' : ''; ?> style="position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer; z-index: 2;" onchange="var s=this.nextElementSibling; var k=s.firstElementChild; if(this.checked){ s.style.backgroundColor='#10b981'; k.style.left='24px'; }else{ s.style.backgroundColor='#cbd5e1'; k.style.left='3px'; }">
+                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: <?php echo !empty($settings->client_chat_ds_announcements ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
+                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_announcements ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: #fff; transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
+                                                </span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 17. Promotions & Promo Codes -->
+                                <div class="list-group-item" style="padding: 16px 20px; border-left: none; border-right: none;">
+                                    <div class="row" style="display: flex; align-items: center;">
+                                        <div class="col-sm-10 col-xs-9">
+                                            <div style="font-weight: 700; font-size: 14px; color: #1e293b; margin-bottom: 4px;">
+                                                <i class="fas fa-tag text-success" style="width: 20px;"></i> Active Public Promotional Coupons
+                                                <span class="label label-info" style="margin-left: 6px; font-weight: 500; font-size: 10px;">Public Grounding</span>
+                                            </div>
+                                            <div class="text-muted" style="font-size: 12.5px; line-height: 1.5;">
+                                                Shares unexpired public promo codes (<code>showonorder=1</code>) from <code>tblpromotions</code>. Internal retention and test coupons are strictly excluded from live chat context.
+                                            </div>
+                                        </div>
+                                        <div class="col-sm-2 col-xs-3 text-right">
+                                            <label style="position: relative; display: inline-block; width: 46px; height: 24px; margin: 0; cursor: pointer; vertical-align: middle;">
+                                                <input type="checkbox" name="client_chat_ds_promotions" value="1" <?php echo !empty($settings->client_chat_ds_promotions ?? 1) ? 'checked' : ''; ?> style="position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer; z-index: 2;" onchange="var s=this.nextElementSibling; var k=s.firstElementChild; if(this.checked){ s.style.backgroundColor='#10b981'; k.style.left='24px'; }else{ s.style.backgroundColor='#cbd5e1'; k.style.left='3px'; }">
+                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: <?php echo !empty($settings->client_chat_ds_promotions ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
+                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_promotions ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: #fff; transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
+                                                </span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 18. Payment Gateways -->
+                                <div class="list-group-item" style="padding: 16px 20px; border-left: none; border-right: none;">
+                                    <div class="row" style="display: flex; align-items: center;">
+                                        <div class="col-sm-10 col-xs-9">
+                                            <div style="font-weight: 700; font-size: 14px; color: #1e293b; margin-bottom: 4px;">
+                                                <i class="fas fa-credit-card text-primary" style="width: 20px;"></i> Accepted Payment Gateways
+                                                <span class="label label-info" style="margin-left: 6px; font-weight: 500; font-size: 10px;">Public Grounding</span>
+                                            </div>
+                                            <div class="text-muted" style="font-size: 12.5px; line-height: 1.5;">
+                                                Queries public gateway display names (Stripe, PayPal, UPI, Bank Transfer) from <code>tblpaymentgateways</code> where <code>setting='name'</code>. All merchant IDs, API secret keys, and webhook credentials are strictly filtered.
+                                            </div>
+                                        </div>
+                                        <div class="col-sm-2 col-xs-3 text-right">
+                                            <label style="position: relative; display: inline-block; width: 46px; height: 24px; margin: 0; cursor: pointer; vertical-align: middle;">
+                                                <input type="checkbox" name="client_chat_ds_payment_gateways" value="1" <?php echo !empty($settings->client_chat_ds_payment_gateways ?? 1) ? 'checked' : ''; ?> style="position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer; z-index: 2;" onchange="var s=this.nextElementSibling; var k=s.firstElementChild; if(this.checked){ s.style.backgroundColor='#10b981'; k.style.left='24px'; }else{ s.style.backgroundColor='#cbd5e1'; k.style.left='3px'; }">
+                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: <?php echo !empty($settings->client_chat_ds_payment_gateways ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
+                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_payment_gateways ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: #fff; transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
+                                                </span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 19. Ticket Departments & Routing SLAs -->
+                                <div class="list-group-item" style="padding: 16px 20px; border-left: none; border-right: none;">
+                                    <div class="row" style="display: flex; align-items: center;">
+                                        <div class="col-sm-10 col-xs-9">
+                                            <div style="font-weight: 700; font-size: 14px; color: #1e293b; margin-bottom: 4px;">
+                                                <i class="fas fa-sitemap text-info" style="width: 20px;"></i> Support Department Routing &amp; SLAs
+                                                <span class="label label-info" style="margin-left: 6px; font-weight: 500; font-size: 10px;">Public Grounding</span>
+                                            </div>
+                                            <div class="text-muted" style="font-size: 12.5px; line-height: 1.5;">
+                                                Provides public department names and descriptions (Technical Support, Billing, Sales) from <code>tblticketdepartments</code> so the assistant routes inquiries to the correct department when tickets need to be opened.
+                                            </div>
+                                        </div>
+                                        <div class="col-sm-2 col-xs-3 text-right">
+                                            <label style="position: relative; display: inline-block; width: 46px; height: 24px; margin: 0; cursor: pointer; vertical-align: middle;">
+                                                <input type="checkbox" name="client_chat_ds_departments" value="1" <?php echo !empty($settings->client_chat_ds_departments ?? 1) ? 'checked' : ''; ?> style="position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer; z-index: 2;" onchange="var s=this.nextElementSibling; var k=s.firstElementChild; if(this.checked){ s.style.backgroundColor='#10b981'; k.style.left='24px'; }else{ s.style.backgroundColor='#cbd5e1'; k.style.left='3px'; }">
+                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: <?php echo !empty($settings->client_chat_ds_departments ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
+                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_departments ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: #fff; transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
+                                                </span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Save Actions Bar -->
+                    <div style="display: flex; align-items: center; justify-content: space-between; padding: 15px 0 30px 0;">
+                        <div>
+                            <button type="submit" class="btn btn-primary btn-lg" style="font-weight: 600; padding: 10px 24px; border-radius: 6px; box-shadow: 0 2px 4px rgba(59,130,246,0.2);">
+                                <i class="fas fa-save" style="margin-right: 6px;"></i> Save Data Source Permissions
+                            </button>
+                        </div>
+                        <div class="text-muted" style="font-size: 12px;">
+                            <i class="fas fa-check-circle text-success"></i> Changes take effect immediately on next visitor or client message.
+                        </div>
+                    </div>
+                </form>
             <?php endif; ?>
 
             <!-- ── TAB 4: WIDGET CUSTOMIZER & APPEARANCE ──────────────────────── -->

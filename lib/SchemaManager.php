@@ -101,15 +101,28 @@ class SchemaManager
                 'client_chat_system_prompt'    => ['type' => 'longtext'],
                 'client_chat_debug'            => ['type' => 'boolean', 'default' => 0],
 
-                // Client Live Chat Data Sources (Granular Self-Help Scope)
-                'client_chat_ds_services'       => ['type' => 'boolean', 'default' => 1],
-                'client_chat_ds_domains'        => ['type' => 'boolean', 'default' => 1],
-                'client_chat_ds_invoices'       => ['type' => 'boolean', 'default' => 1],
-                'client_chat_ds_tickets'        => ['type' => 'boolean', 'default' => 1],
-                'client_chat_ds_kb'             => ['type' => 'boolean', 'default' => 1],
-                'client_chat_ds_network_issues' => ['type' => 'boolean', 'default' => 1],
-                'client_chat_ds_catalog'        => ['type' => 'boolean', 'default' => 1],
-                'client_chat_ds_domain_pricing' => ['type' => 'boolean', 'default' => 1],
+                // Client Live Chat Data Sources (Granular Self-Help & Presales Scope)
+                'client_chat_ds_services'           => ['type' => 'boolean', 'default' => 1],
+                'client_chat_ds_domains'            => ['type' => 'boolean', 'default' => 1],
+                'client_chat_ds_invoices'           => ['type' => 'boolean', 'default' => 1],
+                'client_chat_ds_tickets'            => ['type' => 'boolean', 'default' => 1],
+                'client_chat_ds_kb'                 => ['type' => 'boolean', 'default' => 1],
+                'client_chat_ds_network_issues'     => ['type' => 'boolean', 'default' => 1],
+                'client_chat_ds_catalog'            => ['type' => 'boolean', 'default' => 1],
+                'client_chat_ds_domain_pricing'     => ['type' => 'boolean', 'default' => 1],
+                // Client-Isolated Scope Additions
+                'client_chat_ds_server_nameservers' => ['type' => 'boolean', 'default' => 1],
+                'client_chat_ds_hosting_addons'     => ['type' => 'boolean', 'default' => 1],
+                'client_chat_ds_credit_balance'     => ['type' => 'boolean', 'default' => 1],
+                'client_chat_ds_ssl_orders'         => ['type' => 'boolean', 'default' => 1],
+                'client_chat_ds_domain_addons'      => ['type' => 'boolean', 'default' => 1],
+                'client_chat_ds_config_options'     => ['type' => 'boolean', 'default' => 1],
+                'client_chat_ds_quotes'             => ['type' => 'boolean', 'default' => 1],
+                // Public Scope Additions
+                'client_chat_ds_announcements'      => ['type' => 'boolean', 'default' => 1],
+                'client_chat_ds_promotions'         => ['type' => 'boolean', 'default' => 1],
+                'client_chat_ds_payment_gateways'   => ['type' => 'boolean', 'default' => 1],
+                'client_chat_ds_departments'        => ['type' => 'boolean', 'default' => 1],
 
                 // Client Live Chat Widget Dimensions & Themes
                 'client_chat_width'             => ['type' => 'integer', 'default' => 380],

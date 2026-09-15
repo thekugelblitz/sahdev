@@ -622,6 +622,17 @@ class ChatService
         $kbContext = self::searchKnowledgeBase($messageText);
         $clientContext = self::getClientScopeSummary($clientId);
 
+        // 3.5 Public & Presales Scope Grounding (Announcements, Gateways, Promos, SLAs)
+        $publicContext = '';
+        try {
+            require_once __DIR__ . '/ClientChatScopeService.php';
+            if (class_exists('Sahdev\Lib\ClientChatScopeService')) {
+                $publicContext = ClientChatScopeService::buildPublicScope();
+            }
+        } catch (\Throwable $e) {
+            ModuleLogger::error('client_chat', "Public scope error: " . $e->getMessage());
+        }
+
         // 4. Products/Services & Domain Catalog Grounding (Local Determination)
         $catalogContext = '';
         try {
@@ -675,6 +686,7 @@ class ChatService
             . $escalationPrompt . "\n\n"
             . "CLIENT ACCOUNT CONTEXT (Read-Only):\n" . $clientContext . "\n\n"
             . (!empty($catalogContext) ? $catalogContext . "\n\n" : "")
+            . (!empty($publicContext) ? "PUBLIC / SYSTEM INFRASTRUCTURE & PROMOTIONS CONTEXT:\n" . $publicContext . "\n\n" : "")
             . "KNOWLEDGE BASE RESOURCES:\n" . $kbContext;
 
         if (!empty($customOrgPrompt)) {
@@ -1795,164 +1807,22 @@ class ChatService
 
     private static function getClientScopeSummary(?int $clientId): string
     {
+        try {
+            require_once __DIR__ . '/ClientChatScopeService.php';
+            if (class_exists('Sahdev\Lib\ClientChatScopeService')) {
+                return ClientChatScopeService::buildClientScope($clientId);
+            }
+        } catch (\Throwable $e) {
+            ModuleLogger::error('client_chat', "Client scope error: " . $e->getMessage());
+        }
+
         if (!$clientId || $clientId <= 0) {
             return "VISITOR AUTHENTICATION: Unauthenticated Guest (Not logged in).\n"
                 . "ACCOUNT ACCESS: None. No WHMCS client account is associated with this visitor.\n"
                 . "GUARDRAIL RULE: Do NOT disclose or guess any customer account details, services, or invoices. Instruct the visitor to log into the client portal to discuss specific account matters.";
         }
 
-        try {
-            $client = Capsule::table('tblclients')->where('id', $clientId)->first([
-                'id', 'firstname', 'lastname', 'email', 'companyname', 'status', 'datecreated'
-            ]);
-            if (!$client) {
-                return "Client record not found in system.";
-            }
-
-            $dsServices = (bool) self::getChatSetting('client_chat_ds_services', 1);
-            $dsDomains  = (bool) self::getChatSetting('client_chat_ds_domains', 1);
-            $dsInvoices = (bool) self::getChatSetting('client_chat_ds_invoices', 1);
-            $dsTickets  = (bool) self::getChatSetting('client_chat_ds_tickets', 1);
-            $dsNetwork  = (bool) self::getChatSetting('client_chat_ds_network_issues', 1);
-
-            // 1. Client's own hosting services (Strict Active vs Inactive separation)
-            $activeSvcLines = [];
-            $inactiveSvcLines = [];
-            if ($dsServices) {
-                $services = Capsule::table('tblhosting')
-                    ->leftJoin('tblproducts', 'tblhosting.packageid', '=', 'tblproducts.id')
-                    ->where('tblhosting.userid', $clientId)
-                    ->select([
-                        'tblhosting.id',
-                        'tblhosting.domain',
-                        'tblhosting.domainstatus',
-                        'tblhosting.nextduedate',
-                        'tblhosting.billingcycle',
-                        'tblproducts.name as product_name',
-                        'tblproducts.retired as product_retired',
-                    ])
-                    ->orderBy('tblhosting.id', 'desc')
-                    ->limit(12)
-                    ->get();
-
-                foreach ($services as $s) {
-                    $pName = $s->product_name ?: 'Hosting Service';
-                    $dom = $s->domain ?: '(No domain)';
-                    $due = $s->nextduedate && $s->nextduedate !== '0000-00-00' ? "Due: {$s->nextduedate}" : '';
-                    $cycle = $s->billingcycle ? "[{$s->billingcycle}]" : '';
-                    $retiredNote = !empty($s->product_retired) ? ' [Grandfathered/Retired Plan]' : '';
-                    $line = "- Service #{$s->id}: {$pName}{$retiredNote} | Domain: {$dom} | Status: {$s->domainstatus} {$cycle} {$due}";
-
-                    if (strcasecmp((string) $s->domainstatus, 'Active') === 0) {
-                        $activeSvcLines[] = $line;
-                    } else {
-                        $inactiveSvcLines[] = $line;
-                    }
-                }
-            }
-
-            // 2. Client's domains (Strict Active vs Inactive separation)
-            $activeDomLines = [];
-            $inactiveDomLines = [];
-            if ($dsDomains && Capsule::schema()->hasTable('tbldomains')) {
-                try {
-                    $domains = Capsule::table('tbldomains')
-                        ->where('userid', $clientId)
-                        ->orderBy('id', 'desc')
-                        ->limit(12)
-                        ->get(['id', 'domain', 'status', 'expirydate', 'donotrenew']);
-                    foreach ($domains as $d) {
-                        $exp = $d->expirydate && $d->expirydate !== '0000-00-00' ? "Expires: {$d->expirydate}" : '';
-                        $renew = $d->donotrenew ? '[Auto-Renew Off]' : '[Auto-Renew On]';
-                        $line = "- Domain: {$d->domain} | Status: {$d->status} {$renew} {$exp}";
-
-                        if (strcasecmp((string) $d->status, 'Active') === 0) {
-                            $activeDomLines[] = $line;
-                        } else {
-                            $inactiveDomLines[] = $line;
-                        }
-                    }
-                } catch (\Throwable $e) {}
-            }
-
-            // 3. Client's recent invoices
-            $invLines = [];
-            if ($dsInvoices) {
-                $invoices = Capsule::table('tblinvoices')
-                    ->where('userid', $clientId)
-                    ->orderBy('id', 'desc')
-                    ->limit(5)
-                    ->get(['id', 'invoicenum', 'total', 'status', 'duedate']);
-
-                foreach ($invoices as $inv) {
-                    $num = !empty($inv->invoicenum) ? $inv->invoicenum : '#' . $inv->id;
-                    $invLines[] = "- Invoice {$num}: Total {$inv->total} | Status: {$inv->status} | Due: {$inv->duedate}";
-                }
-            }
-
-            // 4. Client's recent support tickets
-            $tktLines = [];
-            if ($dsTickets) {
-                $tickets = Capsule::table('tbltickets')
-                    ->where('userid', $clientId)
-                    ->orderBy('id', 'desc')
-                    ->limit(5)
-                    ->get(['id', 'tid', 'title', 'status', 'lastreply']);
-
-                foreach ($tickets as $t) {
-                    $tktLines[] = "- Ticket #{$t->tid}: {$t->title} | Status: {$t->status} | Last Activity: {$t->lastreply}";
-                }
-            }
-
-            // 5. Active Network Issues
-            $netLines = [];
-            if ($dsNetwork && Capsule::schema()->hasTable('tblnetworkissues')) {
-                try {
-                    $issues = Capsule::table('tblnetworkissues')
-                        ->whereIn('status', ['Open', 'In Progress'])
-                        ->orderBy('id', 'desc')
-                        ->limit(3)
-                        ->get(['id', 'title', 'status', 'priority', 'description']);
-                    foreach ($issues as $ni) {
-                        $desc = mb_substr(strip_tags($ni->description), 0, 150);
-                        $netLines[] = "- System Incident: {$ni->title} [{$ni->status}] - {$desc}";
-                    }
-                } catch (\Throwable $e) {}
-            }
-
-            $svcSection = "CLIENT ACTIVE SERVICES (Eligible for Support & Technical Assistance):\n"
-                . (!empty($activeSvcLines) ? implode("\n", $activeSvcLines) : ($dsServices ? "No currently active services." : "(Services data source disabled)"));
-            if (!empty($inactiveSvcLines)) {
-                $svcSection .= "\n\nCLIENT INACTIVE / SUSPENDED / PENDING SERVICES (Do NOT offer technical debugging; direct client to pay due invoices or wait for provisioning):\n"
-                    . implode("\n", $inactiveSvcLines);
-            }
-
-            $domSection = "CLIENT ACTIVE DOMAINS (Eligible for DNS Management Assistance):\n"
-                . (!empty($activeDomLines) ? implode("\n", $activeDomLines) : ($dsDomains ? "No active domains registered." : "(Domains data source disabled)"));
-            if (!empty($inactiveDomLines)) {
-                $domSection .= "\n\nCLIENT INACTIVE / EXPIRED / PENDING DOMAINS (Direct to domain renewal):\n"
-                    . implode("\n", $inactiveDomLines);
-            }
-
-            $summary = "AUTHENTICATED CLIENT PROFILE:\n"
-                . "Client Name: {$client->firstname} {$client->lastname}\n"
-                . "Company: " . (!empty($client->companyname) ? $client->companyname : 'Individual') . "\n"
-                . "Account Status: {$client->status}\n\n"
-                . $svcSection . "\n\n"
-                . $domSection . "\n\n"
-                . "RECENT INVOICES (Read-Only):\n"
-                . (!empty($invLines) ? implode("\n", $invLines) : ($dsInvoices ? "No recent invoices." : "(Invoices data source disabled)")) . "\n\n"
-                . "RECENT TICKETS (Read-Only):\n"
-                . (!empty($tktLines) ? implode("\n", $tktLines) : ($dsTickets ? "No recent tickets." : "(Tickets data source disabled)"));
-
-            if (!empty($netLines)) {
-                $summary .= "\n\nACTIVE NETWORK & SERVER ISSUES:\n" . implode("\n", $netLines);
-            }
-
-            return $summary;
-        } catch (\Throwable $e) {
-            return "Client account information could not be retrieved.";
-        }
+        return "Client account information could not be retrieved.";
     }
 
     /**
