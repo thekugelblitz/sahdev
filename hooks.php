@@ -13117,7 +13117,7 @@ DISC;
                     console.log("%cProvider & Model:%c", "font-weight:bold;color:#6366f1;", "color:#0f172a;", data.debug_payload.provider);
                     console.log("%cSettings:%c", "font-weight:bold;color:#6366f1;", "color:#0f172a;", data.debug_payload.settings);
                     console.log("%cMessages Array (" + (data.debug_payload.messages ? data.debug_payload.messages.length : 0) + " items):%c", "font-weight:bold;color:#6366f1;", "color:#0f172a;", data.debug_payload.messages);
-                    console.log("%cComplete Raw JSON Payload:%c\n" + JSON.stringify(data.debug_payload, null, 2), "font-weight:bold;color:#6366f1;", "font-family:monospace;color:#047857;");
+                    console.log("%cComplete Raw JSON Payload:%c\\n" + JSON.stringify(data.debug_payload, null, 2), "font-weight:bold;color:#6366f1;", "font-family:monospace;color:#047857;");
                     console.groupEnd();
                 } catch(e) {}
             }
