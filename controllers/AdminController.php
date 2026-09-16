@@ -12210,52 +12210,55 @@ class AdminController
             <?php echo $this->getNavigationMarkup('live_console'); ?>
         <?php endif; ?>
 
-        <div class="sahdev-page-container" style="<?php echo $isStandalone ? 'margin:0;padding:12px;height:100vh;box-sizing:border-box;' : 'margin-top:15px;'; ?>">
+        <div class="sahdev-page-container sdv-live-console-wrapper" style="<?php echo $isStandalone ? 'margin:0;padding:12px;height:100vh;box-sizing:border-box;' : 'margin-top:15px;'; ?>">
             <!-- Top Control Bar -->
-            <div style="display:flex;align-items:center;justify-content:space-between;background:#0f172a;color:#f8fafc;padding:12px 20px;border-radius:10px 10px 0 0;box-shadow:0 4px 12px rgba(0,0,0,0.15);">
-                <div style="display:flex;align-items:center;gap:14px;">
-                    <div style="width:36px;height:36px;border-radius:8px;background:linear-gradient(135deg, #0284c7, #6366f1);display:flex;align-items:center;justify-content:center;font-size:18px;">
+            <div class="sdv-console-topbar" style="display:flex;align-items:center;justify-content:space-between;background:#0f172a;color:#f8fafc;padding:12px 20px;border-radius:10px 10px 0 0;box-shadow:0 4px 12px rgba(0,0,0,0.15);">
+                <div class="sdv-topbar-left" style="display:flex;align-items:center;gap:14px;">
+                    <div style="width:36px;height:36px;border-radius:8px;background:linear-gradient(135deg, #0284c7, #6366f1);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">
                         <i class="fas fa-satellite-dish"></i>
                     </div>
                     <div>
-                        <div style="font-weight:700;font-size:16px;letter-spacing:-0.2px;display:flex;align-items:center;gap:8px;">
+                        <div style="font-weight:700;font-size:16px;letter-spacing:-0.2px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
                             Sahdev Live Support Console
                             <span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:12px;background:#10b981;color:#fff;">
                                 <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#fff;margin-right:4px;animation:pulseDot 1.5s infinite;"></span> LIVE
                             </span>
                         </div>
-                        <div style="font-size:12px;color:#94a3b8;">
-                            Operator: <strong style="color:#e2e8f0;"><?php echo htmlspecialchars($adminName); ?></strong> &bull; Adaptive micro-polling: <strong><?php echo $pollInterval; ?>s</strong>
+                        <div class="sdv-topbar-subtext" style="font-size:12px;color:#94a3b8;">
+                            Operator: <strong style="color:#e2e8f0;"><?php echo htmlspecialchars($adminName); ?></strong> <span class="sdv-poll-info">&bull; Adaptive micro-polling: <strong><?php echo $pollInterval; ?>s</strong></span>
                         </div>
                     </div>
                 </div>
 
-                <div style="display:flex;align-items:center;gap:10px;">
+                <div class="sdv-topbar-tools" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
                     <button type="button" id="toggleSoundBtn" class="btn btn-sm" style="background:#1e293b;border:1px solid #334155;color:#e2e8f0;font-weight:600;border-radius:6px;" title="Toggle audio alert chime">
                         <i class="fas fa-volume-up text-success" id="soundIcon"></i> <span id="soundText">Sound On</span>
                     </button>
 
                     <button type="button" id="triggerSoundTestBtn" class="btn btn-sm" style="background:#1e293b;border:1px solid #334155;color:#94a3b8;border-radius:6px;" title="Test audio notification">
-                        <i class="fas fa-play"></i> Test Chime
+                        <i class="fas fa-play"></i> <span class="sdv-btn-label">Test Chime</span>
                     </button>
 
                     <?php if (!$isStandalone): ?>
                         <button type="button" id="popOutConsoleBtn" class="btn btn-sm" style="background:#3b82f6;border:none;color:#fff;font-weight:600;border-radius:6px;" title="Pop-out to dedicated full-screen window for multi-monitor setups">
-                            <i class="fas fa-external-link-alt"></i> Pop Out Window
+                            <i class="fas fa-external-link-alt"></i> <span class="sdv-btn-label">Pop Out Window</span>
                         </button>
                     <?php else: ?>
                         <button type="button" onclick="window.close()" class="btn btn-sm btn-default" style="border-radius:6px;">
-                            <i class="fas fa-times"></i> Close Window
+                            <i class="fas fa-times"></i> <span class="sdv-btn-label">Close Window</span>
                         </button>
                     <?php endif; ?>
                 </div>
             </div>
 
             <!-- Main 3-Column Layout Workspace -->
-            <div id="liveConsoleApp" style="display:grid;grid-template-columns:330px 1fr 340px;height:calc(100vh - <?php echo $isStandalone ? '95px' : '230px'; ?>);min-height:600px;background:#f8fafc;border:1px solid #cbd5e1;border-top:none;border-radius:0 0 10px 10px;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,0.06);">
+            <div id="liveConsoleApp" class="sdv-live-console-app view-queue<?php echo $isStandalone ? ' is-standalone' : ''; ?>" style="display:grid;grid-template-columns:330px 1fr 340px;height:calc(100vh - <?php echo $isStandalone ? '95px' : '230px'; ?>);min-height:600px;background:#f8fafc;border:1px solid #cbd5e1;border-top:none;border-radius:0 0 10px 10px;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,0.06);position:relative;">
                 
+                <!-- Backdrop for mobile/tablet slide-over drawer -->
+                <div id="sideWatcherBackdrop" class="sdv-watcher-backdrop"></div>
+
                 <!-- ── COLUMN 1: SESSIONS QUEUE & FILTERS ────────────────────────── -->
-                <div style="border-right:1px solid #e2e8f0;background:#ffffff;display:flex;flex-direction:column;overflow:hidden;">
+                <div class="sdv-console-col-queue" style="border-right:1px solid #e2e8f0;background:#ffffff;display:flex;flex-direction:column;overflow:hidden;">
                     <!-- Filter Tabs -->
                     <div style="padding:12px;border-bottom:1px solid #e2e8f0;background:#f8fafc;">
                         <div style="position:relative;margin-bottom:10px;">
@@ -12283,13 +12286,18 @@ class AdminController
                 </div>
 
                 <!-- ── COLUMN 2: LIVE CONVERSATION & SNEAK-PEEK COMPOSER ────────── -->
-                <div style="display:flex;flex-direction:column;background:#ffffff;overflow:hidden;position:relative;">
+                <div class="sdv-console-col-chat" style="display:flex;flex-direction:column;background:#ffffff;overflow:hidden;position:relative;">
                     <!-- Chat Header -->
-                    <div id="chatViewHeader" style="padding:12px 18px;border-bottom:1px solid #e2e8f0;background:#ffffff;display:flex;align-items:center;justify-content:space-between;min-height:55px;">
-                        <div id="chatHeaderDetails" style="display:flex;align-items:center;gap:12px;">
-                            <div style="font-size:13px;color:#64748b;">Select a conversation from the left queue to begin live monitoring or takeover.</div>
+                    <div id="chatViewHeader" class="sdv-chat-view-header" style="padding:12px 18px;border-bottom:1px solid #e2e8f0;background:#ffffff;display:flex;align-items:center;justify-content:space-between;min-height:55px;">
+                        <div class="sdv-chat-header-main" style="display:flex;align-items:center;gap:10px;flex:1;min-width:0;">
+                            <button type="button" id="btnBackToQueue" class="btn btn-sm btn-default sdv-mobile-back-btn" title="Back to visitor queue" aria-label="Back to visitor queue" style="display:none;border-radius:6px;height:34px;width:34px;padding:0;align-items:center;justify-content:center;flex-shrink:0;">
+                                <i class="fas fa-arrow-left"></i>
+                            </button>
+                            <div id="chatHeaderDetails" style="display:flex;flex-direction:column;gap:2px;min-width:0;">
+                                <div style="font-size:13px;color:#64748b;">Select a conversation from the left queue to begin live monitoring or takeover.</div>
+                            </div>
                         </div>
-                        <div id="chatHeaderActions" style="display:none;align-items:center;gap:8px;">
+                        <div id="chatHeaderActions" style="display:none;align-items:center;gap:8px;flex-wrap:wrap;">
                             <!-- Takeover Controls injected dynamically -->
                         </div>
                     </div>
@@ -12304,27 +12312,32 @@ class AdminController
 
                     <!-- Staff Reply Composer -->
                     <div id="chatComposerContainer" style="border-top:1px solid #e2e8f0;background:#ffffff;padding:12px 16px;display:none;flex-direction:column;gap:8px;">
-                        <div style="display:flex;align-items:center;justify-content:space-between;">
+                        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;">
                             <div style="font-size:11.5px;color:#64748b;font-weight:600;">
                                 <i class="fas fa-user-shield text-success"></i> Replying as Staff: <strong><?php echo htmlspecialchars($adminName); ?></strong>
                             </div>
                             <button type="button" id="btnAiSuggestReply" class="btn btn-xs" style="background:#f1f5f9;color:#4f46e5;font-weight:600;border:1px solid #c7d2fe;border-radius:4px;" title="AI Co-Pilot generates contextual draft suggestion">
-                                <i class="fas fa-magic"></i> AI Co-Pilot Suggest Reply
+                                <i class="fas fa-magic"></i> <span class="sdv-ai-suggest-text">AI Co-Pilot Suggest Reply</span>
                             </button>
                         </div>
                         <div style="display:flex;gap:10px;align-items:flex-end;">
-                            <textarea id="staffReplyInput" rows="2" placeholder="Type message as human staff agent... (Shift+Enter for newline, Enter to send)" style="flex:1;padding:10px 12px;font-size:13px;border:1px solid #cbd5e1;border-radius:6px;resize:none;outline:none;line-height:1.4;box-sizing:border-box;"></textarea>
+                            <textarea id="staffReplyInput" rows="2" placeholder="Type message as human staff agent... (Shift+Enter for newline, Enter to send)" style="flex:1;padding:10px 12px;font-size:14px;border:1px solid #cbd5e1;border-radius:6px;resize:none;outline:none;line-height:1.4;box-sizing:border-box;"></textarea>
                             <button type="button" id="btnSendStaffReply" class="btn btn-primary" style="height:44px;padding:0 20px;font-weight:700;border-radius:6px;display:flex;align-items:center;gap:6px;">
-                                <i class="fas fa-paper-plane"></i> Send
+                                <i class="fas fa-paper-plane"></i> <span class="sdv-send-btn-text">Send</span>
                             </button>
                         </div>
                     </div>
                 </div>
 
                 <!-- ── COLUMN 3: CLIENT ACCOUNT WATCHER & TICKET CONVERT ────────── -->
-                <div id="sideWatcherContainer" style="border-left:1px solid #e2e8f0;background:#ffffff;display:flex;flex-direction:column;overflow-y:auto;">
-                    <div style="padding:14px 16px;border-bottom:1px solid #e2e8f0;background:#f8fafc;font-weight:700;font-size:13px;color:#1e293b;display:flex;align-items:center;gap:8px;">
-                        <i class="fas fa-id-card text-primary"></i> Client Profile &amp; Account Watcher
+                <div id="sideWatcherContainer" class="sdv-console-col-watcher" style="border-left:1px solid #e2e8f0;background:#ffffff;display:flex;flex-direction:column;overflow-y:auto;">
+                    <div style="padding:14px 16px;border-bottom:1px solid #e2e8f0;background:#f8fafc;font-weight:700;font-size:13px;color:#1e293b;display:flex;align-items:center;justify-content:space-between;">
+                        <div style="display:flex;align-items:center;gap:8px;">
+                            <i class="fas fa-id-card text-primary"></i> Client Profile &amp; Account Watcher
+                        </div>
+                        <button type="button" id="btnCloseSideWatcher" class="btn btn-xs btn-default sdv-watcher-close-btn" title="Close info drawer" style="display:none;border-radius:50%;width:26px;height:26px;padding:0;align-items:center;justify-content:center;">
+                            <i class="fas fa-times"></i>
+                        </button>
                     </div>
                     <div id="sideWatcherContent" style="padding:16px;">
                         <div style="text-align:center;padding:40px 10px;color:#94a3b8;font-size:12.5px;">
@@ -12423,6 +12436,62 @@ class AdminController
         <style>
             @keyframes pulseDot { 0%,100%{opacity:1;} 50%{opacity:0.3;} }
             @keyframes fadeIn { from{opacity:0;transform:translateY(4px);} to{opacity:1;transform:translateY(0);} }
+
+            .sdv-live-console-app {
+                display: grid;
+                grid-template-columns: 330px 1fr 340px;
+                height: calc(100vh - <?php echo $isStandalone ? '95px' : '230px'; ?>);
+                min-height: 600px;
+                background: #f8fafc;
+                border: 1px solid #cbd5e1;
+                border-top: none;
+                border-radius: 0 0 10px 10px;
+                overflow: hidden;
+                box-shadow: 0 8px 24px rgba(0,0,0,0.06);
+                position: relative;
+            }
+
+            .sdv-console-col-queue {
+                border-right: 1px solid #e2e8f0;
+                background: #ffffff;
+                display: flex;
+                flex-direction: column;
+                overflow: hidden;
+                min-width: 0;
+            }
+
+            .sdv-console-col-chat {
+                display: flex;
+                flex-direction: column;
+                background: #ffffff;
+                overflow: hidden;
+                position: relative;
+                min-width: 0;
+            }
+
+            .sdv-console-col-watcher {
+                border-left: 1px solid #e2e8f0;
+                background: #ffffff;
+                display: flex;
+                flex-direction: column;
+                overflow-y: auto;
+                min-width: 0;
+            }
+
+            .sdv-watcher-backdrop {
+                display: none;
+                position: absolute;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background: rgba(15, 23, 42, 0.45);
+                backdrop-filter: blur(2px);
+                z-index: 45;
+                opacity: 0;
+                transition: opacity 0.2s ease;
+            }
+
             .q-tab { background:#ffffff;border:1px solid #cbd5e1;padding:4px 10px;font-size:11.5px;font-weight:600;border-radius:4px;cursor:pointer;color:#475569;white-space:nowrap; }
             .q-tab.active { background:#0f172a;color:#ffffff;border-color:#0f172a; }
             .session-card { padding:10px 12px;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:8px;cursor:pointer;transition:all 0.15s ease;background:#ffffff; }
@@ -12434,6 +12503,215 @@ class AdminController
             .msg-assistant { align-self:flex-start;background:#f3e8ff;border:1px solid #e9d5ff;color:#581c87;border-bottom-left-radius:3px; }
             .msg-staff { align-self:flex-end;background:#0284c7;color:#ffffff;border-bottom-right-radius:3px;box-shadow:0 2px 4px rgba(2,132,199,0.25); }
             .msg-system { align-self:center;background:#f1f5f9;color:#64748b;font-size:11.5px;font-style:italic;padding:4px 12px;border-radius:20px;border:1px solid #e2e8f0;max-width:90%;text-align:center; }
+
+            .sdv-mobile-back-btn,
+            .sdv-watcher-close-btn,
+            .sdv-watcher-toggle-btn {
+                display: none;
+            }
+
+            /* Tablet viewports: 768px - 1023px */
+            @media (min-width: 768px) and (max-width: 1023px) {
+                .sdv-live-console-app {
+                    grid-template-columns: 290px 1fr !important;
+                }
+                .sdv-console-col-watcher {
+                    position: absolute !important;
+                    top: 0 !important;
+                    right: -360px !important;
+                    bottom: 0 !important;
+                    width: 350px !important;
+                    max-width: 85% !important;
+                    z-index: 50 !important;
+                    box-shadow: -6px 0 25px rgba(0,0,0,0.15) !important;
+                    transition: right 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+                    display: flex !important;
+                }
+                .sdv-live-console-app.watcher-open .sdv-console-col-watcher {
+                    right: 0 !important;
+                }
+                .sdv-live-console-app.watcher-open .sdv-watcher-backdrop {
+                    display: block !important;
+                    opacity: 1 !important;
+                }
+                .sdv-watcher-close-btn {
+                    display: inline-flex !important;
+                }
+                .sdv-watcher-toggle-btn {
+                    display: inline-flex !important;
+                }
+            }
+
+            /* Mobile viewports: <= 767px */
+            @media (max-width: 767px) {
+                .sdv-live-console-wrapper {
+                    margin-top: 4px !important;
+                    padding: 0 4px !important;
+                }
+
+                .sdv-console-topbar {
+                    flex-direction: column !important;
+                    align-items: stretch !important;
+                    gap: 10px !important;
+                    padding: 10px 14px !important;
+                    border-radius: 8px 8px 0 0 !important;
+                }
+                .sdv-topbar-left {
+                    justify-content: flex-start !important;
+                    gap: 10px !important;
+                }
+                .sdv-topbar-tools {
+                    display: flex !important;
+                    justify-content: flex-start !important;
+                    gap: 6px !important;
+                    width: 100% !important;
+                }
+                .sdv-topbar-tools .btn {
+                    flex: 1 1 auto !important;
+                    text-align: center !important;
+                    padding: 6px 8px !important;
+                    font-size: 11.5px !important;
+                }
+                .sdv-poll-info {
+                    display: none !important;
+                }
+
+                .sdv-live-console-app {
+                    display: block !important;
+                    position: relative !important;
+                    height: calc(100vh - 140px) !important;
+                    height: calc(100dvh - 140px) !important;
+                    min-height: 480px !important;
+                    border-radius: 0 0 8px 8px !important;
+                }
+                .sdv-live-console-app.is-standalone {
+                    height: calc(100vh - 110px) !important;
+                    height: calc(100dvh - 110px) !important;
+                }
+
+                /* Single view switching */
+                .sdv-live-console-app.view-queue .sdv-console-col-queue {
+                    display: flex !important;
+                    width: 100% !important;
+                    height: 100% !important;
+                    border-right: none !important;
+                }
+                .sdv-live-console-app.view-queue .sdv-console-col-chat {
+                    display: none !important;
+                }
+
+                .sdv-live-console-app.view-chat .sdv-console-col-queue {
+                    display: none !important;
+                }
+                .sdv-live-console-app.view-chat .sdv-console-col-chat {
+                    display: flex !important;
+                    width: 100% !important;
+                    height: 100% !important;
+                }
+
+                /* Slide-over watcher drawer */
+                .sdv-console-col-watcher {
+                    position: absolute !important;
+                    top: 0 !important;
+                    right: -100% !important;
+                    bottom: 0 !important;
+                    width: 90% !important;
+                    max-width: 360px !important;
+                    z-index: 50 !important;
+                    background: #ffffff !important;
+                    box-shadow: -8px 0 28px rgba(0,0,0,0.2) !important;
+                    transition: right 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+                    display: flex !important;
+                }
+                .sdv-live-console-app.watcher-open .sdv-console-col-watcher {
+                    right: 0 !important;
+                }
+                .sdv-live-console-app.watcher-open .sdv-watcher-backdrop {
+                    display: block !important;
+                    opacity: 1 !important;
+                }
+
+                .sdv-mobile-back-btn {
+                    display: inline-flex !important;
+                }
+                .sdv-watcher-close-btn {
+                    display: inline-flex !important;
+                }
+                .sdv-watcher-toggle-btn {
+                    display: inline-flex !important;
+                }
+
+                /* Chat header styling */
+                #chatViewHeader {
+                    padding: 8px 12px !important;
+                    flex-direction: column !important;
+                    align-items: stretch !important;
+                    gap: 8px !important;
+                    min-height: auto !important;
+                }
+                .sdv-chat-header-main {
+                    width: 100% !important;
+                }
+                #chatHeaderActions {
+                    width: 100% !important;
+                    flex-wrap: wrap !important;
+                    gap: 6px !important;
+                    justify-content: flex-start !important;
+                }
+                #chatHeaderActions .btn,
+                #chatHeaderActions select {
+                    font-size: 11px !important;
+                    padding: 4px 8px !important;
+                    height: 30px !important;
+                }
+
+                /* Messages container */
+                #chatMessagesScroll {
+                    padding: 12px 10px !important;
+                    gap: 8px !important;
+                }
+                .msg-bubble {
+                    max-width: 88% !important;
+                    font-size: 13px !important;
+                    padding: 8px 12px !important;
+                }
+
+                /* Staff composer */
+                #chatComposerContainer {
+                    padding: 8px 10px !important;
+                    gap: 6px !important;
+                }
+                #staffReplyInput {
+                    font-size: 14px !important;
+                    padding: 8px 10px !important;
+                }
+                #btnSendStaffReply {
+                    height: 42px !important;
+                    padding: 0 14px !important;
+                }
+
+                /* Filter tabs on mobile */
+                #queueFilterTabs {
+                    padding-bottom: 4px !important;
+                    -webkit-overflow-scrolling: touch !important;
+                }
+
+                /* Modal dialog */
+                #ticketConvertModal .modal-dialog {
+                    margin: 10px !important;
+                    width: auto !important;
+                    max-width: 100% !important;
+                }
+                #ticketConvertModal .modal-body {
+                    padding: 12px 14px !important;
+                }
+            }
+
+            @media (max-width: 480px) {
+                .sdv-topbar-tools .sdv-btn-label {
+                    display: none;
+                }
+            }
         </style>
 
         <script>
@@ -12840,6 +13118,13 @@ class AdminController
                 lastMsgId = 0;
                 renderedMsgIds = {};
 
+                // Mobile view switch to conversation view
+                var app = document.getElementById('liveConsoleApp');
+                if (app) {
+                    app.classList.remove('view-queue');
+                    app.classList.add('view-chat');
+                }
+
                 // Highlight card in queue
                 var cards = document.querySelectorAll('.session-card');
                 cards.forEach(function(c) {
@@ -12904,6 +13189,7 @@ class AdminController
                     }
 
                     actHtml += '<button type="button" id="btnOpenConvertModal" class="btn btn-sm btn-primary" style="font-weight:700;"><i class="fas fa-ticket-alt"></i> Convert to Ticket</button>';
+                    actHtml += '<button type="button" id="btnToggleSideWatcher" class="btn btn-sm btn-default sdv-watcher-toggle-btn" title="View Client Account & Services" style="font-weight:600;"><i class="fas fa-id-card text-primary"></i> <span class="sdv-btn-text">Client Info</span></button>';
                     headerActions.innerHTML = actHtml;
 
                     // Bind Takeover Handlers
@@ -12965,6 +13251,14 @@ class AdminController
                     if (btnConvert) {
                         btnConvert.addEventListener('click', function() {
                             openTicketModal();
+                        });
+                    }
+
+                    var btnToggleWatcher = document.getElementById('btnToggleSideWatcher');
+                    if (btnToggleWatcher) {
+                        btnToggleWatcher.addEventListener('click', function() {
+                            var app = document.getElementById('liveConsoleApp');
+                            if (app) app.classList.toggle('watcher-open');
                         });
                     }
                 }
@@ -13326,6 +13620,35 @@ class AdminController
                     .replace(/>/g, '&gt;')
                     .replace(/"/g, '&quot;')
                     .replace(/'/g, '&#039;');
+            }
+
+            // Mobile navigation & drawer controls
+            var btnBackQueue = document.getElementById('btnBackToQueue');
+            if (btnBackQueue) {
+                btnBackQueue.addEventListener('click', function() {
+                    var app = document.getElementById('liveConsoleApp');
+                    if (app) {
+                        app.classList.remove('view-chat');
+                        app.classList.remove('watcher-open');
+                        app.classList.add('view-queue');
+                    }
+                });
+            }
+
+            var btnCloseWatcher = document.getElementById('btnCloseSideWatcher');
+            if (btnCloseWatcher) {
+                btnCloseWatcher.addEventListener('click', function() {
+                    var app = document.getElementById('liveConsoleApp');
+                    if (app) app.classList.remove('watcher-open');
+                });
+            }
+
+            var watcherBackdrop = document.getElementById('sideWatcherBackdrop');
+            if (watcherBackdrop) {
+                watcherBackdrop.addEventListener('click', function() {
+                    var app = document.getElementById('liveConsoleApp');
+                    if (app) app.classList.remove('watcher-open');
+                });
             }
 
             // Initial poll and recurring loop
