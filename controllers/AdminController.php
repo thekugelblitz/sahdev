@@ -13857,12 +13857,28 @@ class AdminController
         $apkSizeMb = $apkExists ? (round($apkSizeBytes / (1024 * 1024), 1) . ' MB') : '33.8 MB';
         $apkBuildDate = $apkExists ? date('M j, Y g:i A', filemtime($apkPath)) : 'Production Build';
 
-        // Base URLs
-        $whmcsUrl = rtrim((string) Capsule::table('tblconfiguration')->where('setting', 'SystemURL')->value('value'), '/');
+        // Base URLs (prefer SystemSSLURL or upgrade to https if admin session is HTTPS)
+        $whmcsUrl = '';
+        if (class_exists('\WHMCS\Config\Setting')) {
+            $whmcsUrl = \WHMCS\Config\Setting::getValue('SystemSSLURL') ?: \WHMCS\Config\Setting::getValue('SystemURL');
+        }
         if (empty($whmcsUrl)) {
-            $proto = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https://' : 'http://';
+            $sslUrl = Capsule::table('tblconfiguration')->where('setting', 'SystemSSLURL')->value('value');
+            $normUrl = Capsule::table('tblconfiguration')->where('setting', 'SystemURL')->value('value');
+            $whmcsUrl = !empty($sslUrl) ? $sslUrl : $normUrl;
+        }
+        $whmcsUrl = rtrim((string) $whmcsUrl, '/');
+
+        $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+            || (!empty($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https')
+            || (!empty($_SERVER['SERVER_PORT']) && (int)$_SERVER['SERVER_PORT'] === 443);
+
+        if (empty($whmcsUrl)) {
+            $proto = $isHttps ? 'https://' : 'http://';
             $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
             $whmcsUrl = $proto . $host;
+        } elseif ($isHttps && strpos($whmcsUrl, 'http://') === 0) {
+            $whmcsUrl = 'https://' . substr($whmcsUrl, 7);
         }
         $moduleLink = htmlspecialchars($this->moduleVars['modulelink']);
         $ajaxEndpoint = 'addonmodules.php?module=sahdev&sahdev_act=ajax_handler';

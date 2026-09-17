@@ -110,12 +110,29 @@ class MobileApiService
             'updated_at'      => Carbon::now(),
         ]);
 
-        // Discover base URL for WHMCS
-        $whmcsUrl = rtrim((string) Capsule::table('tblconfiguration')->where('setting', 'SystemURL')->value('value'), '/');
+        // Discover base URL for WHMCS (prefer SystemSSLURL or upgrade to https if admin is on HTTPS)
+        $whmcsUrl = '';
+        if (class_exists('\WHMCS\Config\Setting')) {
+            $whmcsUrl = \WHMCS\Config\Setting::getValue('SystemSSLURL') ?: \WHMCS\Config\Setting::getValue('SystemURL');
+        }
         if (empty($whmcsUrl)) {
-            $proto = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https://' : 'http://';
+            $sslUrl = Capsule::table('tblconfiguration')->where('setting', 'SystemSSLURL')->value('value');
+            $normUrl = Capsule::table('tblconfiguration')->where('setting', 'SystemURL')->value('value');
+            $whmcsUrl = !empty($sslUrl) ? $sslUrl : $normUrl;
+        }
+        $whmcsUrl = rtrim((string) $whmcsUrl, '/');
+
+        $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+            || (!empty($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https')
+            || (!empty($_SERVER['SERVER_PORT']) && (int)$_SERVER['SERVER_PORT'] === 443);
+
+        if (empty($whmcsUrl)) {
+            $proto = $isHttps ? 'https://' : 'http://';
             $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
             $whmcsUrl = $proto . $host;
+        } elseif ($isHttps && strpos($whmcsUrl, 'http://') === 0) {
+            // Automatically upgrade to https if the current session is HTTPS to avoid 301/302 redirects
+            $whmcsUrl = 'https://' . substr($whmcsUrl, 7);
         }
 
         $pairingPayload = [

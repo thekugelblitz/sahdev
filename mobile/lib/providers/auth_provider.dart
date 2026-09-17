@@ -106,12 +106,30 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final decoded = jsonDecode(qrPayloadString);
-      final String url = decoded['url'] ?? '';
-      final String code = decoded['code'] ?? '';
+      String url = '';
+      String code = '';
+
+      final trimmed = qrPayloadString.trim();
+      if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+        try {
+          final decoded = jsonDecode(trimmed);
+          if (decoded is Map) {
+            url = (decoded['url'] ?? '').toString();
+            code = (decoded['code'] ?? '').toString();
+          }
+        } catch (_) {}
+      }
+
+      // Fallback if raw code scanned or URL saved in prefs
+      if (url.isEmpty && _baseUrl != null && _baseUrl!.isNotEmpty) {
+        url = _baseUrl!;
+      }
+      if (code.isEmpty && trimmed.startsWith('sdv_pair_')) {
+        code = trimmed;
+      }
 
       if (url.isEmpty || code.isEmpty) {
-        _errorMessage = 'Invalid QR code format';
+        _errorMessage = 'Invalid QR code. Please scan the QR code displayed in WHMCS -> Mobile App (QR).';
         _isLoading = false;
         notifyListeners();
         return false;
@@ -143,7 +161,7 @@ class AuthProvider extends ChangeNotifier {
       }
     } catch (e) {
       _isLoading = false;
-      _errorMessage = 'Invalid QR payload: $e';
+      _errorMessage = 'QR scan error: ${e.toString().replaceAll("Exception:", "").trim()}';
       notifyListeners();
       return false;
     }

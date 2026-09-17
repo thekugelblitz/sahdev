@@ -54,8 +54,10 @@ if (!empty($origin)) {
 }
 
 // Always ensure JSON output for this endpoint
-header('Content-Type: application/json');
-if (ob_get_length()) ob_clean();
+header('Content-Type: application/json; charset=utf-8');
+while (ob_get_level() > 0) {
+    @ob_end_clean();
+}
 
 $action = isset($_REQUEST['action']) ? (string) $_REQUEST['action'] : '';
 $isMobileAction = strpos($action, 'mobile_') === 0;
@@ -1779,9 +1781,20 @@ try {
     // ── Sahdev Mobile Live Support (Android / Flutter) Endpoints ─────────────
     } elseif ($action === 'mobile_login') {
         require_once __DIR__ . '/lib/MobileApiService.php';
-        $username = (string)($_POST['username'] ?? '');
-        $password = (string)($_POST['password'] ?? '');
-        $deviceName = (string)($_POST['device_name'] ?? 'Android Staff Phone');
+        $username = (string)($_REQUEST['username'] ?? ($_POST['username'] ?? ''));
+        $password = (string)($_REQUEST['password'] ?? ($_POST['password'] ?? ''));
+        $deviceName = (string)($_REQUEST['device_name'] ?? ($_POST['device_name'] ?? 'Android Staff Phone'));
+        if (empty($username) || empty($password)) {
+            $rawInput = @file_get_contents('php://input');
+            if (!empty($rawInput)) {
+                $jsonData = @json_decode($rawInput, true);
+                if (is_array($jsonData)) {
+                    $username = $username ?: ($jsonData['username'] ?? '');
+                    $password = $password ?: ($jsonData['password'] ?? '');
+                    $deviceName = $deviceName ?: ($jsonData['device_name'] ?? 'Android Staff Phone');
+                }
+            }
+        }
         $response = \Sahdev\Lib\MobileApiService::authenticate($username, $password, $deviceName);
     } elseif ($action === 'mobile_qr_generate') {
         require_once __DIR__ . '/lib/MobileApiService.php';
@@ -1792,8 +1805,18 @@ try {
         $response = \Sahdev\Lib\MobileApiService::checkQrStatus($tokenId, (int)$adminId);
     } elseif ($action === 'mobile_qr_verify') {
         require_once __DIR__ . '/lib/MobileApiService.php';
-        $code = (string)($_REQUEST['code'] ?? '');
-        $deviceName = (string)($_REQUEST['device_name'] ?? 'Android Staff Phone');
+        $code = (string)($_REQUEST['code'] ?? ($_POST['code'] ?? ''));
+        $deviceName = (string)($_REQUEST['device_name'] ?? ($_POST['device_name'] ?? 'Android Staff Phone'));
+        if (empty($code)) {
+            $rawInput = @file_get_contents('php://input');
+            if (!empty($rawInput)) {
+                $jsonData = @json_decode($rawInput, true);
+                if (is_array($jsonData)) {
+                    $code = $code ?: ($jsonData['code'] ?? '');
+                    $deviceName = $deviceName ?: ($jsonData['device_name'] ?? 'Android Staff Phone');
+                }
+            }
+        }
         $response = \Sahdev\Lib\MobileApiService::verifyQrPairingToken($code, $deviceName);
     } elseif ($action === 'mobile_poll') {
         require_once __DIR__ . '/lib/MobileApiService.php';
@@ -1861,17 +1884,17 @@ try {
     }
 
     // Clean any prior output to prevent malformed JSON
-    if (ob_get_length() !== false) {
-        ob_clean();
+    while (ob_get_level() > 0) {
+        @ob_end_clean();
     }
-
+    header('Content-Type: application/json; charset=utf-8');
     echo json_encode($response);
 
 } catch (\Throwable $e) {
-    if (ob_get_length() !== false) {
-        ob_clean();
+    while (ob_get_level() > 0) {
+        @ob_end_clean();
     }
-
+    header('Content-Type: application/json; charset=utf-8');
     header('HTTP/1.1 500 Internal Server Error');
     echo json_encode([
         'status' => 'error',

@@ -1419,11 +1419,24 @@ function sahdev_clientarea($vars)
         'client_chat_kb_search', 'client_chat_typing', 'client_chat_summon',
         'client_chat_link_email', 'client_chat_rate_message'
     ];
-    if ($sahdevAct === 'ajax_handler' || in_array($action, $clientActions, true) || !empty($action)) {
+
+    $isMobileAction = (strpos($action, 'mobile_') === 0)
+        || (strpos($sahdevAct, 'mobile_') === 0)
+        || !empty($_REQUEST['mobile_token'])
+        || !empty($_SERVER['HTTP_AUTHORIZATION']);
+
+    if ($isMobileAction || $sahdevAct === 'ajax_handler' || in_array($action, $clientActions, true) || !empty($action)) {
         while (ob_get_level() > 0) {
             @ob_end_clean();
         }
         header('Content-Type: application/json; charset=utf-8');
+        header('Access-Control-Allow-Origin: *');
+        header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
+        header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With, mobile_token, X-Mobile-Token');
+        if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+            http_response_code(200);
+            exit;
+        }
         require_once __DIR__ . '/ajax.php';
         exit;
     }
