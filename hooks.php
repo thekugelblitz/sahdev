@@ -7144,9 +7144,28 @@ DISC;
     gap: 4px !important;
     font-size: 10.5px !important;
     font-weight: 600 !important;
-    color: rgba(255, 255, 255, 0.88) !important;
+    color: inherit !important;
+    opacity: 0.85 !important;
     margin-bottom: 4px !important;
     letter-spacing: 0.2px !important;
+}
+.sdv-cl-msg-user .sdv-user-header-badge {
+    color: inherit !important;
+}
+#sdv-client-chat-window.sdv-theme-apple_siri .sdv-user-header-badge {
+    color: #475569 !important;
+    opacity: 1 !important;
+    font-weight: 700 !important;
+}
+#sdv-client-chat-window.sdv-theme-terminal_cli .sdv-user-header-badge {
+    color: #052e16 !important;
+    opacity: 1 !important;
+    font-weight: 700 !important;
+}
+#sdv-client-chat-window.sdv-theme-high_contrast .sdv-user-header-badge {
+    color: #000000 !important;
+    opacity: 1 !important;
+    font-weight: 700 !important;
 }
 .sdv-staff-msg-body,
 .sdv-bot-msg-body,
@@ -7218,7 +7237,6 @@ DISC;
     color: #a78bfa !important;
 }
 #sdv-client-chat-window.sdv-theme-cyber_dark .sdv-user-header-badge,
-#sdv-client-chat-window.sdv-theme-terminal_cli .sdv-user-header-badge,
 #sdv-client-chat-window.sdv-theme-linear_geist .sdv-user-header-badge {
     color: rgba(255, 255, 255, 0.78) !important;
 }
@@ -11040,6 +11058,23 @@ DISC;
     var currentClientId = {$currentClientIdJs};
     var clientNamePrefill = {$clientNameJs};
     var clientEmailPrefill = {$clientEmailJs};
+    var currentClientDisplayName = (function() {
+        if (typeof clientNamePrefill === 'string' && clientNamePrefill.trim()) {
+            return clientNamePrefill.trim();
+        }
+        var guestName = sdvSafeGet('sdv_guest_name', '');
+        if (typeof guestName === 'string' && guestName.trim()) {
+            return guestName.trim();
+        }
+        return '';
+    })();
+
+    function sdvGetClientDisplayName() {
+        if (currentClientDisplayName && currentClientDisplayName.trim()) {
+            return currentClientDisplayName.trim();
+        }
+        return 'You';
+    }
     var configuredMaxChars = Number({$maxMsgCharsJs}) || 0;
     var configuredMaxSessionChars = Number({$maxSessionCharsJs}) || 0;
     var csatEnabled = Boolean({$csatEnabledJs});
@@ -12764,7 +12799,9 @@ DISC;
             var sName = senderName || currentAssignedStaffName || 'Support Agent';
             return '<div class="sdv-staff-header-badge"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> ' + sdvEscapeHtml(sName) + '</div><div class="sdv-staff-msg-body">' + parsedContent + '</div>';
         } else if (role === 'user') {
-            var uName = senderName || 'You';
+            var uName = (typeof senderName === 'string' && senderName.trim() && senderName.toLowerCase() !== 'visitor' && senderName.toLowerCase() !== 'client')
+                ? senderName.trim()
+                : sdvGetClientDisplayName();
             return '<div class="sdv-user-header-badge"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> ' + sdvEscapeHtml(uName) + '</div><div class="sdv-user-msg-body">' + parsedContent + '</div>';
         } else if (role === 'bot') {
             var bName = senderName || '{$chatTitle}' || 'Sahdev AI';
@@ -13068,7 +13105,20 @@ DISC;
 
         // 10. Default user / bot rendering
         var role = (m.sender_type === 'user' || m.sender_type === 'client') ? 'user' : 'bot';
-        var senderDisplayName = m.sender_name || (role === 'user' ? 'You' : '{$chatTitle}');
+        var senderDisplayName = '';
+        if (role === 'user') {
+            var rawSender = (typeof m.sender_name === 'string') ? m.sender_name.trim() : '';
+            if (rawSender && rawSender.toLowerCase() !== 'visitor' && rawSender.toLowerCase() !== 'client' && rawSender.toLowerCase() !== 'you') {
+                senderDisplayName = rawSender;
+                if (!currentClientDisplayName) {
+                    currentClientDisplayName = rawSender;
+                }
+            } else {
+                senderDisplayName = sdvGetClientDisplayName();
+            }
+        } else {
+            senderDisplayName = m.sender_name || '{$chatTitle}';
+        }
         var formattedHtml = sdvFormatMsgWithBadge(role, m.message_text, senderDisplayName, false);
         appendClMsg(role, formattedHtml, true, m.id, m.rating, m.created_at, senderDisplayName);
     }
@@ -13091,6 +13141,10 @@ DISC;
             if (data && data.status === 'success') {
                 sessionUuid = data.session_uuid;
                 sdvSafeSet(activeSessionKey, sessionUuid);
+
+                if (data.client_name && typeof data.client_name === 'string' && data.client_name.trim()) {
+                    currentClientDisplayName = data.client_name.trim();
+                }
 
                 if (data.max_msg_chars) {
                     configuredMaxChars = parseInt(data.max_msg_chars, 10) || configuredMaxChars;
@@ -13199,8 +13253,9 @@ DISC;
             window.sdvCancelReply();
         }
 
-        var userHtml = sdvFormatMsgWithBadge('user', textToSend, 'You', false);
-        var userMsgEl = appendClMsg('user', userHtml, true, null, null, Date.now(), 'You');
+        var clientDisplayName = sdvGetClientDisplayName();
+        var userHtml = sdvFormatMsgWithBadge('user', textToSend, clientDisplayName, false);
+        var userMsgEl = appendClMsg('user', userHtml, true, null, null, Date.now(), clientDisplayName);
         inputEl.value = '';
         sdvUpdateCharCounter();
         inputEl.disabled = true;
@@ -13515,6 +13570,7 @@ DISC;
 
         sdvSafeSet('sdv_guest_name', name);
         sdvSafeSet('sdv_guest_email', email);
+        currentClientDisplayName = name;
 
         if (submitBtn) {
             submitBtn.disabled = true;

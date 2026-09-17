@@ -96,43 +96,58 @@ class ChatService
     {
         SchemaManager::ensureChatMessagesTable();
 
-        // Self-healing backfill: If this session is marked escalated_ticket but has no escalation card message, create one
+        $clientDisplayName = null;
         try {
             $session = Capsule::table('tblsahdev_chat_sessions')->where('id', $sessionId)->first();
-            if ($session && $session->status === 'escalated_ticket') {
-                $hasEscalatedMsg = Capsule::table('tblsahdev_chat_messages')
-                    ->where('session_id', $sessionId)
-                    ->where('action_card_json', 'LIKE', '%ticket_escalated%')
-                    ->exists();
-                if (!$hasEscalatedMsg) {
-                    $tid = '';
-                    $ticketId = 0;
-                    $ticket = Capsule::table('tbltickets')
-                        ->where('title', 'LIKE', "%{$session->session_uuid}%")
-                        ->orWhere('message', 'LIKE', "%{$session->session_uuid}%")
-                        ->orderBy('id', 'desc')
-                        ->first(['id', 'tid']);
-                    if ($ticket) {
-                        $tid = (string)$ticket->tid;
-                        $ticketId = (int)$ticket->id;
+            if ($session) {
+                if (!empty($session->client_id)) {
+                    $cl = Capsule::table('tblclients')->where('id', $session->client_id)->first(['firstname', 'lastname']);
+                    if ($cl) {
+                        $clientDisplayName = trim(($cl->firstname ?? '') . ' ' . ($cl->lastname ?? ''));
                     }
-                    if (empty($tid)) {
-                        $tid = 'Support';
+                }
+                if (empty($clientDisplayName) && !empty($session->metadata_json)) {
+                    $meta = is_string($session->metadata_json) ? json_decode($session->metadata_json, true) : $session->metadata_json;
+                    if (!empty($meta['name']) && trim($meta['name']) !== '') {
+                        $clientDisplayName = trim($meta['name']);
                     }
-                    Capsule::table('tblsahdev_chat_messages')->insert([
-                        'session_id'       => $sessionId,
-                        'sender_type'      => 'system',
-                        'sender_id'        => (int)($session->assigned_admin_id ?? 0),
-                        'sender_name'      => 'System',
-                        'message_text'     => "Support Ticket #{$tid} Created: Live chat conversation escalated to staff. Our technical staff has received your complete conversation transcript and account details.",
-                        'action_card_json' => json_encode([
-                            'type'         => 'ticket_escalated',
-                            'tid'          => $tid,
-                            'ticket_id'    => $ticketId,
-                            'ticket_url'   => 'supporttickets.php',
-                        ]),
-                        'created_at'       => $session->updated_at ?: Carbon::now(),
-                    ]);
+                }
+
+                if ($session->status === 'escalated_ticket') {
+                    $hasEscalatedMsg = Capsule::table('tblsahdev_chat_messages')
+                        ->where('session_id', $sessionId)
+                        ->where('action_card_json', 'LIKE', '%ticket_escalated%')
+                        ->exists();
+                    if (!$hasEscalatedMsg) {
+                        $tid = '';
+                        $ticketId = 0;
+                        $ticket = Capsule::table('tbltickets')
+                            ->where('title', 'LIKE', "%{$session->session_uuid}%")
+                            ->orWhere('message', 'LIKE', "%{$session->session_uuid}%")
+                            ->orderBy('id', 'desc')
+                            ->first(['id', 'tid']);
+                        if ($ticket) {
+                            $tid = (string)$ticket->tid;
+                            $ticketId = (int)$ticket->id;
+                        }
+                        if (empty($tid)) {
+                            $tid = 'Support';
+                        }
+                        Capsule::table('tblsahdev_chat_messages')->insert([
+                            'session_id'       => $sessionId,
+                            'sender_type'      => 'system',
+                            'sender_id'        => (int)($session->assigned_admin_id ?? 0),
+                            'sender_name'      => 'System',
+                            'message_text'     => "Support Ticket #{$tid} Created: Live chat conversation escalated to staff. Our technical staff has received your complete conversation transcript and account details.",
+                            'action_card_json' => json_encode([
+                                'type'         => 'ticket_escalated',
+                                'tid'          => $tid,
+                                'ticket_id'    => $ticketId,
+                                'ticket_url'   => 'supporttickets.php',
+                            ]),
+                            'created_at'       => $session->updated_at ?: Carbon::now(),
+                        ]);
+                    }
                 }
             }
         } catch (\Throwable $e) {
@@ -144,15 +159,17 @@ class ChatService
             ->orderBy('id', 'asc')
             ->limit($limit)
             ->get()
-            ->map(function ($m) {
+            ->map(function ($m) use ($clientDisplayName) {
                 $senderName = $m->sender_name;
-                if (empty($senderName)) {
+                if ($m->sender_type === 'user' || $m->sender_type === 'client') {
+                    if (empty($senderName) || in_array(strtolower($senderName), ['visitor', 'client', 'you'])) {
+                        $senderName = !empty($clientDisplayName) ? $clientDisplayName : 'You';
+                    }
+                } elseif (empty($senderName)) {
                     if ($m->sender_type === 'staff' || $m->sender_type === 'admin') {
                         $senderName = 'Support Agent';
                     } elseif ($m->sender_type === 'assistant' || $m->sender_type === 'bot' || $m->sender_type === 'ai') {
                         $senderName = self::getChatSetting('client_chat_title', 'Sahdev AI');
-                    } elseif ($m->sender_type === 'user' || $m->sender_type === 'client') {
-                        $senderName = 'You';
                     } else {
                         $senderName = 'System';
                     }
@@ -621,9 +638,24 @@ class ChatService
             }
         }
 
-        $senderName = $clientId > 0
-            ? (Capsule::table('tblclients')->where('id', $clientId)->value('firstname') ?: 'Client')
-            : 'Visitor';
+        $senderName = null;
+        if ($clientId > 0) {
+            try {
+                $cl = Capsule::table('tblclients')->where('id', $clientId)->first(['firstname', 'lastname']);
+                if ($cl) {
+                    $senderName = trim(($cl->firstname ?? '') . ' ' . ($cl->lastname ?? ''));
+                }
+            } catch (\Throwable $e) {}
+        }
+        if (empty($senderName) && !empty($session['metadata_json'])) {
+            $meta = is_string($session['metadata_json']) ? json_decode($session['metadata_json'], true) : $session['metadata_json'];
+            if (!empty($meta['name']) && trim($meta['name']) !== '') {
+                $senderName = trim($meta['name']);
+            }
+        }
+        if (empty($senderName)) {
+            $senderName = 'You';
+        }
 
         // 1. Record visitor message (with idempotency guard against rapid duplicate submissions)
         $cleanStorageText = self::safeStorageText($messageText);
@@ -2344,18 +2376,36 @@ class ChatService
             }
         }
 
+        $clientDisplayName = null;
+        if (!empty($session->client_id)) {
+            try {
+                $cl = Capsule::table('tblclients')->where('id', $session->client_id)->first(['firstname', 'lastname']);
+                if ($cl) {
+                    $clientDisplayName = trim(($cl->firstname ?? '') . ' ' . ($cl->lastname ?? ''));
+                }
+            } catch (\Throwable $e) {}
+        }
+        if (empty($clientDisplayName) && !empty($session->metadata_json)) {
+            $meta = is_string($session->metadata_json) ? json_decode($session->metadata_json, true) : $session->metadata_json;
+            if (!empty($meta['name']) && trim($meta['name']) !== '') {
+                $clientDisplayName = trim($meta['name']);
+            }
+        }
+
         $botTitle = self::getChatSetting('client_chat_title', 'Sahdev AI');
 
         $formatted = [];
         foreach ($messages as $m) {
             $senderName = $m->sender_name;
-            if (empty($senderName)) {
+            if ($m->sender_type === 'user' || $m->sender_type === 'client') {
+                if (empty($senderName) || in_array(strtolower($senderName), ['visitor', 'client', 'you'])) {
+                    $senderName = !empty($clientDisplayName) ? $clientDisplayName : 'You';
+                }
+            } elseif (empty($senderName)) {
                 if ($m->sender_type === 'staff' || $m->sender_type === 'admin') {
                     $senderName = $assignedAdminName ?: 'Support Agent';
                 } elseif ($m->sender_type === 'assistant' || $m->sender_type === 'bot' || $m->sender_type === 'ai') {
                     $senderName = $botTitle;
-                } elseif ($m->sender_type === 'user' || $m->sender_type === 'client') {
-                    $senderName = 'You';
                 } else {
                     $senderName = 'System';
                 }

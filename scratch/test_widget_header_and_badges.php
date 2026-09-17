@@ -56,12 +56,26 @@ assertCheck("MobileApiService::takeoverSession updates last_staff_message_at and
 assertCheck("Mobile message return payload sets sender_type => 'staff'", strpos($mobileApiCode, "'sender_type' => 'staff'") !== false, $errors);
 
 // 4. Check Backend Dispatcher and Polling Synchronization
-echo "\n[4/4] Checking Backend Synchronization in ChatService & ajax.php...\n";
+echo "\n[4/5] Checking Backend Synchronization in ChatService & ajax.php...\n";
 assertCheck("ChatService::handleClientMessage pauses AI when isHuman or assigned_admin_id > 0", strpos($chatServiceCode, 'if ($isHuman || ($session[\'status\'] ?? \'\') === \'taken_over\' || (int)($session[\'assigned_admin_id\'] ?? 0) > 0)') !== false, $errors);
 assertCheck("ChatService::handleClientMessage returns assigned_admin_name on takeover", strpos($chatServiceCode, "'assigned_admin_name' => \$assignedAdminName") !== false, $errors);
 assertCheck("ChatService::pollSessionMessages guarantees non-empty sender_name", strpos($chatServiceCode, "\$senderName = \$assignedAdminName ?: 'Support Agent';") !== false, $errors);
 assertCheck("ChatService::pollSessionMessages includes chat_title", strpos($chatServiceCode, "'chat_title'          => \$botTitle") !== false, $errors);
 assertCheck("ajax.php client_chat_init returns assigned_admin_name and is_human", strpos($ajaxCode, "'assigned_admin_name' => \$assignedAdminName") !== false && strpos($ajaxCode, "'is_human'            => \$isHuman") !== false, $errors);
+
+// 5. Check User Message Bubble Badge Styling & Client Name vs You Resolution
+echo "\n[5/5] Checking User Badge Anti-Whitewashing & Client Name Resolution...\n";
+assertCheck("User badge uses color: inherit to prevent whitewashing", strpos($hooksCode, 'color: inherit !important;') !== false, $errors);
+assertCheck("Apple Siri theme has explicit high-contrast badge styling", strpos($hooksCode, '#sdv-client-chat-window.sdv-theme-apple_siri .sdv-user-header-badge') !== false && strpos($hooksCode, '#475569') !== false, $errors);
+assertCheck("Terminal CLI theme has dark green badge styling", strpos($hooksCode, '#sdv-client-chat-window.sdv-theme-terminal_cli .sdv-user-header-badge') !== false && strpos($hooksCode, '#052e16') !== false, $errors);
+assertCheck("High Contrast theme has black badge styling", strpos($hooksCode, '#sdv-client-chat-window.sdv-theme-high_contrast .sdv-user-header-badge') !== false && strpos($hooksCode, '#000000') !== false, $errors);
+assertCheck("sdvGetClientDisplayName function defined in hooks.php", strpos($hooksCode, 'function sdvGetClientDisplayName()') !== false, $errors);
+assertCheck("sdvGetClientDisplayName falls back to 'You' for unidentified visitors", strpos($hooksCode, "return 'You';") !== false, $errors);
+assertCheck("sdvSendMessage uses sdvGetClientDisplayName()", strpos($hooksCode, "var clientDisplayName = sdvGetClientDisplayName();") !== false, $errors);
+assertCheck("ChatService::handleClientMessage resolves client name with 'You' fallback", strpos($chatServiceCode, "\$senderName = 'You';") !== false, $errors);
+assertCheck("ChatService::getSessionMessages maps clientDisplayName or 'You'", strpos($chatServiceCode, "\$senderName = !empty(\$clientDisplayName) ? \$clientDisplayName : 'You';") !== false, $errors);
+assertCheck("ChatService::pollSessionMessages maps clientDisplayName or 'You'", strpos($chatServiceCode, "\$senderName = !empty(\$clientDisplayName) ? \$clientDisplayName : 'You';") !== false, $errors);
+assertCheck("ajax.php extracts guest name from metadata_json if guest", strpos($ajaxCode, "\$metadata['name'] = trim(\$sessMeta['name']);") !== false, $errors);
 
 echo "\n=================================================================\n";
 if ($errors === 0) {
@@ -73,3 +87,4 @@ if ($errors === 0) {
     echo "=================================================================\n";
     exit(1);
 }
+

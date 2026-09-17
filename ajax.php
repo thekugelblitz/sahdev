@@ -438,6 +438,14 @@ if ($isClientChatAction) {
 
             $sessionUuid = trim((string) ($_REQUEST['session_uuid'] ?? ''));
             $session = \Sahdev\Lib\ChatService::getOrCreateClientSession($visitorToken, $clientId, $metadata, $sessionUuid);
+
+            if (empty($metadata['name']) && !empty($session['metadata_json'])) {
+                $sessMeta = is_string($session['metadata_json']) ? json_decode($session['metadata_json'], true) : $session['metadata_json'];
+                if (!empty($sessMeta['name']) && trim($sessMeta['name']) !== '') {
+                    $metadata['name'] = trim($sessMeta['name']);
+                }
+            }
+
             $messages = \Sahdev\Lib\ChatService::getSessionMessages((int) $session['id'], 50);
             $greeting = !empty($settings->client_chat_welcome_message)
                 ? $settings->client_chat_welcome_message
@@ -550,6 +558,7 @@ if ($isClientChatAction) {
                 'greeting'      => $greeting,
                 'messages'      => [],
                 'is_logged_in'  => ($clientId > 0),
+                'client_name'   => $metadata['name'] ?? null,
                 'limit_status'  => $quotaStatus,
                 'max_msg_chars' => $maxMsgChars,
                 'starter_chips' => $starterChips,
