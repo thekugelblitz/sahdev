@@ -145,10 +145,22 @@ class ChatService
             ->limit($limit)
             ->get()
             ->map(function ($m) {
+                $senderName = $m->sender_name;
+                if (empty($senderName)) {
+                    if ($m->sender_type === 'staff' || $m->sender_type === 'admin') {
+                        $senderName = 'Support Agent';
+                    } elseif ($m->sender_type === 'assistant' || $m->sender_type === 'bot' || $m->sender_type === 'ai') {
+                        $senderName = self::getChatSetting('client_chat_title', 'Sahdev AI');
+                    } elseif ($m->sender_type === 'user' || $m->sender_type === 'client') {
+                        $senderName = 'You';
+                    } else {
+                        $senderName = 'System';
+                    }
+                }
                 return [
                     'id'               => (int) $m->id,
                     'sender_type'      => $m->sender_type,
-                    'sender_name'      => $m->sender_name,
+                    'sender_name'      => $senderName,
                     'message_text'     => html_entity_decode((string)$m->message_text, ENT_QUOTES | ENT_HTML5, 'UTF-8'),
                     'action_card'      => !empty($m->action_card_json) ? json_decode($m->action_card_json, true) : null,
                     'tool_calls'       => !empty($m->tool_calls_json) ? json_decode($m->tool_calls_json, true) : null,
@@ -654,13 +666,32 @@ class ChatService
         }
 
         // 2. If staff has actively taken over this chat, deliver message to staff and pause AI auto-reply
-        if (($session['status'] ?? '') === 'taken_over') {
+        if ($isHuman || ($session['status'] ?? '') === 'taken_over' || (int)($session['assigned_admin_id'] ?? 0) > 0) {
+            $assignedAdminName = null;
+            if (!empty($session['assigned_admin_id'])) {
+                $adm = Capsule::table('tbladmins')->where('id', $session['assigned_admin_id'])->first(['firstname', 'lastname']);
+                if ($adm) {
+                    $assignedAdminName = trim($adm->firstname . ' ' . $adm->lastname);
+                }
+            }
+            if (empty($assignedAdminName)) {
+                $lastStaff = Capsule::table('tblsahdev_chat_messages')
+                    ->where('session_id', $sessionId)
+                    ->whereIn('sender_type', ['staff', 'admin'])
+                    ->orderBy('id', 'desc')
+                    ->first();
+                if ($lastStaff && !empty($lastStaff->sender_name)) {
+                    $assignedAdminName = $lastStaff->sender_name;
+                }
+            }
             return [
-                'success'         => true,
-                'is_takeover'     => true,
-                'status'          => 'taken_over',
-                'user_message_id' => $userMsgId,
-                'message'         => 'Your message was delivered to our support agent.',
+                'success'             => true,
+                'is_takeover'         => true,
+                'status'              => 'taken_over',
+                'user_message_id'     => $userMsgId,
+                'assigned_admin_id'   => (int)($session['assigned_admin_id'] ?? 0),
+                'assigned_admin_name' => $assignedAdminName,
+                'message'             => 'Your message was delivered to our support agent.',
             ];
         }
 
@@ -2295,25 +2326,49 @@ class ChatService
 
         $messages = $query->orderBy('id', 'asc')->get();
 
-        $formatted = [];
-        foreach ($messages as $m) {
-            $formatted[] = [
-                'id'           => (int) $m->id,
-                'sender_type'  => $m->sender_type,
-                'sender_name'  => $m->sender_name,
-                'message_text' => html_entity_decode((string)$m->message_text, ENT_QUOTES | ENT_HTML5, 'UTF-8'),
-                'action_card'  => !empty($m->action_card_json) ? json_decode($m->action_card_json, true) : null,
-                'rating'       => isset($m->rating) ? (int) $m->rating : null,
-                'created_at'   => Carbon::parse($m->created_at)->diffForHumans(),
-            ];
-        }
-
         $assignedAdminName = null;
         if (!empty($session->assigned_admin_id)) {
             $adm = Capsule::table('tbladmins')->where('id', $session->assigned_admin_id)->first(['firstname', 'lastname']);
             if ($adm) {
                 $assignedAdminName = trim($adm->firstname . ' ' . $adm->lastname);
             }
+        }
+        if (empty($assignedAdminName)) {
+            $lastStaff = Capsule::table('tblsahdev_chat_messages')
+                ->where('session_id', $session->id)
+                ->whereIn('sender_type', ['staff', 'admin'])
+                ->orderBy('id', 'desc')
+                ->first();
+            if ($lastStaff && !empty($lastStaff->sender_name)) {
+                $assignedAdminName = $lastStaff->sender_name;
+            }
+        }
+
+        $botTitle = self::getChatSetting('client_chat_title', 'Sahdev AI');
+
+        $formatted = [];
+        foreach ($messages as $m) {
+            $senderName = $m->sender_name;
+            if (empty($senderName)) {
+                if ($m->sender_type === 'staff' || $m->sender_type === 'admin') {
+                    $senderName = $assignedAdminName ?: 'Support Agent';
+                } elseif ($m->sender_type === 'assistant' || $m->sender_type === 'bot' || $m->sender_type === 'ai') {
+                    $senderName = $botTitle;
+                } elseif ($m->sender_type === 'user' || $m->sender_type === 'client') {
+                    $senderName = 'You';
+                } else {
+                    $senderName = 'System';
+                }
+            }
+            $formatted[] = [
+                'id'           => (int) $m->id,
+                'sender_type'  => $m->sender_type,
+                'sender_name'  => $senderName,
+                'message_text' => html_entity_decode((string)$m->message_text, ENT_QUOTES | ENT_HTML5, 'UTF-8'),
+                'action_card'  => !empty($m->action_card_json) ? json_decode($m->action_card_json, true) : null,
+                'rating'       => isset($m->rating) ? (int) $m->rating : null,
+                'created_at'   => Carbon::parse($m->created_at)->diffForHumans(),
+            ];
         }
 
         $quotaStatus = self::checkClientChatLimits($visitorToken, $clientId, (int)$session->id);
@@ -2324,6 +2379,7 @@ class ChatService
             'status'              => $session->status,
             'assigned_admin_id'   => (int)($session->assigned_admin_id ?? 0),
             'assigned_admin_name' => $assignedAdminName,
+            'chat_title'          => $botTitle,
             'summon_status'       => $session->summon_status ?? 'none',
             'limit_status'        => $quotaStatus,
             'messages'            => $formatted,

@@ -7128,11 +7128,58 @@ DISC;
     margin-bottom: 5px !important;
     letter-spacing: 0.2px !important;
 }
-.sdv-staff-msg-body {
+.sdv-bot-header-badge {
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 4px !important;
+    font-size: 11px !important;
+    font-weight: 700 !important;
+    color: #6366f1 !important;
+    margin-bottom: 5px !important;
+    letter-spacing: 0.2px !important;
+}
+.sdv-user-header-badge {
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 4px !important;
+    font-size: 10.5px !important;
+    font-weight: 600 !important;
+    color: rgba(255, 255, 255, 0.88) !important;
+    margin-bottom: 4px !important;
+    letter-spacing: 0.2px !important;
+}
+.sdv-staff-msg-body,
+.sdv-bot-msg-body,
+.sdv-user-msg-body {
     font-size: 13.5px !important;
     line-height: 1.5 !important;
     word-break: break-word !important;
     color: inherit !important;
+}
+.sdv-staff-avatar-circle {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #0284c7, #0369a1);
+    border-radius: 50%;
+    position: relative;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+}
+.sdv-staff-avatar-dot {
+    position: absolute;
+    bottom: -1px;
+    right: -1px;
+    width: 9px;
+    height: 9px;
+    background: #22c55e;
+    border: 2px solid #ffffff;
+    border-radius: 50%;
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.1);
+}
+.sdv-cl-title, .sdv-cl-status, .sdv-cl-avatar {
+    transition: all 0.25s ease-in-out;
 }
 .sdv-cl-msg-system {
     align-self: center !important;
@@ -7164,6 +7211,16 @@ DISC;
 #sdv-client-chat-window.sdv-theme-terminal_cli .sdv-staff-header-badge,
 #sdv-client-chat-window.sdv-theme-linear_geist .sdv-staff-header-badge {
     color: #60a5fa !important;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-bot-header-badge,
+#sdv-client-chat-window.sdv-theme-terminal_cli .sdv-bot-header-badge,
+#sdv-client-chat-window.sdv-theme-linear_geist .sdv-bot-header-badge {
+    color: #a78bfa !important;
+}
+#sdv-client-chat-window.sdv-theme-cyber_dark .sdv-user-header-badge,
+#sdv-client-chat-window.sdv-theme-terminal_cli .sdv-user-header-badge,
+#sdv-client-chat-window.sdv-theme-linear_geist .sdv-user-header-badge {
+    color: rgba(255, 255, 255, 0.78) !important;
 }
 #sdv-client-chat-window.sdv-theme-cyber_dark .sdv-cl-msg-system,
 #sdv-client-chat-window.sdv-theme-terminal_cli .sdv-cl-msg-system,
@@ -10919,7 +10976,7 @@ DISC;
         {$disclaimerHtml}
 
         <div class="sdv-cl-messages" id="sdv-cl-msgs">
-            <div class="sdv-cl-msg sdv-cl-msg-bot">{$welcomeMsg}</div>
+            <div class="sdv-cl-msg sdv-cl-msg-bot"><div class="sdv-bot-header-badge"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg> {$chatTitle}</div><div class="sdv-bot-msg-body">{$welcomeMsg}</div></div>
             <div id="sdv-starter-chips" class="sdv-starter-chips" style="display:none;"></div>
         </div>
 
@@ -11105,6 +11162,10 @@ DISC;
         if (oldQuote) oldQuote.remove();
         var staffBadge = clone.querySelector('.sdv-staff-header-badge');
         if (staffBadge) staffBadge.remove();
+        var botBadge = clone.querySelector('.sdv-bot-header-badge');
+        if (botBadge) botBadge.remove();
+        var userBadge = clone.querySelector('.sdv-user-header-badge');
+        if (userBadge) userBadge.remove();
 
         var fullText = (clone.innerText || clone.textContent || '').trim();
         if (!fullText) return;
@@ -12527,7 +12588,7 @@ DISC;
         return res;
     }
 
-    function appendClMsg(role, text, isHtml, msgId, rating, timestamp) {
+    function appendClMsg(role, text, isHtml, msgId, rating, timestamp, senderName) {
         if (!text && !isHtml) return null;
         if (typeof text === 'string' && !text.trim() && !isHtml) return null;
 
@@ -12562,13 +12623,13 @@ DISC;
             }
         }
 
-        if (isHtml) {
-            d.innerHTML = text;
+        if (role === 'system') {
+            d.innerHTML = isHtml ? text : parseSimpleMarkdown(text);
         } else {
-            d.innerHTML = parseSimpleMarkdown(text);
+            d.innerHTML = sdvFormatMsgWithBadge(role, text, senderName, isHtml);
         }
 
-        if ((!isHtml || role === 'staff') && role !== 'system') {
+        if (role !== 'system') {
             attachMsgActions(d, msgId, rating, role, timestamp);
         }
         msgsEl.appendChild(d);
@@ -12683,6 +12744,105 @@ DISC;
         }
     }
 
+    function sdvFormatMsgWithBadge(role, text, senderName, isHtml) {
+        var rawText = (typeof text === 'string') ? text : '';
+        if (!rawText.trim()) return '';
+
+        // If message is a card or typing wave or already formatted, don't double-badge
+        if (rawText.indexOf('sdv-typing-wave') > -1 ||
+            rawText.indexOf('sdv-escalate-success-card') > -1 ||
+            rawText.indexOf('sdv-limit-notice-card') > -1 ||
+            rawText.indexOf('sdv-staff-header-badge') > -1 ||
+            rawText.indexOf('sdv-bot-header-badge') > -1 ||
+            rawText.indexOf('sdv-user-header-badge') > -1) {
+            return isHtml ? rawText : parseSimpleMarkdown(rawText);
+        }
+
+        var parsedContent = isHtml ? rawText : parseSimpleMarkdown(rawText);
+
+        if (role === 'staff') {
+            var sName = senderName || currentAssignedStaffName || 'Support Agent';
+            return '<div class="sdv-staff-header-badge"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> ' + sdvEscapeHtml(sName) + '</div><div class="sdv-staff-msg-body">' + parsedContent + '</div>';
+        } else if (role === 'user') {
+            var uName = senderName || 'You';
+            return '<div class="sdv-user-header-badge"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> ' + sdvEscapeHtml(uName) + '</div><div class="sdv-user-msg-body">' + parsedContent + '</div>';
+        } else if (role === 'bot') {
+            var bName = senderName || '{$chatTitle}' || 'Sahdev AI';
+            return '<div class="sdv-bot-header-badge"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg> ' + sdvEscapeHtml(bName) + '</div><div class="sdv-bot-msg-body">' + parsedContent + '</div>';
+        }
+
+        return parsedContent;
+    }
+
+    window.sdvUpdateHeaderState = function(isHuman, staffName, isSummoning) {
+        var win = document.getElementById('sdv-client-chat-window');
+        if (!win) return;
+        var titleEl = win.querySelector('.sdv-cl-title');
+        var statusEl = win.querySelector('.sdv-cl-status');
+        var avatarEl = win.querySelector('.sdv-cl-avatar');
+        var badgeEl = win.querySelector('.sdv-cl-globe-badge');
+
+        if (!window._sdvOriginalHeader) {
+            window._sdvOriginalHeader = {
+                title: titleEl ? titleEl.textContent : '{$chatTitle}',
+                avatarHtml: avatarEl ? avatarEl.innerHTML : '',
+                badgeHtml: badgeEl ? badgeEl.innerHTML : '',
+                badgeTitle: badgeEl ? badgeEl.getAttribute('title') : 'Global AI Knowledge Network'
+            };
+        }
+
+        if (isHuman) {
+            var sName = staffName || window._sdvLastStaffName || currentAssignedStaffName || 'Support Agent';
+            window._sdvLastStaffName = sName;
+            currentAssignedStaffName = sName;
+            if (titleEl) {
+                titleEl.textContent = sName;
+                titleEl.setAttribute('title', sName + ' (Support Agent)');
+            }
+            if (statusEl) {
+                statusEl.innerHTML = '<span class="sdv-cl-status-dot" style="background:#38bdf8;box-shadow:0 0 0 2px rgba(56,189,248,0.4);"></span> Online &bull; Support Agent';
+            }
+            if (avatarEl) {
+                avatarEl.innerHTML = '<div class="sdv-staff-avatar-circle" title="' + sdvEscapeHtml(sName) + '">' +
+                    '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>' +
+                    '<span class="sdv-staff-avatar-dot"></span>' +
+                    '</div>';
+            }
+            if (badgeEl) {
+                badgeEl.setAttribute('title', 'Verified Support Agent');
+                badgeEl.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none;"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>';
+                badgeEl.style.display = 'inline-flex';
+            }
+        } else if (isSummoning) {
+            if (titleEl) {
+                titleEl.textContent = window._sdvOriginalHeader.title;
+                titleEl.setAttribute('title', window._sdvOriginalHeader.title);
+            }
+            if (statusEl) {
+                statusEl.innerHTML = '<span class="sdv-cl-status-dot" style="background:#f59e0b;animation:sdvPulse 1.5s infinite;"></span> Summoning Support Agent...';
+            }
+            if (avatarEl) avatarEl.innerHTML = window._sdvOriginalHeader.avatarHtml;
+            if (badgeEl) {
+                badgeEl.setAttribute('title', window._sdvOriginalHeader.badgeTitle);
+                badgeEl.innerHTML = window._sdvOriginalHeader.badgeHtml;
+            }
+        } else {
+            // Revert back to AI Assistant
+            if (titleEl) {
+                titleEl.textContent = window._sdvOriginalHeader.title;
+                titleEl.setAttribute('title', window._sdvOriginalHeader.title);
+            }
+            if (statusEl) {
+                statusEl.innerHTML = '<span class="sdv-cl-status-dot"></span> Online &bull; Self-Help AI';
+            }
+            if (avatarEl) avatarEl.innerHTML = window._sdvOriginalHeader.avatarHtml;
+            if (badgeEl) {
+                badgeEl.setAttribute('title', window._sdvOriginalHeader.badgeTitle);
+                badgeEl.innerHTML = window._sdvOriginalHeader.badgeHtml;
+            }
+        }
+    };
+
     var currentAssignedStaffName = null;
     function sdvClearLimitState(isTakeover, adminName) {
         var inputEl = document.getElementById('sdv-cl-input');
@@ -12700,8 +12860,10 @@ DISC;
             if (isTakeover) {
                 var staffLabel = currentAssignedStaffName || adminName || 'Support Agent';
                 inputEl.placeholder = 'Message ' + staffLabel + '...';
+                window.sdvUpdateHeaderState && window.sdvUpdateHeaderState(true, staffLabel);
             } else {
                 inputEl.placeholder = 'Type your message...';
+                window.sdvUpdateHeaderState && window.sdvUpdateHeaderState(false, null, false);
             }
             inputEl.style.background = '';
             inputEl.style.color = '';
@@ -12881,13 +13043,15 @@ DISC;
         }
 
         // 8. Staff message rendering
-        if (m.sender_type === 'staff') {
+        if (m.sender_type === 'staff' || m.sender_type === 'admin') {
             isHumanSessionActive = true;
             currentChatStatus = 'taken_over';
-            var staffName = m.staff_name || m.sender_name || 'Support Agent';
+            var staffName = m.staff_name || m.sender_name || currentAssignedStaffName || 'Support Agent';
+            currentAssignedStaffName = staffName;
             sdvClearLimitState(true, staffName);
-            var staffHtml = '<div class="sdv-staff-header-badge"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> ' + sdvEscapeHtml(staffName) + '</div><div class="sdv-staff-msg-body">' + parseSimpleMarkdown(m.message_text) + '</div>';
-            var staffEl = appendClMsg('staff', staffHtml, true, m.id, null, m.created_at);
+            window.sdvUpdateHeaderState && window.sdvUpdateHeaderState(true, staffName);
+            var staffHtml = sdvFormatMsgWithBadge('staff', m.message_text, staffName, false);
+            var staffEl = appendClMsg('staff', staffHtml, true, m.id, null, m.created_at, staffName);
             if (staffEl) {
                 staffEl.setAttribute('data-msg-text', (m.message_text || '').trim());
             }
@@ -12903,8 +13067,10 @@ DISC;
         }
 
         // 10. Default user / bot rendering
-        var role = (m.sender_type === 'user') ? 'user' : 'bot';
-        appendClMsg(role, m.message_text, false, m.id, m.rating, m.created_at);
+        var role = (m.sender_type === 'user' || m.sender_type === 'client') ? 'user' : 'bot';
+        var senderDisplayName = m.sender_name || (role === 'user' ? 'You' : '{$chatTitle}');
+        var formattedHtml = sdvFormatMsgWithBadge(role, m.message_text, senderDisplayName, false);
+        appendClMsg(role, formattedHtml, true, m.id, m.rating, m.created_at, senderDisplayName);
     }
 
     window.sdvInitChat = function() {
@@ -12951,12 +13117,19 @@ DISC;
                 }
 
                 currentChatStatus = data.status_chat || data.status || 'active';
-                if (currentChatStatus === 'taken_over' || (data.limit_status && data.limit_status.is_human)) {
+                if (currentChatStatus === 'taken_over' || (data.limit_status && data.limit_status.is_human) || data.is_human) {
                     isHumanSessionActive = true;
-                    sdvClearLimitState(true, null);
+                    var sName = data.assigned_admin_name || currentAssignedStaffName || 'Support Agent';
+                    sdvClearLimitState(true, sName);
+                    window.sdvUpdateHeaderState && window.sdvUpdateHeaderState(true, sName);
+                } else if (data.summon_status === 'requested') {
+                    isHumanSessionActive = true;
+                    sdvClearLimitState(false, null);
+                    window.sdvUpdateHeaderState && window.sdvUpdateHeaderState(false, null, true);
                 } else if (data.limit_status && data.limit_status.limit_reached) {
                     isHumanSessionActive = false;
                     sdvApplyLimitState(data.limit_status);
+                    window.sdvUpdateHeaderState && window.sdvUpdateHeaderState(false, null, false);
                     var msgsEl = document.getElementById('sdv-cl-msgs');
                     if (msgsEl && (!data.messages || data.messages.length === 0)) {
                         var cardHtml = renderLimitNoticeCardHtml(data.limit_status.message);
@@ -12965,6 +13138,7 @@ DISC;
                 } else {
                     isHumanSessionActive = false;
                     sdvClearLimitState(false, null);
+                    window.sdvUpdateHeaderState && window.sdvUpdateHeaderState(false, null, false);
                 }
 
                 if (data.starter_chips && Array.isArray(data.starter_chips)) {
@@ -13025,7 +13199,8 @@ DISC;
             window.sdvCancelReply();
         }
 
-        var userMsgEl = appendClMsg('user', textToSend, false, null, null, Date.now());
+        var userHtml = sdvFormatMsgWithBadge('user', textToSend, 'You', false);
+        var userMsgEl = appendClMsg('user', userHtml, true, null, null, Date.now(), 'You');
         inputEl.value = '';
         sdvUpdateCharCounter();
         inputEl.disabled = true;
@@ -13135,7 +13310,9 @@ DISC;
                 if (data.is_takeover || data.status === 'taken_over') {
                     isHumanSessionActive = true;
                     currentChatStatus = 'taken_over';
-                    sdvClearLimitState(true, null);
+                    var sName = data.assigned_admin_name || currentAssignedStaffName || 'Support Agent';
+                    sdvClearLimitState(true, sName);
+                    window.sdvUpdateHeaderState && window.sdvUpdateHeaderState(true, sName);
                     // Remove optimistic AI typing bubble since human staff is handling this chat
                     if (tempBot && tempBot.parentNode) {
                         tempBot.parentNode.removeChild(tempBot);
@@ -13149,6 +13326,7 @@ DISC;
                 if (data.is_summoned) {
                     isHumanSessionActive = true;
                     sdvClearLimitState(false, null);
+                    window.sdvUpdateHeaderState && window.sdvUpdateHeaderState(false, null, true);
                     if (tempBot) {
                         tempBot.removeAttribute('data-pending-bot');
                         tempBot.innerHTML = parseSimpleMarkdown(data.reply || '🔔 An agent will join this conversation shortly!');
@@ -13161,6 +13339,7 @@ DISC;
                 // Normal AI Assistant response
                 if (data.reply) {
                     var replyText = data.reply;
+                    var botHtml = sdvFormatMsgWithBadge('bot', replyText, '{$chatTitle}', false);
                     if (data.message_id && document.getElementById('sdv-msg-' + data.message_id)) {
                         // Already rendered by polling! Clean up tempBot if it exists
                         if (tempBot && tempBot.parentNode && tempBot.id !== ('sdv-msg-' + data.message_id)) {
@@ -13169,14 +13348,14 @@ DISC;
                     } else if (tempBot) {
                         tempBot.removeAttribute('data-pending-bot');
                         tempBot.setAttribute('data-msg-text', replyText);
-                        tempBot.innerHTML = parseSimpleMarkdown(replyText);
+                        tempBot.innerHTML = botHtml;
                         if (data.message_id) {
                             tempBot.id = 'sdv-msg-' + data.message_id;
                             if (data.message_id > highestMsgId) highestMsgId = data.message_id;
                         }
                         attachMsgActions(tempBot, data.message_id, 0, 'bot', Date.now());
                     } else {
-                        appendClMsg('bot', replyText, false, data.message_id);
+                        appendClMsg('bot', botHtml, true, data.message_id, 0, Date.now(), '{$chatTitle}');
                     }
                     sdvPlayNotificationChime();
                     if (data.session_uuid && data.session_uuid !== sessionUuid) {
@@ -13238,7 +13417,17 @@ DISC;
             currentChatStatus = res.status || currentChatStatus;
             if (res.status === 'taken_over' || res.summon_status === 'requested' || res.summon_status === 'claimed' || (res.limit_status && res.limit_status.is_human)) {
                 isHumanSessionActive = true;
-                sdvClearLimitState(res.status === 'taken_over', res.assigned_admin_name);
+                if (res.status === 'taken_over' || res.summon_status === 'claimed') {
+                    var aName = res.assigned_admin_name || currentAssignedStaffName || 'Support Agent';
+                    sdvClearLimitState(true, aName);
+                    window.sdvUpdateHeaderState && window.sdvUpdateHeaderState(true, aName);
+                } else if (res.summon_status === 'requested') {
+                    sdvClearLimitState(false, null);
+                    window.sdvUpdateHeaderState && window.sdvUpdateHeaderState(false, null, true);
+                } else {
+                    sdvClearLimitState(true, res.assigned_admin_name);
+                    window.sdvUpdateHeaderState && window.sdvUpdateHeaderState(true, res.assigned_admin_name);
+                }
             } else if (res.status === 'active' && (!res.summon_status || res.summon_status === 'none' || res.summon_status === 'dismissed')) {
                 isHumanSessionActive = false;
                 if (res.limit_status && res.limit_status.limit_reached) {
@@ -13246,19 +13435,7 @@ DISC;
                 } else {
                     sdvClearLimitState(false, null);
                 }
-            }
-
-            // Dynamically update client widget status bar
-            var statusEl = document.querySelector('#sdv-client-chat-window .sdv-cl-status');
-            if (statusEl) {
-                if (res.status === 'taken_over' || res.summon_status === 'claimed') {
-                    var aName = res.assigned_admin_name || 'Staff Agent';
-                    statusEl.innerHTML = '<span class="sdv-cl-status-dot" style="background:#3b82f6;"></span> Connected with ' + sdvEscapeHtml(aName);
-                } else if (res.summon_status === 'requested') {
-                    statusEl.innerHTML = '<span class="sdv-cl-status-dot" style="background:#f59e0b;animation:sdvPulse 1.5s infinite;"></span> Summoning Agent...';
-                } else {
-                    statusEl.innerHTML = '<span class="sdv-cl-status-dot"></span> Online &bull; Self-Help AI';
-                }
+                window.sdvUpdateHeaderState && window.sdvUpdateHeaderState(false, null, false);
             }
 
             if (res.messages && res.messages.length > 0) {
@@ -13791,10 +13968,7 @@ DISC;
         postAjaxWithFallback(form, function(err, data) {
             isHumanSessionActive = true;
             sdvClearLimitState(false, null);
-            var statusEl = document.querySelector('#sdv-client-chat-window .sdv-cl-status');
-            if (statusEl) {
-                statusEl.innerHTML = '<span class="sdv-cl-status-dot" style="background:#f59e0b;animation:sdvPulse 1.5s infinite;"></span> Summoning Agent...';
-            }
+            window.sdvUpdateHeaderState && window.sdvUpdateHeaderState(false, null, true);
             var summonMsgId = (data && data.message_id) ? data.message_id : null;
             var sysMsg = '🔔 A live human support agent has been notified and summoned to assist you. A team member will join shortly!';
             var existingSys = document.querySelector('#sdv-cl-msgs .sdv-cl-msg-system');

@@ -505,7 +505,7 @@ class MobileApiService
 
         $msgId = Capsule::table('tblsahdev_chat_messages')->insertGetId([
             'session_id'   => $sessionId,
-            'sender_type'  => 'admin',
+            'sender_type'  => 'staff',
             'sender_id'    => $adminId,
             'sender_name'  => $adminName,
             'message_text' => $safeText,
@@ -516,12 +516,13 @@ class MobileApiService
         Capsule::table('tblsahdev_chat_sessions')
             ->where('id', $sessionId)
             ->update([
-                'status'            => 'taken_over',
-                'summon_status'     => 'handled',
-                'assigned_admin_id' => $adminId,
-                'typing_preview'    => null,
-                'last_message_at'   => Carbon::now(),
-                'updated_at'        => Carbon::now(),
+                'status'                => 'taken_over',
+                'summon_status'         => 'claimed',
+                'assigned_admin_id'     => $adminId,
+                'typing_preview'        => null,
+                'last_staff_message_at' => Carbon::now(),
+                'last_message_at'       => Carbon::now(),
+                'updated_at'            => Carbon::now(),
             ]);
 
         return [
@@ -529,7 +530,7 @@ class MobileApiService
             'message' => [
                 'id'          => $msgId,
                 'session_id'  => $sessionId,
-                'sender_type' => 'admin',
+                'sender_type' => 'staff',
                 'sender_name' => $adminName,
                 'text'        => $text,
                 'is_staff'    => true,
@@ -558,10 +559,12 @@ class MobileApiService
             Capsule::table('tblsahdev_chat_sessions')
                 ->where('id', $sessionId)
                 ->update([
-                    'status'            => 'taken_over',
-                    'summon_status'     => 'handled',
-                    'assigned_admin_id' => $adminId,
-                    'updated_at'        => Carbon::now(),
+                    'status'                => 'taken_over',
+                    'summon_status'         => 'claimed',
+                    'assigned_admin_id'     => $adminId,
+                    'last_staff_message_at' => Carbon::now(),
+                    'last_message_at'       => Carbon::now(),
+                    'updated_at'            => Carbon::now(),
                 ]);
 
             Capsule::table('tblsahdev_chat_messages')->insert([

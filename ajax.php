@@ -453,20 +453,46 @@ if ($isClientChatAction) {
             $csatEnabled = (bool) \Sahdev\Lib\ChatService::getChatSetting('client_chat_csat_enabled', 1);
             $soundEnabled = (bool) \Sahdev\Lib\ChatService::getChatSetting('client_chat_sound_enabled', 1);
 
+            $assignedAdminName = null;
+            if (!empty($session['assigned_admin_id'])) {
+                $adm = Capsule::table('tbladmins')->where('id', $session['assigned_admin_id'])->first(['firstname', 'lastname']);
+                if ($adm) {
+                    $assignedAdminName = trim($adm->firstname . ' ' . $adm->lastname);
+                }
+            }
+            if (empty($assignedAdminName)) {
+                $lastStaff = Capsule::table('tblsahdev_chat_messages')
+                    ->where('session_id', $session['id'])
+                    ->whereIn('sender_type', ['staff', 'admin'])
+                    ->orderBy('id', 'desc')
+                    ->first();
+                if ($lastStaff && !empty($lastStaff->sender_name)) {
+                    $assignedAdminName = $lastStaff->sender_name;
+                }
+            }
+            $isHuman = \Sahdev\Lib\ChatService::isHumanAgentSession($session);
+            $botTitle = \Sahdev\Lib\ChatService::getChatSetting('client_chat_title', 'Sahdev AI');
+
             echo json_encode([
-                'status'        => 'success',
-                'visitor_token' => $visitorToken,
-                'session_uuid'  => $session['session_uuid'],
-                'greeting'      => $greeting,
-                'messages'      => $messages,
-                'is_logged_in'  => ($clientId > 0),
-                'client_name'   => $metadata['name'] ?? null,
-                'status_chat'   => $session['status'] ?? 'active',
-                'limit_status'  => $quotaStatus,
-                'max_msg_chars' => $maxMsgChars,
-                'starter_chips' => $starterChips,
-                'csat_enabled'  => $csatEnabled,
-                'sound_enabled' => $soundEnabled,
+                'status'              => 'success',
+                'visitor_token'       => $visitorToken,
+                'session_uuid'        => $session['session_uuid'],
+                'greeting'            => $greeting,
+                'messages'            => $messages,
+                'is_logged_in'        => ($clientId > 0),
+                'client_name'         => $metadata['name'] ?? null,
+                'status_chat'         => $session['status'] ?? 'active',
+                'status'              => $session['status'] ?? 'active',
+                'is_human'            => $isHuman,
+                'assigned_admin_id'   => (int) ($session['assigned_admin_id'] ?? 0),
+                'assigned_admin_name' => $assignedAdminName,
+                'chat_title'          => $botTitle,
+                'summon_status'       => $session['summon_status'] ?? 'none',
+                'limit_status'        => $quotaStatus,
+                'max_msg_chars'       => $maxMsgChars,
+                'starter_chips'       => $starterChips,
+                'csat_enabled'        => $csatEnabled,
+                'sound_enabled'       => $soundEnabled,
             ]);
             exit;
         }
