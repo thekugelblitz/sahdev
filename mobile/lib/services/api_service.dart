@@ -565,23 +565,49 @@ class ApiService {
     }
   }
 
-  /// Analyze ticket with Sahdev AI Copilot
+  /// Generate AI Analysis, intent-based response, or rewrite draft
   Future<ApiResponse<Map<String, dynamic>>> analyzeTicketAi({
     required String baseUrl,
     required String token,
     required int ticketId,
     String tone = 'Professional',
+    String intent = 'auto',
+    int intensity = 3,
+    String customInstruction = '',
+    String model = '',
+    String technicalContext = '',
+    bool feedSummary = true,
+    bool includeNotes = true,
+    bool includeTools = true,
+    String rewriteDraft = '',
+    bool scoreDraft = false,
   }) async {
     try {
+      final body = <String, String>{
+        'ticket_id': ticketId.toString(),
+        'tone': tone,
+        'intent': intent,
+        'intensity': intensity.toString(),
+        'custom_instruction': customInstruction,
+        'model': model,
+        'technical_context': technicalContext,
+        'feed_summary': feedSummary ? '1' : '0',
+        'include_notes': includeNotes ? '1' : '0',
+        'include_tools': includeTools ? '1' : '0',
+      };
+      if (rewriteDraft.isNotEmpty) {
+        body['rewrite_draft'] = rewriteDraft;
+      }
+      if (scoreDraft) {
+        body['score_draft'] = '1';
+      }
+
       final response = await _postWithFallback(
         baseUrl: baseUrl,
         action: 'mobile_ticket_ai_analyze',
         token: token,
-        body: {
-          'ticket_id': ticketId.toString(),
-          'tone': tone,
-        },
-        timeout: const Duration(seconds: 35),
+        body: body,
+        timeout: const Duration(seconds: 40),
       );
 
       final decoded = _parseJsonSafely(response.body);

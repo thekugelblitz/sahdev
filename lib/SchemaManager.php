@@ -336,6 +336,11 @@ class SchemaManager
                         $table->text('rating_feedback')->nullable();
                     });
                 }
+                if (!Capsule::schema()->hasColumn('tblsahdev_chat_messages', 'updated_at')) {
+                    Capsule::schema()->table('tblsahdev_chat_messages', function ($table) {
+                        $table->timestamp('updated_at')->nullable();
+                    });
+                }
             }
 
             // Ensure utf8mb4 collation for full emoji and multilingual support

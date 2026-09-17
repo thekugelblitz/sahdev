@@ -6,6 +6,7 @@ class TicketProvider extends ChangeNotifier {
 
   List<Map<String, dynamic>> _tickets = [];
   Map<String, int> _counts = {
+    'awaiting_reply': 0,
     'open': 0,
     'customer_reply': 0,
     'answered': 0,
@@ -14,7 +15,7 @@ class TicketProvider extends ChangeNotifier {
   };
   bool _isLoading = false;
   String? _errorMessage;
-  String _statusFilter = 'open';
+  String _statusFilter = 'awaiting_reply';
   String _searchQuery = '';
   int _currentPage = 1;
   int _totalTickets = 0;
@@ -79,6 +80,7 @@ class TicketProvider extends ChangeNotifier {
         final rawCounts = data['counts'] as Map<String, dynamic>?;
         if (rawCounts != null) {
           _counts = {
+            'awaiting_reply': (rawCounts['awaiting_reply'] as num?)?.toInt() ?? 0,
             'open': (rawCounts['open'] as num?)?.toInt() ?? 0,
             'customer_reply': (rawCounts['customer_reply'] as num?)?.toInt() ?? 0,
             'answered': (rawCounts['answered'] as num?)?.toInt() ?? 0,
@@ -198,6 +200,14 @@ class TicketProvider extends ChangeNotifier {
     required String token,
     required int ticketId,
     String tone = 'Professional',
+    String intent = 'auto',
+    int intensity = 3,
+    String customInstruction = '',
+    String model = '',
+    String technicalContext = '',
+    bool feedSummary = true,
+    bool includeNotes = true,
+    bool includeTools = true,
   }) async {
     _isAiAnalyzing = true;
     _aiAnalysis = null;
@@ -209,6 +219,14 @@ class TicketProvider extends ChangeNotifier {
         token: token,
         ticketId: ticketId,
         tone: tone,
+        intent: intent,
+        intensity: intensity,
+        customInstruction: customInstruction,
+        model: model,
+        technicalContext: technicalContext,
+        feedSummary: feedSummary,
+        includeNotes: includeNotes,
+        includeTools: includeTools,
       );
 
       if (res.success && res.data != null) {
@@ -222,6 +240,34 @@ class TicketProvider extends ChangeNotifier {
       _isAiAnalyzing = false;
       notifyListeners();
     }
+  }
+
+  Future<String?> rewriteDraftReply({
+    required String baseUrl,
+    required String token,
+    required int ticketId,
+    required String draft,
+    String tone = 'Professional',
+    int intensity = 3,
+    String customInstruction = '',
+    String technicalContext = '',
+  }) async {
+    try {
+      final res = await _api.analyzeTicketAi(
+        baseUrl: baseUrl,
+        token: token,
+        ticketId: ticketId,
+        tone: tone,
+        intensity: intensity,
+        customInstruction: customInstruction,
+        technicalContext: technicalContext,
+        rewriteDraft: draft,
+      );
+      if (res.success && res.data != null) {
+        return res.data!['client_reply']?.toString();
+      }
+    } catch (_) {}
+    return null;
   }
 
   Future<bool> updateTicket({

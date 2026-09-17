@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/ticket_provider.dart';
 import '../widgets/canned_responses_sheet.dart';
+import '../widgets/sahdev_ai_ticket_panel.dart';
 
 class TicketDetailScreen extends StatefulWidget {
   final int ticketId;
@@ -18,7 +19,6 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
   final ScrollController _scrollController = ScrollController();
   bool _isStaffNote = false;
   String _selectedStatusAfterReply = 'Answered';
-  String _selectedAiTone = 'Professional';
 
   @override
   void initState() {
@@ -94,27 +94,6 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
     }
   }
 
-  void _triggerAiAnalysis() async {
-    final auth = context.read<AuthProvider>();
-    final prov = context.read<TicketProvider>();
-    if (auth.baseUrl == null || auth.token == null) return;
-
-    final ok = await prov.analyzeTicketAi(
-      baseUrl: auth.baseUrl!,
-      token: auth.token!,
-      ticketId: widget.ticketId,
-      tone: _selectedAiTone,
-    );
-
-    if (!ok && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Sahdev AI analysis unavailable. Check API keys in settings.'),
-          backgroundColor: Color(0xFFEF4444),
-        ),
-      );
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -166,8 +145,17 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                         controller: _scrollController,
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                         children: [
-                          // Sahdev AI Action Card
-                          _buildAiCard(ticketProv, theme, isAmoled),
+                          // Sahdev AI Ticket Intelligence Panel (Matches WHMCS Desktop)
+                          SahdevAiTicketPanel(
+                            ticketId: widget.ticketId,
+                            replyController: _replyController,
+                            onInsertReply: (reply) {
+                              setState(() {
+                                _replyController.text = reply;
+                                _isStaffNote = false;
+                              });
+                            },
+                          ),
 
                           const SizedBox(height: 12),
 
@@ -245,180 +233,6 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
     );
   }
 
-  Widget _buildAiCard(TicketProvider prov, ThemeData theme, bool isAmoled) {
-    final primary = theme.colorScheme.primary;
-    final ai = prov.aiAnalysis;
-
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: isAmoled
-              ? [const Color(0xFF120B24), const Color(0xFF0D1526)]
-              : [const Color(0xFFF3E8FF), const Color(0xFFE0F2FE)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFF8B5CF6).withOpacity(0.4)),
-      ),
-      padding: const EdgeInsets.all(14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF8B5CF6).withOpacity(0.25),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(Icons.auto_awesome, color: Color(0xFFA78BFA), size: 18),
-              ),
-              const SizedBox(width: 8),
-              const Text(
-                'Sahdev AI Ticket Intelligence',
-                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: Color(0xFFA78BFA)),
-              ),
-              const Spacer(),
-              if (prov.isAiAnalyzing)
-                const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-              else
-                InkWell(
-                  onTap: _triggerAiAnalysis,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF8B5CF6),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(ai == null ? Icons.bolt : Icons.refresh, size: 14, color: Colors.white),
-                        const SizedBox(width: 4),
-                        Text(
-                          ai == null ? 'Analyze' : 'Regenerate',
-                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-            ],
-          ),
-
-          if (ai == null && !prov.isAiAnalyzing) ...[
-            const SizedBox(height: 8),
-            const Text(
-              'Tap "Analyze" to automatically diagnose root cause, review internal actions, and draft a high-empathy response.',
-              style: TextStyle(fontSize: 12, color: Colors.grey),
-            ),
-          ],
-
-          if (ai != null) ...[
-            const SizedBox(height: 12),
-            // Root Cause
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: isAmoled ? const Color(0xFF090D17) : Colors.white,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFF06B6D4).withOpacity(0.3)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Row(
-                    children: [
-                      Icon(Icons.search, size: 14, color: Color(0xFF06B6D4)),
-                      SizedBox(width: 6),
-                      Text('Root Cause Diagnosis:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF06B6D4))),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(ai['root_cause'] ?? '', style: const TextStyle(fontSize: 13)),
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
-
-            // Internal Action Plan
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: isAmoled ? const Color(0xFF090D17) : Colors.white,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFF10B981).withOpacity(0.3)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Row(
-                    children: [
-                      Icon(Icons.checklist, size: 14, color: Color(0xFF10B981)),
-                      SizedBox(width: 6),
-                      Text('Internal Action Plan:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF10B981))),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(ai['internal_action_plan'] ?? '', style: const TextStyle(fontSize: 13)),
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
-
-            // Drafted Client Reply
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: isAmoled ? const Color(0xFF090D17) : Colors.white,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFF8B5CF6).withOpacity(0.3)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.mode_comment_outlined, size: 14, color: Color(0xFFA78BFA)),
-                      const SizedBox(width: 6),
-                      const Text('Drafted Client Reply:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFFA78BFA))),
-                      const Spacer(),
-                      ElevatedButton.icon(
-                        icon: const Icon(Icons.input, size: 14),
-                        label: const Text('Insert to Reply', style: TextStyle(fontSize: 11)),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF8B5CF6),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                          minimumSize: Size.zero,
-                        ),
-                        onPressed: () {
-                          setState(() {
-                            _replyController.text = ai['client_reply'] ?? '';
-                            _isStaffNote = false;
-                          });
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('AI draft inserted into reply box!'),
-                              duration: Duration(seconds: 2),
-                            ),
-                          );
-                        },
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  Text(ai['client_reply'] ?? '', style: const TextStyle(fontSize: 13)),
-                ],
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
 
   Widget _buildThreadItem(Map<String, dynamic> msg, ThemeData theme, bool isAmoled) {
     final isStaff = msg['is_staff'] == true;

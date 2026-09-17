@@ -510,7 +510,6 @@ class MobileApiService
             'sender_name'  => $adminName,
             'message_text' => $safeText,
             'created_at'   => Carbon::now(),
-            'updated_at'   => Carbon::now(),
         ]);
 
         // Automatically set session to taken_over and assign to this admin if not already
@@ -571,7 +570,6 @@ class MobileApiService
                 'sender_name'  => 'System',
                 'message_text' => "{$adminName} has joined the conversation and taken over support.",
                 'created_at'   => Carbon::now(),
-                'updated_at'   => Carbon::now(),
             ]);
         } else {
             Capsule::table('tblsahdev_chat_sessions')
@@ -589,7 +587,6 @@ class MobileApiService
                 'sender_name'  => 'System',
                 'message_text' => "Conversation released back to Autonomous AI Assistant.",
                 'created_at'   => Carbon::now(),
-                'updated_at'   => Carbon::now(),
             ]);
         }
 
@@ -991,8 +988,10 @@ class MobileApiService
         }
 
         $status = strtolower(trim($status));
-        if ($status === 'open') {
-            $q->whereIn('t.status', ['Open', 'Customer-Reply', 'In Progress']);
+        if ($status === 'awaiting_reply' || $status === 'awaiting-reply' || $status === 'awaiting') {
+            $q->whereIn('t.status', ['Customer-Reply', 'Open']);
+        } elseif ($status === 'open') {
+            $q->where('t.status', 'Open');
         } elseif ($status === 'customer_reply' || $status === 'customer-reply') {
             $q->where('t.status', 'Customer-Reply');
         } elseif ($status === 'in_progress' || $status === 'in progress') {
@@ -1010,7 +1009,8 @@ class MobileApiService
             ->get();
 
         // Calculate counts
-        $openCount = Capsule::table('tbltickets')->whereIn('status', ['Open', 'Customer-Reply', 'In Progress'])->count();
+        $awaitingReplyCount = Capsule::table('tbltickets')->whereIn('status', ['Customer-Reply', 'Open'])->count();
+        $openCount = Capsule::table('tbltickets')->where('status', 'Open')->count();
         $customerReplyCount = Capsule::table('tbltickets')->where('status', 'Customer-Reply')->count();
         $answeredCount = Capsule::table('tbltickets')->where('status', 'Answered')->count();
         $closedCount = Capsule::table('tbltickets')->where('status', 'Closed')->count();
@@ -1023,6 +1023,8 @@ class MobileApiService
                 if ($cl) $clientName = trim($cl->firstname . ' ' . $cl->lastname);
             }
 
+            $isAwaiting = in_array($r->status, ['Customer-Reply', 'Open']);
+
             $tickets[] = [
                 'id'          => (int) $r->id,
                 'tid'         => $r->tid,
@@ -1032,6 +1034,7 @@ class MobileApiService
                 'department'  => $r->dept_name ?: 'Support',
                 'title'       => $r->title,
                 'status'      => $r->status,
+                'is_awaiting_reply' => $isAwaiting,
                 'priority'    => $r->urgency ?: 'Medium',
                 'last_reply'  => $r->lastreply ? Carbon::parse($r->lastreply)->diffForHumans() : 'Never',
                 'created_at'  => $r->date ? Carbon::parse($r->date)->format('M d, Y g:i A') : '',
@@ -1042,6 +1045,7 @@ class MobileApiService
             'status'  => 'success',
             'tickets' => $tickets,
             'counts'  => [
+                'awaiting_reply' => $awaitingReplyCount,
                 'open'           => $openCount,
                 'customer_reply' => $customerReplyCount,
                 'answered'       => $answeredCount,
@@ -1242,15 +1246,28 @@ class MobileApiService
     /**
      * Run Sahdev AI Copilot analysis and draft reply for a ticket.
      */
-    public static function analyzeTicketAi(int $adminId, int $ticketId, string $tone = 'Professional'): array
-    {
+    public static function analyzeTicketAi(
+        int $adminId,
+        int $ticketId,
+        string $tone = 'Professional',
+        string $intent = 'auto',
+        int $intensity = 3,
+        string $customInstruction = '',
+        string $modelOverride = '',
+        string $technicalContext = '',
+        bool $feedSummary = true,
+        bool $includeNotes = true,
+        bool $includeTools = true,
+        string $rewriteDraft = '',
+        bool $scoreDraft = false
+    ): array {
         try {
             require_once __DIR__ . '/TicketDataExtractor.php';
             require_once __DIR__ . '/GoogleAIProvider.php';
             require_once __DIR__ . '/OpenRouterAIProvider.php';
 
             $extractor = new TicketDataExtractor($ticketId, $adminId);
-            $context = $extractor->getContext(false, true);
+            $context = $extractor->getContext(false, $includeNotes);
 
             $subject = $context['subject'] ?? 'Support Inquiry';
             $clientName = $context['client_name'] ?? 'Customer';
@@ -1264,28 +1281,69 @@ class MobileApiService
                 }
             }
 
-            $prompt = "You are Sahdev AI Ticket Intelligence Assistant for WHMCS Support.\n"
-                . "Analyze this support ticket and provide a JSON response with:\n"
-                . "1. ROOT_CAUSE: Brief technical diagnosis of the client's issue.\n"
-                . "2. INTERNAL_ACTION_PLAN: Step-by-step resolution plan for the support engineer.\n"
-                . "3. CLIENT_REPLY: Complete, professional, and empathetic client reply in Markdown ({$tone} tone), addressing the customer directly (no placeholders).\n\n"
-                . "=== TICKET DETAILS ===\n"
-                . "Subject: {$subject}\n"
-                . "Client: {$clientName}\n\n"
-                . "=== CONVERSATION ===\n"
-                . "{$conversation}\n\n"
-                . "Output ONLY a valid JSON object matching: {\"ROOT_CAUSE\": \"...\", \"INTERNAL_ACTION_PLAN\": \"...\", \"CLIENT_REPLY\": \"...\"}";
+            // If draft rewrite is requested
+            if (!empty($rewriteDraft)) {
+                $prompt = "You are Sahdev AI Ticket Intelligence Assistant for WHMCS Support.\n"
+                    . "The support engineer wrote this rough draft reply for Ticket #{$ticketId} (Subject: {$subject}, Client: {$clientName}):\n\n"
+                    . "--- ROUGH DRAFT ---\n{$rewriteDraft}\n-------------------\n\n"
+                    . "Conversation context:\n{$conversation}\n\n"
+                    . "Please rewrite and polish this rough draft into a complete, highly professional, polite, and empathetic reply ({$tone} tone, Dive Intensity: {$intensity}/5).\n"
+                    . ($customInstruction ? "Custom Staff Instruction: {$customInstruction}\n" : "")
+                    . ($technicalContext ? "Technical Context: {$technicalContext}\n" : "")
+                    . "Return ONLY the expanded, polished reply text in clean markdown. Do not include meta-commentary.";
+            } elseif ($scoreDraft && !empty($rewriteDraft)) {
+                $prompt = "You are a Quality Assurance Support Director evaluating this draft response for Ticket #{$ticketId} (Subject: {$subject}):\n\n"
+                    . "Draft:\n{$rewriteDraft}\n\nContext:\n{$conversation}\n\n"
+                    . "Score the draft out of 100 on clarity, empathy, technical precision, and completeness. Output a brief JSON with {\"score\": 85, \"critique\": \"...\", \"suggestions\": \"...\"}";
+            } else {
+                $intentDescriptions = [
+                    'auto'         => 'Autonomously determine the best resolution strategy for the inquiry.',
+                    'resolved'     => 'Confirm the problem is fully resolved and explain what was fixed.',
+                    'checking'     => 'Inform the customer you are actively investigating/checking their server or service.',
+                    'more_info'    => 'Politely request specific clarifying details, steps to reproduce, or credentials.',
+                    'solution'     => 'Provide a clear, numbered, step-by-step troubleshooting guide or solution.',
+                    'escalate'     => 'Notify the customer that their issue has been escalated to senior engineering.',
+                    'out_of_scope' => 'Politely explain that this request is beyond standard managed support scope with helpful pointers.',
+                    'abuse'        => 'Address policy or acceptable use violations firmly and professionally.',
+                    'duplicate'    => 'Acknowledge duplicate inquiry and consolidate into primary thread.',
+                    'handle_it'    => 'Take complete ownership and deliver the immediate solution without hesitation.',
+                ];
+                $intentGuidance = $intentDescriptions[$intent] ?? $intentDescriptions['auto'];
+
+                $prompt = "You are Sahdev AI Ticket Intelligence Assistant for WHMCS Support.\n"
+                    . "Analyze this support ticket and provide a JSON response with:\n"
+                    . "1. ROOT_CAUSE: Brief technical diagnosis of the client's issue.\n"
+                    . "2. INTERNAL_ACTION_PLAN: Step-by-step resolution plan for the support engineer.\n"
+                    . "3. CLIENT_REPLY: Complete, professional, and empathetic client reply in Markdown ({$tone} tone, Dive Intensity: {$intensity}/5), addressing the customer directly (no placeholders).\n\n"
+                    . "Reply Intent Directive: {$intent} ({$intentGuidance})\n"
+                    . ($customInstruction ? "Custom Staff Instruction: {$customInstruction}\n" : "")
+                    . ($technicalContext ? "Technical Evidence / Context:\n{$technicalContext}\n\n" : "")
+                    . "=== TICKET DETAILS ===\n"
+                    . "Subject: {$subject}\n"
+                    . "Client: {$clientName}\n\n"
+                    . "=== CONVERSATION ===\n"
+                    . "{$conversation}\n\n"
+                    . "Output ONLY a valid JSON object matching: {\"ROOT_CAUSE\": \"...\", \"INTERNAL_ACTION_PLAN\": \"...\", \"CLIENT_REPLY\": \"...\"}";
+            }
 
             $settings = Capsule::table('tblsahdev_settings')->first();
             $providerType = $settings->ai_provider ?? 'gemini';
 
             $reply = "";
-            if ($providerType === 'openrouter') {
+            if ($providerType === 'openrouter' || (!empty($modelOverride) && strpos($modelOverride, '/') !== false)) {
                 $provider = new OpenRouterAIProvider();
                 $reply = $provider->generateText($prompt);
             } else {
                 $provider = new GoogleAIProvider();
                 $reply = $provider->generateText($prompt);
+            }
+
+            if (!empty($rewriteDraft)) {
+                return [
+                    'status'       => 'success',
+                    'action'       => 'rewrite',
+                    'client_reply' => trim($reply),
+                ];
             }
 
             $cleanJson = trim($reply);
@@ -1301,6 +1359,8 @@ class MobileApiService
                     'internal_action_plan' => $data['INTERNAL_ACTION_PLAN'] ?? 'Review account configuration and assist customer.',
                     'client_reply'         => $data['CLIENT_REPLY'],
                     'tone'                 => $tone,
+                    'intent'               => $intent,
+                    'intensity'            => $intensity,
                 ];
             }
 
@@ -1310,6 +1370,8 @@ class MobileApiService
                 'internal_action_plan' => 'Verify account services and reply with resolution details.',
                 'client_reply'         => trim($reply) ?: "Hello {$clientName},\n\nThank you for reaching out. I have reviewed your request and am taking care of this for you immediately.",
                 'tone'                 => $tone,
+                'intent'               => $intent,
+                'intensity'            => $intensity,
             ];
         } catch (\Throwable $e) {
             return [
@@ -1318,6 +1380,8 @@ class MobileApiService
                 'internal_action_plan' => 'Verify customer request and proceed with standard troubleshooting.',
                 'client_reply'         => "Hello,\n\nThank you for reaching out to support. We are currently investigating your request and will follow up with full details shortly.",
                 'tone'                 => $tone,
+                'intent'               => $intent,
+                'intensity'            => $intensity,
             ];
         }
     }
@@ -1429,11 +1493,16 @@ class MobileApiService
             ->where('h.userid', $clientId)
             ->select([
                 'h.id',
+                'h.userid',
                 'h.domain',
                 'h.domainstatus',
                 'h.billingcycle',
                 'h.amount',
                 'h.nextduedate',
+                'h.regdate',
+                'h.paymentmethod',
+                'h.dedicatedip',
+                'h.username',
                 'p.name as product_name',
             ])
             ->orderBy('h.id', 'desc')
@@ -1500,10 +1569,15 @@ class MobileApiService
                 'h.billingcycle',
                 'h.amount',
                 'h.nextduedate',
+                'h.regdate',
+                'h.paymentmethod',
+                'h.dedicatedip',
+                'h.username',
                 'p.name as product_name',
                 'c.firstname',
                 'c.lastname',
                 'c.companyname',
+                'c.email as client_email',
             ]);
 
         $search = trim($search);
@@ -1526,15 +1600,20 @@ class MobileApiService
         $services = [];
         foreach ($rows as $r) {
             $services[] = [
-                'id'           => (int) $r->id,
-                'client_id'    => (int) $r->userid,
-                'client_name'  => trim(($r->firstname ?? '') . ' ' . ($r->lastname ?? '')),
-                'product_name' => $r->product_name,
-                'domain'       => $r->domain ?: '—',
-                'status'         => $r->domainstatus,
-                'price'        => number_format((float)$r->amount, 2),
-                'billing_cycle'=> $r->billingcycle,
-                'next_due_date'=> $r->nextduedate ? Carbon::parse($r->nextduedate)->format('M d, Y') : '—',
+                'id'            => (int) $r->id,
+                'client_id'     => (int) $r->userid,
+                'client_name'   => trim(($r->firstname ?? '') . ' ' . ($r->lastname ?? '')),
+                'client_email'  => $r->client_email ?? '',
+                'product_name'  => $r->product_name,
+                'domain'        => $r->domain ?: '—',
+                'status'        => $r->domainstatus,
+                'price'         => number_format((float)$r->amount, 2),
+                'billing_cycle' => $r->billingcycle,
+                'payment_method'=> $r->paymentmethod ?: '—',
+                'dedicated_ip'  => $r->dedicatedip ?: '',
+                'username'      => $r->username ?: '',
+                'reg_date'      => $r->regdate ? Carbon::parse($r->regdate)->format('M d, Y') : '—',
+                'next_due_date' => $r->nextduedate ? Carbon::parse($r->nextduedate)->format('M d, Y') : '—',
             ];
         }
 

@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 import '../config/theme_config.dart';
 import '../providers/auth_provider.dart';
 import '../providers/chat_provider.dart';
+import '../services/background_service.dart';
+import '../services/audio_service.dart';
 import '../widgets/canned_responses_sheet.dart';
 import '../widgets/client_details_sheet.dart';
 import '../widgets/message_bubble.dart';
@@ -35,6 +37,8 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
+    BackgroundService().silenceCurrentAlert(widget.sessionId);
+    AudioService().stopAlertRing();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final auth = Provider.of<AuthProvider>(context, listen: false);
       if (auth.baseUrl != null && auth.token != null) {

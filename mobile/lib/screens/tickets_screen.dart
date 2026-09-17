@@ -112,6 +112,8 @@ class _TicketsScreenState extends State<TicketsScreen> {
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                   children: [
+                    _buildFilterChip('Awaiting Reply', 'awaiting_reply', ticketProv.counts['awaiting_reply'] ?? 0, ticketProv, auth, theme, badgeColor: const Color(0xFFEF4444)),
+                    const SizedBox(width: 8),
                     _buildFilterChip('Open', 'open', ticketProv.counts['open'] ?? 0, ticketProv, auth, theme),
                     const SizedBox(width: 8),
                     _buildFilterChip('Customer-Reply', 'customer_reply', ticketProv.counts['customer_reply'] ?? 0, ticketProv, auth, theme, badgeColor: const Color(0xFFEF4444)),

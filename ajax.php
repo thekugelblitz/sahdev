@@ -248,7 +248,32 @@ if ($isMobileAction) {
             $jsonData = !empty($rawInput) ? (@json_decode($rawInput, true) ?: []) : [];
             $ticketId = (int)($_REQUEST['ticket_id'] ?? ($jsonData['ticket_id'] ?? 0));
             $tone = (string)($_REQUEST['tone'] ?? ($jsonData['tone'] ?? 'Professional'));
-            $response = \Sahdev\Lib\MobileApiService::analyzeTicketAi((int)$adminId, $ticketId, $tone);
+            $intent = (string)($_REQUEST['intent'] ?? ($jsonData['intent'] ?? 'auto'));
+            $intensity = (int)($_REQUEST['intensity'] ?? ($jsonData['intensity'] ?? 3));
+            $customInstruction = (string)($_REQUEST['custom_instruction'] ?? ($jsonData['custom_instruction'] ?? ''));
+            $modelOverride = (string)($_REQUEST['model'] ?? ($jsonData['model'] ?? ''));
+            $technicalContext = (string)($_REQUEST['technical_context'] ?? ($jsonData['technical_context'] ?? ''));
+            $feedSummary = isset($_REQUEST['feed_summary']) ? !empty($_REQUEST['feed_summary']) : (!empty($jsonData['feed_summary']));
+            $includeNotes = isset($_REQUEST['include_notes']) ? !empty($_REQUEST['include_notes']) : (!empty($jsonData['include_notes']));
+            $includeTools = isset($_REQUEST['include_tools']) ? !empty($_REQUEST['include_tools']) : (!empty($jsonData['include_tools']));
+            $rewriteDraft = (string)($_REQUEST['rewrite_draft'] ?? ($jsonData['rewrite_draft'] ?? ''));
+            $scoreDraft = !empty($_REQUEST['score_draft']) || !empty($jsonData['score_draft']);
+
+            $response = \Sahdev\Lib\MobileApiService::analyzeTicketAi(
+                (int)$adminId,
+                $ticketId,
+                $tone,
+                $intent,
+                $intensity,
+                $customInstruction,
+                $modelOverride,
+                $technicalContext,
+                $feedSummary,
+                $includeNotes,
+                $includeTools,
+                $rewriteDraft,
+                $scoreDraft
+            );
         } elseif ($action === 'mobile_ticket_update') {
             $rawInput = @file_get_contents('php://input');
             $jsonData = !empty($rawInput) ? (@json_decode($rawInput, true) ?: []) : [];

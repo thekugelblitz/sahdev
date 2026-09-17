@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../config/theme_config.dart';
 import '../providers/auth_provider.dart';
 import '../providers/queue_provider.dart';
+import '../services/background_service.dart';
 import '../widgets/session_card.dart';
 import 'chat_screen.dart';
 import 'settings_screen.dart';
@@ -40,6 +41,7 @@ class _QueueScreenState extends State<QueueScreen> {
   void _openChat(int sessionId, String uuid, String clientName, bool isTakenOver, int? clientId) {
     final queue = Provider.of<QueueProvider>(context, listen: false);
     queue.acknowledgeAlert();
+    BackgroundService().silenceCurrentAlert(sessionId);
 
     Navigator.of(context).push(
       MaterialPageRoute(
@@ -120,6 +122,43 @@ class _QueueScreenState extends State<QueueScreen> {
                         color: Colors.white,
                         fontWeight: FontWeight.w700,
                         fontSize: 13,
+                      ),
+                    ),
+                  ),
+                  InkWell(
+                    onTap: () {
+                      BackgroundService().silenceCurrentAlert();
+                      queue.acknowledgeAlert();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text("Alert sound silenced."),
+                          duration: Duration(seconds: 2),
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      margin: const EdgeInsets.only(right: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.25),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: Colors.white.withOpacity(0.5)),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.volume_off, size: 12, color: Colors.white),
+                          SizedBox(width: 4),
+                          Text(
+                            "Silence",
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),

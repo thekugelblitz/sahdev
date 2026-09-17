@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../providers/auth_provider.dart';
 import '../services/api_service.dart';
+import '../widgets/service_detail_modal.dart';
+import 'ticket_detail_screen.dart';
 
 class ClientsScreen extends StatefulWidget {
   const ClientsScreen({super.key});
@@ -80,7 +84,7 @@ class _ClientsScreenState extends State<ClientsScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => _ClientProfileModal(
+      builder: (ctx) => ClientProfileModal(
         clientId: clientId,
         baseUrl: auth.baseUrl!,
         token: auth.token!,
@@ -303,13 +307,14 @@ class _ClientsScreenState extends State<ClientsScreen> {
   }
 }
 
-class _ClientProfileModal extends StatefulWidget {
+class ClientProfileModal extends StatefulWidget {
   final int clientId;
   final String baseUrl;
   final String token;
   final Map<String, dynamic> initialSummary;
 
-  const _ClientProfileModal({
+  const ClientProfileModal({
+    super.key,
     required this.clientId,
     required this.baseUrl,
     required this.token,
@@ -317,10 +322,10 @@ class _ClientProfileModal extends StatefulWidget {
   });
 
   @override
-  State<_ClientProfileModal> createState() => _ClientProfileModalState();
+  State<ClientProfileModal> createState() => _ClientProfileModalState();
 }
 
-class _ClientProfileModalState extends State<_ClientProfileModal> {
+class _ClientProfileModalState extends State<ClientProfileModal> {
   final ApiService _api = ApiService();
   bool _isLoading = true;
   Map<String, dynamic>? _profile;
@@ -349,6 +354,27 @@ class _ClientProfileModalState extends State<_ClientProfileModal> {
     }
   }
 
+  Future<void> _launchUrlAction(String urlStr) async {
+    try {
+      final uri = Uri.parse(urlStr);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
+    } catch (_) {}
+  }
+
+  void _copyContact(BuildContext context, String email, String phone) {
+    final text = 'Email: $email\nPhone: $phone';
+    Clipboard.setData(ClipboardData(text: text));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Client contact copied to clipboard'),
+        duration: Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -357,16 +383,26 @@ class _ClientProfileModalState extends State<_ClientProfileModal> {
     final client = _profile?['client'] ?? widget.initialSummary;
     final services = (_profile?['services'] as List<dynamic>?) ?? [];
     final tickets = (_profile?['tickets'] as List<dynamic>?) ?? [];
+    final invoices = (_profile?['invoices'] as List<dynamic>?) ?? [];
+
+    final name = client['name']?.toString() ?? 'Client Profile';
+    final email = client['email']?.toString() ?? '';
+    final phone = client['phone']?.toString() ?? '—';
+    final address = client['address']?.toString() ?? '';
+    final credit = client['credit']?.toString() ?? '0.00';
+    final unpaidTotal = client['unpaid_total']?.toString() ?? '0.00';
+    final status = client['status']?.toString() ?? 'Active';
+    final isActive = status.toLowerCase() == 'active';
 
     return DraggableScrollableSheet(
-      initialChildSize: 0.85,
-      maxChildSize: 0.95,
+      initialChildSize: 0.88,
+      maxChildSize: 0.96,
       minChildSize: 0.5,
       builder: (_, scrollController) {
         return Container(
           decoration: BoxDecoration(
             color: isAmoled ? const Color(0xFF090D17) : theme.cardColor,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
             border: Border.all(color: theme.dividerColor),
           ),
           child: Column(
@@ -375,7 +411,7 @@ class _ClientProfileModalState extends State<_ClientProfileModal> {
               Center(
                 child: Container(
                   margin: const EdgeInsets.symmetric(vertical: 10),
-                  width: 40,
+                  width: 44,
                   height: 4,
                   decoration: BoxDecoration(
                     color: Colors.grey.shade600,
@@ -383,20 +419,21 @@ class _ClientProfileModalState extends State<_ClientProfileModal> {
                   ),
                 ),
               ),
+
               Expanded(
                 child: ListView(
                   controller: scrollController,
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.all(18),
                   children: [
-                    // Header
+                    // Top Header Row
                     Row(
                       children: [
                         CircleAvatar(
-                          radius: 26,
+                          radius: 28,
                           backgroundColor: theme.colorScheme.primary.withOpacity(0.15),
                           child: Text(
-                            (client['name'] ?? 'C')[0].toUpperCase(),
-                            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: theme.colorScheme.primary),
+                            name.isNotEmpty ? name[0].toUpperCase() : 'C',
+                            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: theme.colorScheme.primary),
                           ),
                         ),
                         const SizedBox(width: 14),
@@ -405,88 +442,397 @@ class _ClientProfileModalState extends State<_ClientProfileModal> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                client['name'] ?? 'Client Profile',
+                                name,
                                 style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
                               ),
-                              Text(
-                                client['email'] ?? '',
-                                style: const TextStyle(fontSize: 13, color: Colors.grey),
+                              if (email.isNotEmpty)
+                                Text(
+                                  email,
+                                  style: const TextStyle(fontSize: 13, color: Colors.grey),
+                                ),
+                              const SizedBox(height: 4),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: (isActive ? const Color(0xFF10B981) : Colors.grey).withOpacity(0.15),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: (isActive ? const Color(0xFF10B981) : Colors.grey).withOpacity(0.3),
+                                  ),
+                                ),
+                                child: Text(
+                                  status.toUpperCase(),
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: isActive ? const Color(0xFF10B981) : Colors.grey,
+                                  ),
+                                ),
                               ),
                             ],
                           ),
                         ),
+                        IconButton(
+                          icon: const Icon(Icons.close),
+                          onPressed: () => Navigator.of(context).pop(),
+                        ),
                       ],
                     ),
+
+                    const SizedBox(height: 14),
+
+                    // Quick Action Buttons (Call, Email, Copy)
+                    Row(
+                      children: [
+                        if (email.isNotEmpty && email != 'Not provided')
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              icon: const Icon(Icons.email_outlined, size: 15),
+                              label: const Text('Email', style: TextStyle(fontSize: 12)),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF8B5CF6),
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(vertical: 8),
+                              ),
+                              onPressed: () => _launchUrlAction('mailto:$email'),
+                            ),
+                          ),
+                        if (email.isNotEmpty && phone.isNotEmpty && phone != '—') const SizedBox(width: 8),
+                        if (phone.isNotEmpty && phone != '—')
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              icon: const Icon(Icons.phone_outlined, size: 15),
+                              label: const Text('Call', style: TextStyle(fontSize: 12)),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF10B981),
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(vertical: 8),
+                              ),
+                              onPressed: () => _launchUrlAction('tel:$phone'),
+                            ),
+                          ),
+                        const SizedBox(width: 8),
+                        OutlinedButton(
+                          onPressed: () => _copyContact(context, email, phone),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          ),
+                          child: const Icon(Icons.copy, size: 16),
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 14),
+
+                    // Account Financial Summary
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: isAmoled ? const Color(0xFF111726) : Colors.grey.shade50,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: theme.dividerColor),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('Credit Balance', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '\$$credit',
+                                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF10B981)),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Container(width: 1, height: 30, color: theme.dividerColor),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('Unpaid Invoices', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '\$$unpaidTotal',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                    color: unpaidTotal != '0.00' ? const Color(0xFFEF4444) : Colors.grey,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    if (address.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(Icons.location_on_outlined, size: 14, color: Colors.grey),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              address,
+                              style: const TextStyle(fontSize: 12, color: Colors.grey),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+
                     const SizedBox(height: 16),
                     const Divider(),
                     const SizedBox(height: 12),
 
                     // Products & Services Section
-                    const Text('Hosting & Services', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                    Row(
+                      children: [
+                        const Icon(Icons.dns_outlined, size: 18, color: Color(0xFF06B6D4)),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Hosting & Services (${services.length})',
+                          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
                     const SizedBox(height: 8),
                     if (services.isEmpty)
-                      const Text('No active hosting services.', style: TextStyle(fontSize: 13, color: Colors.grey))
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 8),
+                        child: Text('No active hosting services.', style: TextStyle(fontSize: 13, color: Colors.grey)),
+                      )
                     else
-                      ...services.map((s) => Container(
-                            margin: const EdgeInsets.only(bottom: 8),
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color: isAmoled ? const Color(0xFF111726) : Colors.grey.shade100,
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Row(
-                              children: [
-                                const Icon(Icons.dns_outlined, size: 18, color: Color(0xFF06B6D4)),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(s['product_name'] ?? 'Service', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                                      Text(s['domain'] ?? '', style: const TextStyle(fontSize: 11, color: Colors.grey)),
-                                    ],
+                      ...services.map((s) {
+                        final sMap = Map<String, dynamic>.from(s as Map);
+                        final sDomain = sMap['domain']?.toString() ?? '—';
+                        final sStatus = sMap['domainstatus']?.toString() ?? 'Active';
+                        final sIsActive = sStatus.toLowerCase() == 'active';
+
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          decoration: BoxDecoration(
+                            color: isAmoled ? const Color(0xFF111726) : Colors.grey.shade100,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: theme.dividerColor),
+                          ),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(10),
+                            onTap: () {
+                              ServiceDetailModal.show(context, {
+                                ...sMap,
+                                'client_name': name,
+                                'client_email': email,
+                              });
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.all(12),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.cloud_outlined, size: 20, color: Color(0xFF06B6D4)),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          sMap['product_name']?.toString() ?? 'Service',
+                                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(sDomain, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                                      ],
+                                    ),
                                   ),
-                                ),
-                                Text(s['domainstatus'] ?? '', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF10B981))),
-                              ],
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: (sIsActive ? const Color(0xFF10B981) : const Color(0xFFEF4444)).withOpacity(0.15),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      sStatus,
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.bold,
+                                        color: sIsActive ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  const Icon(Icons.chevron_right, size: 18, color: Colors.grey),
+                                ],
+                              ),
                             ),
-                          )),
+                          ),
+                        );
+                      }),
 
                     const SizedBox(height: 16),
                     const Divider(),
                     const SizedBox(height: 12),
 
                     // Tickets Section
-                    const Text('Recent Support Tickets', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                    Row(
+                      children: [
+                        const Icon(Icons.confirmation_number_outlined, size: 18, color: Color(0xFFF59E0B)),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Support Tickets (${tickets.length})',
+                          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
                     const SizedBox(height: 8),
                     if (tickets.isEmpty)
-                      const Text('No tickets found for this client.', style: TextStyle(fontSize: 13, color: Colors.grey))
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 8),
+                        child: Text('No tickets found for this client.', style: TextStyle(fontSize: 13, color: Colors.grey)),
+                      )
                     else
-                      ...tickets.map((t) => Container(
-                            margin: const EdgeInsets.only(bottom: 8),
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color: isAmoled ? const Color(0xFF111726) : Colors.grey.shade100,
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Row(
-                              children: [
-                                const Icon(Icons.confirmation_number_outlined, size: 16, color: Color(0xFFF59E0B)),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(t['title'] ?? 'Ticket', style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis),
-                                ),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFF10B981).withOpacity(0.15),
-                                    borderRadius: BorderRadius.circular(6),
+                      ...tickets.map((t) {
+                        final tMap = Map<String, dynamic>.from(t as Map);
+                        final tId = (tMap['id'] as num?)?.toInt();
+                        final tStatus = tMap['status']?.toString() ?? 'Open';
+
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          decoration: BoxDecoration(
+                            color: isAmoled ? const Color(0xFF111726) : Colors.grey.shade100,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: theme.dividerColor),
+                          ),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(10),
+                            onTap: () {
+                              if (tId != null) {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) => TicketDetailScreen(ticketId: tId),
                                   ),
-                                  child: Text(t['status'] ?? '', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF10B981))),
-                                ),
-                              ],
+                                );
+                              }
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.all(12),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          '#${tMap['tid'] ?? tId}: ${tMap['title'] ?? 'Ticket'}',
+                                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        if (tMap['lastreply'] != null) ...[
+                                          const SizedBox(height: 3),
+                                          Text(
+                                            'Last reply: ${tMap['lastreply']}',
+                                            style: const TextStyle(fontSize: 11, color: Colors.grey),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF10B981).withOpacity(0.15),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      tStatus,
+                                      style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF10B981)),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  const Icon(Icons.chevron_right, size: 18, color: Colors.grey),
+                                ],
+                              ),
                             ),
-                          )),
+                          ),
+                        );
+                      }),
+
+                    if (invoices.isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      const Divider(),
+                      const SizedBox(height: 12),
+
+                      // Invoices Section
+                      Row(
+                        children: [
+                          const Icon(Icons.receipt_long_outlined, size: 18, color: Color(0xFF10B981)),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Invoices (${invoices.length})',
+                            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      ...invoices.map((inv) {
+                        final invMap = Map<String, dynamic>.from(inv as Map);
+                        final invStatus = invMap['status']?.toString() ?? 'Unpaid';
+                        final isPaid = invStatus.toLowerCase() == 'paid';
+                        final numStr = invMap['invoicenum']?.toString() ?? invMap['id']?.toString() ?? '';
+                        final total = invMap['total']?.toString() ?? '0.00';
+                        final due = invMap['duedate']?.toString() ?? '—';
+
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: isAmoled ? const Color(0xFF111726) : Colors.grey.shade100,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: theme.dividerColor),
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('Invoice #$numStr', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                                    const SizedBox(height: 2),
+                                    Text('Due: $due', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                                  ],
+                                ),
+                              ),
+                              Text('\$$total', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: (isPaid ? const Color(0xFF10B981) : const Color(0xFFEF4444)).withOpacity(0.15),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  invStatus,
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: isPaid ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }),
+                    ],
+
+                    const SizedBox(height: 20),
                   ],
                 ),
               ),

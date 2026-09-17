@@ -40,9 +40,9 @@ class SahdevMobileApp extends StatelessWidget {
           return MaterialApp(
             title: 'Sahdev Support',
             debugShowCheckedModeBanner: false,
-            theme: themeProv.themeData,
-            darkTheme: ThemeConfig.darkTheme,
-            themeMode: ThemeMode.dark,
+            theme: ThemeConfig.lightTheme,
+            darkTheme: themeProv.isAmoled ? ThemeConfig.amoledTheme : ThemeConfig.darkTheme,
+            themeMode: themeProv.currentTheme == 'light' ? ThemeMode.light : ThemeMode.dark,
             home: const SplashScreen(),
           );
         },

@@ -38,6 +38,7 @@ class NotificationService {
       priority: Priority.high,
       playSound: true,
       enableVibration: true,
+      onlyAlertOnce: true,
       category: AndroidNotificationCategory.call,
       fullScreenIntent: true,
     );

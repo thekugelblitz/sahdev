@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../services/api_service.dart';
+import '../widgets/service_detail_modal.dart';
+import 'clients_screen.dart';
 
 class ServicesScreen extends StatefulWidget {
   const ServicesScreen({super.key});
@@ -69,6 +71,38 @@ class _ServicesScreenState extends State<ServicesScreen> {
         _isLoading = false;
       });
     }
+  }
+
+  void _openServiceDetail(Map<String, dynamic> s) {
+    final clientId = (s['client_id'] as num?)?.toInt();
+    ServiceDetailModal.show(
+      context,
+      s,
+      onViewClient: (clientId != null && clientId > 0)
+          ? () => _showClientProfile(clientId, s['client_name']?.toString() ?? 'Client', s['client_email']?.toString() ?? '')
+          : null,
+    );
+  }
+
+  void _showClientProfile(int clientId, String clientName, String clientEmail) {
+    final auth = context.read<AuthProvider>();
+    if (auth.baseUrl == null || auth.token == null) return;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => ClientProfileModal(
+        clientId: clientId,
+        baseUrl: auth.baseUrl!,
+        token: auth.token!,
+        initialSummary: {
+          'id': clientId,
+          'name': clientName,
+          'email': clientEmail,
+        },
+      ),
+    );
   }
 
   @override
@@ -224,71 +258,77 @@ class _ServicesScreenState extends State<ServicesScreen> {
 
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    productName,
-                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: statusColor.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: statusColor.withOpacity(0.3)),
-                  ),
-                  child: Text(
-                    status,
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                      color: statusColor,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () => _openServiceDetail(s),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      productName,
+                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
                     ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            Row(
-              children: [
-                const Icon(Icons.language, size: 14, color: Color(0xFF06B6D4)),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    domain,
-                    style: const TextStyle(fontSize: 13, color: Color(0xFF06B6D4), fontWeight: FontWeight.w600),
-                    overflow: TextOverflow.ellipsis,
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: statusColor.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: statusColor.withOpacity(0.3)),
+                    ),
+                    child: Text(
+                      status,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: statusColor,
+                      ),
+                    ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            const Divider(),
-            const SizedBox(height: 6),
-            Row(
-              children: [
-                Text('Client: $clientName', style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                const Spacer(),
-                Text(
-                  '\$$price / $cycle',
-                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-                ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                Text('Next Due: $nextDue', style: const TextStyle(fontSize: 11, color: Colors.grey)),
-              ],
-            ),
-          ],
+                  const SizedBox(width: 4),
+                  const Icon(Icons.chevron_right, size: 18, color: Colors.grey),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  const Icon(Icons.language, size: 14, color: Color(0xFF06B6D4)),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      domain,
+                      style: const TextStyle(fontSize: 13, color: Color(0xFF06B6D4), fontWeight: FontWeight.w600),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              const Divider(),
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Text('Client: $clientName', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                  const Spacer(),
+                  Text(
+                    '\$$price / $cycle',
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  Text('Next Due: $nextDue', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

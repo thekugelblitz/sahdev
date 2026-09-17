@@ -18,6 +18,8 @@ class BackgroundService {
   String? _baseUrl;
   String? _token;
   int _lastAlertedSummonCount = 0;
+  int _lastAlertTimestamp = 0;
+  final Set<int> _silencedSessionIds = {};
   String _alertMode = 'ringing'; // 'ringing' or 'chime'
   bool _isChecking = false;
 
@@ -69,6 +71,14 @@ class BackgroundService {
     _audio.stopAlertRing();
   }
 
+  /// Silences the current active summon alarm immediately and marks session as acknowledged
+  void silenceCurrentAlert([int? sessionId]) {
+    if (sessionId != null && sessionId > 0) {
+      _silencedSessionIds.add(sessionId);
+    }
+    _audio.stopAlertRing();
+  }
+
   /// Check queue for urgent human summons and unread client messages
   Future<void> _checkQueue() async {
     _isChecking = true;
@@ -77,9 +87,9 @@ class BackgroundService {
       if (res.success && res.data != null) {
         final data = res.data!;
         final int urgentCount = data['urgent_summons_count'] ?? 0;
-        final bool shouldAlert = (data['alert_sound'] == true || data['should_alert'] == true);
+        final bool alertSound = data['alert_sound'] == true;
 
-        if (urgentCount > 0) {
+        if (urgentCount > 0 || alertSound) {
           // Parse first summoned session for notification banner
           final sessions = (data['sessions'] as List?) ?? [];
           final summoned = sessions.firstWhere(
@@ -89,26 +99,36 @@ class BackgroundService {
 
           final clientName = summoned?['client']?['name'] ?? 'Website Visitor';
           final domain = summoned?['source']?['domain'] ?? 'Your Website';
-          final sessionId = summoned?['id'] ?? 1;
+          final int sessionId = (summoned?['id'] as num?)?.toInt() ?? 1;
 
-          // Always display the heads-up high-importance notification
-          if (shouldAlert || urgentCount != _lastAlertedSummonCount || !_audio.isRinging) {
-            await _notifications.showSummonAlert(
-              clientName: clientName,
-              domain: domain,
-              sessionId: sessionId,
-            );
+          final now = DateTime.now().millisecondsSinceEpoch;
+          final bool isSilenced = _silencedSessionIds.contains(sessionId);
+          final bool isNewSummon = (urgentCount > _lastAlertedSummonCount);
+          final bool cooldownExpired = (now - _lastAlertTimestamp > 60000); // at least 60s between ring cycles
 
-            if (_alertMode == 'ringing') {
-              if (!_audio.isRinging) {
-                await _audio.startAlarmRing();
+          if (!isSilenced) {
+            if (isNewSummon || (cooldownExpired && !_audio.isRinging)) {
+              await _notifications.showSummonAlert(
+                clientName: clientName,
+                domain: domain,
+                sessionId: sessionId,
+              );
+
+              if (_alertMode == 'ringing') {
+                if (!_audio.isRinging) {
+                  await _audio.startAlarmRing();
+                }
+              } else {
+                await _audio.playChime();
               }
-            } else {
-              await _audio.playChime();
+              _lastAlertTimestamp = now;
             }
           }
-        } else if (urgentCount == 0 && _audio.isRinging) {
-          _audio.stopAlertRing();
+        } else {
+          if (_audio.isRinging) {
+            _audio.stopAlertRing();
+          }
+          _silencedSessionIds.clear();
         }
 
         _lastAlertedSummonCount = urgentCount;
