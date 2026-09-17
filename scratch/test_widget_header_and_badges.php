@@ -64,7 +64,7 @@ assertCheck("ChatService::pollSessionMessages includes chat_title", strpos($chat
 assertCheck("ajax.php client_chat_init returns assigned_admin_name and is_human", strpos($ajaxCode, "'assigned_admin_name' => \$assignedAdminName") !== false && strpos($ajaxCode, "'is_human'            => \$isHuman") !== false, $errors);
 
 // 5. Check User Message Bubble Badge Styling & Client Name vs You Resolution
-echo "\n[5/5] Checking User Badge Anti-Whitewashing & Client Name Resolution...\n";
+echo "\n[5/6] Checking User Badge Anti-Whitewashing & Client Name Resolution...\n";
 assertCheck("User badge uses color: inherit to prevent whitewashing", strpos($hooksCode, 'color: inherit !important;') !== false, $errors);
 assertCheck("Apple Siri theme has explicit high-contrast badge styling", strpos($hooksCode, '#sdv-client-chat-window.sdv-theme-apple_siri .sdv-user-header-badge') !== false && strpos($hooksCode, '#475569') !== false, $errors);
 assertCheck("Terminal CLI theme has dark green badge styling", strpos($hooksCode, '#sdv-client-chat-window.sdv-theme-terminal_cli .sdv-user-header-badge') !== false && strpos($hooksCode, '#052e16') !== false, $errors);
@@ -77,6 +77,14 @@ assertCheck("ChatService::getSessionMessages maps clientDisplayName or 'You'", s
 assertCheck("ChatService::pollSessionMessages maps clientDisplayName or 'You'", strpos($chatServiceCode, "\$senderName = !empty(\$clientDisplayName) ? \$clientDisplayName : 'You';") !== false, $errors);
 assertCheck("ajax.php extracts guest name from metadata_json if guest", strpos($ajaxCode, "\$metadata['name'] = trim(\$sessMeta['name']);") !== false, $errors);
 
+// 6. Check Input Focus Retention & Conditional Typing Animation
+echo "\n[6/6] Checking Input Focus Retention & Conditional Typing Wave...\n";
+assertCheck("inputEl is never disabled during send in sdvSendMessage", strpos($hooksCode, "inputEl.disabled = true;\n        if (sendBtn) sendBtn.disabled = true;") === false && strpos($hooksCode, "inputEl.disabled = true;\r\n        if (sendBtn) sendBtn.disabled = true;") === false, $errors);
+assertCheck("inputEl focus is explicitly preserved after send", strpos($hooksCode, "try { inputEl.focus(); } catch(e) {}") !== false, $errors);
+assertCheck("Send button has onmousedown preventDefault to prevent stealing focus", strpos($hooksCode, 'id="sdv-cl-send" title="Send message" aria-label="Send message" onmousedown="event.preventDefault();"') !== false, $errors);
+assertCheck("Typing wave is conditionally shown ONLY in AI mode", strpos($hooksCode, "if (!isHumanSessionActive && currentChatStatus !== 'taken_over') {") !== false, $errors);
+assertCheck("attachMsgActions ignores sdv-typing-wave", strpos($hooksCode, "el.querySelector('.sdv-typing-wave')") !== false, $errors);
+
 echo "\n=================================================================\n";
 if ($errors === 0) {
     echo "  ALL VERIFICATION CHECKS PASSED PERFECTLY! (0 ERRORS)\n";
@@ -87,4 +95,5 @@ if ($errors === 0) {
     echo "=================================================================\n";
     exit(1);
 }
+
 

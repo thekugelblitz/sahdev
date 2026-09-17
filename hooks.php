@@ -11009,7 +11009,7 @@ DISC;
             </div>
             <div class="sdv-cl-input-row">
                 <input type="text" id="sdv-cl-input" placeholder="Type your question here..." autocomplete="off" {$maxMsgAttr} onkeydown="if(event.key==='Enter'){event.preventDefault();window.sdvSendMessage&&window.sdvSendMessage();}" />
-                <button type="button" id="sdv-cl-send" title="Send message" aria-label="Send message" onclick="window.sdvSendMessage&&window.sdvSendMessage();">
+                <button type="button" id="sdv-cl-send" title="Send message" aria-label="Send message" onmousedown="event.preventDefault();" onclick="window.sdvSendMessage&&window.sdvSendMessage();">
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" style="pointer-events:none;"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
                 </button>
             </div>
@@ -11714,7 +11714,7 @@ DISC;
     };
 
     function attachMsgActions(el, msgId, rating, role, timestamp) {
-        if (!el || el.querySelector('.sdv-msg-actions')) return;
+        if (!el || el.querySelector('.sdv-msg-actions') || el.querySelector('.sdv-typing-wave')) return;
 
         if (!role) {
             if (el.classList.contains('sdv-cl-msg-user')) role = 'user';
@@ -13258,11 +13258,17 @@ DISC;
         var userMsgEl = appendClMsg('user', userHtml, true, null, null, Date.now(), clientDisplayName);
         inputEl.value = '';
         sdvUpdateCharCounter();
-        inputEl.disabled = true;
-        if (sendBtn) sendBtn.disabled = true;
+        // Never disable inputEl so client can type uninterrupted without losing caret focus
+        try { inputEl.focus(); } catch(e) {}
+        if (sendBtn) sendBtn.style.opacity = '0.65';
 
-        var waveHtml = '<div class="sdv-typing-wave"><span class="sdv-typing-dot"></span><span class="sdv-typing-dot"></span><span class="sdv-typing-dot"></span></div>';
-        var tempBot = appendClMsg('bot', waveHtml, true);
+        // Only show typing wave in autonomous AI mode (never during human agent takeover)
+        var tempBot = null;
+        if (!isHumanSessionActive && currentChatStatus !== 'taken_over') {
+            var waveHtml = '<div class="sdv-typing-wave"><span class="sdv-typing-dot"></span><span class="sdv-typing-dot"></span><span class="sdv-typing-dot"></span></div>';
+            tempBot = appendClMsg('bot', waveHtml, true);
+        }
+        try { inputEl.focus(); } catch(e) {}
 
         broadcastLiveSync('new_message', {
             session_uuid: sessionUuid,
@@ -13278,10 +13284,10 @@ DISC;
 
         postAjaxWithFallback(form, function(err, data) {
             isSendingMessage = false;
+            if (sendBtn) sendBtn.style.opacity = '1';
+            try { inputEl.focus(); } catch(e) {}
 
             if (err) {
-                inputEl.disabled = false;
-                if (sendBtn) sendBtn.disabled = false;
                 try { inputEl.focus(); } catch(e) {}
 
                 var lower = text.toLowerCase();
@@ -13337,8 +13343,8 @@ DISC;
                 }
             }
 
-            inputEl.disabled = false;
-            if (sendBtn) sendBtn.disabled = false;
+            if (sendBtn) sendBtn.style.opacity = '1';
+            try { inputEl.focus(); } catch(e) {}
             if (data.debug_payload) {
                 try {
                     var modelTag = (data.debug_payload.provider && data.debug_payload.provider.model) ? data.debug_payload.provider.model : 'AI';
@@ -13374,6 +13380,7 @@ DISC;
                     }
                     // Start live polling to fetch the human agent's response
                     sdvStartLivePolling();
+                    try { inputEl.focus(); } catch(e) {}
                     return;
                 }
 
@@ -13388,6 +13395,7 @@ DISC;
                         attachMsgActions(tempBot, data.message_id || 0, 0, 'system', Date.now());
                     }
                     sdvStartLivePolling();
+                    try { inputEl.focus(); } catch(e) {}
                     return;
                 }
 
@@ -13432,6 +13440,7 @@ DISC;
             } else {
                 if (tempBot) tempBot.innerHTML = '⚠️ ' + (data.message || data.error || 'Could not send message.');
             }
+            try { inputEl.focus(); } catch(e) {}
         });
     };
 
@@ -14052,9 +14061,14 @@ DISC;
         if (sendBtn && !sendBtn._sdvBound) {
             sendBtn._sdvBound = true;
             sendBtn.removeAttribute('onclick');
+            sendBtn.addEventListener('mousedown', function(e) {
+                if (e && e.preventDefault) e.preventDefault();
+            });
             sendBtn.addEventListener('click', function(e) {
                 if (e && e.preventDefault) e.preventDefault();
                 window.sdvSendMessage();
+                var inp = document.getElementById('sdv-cl-input');
+                if (inp) { try { inp.focus(); } catch(err) {} }
             });
         }
 
@@ -14078,6 +14092,7 @@ DISC;
                 if (e.key === 'Enter') {
                     e.preventDefault();
                     window.sdvSendMessage();
+                    try { inputEl.focus(); } catch(err) {}
                 }
             });
         }
