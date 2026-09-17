@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../config/theme_config.dart';
 import '../providers/auth_provider.dart';
+import 'home_shell.dart';
 import 'login_screen.dart';
-import 'queue_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -27,7 +27,7 @@ class _SplashScreenState extends State<SplashScreen> {
 
     if (auth.isAuthenticated) {
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const QueueScreen()),
+        MaterialPageRoute(builder: (_) => const HomeShell()),
       );
     } else {
       Navigator.of(context).pushReplacement(

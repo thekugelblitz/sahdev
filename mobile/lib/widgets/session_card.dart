@@ -14,29 +14,38 @@ class SessionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isAmoled = theme.scaffoldBackgroundColor == Colors.black;
+
     final isUrgent = session.isUrgentSummon;
     final isTakenOver = session.isTakenOver;
     final isTyping = session.typing.isTyping;
     final typingPreview = session.typing.preview;
 
+    final cardBg = isUrgent
+        ? (isAmoled ? const Color(0xFF2A0D15) : const Color(0xFFFFF1F2))
+        : (isAmoled ? const Color(0xFF0D111A) : Colors.white);
+
+    final cardBorder = isUrgent
+        ? ThemeConfig.statusUrgent
+        : isTakenOver
+            ? (isAmoled ? const Color(0xFF0284C7).withOpacity(0.6) : ThemeConfig.statusTakenOver.withOpacity(0.4))
+            : (isAmoled ? const Color(0xFF1E2638) : const Color(0xFFE2E8F0));
+
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
       decoration: BoxDecoration(
-        color: isUrgent ? const Color(0xFFFFF1F2) : Colors.white,
-        borderRadius: BorderRadius.circular(12),
+        color: cardBg,
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(
-          color: isUrgent
-              ? ThemeConfig.statusUrgent
-              : isTakenOver
-                  ? ThemeConfig.statusTakenOver.withOpacity(0.4)
-                  : const Color(0xFFE2E8F0),
+          color: cardBorder,
           width: isUrgent ? 1.8 : 1,
         ),
         boxShadow: [
           BoxShadow(
             color: isUrgent
-                ? ThemeConfig.statusUrgent.withOpacity(0.08)
-                : Colors.black.withOpacity(0.03),
+                ? ThemeConfig.statusUrgent.withOpacity(0.15)
+                : Colors.black.withOpacity(isAmoled ? 0.3 : 0.03),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -45,10 +54,10 @@ class SessionCard extends StatelessWidget {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(14),
           onTap: onTap,
           child: Padding(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(14),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -65,7 +74,7 @@ class SessionCard extends StatelessWidget {
                             ? ThemeConfig.statusUrgent
                             : isTakenOver
                                 ? ThemeConfig.statusTakenOver
-                                : ThemeConfig.primary,
+                                : theme.colorScheme.primary,
                         shape: BoxShape.circle,
                       ),
                       child: Center(
@@ -73,15 +82,15 @@ class SessionCard extends StatelessWidget {
                           session.client.name.isNotEmpty
                               ? session.client.name.substring(0, 1).toUpperCase()
                               : 'V',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w700,
+                          style: TextStyle(
+                            color: isTakenOver || isUrgent ? Colors.white : Colors.black,
+                            fontWeight: FontWeight.w800,
                             fontSize: 18,
                           ),
                         ),
                       ),
                     ),
-                    const SizedBox(width: 10),
+                    const SizedBox(width: 12),
 
                     // Client details
                     Expanded(
@@ -93,10 +102,10 @@ class SessionCard extends StatelessWidget {
                               Flexible(
                                 child: Text(
                                   session.client.name,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontWeight: FontWeight.w700,
                                     fontSize: 15,
-                                    color: Color(0xFF0F172A),
+                                    color: isAmoled ? Colors.white : const Color(0xFF0F172A),
                                   ),
                                   overflow: TextOverflow.ellipsis,
                                 ),
@@ -133,7 +142,7 @@ class SessionCard extends StatelessWidget {
                     ),
 
                     // Status Pill
-                    _buildStatusPill(session),
+                    _buildStatusPill(session, isAmoled),
                   ],
                 ),
 
@@ -145,14 +154,15 @@ class SessionCard extends StatelessWidget {
                     margin: const EdgeInsets.only(bottom: 8),
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                     decoration: BoxDecoration(
-                      color: ThemeConfig.statusUrgent.withOpacity(0.12),
+                      color: ThemeConfig.statusUrgent.withOpacity(0.18),
                       borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: ThemeConfig.statusUrgent.withOpacity(0.4)),
                     ),
                     child: const Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(Icons.warning_amber_rounded, size: 14, color: ThemeConfig.statusUrgent),
-                        SizedBox(width: 5),
+                        SizedBox(width: 6),
                         Text(
                           "SUMMONED HUMAN SUPPORT",
                           style: TextStyle(
@@ -172,9 +182,9 @@ class SessionCard extends StatelessWidget {
                     margin: const EdgeInsets.only(bottom: 8),
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFEEF2FF),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: const Color(0xFFC7D2FE)),
+                      color: isAmoled ? const Color(0xFF14122B) : const Color(0xFFEEF2FF),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFF818CF8).withOpacity(0.5)),
                     ),
                     child: Row(
                       children: [
@@ -183,7 +193,7 @@ class SessionCard extends StatelessWidget {
                           height: 12,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation(Color(0xFF6366F1)),
+                            valueColor: AlwaysStoppedAnimation(Color(0xFF818CF8)),
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -196,7 +206,7 @@ class SessionCard extends StatelessWidget {
                                   style: TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.w600,
-                                    color: Color(0xFF4338CA),
+                                    color: Color(0xFFA5B4FC),
                                   ),
                                 ),
                                 TextSpan(
@@ -204,7 +214,7 @@ class SessionCard extends StatelessWidget {
                                   style: const TextStyle(
                                     fontSize: 12,
                                     fontStyle: FontStyle.italic,
-                                    color: Color(0xFF312E81),
+                                    color: Color(0xFFC7D2FE),
                                   ),
                                 ),
                               ],
@@ -226,7 +236,7 @@ class SessionCard extends StatelessWidget {
                         style: TextStyle(
                           fontSize: 13,
                           color: session.unreadCount > 0
-                              ? const Color(0xFF0F172A)
+                              ? (isAmoled ? Colors.white : const Color(0xFF0F172A))
                               : const Color(0xFF64748B),
                           fontWeight: session.unreadCount > 0
                               ? FontWeight.w600
@@ -256,7 +266,7 @@ class SessionCard extends StatelessWidget {
     );
   }
 
-  Widget _buildStatusPill(ChatSession session) {
+  Widget _buildStatusPill(ChatSession session, bool isAmoled) {
     if (session.isUrgentSummon) {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -286,13 +296,17 @@ class SessionCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: const Color(0xFFF1F5F9),
+        color: isAmoled ? const Color(0xFF172033) : const Color(0xFFF1F5F9),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFCBD5E1)),
+        border: Border.all(color: isAmoled ? const Color(0xFF25334D) : const Color(0xFFCBD5E1)),
       ),
-      child: const Text(
+      child: Text(
         "AI Autopilot",
-        style: TextStyle(color: Color(0xFF475569), fontSize: 10.5, fontWeight: FontWeight.w600),
+        style: TextStyle(
+          color: isAmoled ? const Color(0xFF94A3B8) : const Color(0xFF475569),
+          fontSize: 10.5,
+          fontWeight: FontWeight.w600,
+        ),
       ),
     );
   }

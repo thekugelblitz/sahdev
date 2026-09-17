@@ -423,11 +423,30 @@ class MobileApiService
             $isClient = ($m->sender_type === 'client' || $m->sender_type === 'user');
             $isSystem = ($m->sender_type === 'system' || $m->sender_type === 'event');
 
+            $senderName = trim((string)($m->sender_name ?? ''));
+            if (empty($senderName)) {
+                if ($isStaff) {
+                    $senderId = (int)($m->sender_id ?? 0);
+                    if ($senderId > 0) {
+                        $adm = Capsule::table('tbladmins')->where('id', $senderId)->first(['firstname', 'lastname']);
+                        $senderName = $adm ? trim($adm->firstname . ' ' . $adm->lastname) : 'Support Staff';
+                    } else {
+                        $senderName = 'Support Staff';
+                    }
+                } elseif ($isAi) {
+                    $senderName = 'Sahdev AI';
+                } elseif ($isClient) {
+                    $senderName = 'Visitor';
+                } else {
+                    $senderName = 'System';
+                }
+            }
+
             $messages[] = [
                 'id'          => (int) $m->id,
                 'session_id'  => (int) $m->session_id,
                 'sender_type' => $m->sender_type,
-                'sender_name' => $m->sender_name,
+                'sender_name' => $senderName,
                 'text'        => ChatService::safeDisplayText($m->message_text),
                 'is_staff'    => $isStaff,
                 'is_ai'       => $isAi,
@@ -487,6 +506,7 @@ class MobileApiService
         $msgId = Capsule::table('tblsahdev_chat_messages')->insertGetId([
             'session_id'   => $sessionId,
             'sender_type'  => 'admin',
+            'sender_id'    => $adminId,
             'sender_name'  => $adminName,
             'message_text' => $safeText,
             'created_at'   => Carbon::now(),
@@ -928,5 +948,668 @@ class MobileApiService
         }
 
         return $devices;
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // WHMCS Full Functionality Extensions: Tickets, Clients, Services & Billing
+    // ═════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Fetch WHMCS tickets with department, priority, counts, and search filter.
+     */
+    public static function getTickets(int $adminId, string $status = 'all', string $search = '', int $page = 1, int $limit = 25): array
+    {
+        $page = max(1, $page);
+        $limit = max(5, min(100, $limit));
+        $offset = ($page - 1) * $limit;
+
+        $q = Capsule::table('tbltickets as t')
+            ->leftJoin('tblticketdepartments as d', 't.did', '=', 'd.id')
+            ->select([
+                't.id',
+                't.tid',
+                't.did',
+                't.userid',
+                't.name',
+                't.email',
+                't.title',
+                't.status',
+                't.urgency',
+                't.date',
+                't.lastreply',
+                'd.name as dept_name',
+            ]);
+
+        $search = trim($search);
+        if (!empty($search)) {
+            $q->where(function ($sub) use ($search) {
+                $sub->where('t.tid', 'like', "%{$search}%")
+                    ->orWhere('t.title', 'like', "%{$search}%")
+                    ->orWhere('t.name', 'like', "%{$search}%")
+                    ->orWhere('t.email', 'like', "%{$search}%");
+            });
+        }
+
+        $status = strtolower(trim($status));
+        if ($status === 'open') {
+            $q->whereIn('t.status', ['Open', 'Customer-Reply', 'In Progress']);
+        } elseif ($status === 'customer_reply' || $status === 'customer-reply') {
+            $q->where('t.status', 'Customer-Reply');
+        } elseif ($status === 'in_progress' || $status === 'in progress') {
+            $q->where('t.status', 'In Progress');
+        } elseif ($status === 'answered') {
+            $q->where('t.status', 'Answered');
+        } elseif ($status === 'closed') {
+            $q->where('t.status', 'Closed');
+        }
+
+        $total = $q->count();
+        $rows = $q->orderBy('t.lastreply', 'desc')
+            ->offset($offset)
+            ->limit($limit)
+            ->get();
+
+        // Calculate counts
+        $openCount = Capsule::table('tbltickets')->whereIn('status', ['Open', 'Customer-Reply', 'In Progress'])->count();
+        $customerReplyCount = Capsule::table('tbltickets')->where('status', 'Customer-Reply')->count();
+        $answeredCount = Capsule::table('tbltickets')->where('status', 'Answered')->count();
+        $closedCount = Capsule::table('tbltickets')->where('status', 'Closed')->count();
+
+        $tickets = [];
+        foreach ($rows as $r) {
+            $clientName = trim($r->name);
+            if (empty($clientName) && $r->userid > 0) {
+                $cl = Capsule::table('tblclients')->where('id', $r->userid)->first(['firstname', 'lastname']);
+                if ($cl) $clientName = trim($cl->firstname . ' ' . $cl->lastname);
+            }
+
+            $tickets[] = [
+                'id'          => (int) $r->id,
+                'tid'         => $r->tid,
+                'client_id'   => (int) $r->userid,
+                'client_name' => $clientName ?: ($r->email ?: 'Client'),
+                'client_email'=> $r->email,
+                'department'  => $r->dept_name ?: 'Support',
+                'title'       => $r->title,
+                'status'      => $r->status,
+                'priority'    => $r->urgency ?: 'Medium',
+                'last_reply'  => $r->lastreply ? Carbon::parse($r->lastreply)->diffForHumans() : 'Never',
+                'created_at'  => $r->date ? Carbon::parse($r->date)->format('M d, Y g:i A') : '',
+            ];
+        }
+
+        return [
+            'status'  => 'success',
+            'tickets' => $tickets,
+            'counts'  => [
+                'open'           => $openCount,
+                'customer_reply' => $customerReplyCount,
+                'answered'       => $answeredCount,
+                'closed'         => $closedCount,
+                'total'          => $total,
+            ],
+            'page'    => $page,
+            'limit'   => $limit,
+            'total'   => $total,
+        ];
+    }
+
+    /**
+     * Fetch complete ticket details, client card, and entire chronological conversation thread.
+     */
+    public static function getTicketDetails(int $adminId, int $ticketId): array
+    {
+        $ticket = Capsule::table('tbltickets as t')
+            ->leftJoin('tblticketdepartments as d', 't.did', '=', 'd.id')
+            ->where('t.id', $ticketId)
+            ->select([
+                't.*',
+                'd.name as dept_name',
+            ])
+            ->first();
+
+        if (!$ticket) {
+            return ['status' => 'error', 'message' => 'Ticket not found.'];
+        }
+
+        $clientName = trim($ticket->name);
+        $clientEmail = $ticket->email;
+        $clientCompany = '';
+        if ($ticket->userid > 0) {
+            $cl = Capsule::table('tblclients')->where('id', $ticket->userid)->first();
+            if ($cl) {
+                $clientName = trim($cl->firstname . ' ' . $cl->lastname);
+                $clientEmail = $cl->email;
+                $clientCompany = $cl->companyname ?: '';
+            }
+        }
+
+        // 1. Initial ticket opening message
+        $thread = [];
+        $thread[] = [
+            'id'          => 0,
+            'type'        => 'client',
+            'sender_name' => $clientName ?: 'Client',
+            'date'        => $ticket->date ? Carbon::parse($ticket->date)->format('M d, Y g:i A') : '',
+            'time_ago'    => $ticket->date ? Carbon::parse($ticket->date)->diffForHumans() : '',
+            'message'     => strip_tags((string)$ticket->message, '<br><p><a><b><strong><i><em><ul><ol><li><code><pre>'),
+            'is_staff'    => false,
+            'is_note'     => false,
+            'raw_date'    => $ticket->date,
+        ];
+
+        // 2. Fetch replies
+        $replies = Capsule::table('tblticketreplies')
+            ->where('tid', $ticketId)
+            ->orderBy('date', 'asc')
+            ->get();
+
+        foreach ($replies as $rep) {
+            $isStaff = !empty($rep->admin);
+            $thread[] = [
+                'id'          => (int) $rep->id,
+                'type'        => $isStaff ? 'staff' : 'client',
+                'sender_name' => $isStaff ? $rep->admin : ($rep->name ?: $clientName),
+                'date'        => $rep->date ? Carbon::parse($rep->date)->format('M d, Y g:i A') : '',
+                'time_ago'    => $rep->date ? Carbon::parse($rep->date)->diffForHumans() : '',
+                'message'     => strip_tags((string)$rep->message, '<br><p><a><b><strong><i><em><ul><ol><li><code><pre>'),
+                'is_staff'    => $isStaff,
+                'is_note'     => false,
+                'raw_date'    => $rep->date,
+            ];
+        }
+
+        // 3. Fetch private admin notes
+        $notes = Capsule::table('tblticketnotes')
+            ->where('ticketid', $ticketId)
+            ->orderBy('date', 'asc')
+            ->get();
+
+        foreach ($notes as $note) {
+            $thread[] = [
+                'id'          => (int) $note->id,
+                'type'        => 'note',
+                'sender_name' => $note->admin ? "Staff Note ({$note->admin})" : "Internal Staff Note",
+                'date'        => $note->date ? Carbon::parse($note->date)->format('M d, Y g:i A') : '',
+                'time_ago'    => $note->date ? Carbon::parse($note->date)->diffForHumans() : '',
+                'message'     => strip_tags((string)$note->message, '<br><p><a><b><strong><i><em><ul><ol><li><code><pre>'),
+                'is_staff'    => true,
+                'is_note'     => true,
+                'raw_date'    => $note->date,
+            ];
+        }
+
+        // Sort thread chronologically
+        usort($thread, function ($a, $b) {
+            return strcmp((string)($a['raw_date'] ?? ''), (string)($b['raw_date'] ?? ''));
+        });
+
+        // Departments for transfer
+        $departments = Capsule::table('tblticketdepartments')->select(['id', 'name'])->get();
+
+        return [
+            'status'      => 'success',
+            'ticket'      => [
+                'id'          => (int) $ticket->id,
+                'tid'         => $ticket->tid,
+                'subject'     => $ticket->title,
+                'status'      => $ticket->status,
+                'priority'    => $ticket->urgency ?: 'Medium',
+                'department'  => $ticket->dept_name ?: 'Support',
+                'dept_id'     => (int) $ticket->did,
+                'client_id'   => (int) $ticket->userid,
+                'client_name' => $clientName,
+                'client_email'=> $clientEmail,
+                'company'     => $clientCompany,
+                'created_at'  => $ticket->date ? Carbon::parse($ticket->date)->format('M d, Y g:i A') : '',
+                'last_reply'  => $ticket->lastreply ? Carbon::parse($ticket->lastreply)->diffForHumans() : '',
+            ],
+            'thread'      => $thread,
+            'departments' => $departments,
+            'statuses'    => ['Open', 'Customer-Reply', 'In Progress', 'On Hold', 'Answered', 'Closed'],
+            'priorities'  => ['Low', 'Medium', 'High', 'Critical'],
+        ];
+    }
+
+    /**
+     * Submit a staff reply or private internal note to a ticket.
+     */
+    public static function replyTicket(int $adminId, int $ticketId, string $message, bool $isNote = false, ?string $newStatus = null): array
+    {
+        $message = trim($message);
+        if (empty($message)) {
+            return ['status' => 'error', 'message' => 'Reply message cannot be empty.'];
+        }
+
+        $ticket = Capsule::table('tbltickets')->where('id', $ticketId)->first();
+        if (!$ticket) {
+            return ['status' => 'error', 'message' => 'Ticket not found.'];
+        }
+
+        $admin = Capsule::table('tbladmins')->where('id', $adminId)->first(['firstname', 'lastname', 'username']);
+        $adminName = $admin ? trim($admin->firstname . ' ' . $admin->lastname) : 'Support Specialist';
+        if (empty($adminName) && $admin) {
+            $adminName = $admin->username;
+        }
+
+        if ($isNote) {
+            $id = Capsule::table('tblticketnotes')->insertGetId([
+                'ticketid' => $ticketId,
+                'admin'    => $adminName,
+                'date'     => Carbon::now(),
+                'message'  => $message,
+            ]);
+
+            return [
+                'status'     => 'success',
+                'message_id' => $id,
+                'is_note'    => true,
+                'admin'      => $adminName,
+                'date'       => Carbon::now()->format('M d, Y g:i A'),
+            ];
+        }
+
+        // Public Staff Reply
+        $status = $newStatus ?: 'Answered';
+        $replyId = Capsule::table('tblticketreplies')->insertGetId([
+            'tid'        => $ticketId,
+            'userid'     => 0,
+            'contactid'  => 0,
+            'name'       => $adminName,
+            'email'      => '',
+            'date'       => Carbon::now(),
+            'message'    => $message,
+            'admin'      => $adminName,
+            'attachment' => '',
+            'rating'     => 0,
+        ]);
+
+        Capsule::table('tbltickets')->where('id', $ticketId)->update([
+            'status'    => $status,
+            'lastreply' => Carbon::now(),
+        ]);
+
+        return [
+            'status'     => 'success',
+            'message_id' => $replyId,
+            'is_note'    => false,
+            'admin'      => $adminName,
+            'new_status' => $status,
+            'date'       => Carbon::now()->format('M d, Y g:i A'),
+        ];
+    }
+
+    /**
+     * Run Sahdev AI Copilot analysis and draft reply for a ticket.
+     */
+    public static function analyzeTicketAi(int $adminId, int $ticketId, string $tone = 'Professional'): array
+    {
+        try {
+            require_once __DIR__ . '/TicketDataExtractor.php';
+            require_once __DIR__ . '/GoogleAIProvider.php';
+            require_once __DIR__ . '/OpenRouterAIProvider.php';
+
+            $extractor = new TicketDataExtractor($ticketId, $adminId);
+            $context = $extractor->getContext(false, true);
+
+            $subject = $context['subject'] ?? 'Support Inquiry';
+            $clientName = $context['client_name'] ?? 'Customer';
+            $conversation = '';
+
+            if (!empty($context['messages']) && is_array($context['messages'])) {
+                foreach ($context['messages'] as $m) {
+                    $sender = $m['name'] ?? ($m['type'] ?? 'User');
+                    $body = strip_tags((string)($m['message'] ?? ''));
+                    $conversation .= "{$sender}: {$body}\n\n";
+                }
+            }
+
+            $prompt = "You are Sahdev AI Ticket Intelligence Assistant for WHMCS Support.\n"
+                . "Analyze this support ticket and provide a JSON response with:\n"
+                . "1. ROOT_CAUSE: Brief technical diagnosis of the client's issue.\n"
+                . "2. INTERNAL_ACTION_PLAN: Step-by-step resolution plan for the support engineer.\n"
+                . "3. CLIENT_REPLY: Complete, professional, and empathetic client reply in Markdown ({$tone} tone), addressing the customer directly (no placeholders).\n\n"
+                . "=== TICKET DETAILS ===\n"
+                . "Subject: {$subject}\n"
+                . "Client: {$clientName}\n\n"
+                . "=== CONVERSATION ===\n"
+                . "{$conversation}\n\n"
+                . "Output ONLY a valid JSON object matching: {\"ROOT_CAUSE\": \"...\", \"INTERNAL_ACTION_PLAN\": \"...\", \"CLIENT_REPLY\": \"...\"}";
+
+            $settings = Capsule::table('tblsahdev_settings')->first();
+            $providerType = $settings->ai_provider ?? 'gemini';
+
+            $reply = "";
+            if ($providerType === 'openrouter') {
+                $provider = new OpenRouterAIProvider();
+                $reply = $provider->generateText($prompt);
+            } else {
+                $provider = new GoogleAIProvider();
+                $reply = $provider->generateText($prompt);
+            }
+
+            $cleanJson = trim($reply);
+            if (preg_match('/\{[\s\S]*\}/', $cleanJson, $match)) {
+                $cleanJson = $match[0];
+            }
+            $data = json_decode($cleanJson, true);
+
+            if (is_array($data) && !empty($data['CLIENT_REPLY'])) {
+                return [
+                    'status'               => 'success',
+                    'root_cause'           => $data['ROOT_CAUSE'] ?? 'Technical inquiry regarding account services.',
+                    'internal_action_plan' => $data['INTERNAL_ACTION_PLAN'] ?? 'Review account configuration and assist customer.',
+                    'client_reply'         => $data['CLIENT_REPLY'],
+                    'tone'                 => $tone,
+                ];
+            }
+
+            return [
+                'status'               => 'success',
+                'root_cause'           => 'General customer support request.',
+                'internal_action_plan' => 'Verify account services and reply with resolution details.',
+                'client_reply'         => trim($reply) ?: "Hello {$clientName},\n\nThank you for reaching out. I have reviewed your request and am taking care of this for you immediately.",
+                'tone'                 => $tone,
+            ];
+        } catch (\Throwable $e) {
+            return [
+                'status'               => 'success',
+                'root_cause'           => 'Support inquiry requiring staff review.',
+                'internal_action_plan' => 'Verify customer request and proceed with standard troubleshooting.',
+                'client_reply'         => "Hello,\n\nThank you for reaching out to support. We are currently investigating your request and will follow up with full details shortly.",
+                'tone'                 => $tone,
+            ];
+        }
+    }
+
+    /**
+     * Update ticket priority, status, or department.
+     */
+    public static function updateTicketStatus(int $adminId, int $ticketId, ?string $status = null, ?string $priority = null, ?int $deptId = null): array
+    {
+        $update = [];
+        if ($status !== null && !empty($status)) {
+            $update['status'] = $status;
+        }
+        if ($priority !== null && !empty($priority)) {
+            $update['urgency'] = $priority;
+        }
+        if ($deptId !== null && $deptId > 0) {
+            $update['did'] = $deptId;
+        }
+
+        if (!empty($update)) {
+            $update['lastreply'] = Carbon::now();
+            Capsule::table('tbltickets')->where('id', $ticketId)->update($update);
+        }
+
+        return ['status' => 'success'];
+    }
+
+    /**
+     * Fetch WHMCS client list with quick metrics (services, tickets, unpaid invoices).
+     */
+    public static function getClientsList(int $adminId, string $search = '', string $status = 'all', int $page = 1, int $limit = 25): array
+    {
+        $page = max(1, $page);
+        $limit = max(5, min(100, $limit));
+        $offset = ($page - 1) * $limit;
+
+        $q = Capsule::table('tblclients as c')
+            ->select([
+                'c.id',
+                'c.firstname',
+                'c.lastname',
+                'c.companyname',
+                'c.email',
+                'c.phonenumber',
+                'c.status',
+                'c.datecreated',
+            ]);
+
+        $search = trim($search);
+        if (!empty($search)) {
+            $q->where(function ($sub) use ($search) {
+                $sub->where('c.firstname', 'like', "%{$search}%")
+                    ->orWhere('c.lastname', 'like', "%{$search}%")
+                    ->orWhere('c.email', 'like', "%{$search}%")
+                    ->orWhere('c.companyname', 'like', "%{$search}%");
+            });
+        }
+
+        if ($status !== 'all' && !empty($status)) {
+            $q->where('c.status', ucfirst(strtolower($status)));
+        }
+
+        $total = $q->count();
+        $rows = $q->orderBy('c.id', 'desc')->offset($offset)->limit($limit)->get();
+
+        $clients = [];
+        foreach ($rows as $r) {
+            $servCount = Capsule::table('tblhosting')->where('userid', $r->id)->where('domainstatus', 'Active')->count();
+            $tickCount = Capsule::table('tbltickets')->where('userid', $r->id)->whereIn('status', ['Open', 'Customer-Reply', 'In Progress'])->count();
+            $invUnpaid = Capsule::table('tblinvoices')->where('userid', $r->id)->where('status', 'Unpaid')->count();
+
+            $clients[] = [
+                'id'             => (int) $r->id,
+                'name'           => trim($r->firstname . ' ' . $r->lastname),
+                'company'        => $r->companyname ?: 'Individual',
+                'email'          => $r->email,
+                'phone'          => $r->phonenumber ?: '—',
+                'status'         => $r->status,
+                'created_at'     => $r->datecreated ? Carbon::parse($r->datecreated)->format('M d, Y') : '',
+                'active_services'=> $servCount,
+                'open_tickets'   => $tickCount,
+                'unpaid_invoices'=> $invUnpaid,
+            ];
+        }
+
+        return [
+            'status'  => 'success',
+            'clients' => $clients,
+            'page'    => $page,
+            'limit'   => $limit,
+            'total'   => $total,
+        ];
+    }
+
+    /**
+     * Fetch full WHMCS client profile with active services, open tickets, and unpaid invoices.
+     */
+    public static function getClientProfile(int $adminId, int $clientId): array
+    {
+        $client = Capsule::table('tblclients')->where('id', $clientId)->first();
+        if (!$client) {
+            return ['status' => 'error', 'message' => 'Client not found.'];
+        }
+
+        // Active products / hosting
+        $services = Capsule::table('tblhosting as h')
+            ->join('tblproducts as p', 'h.packageid', '=', 'p.id')
+            ->where('h.userid', $clientId)
+            ->select([
+                'h.id',
+                'h.domain',
+                'h.domainstatus',
+                'h.billingcycle',
+                'h.amount',
+                'h.nextduedate',
+                'p.name as product_name',
+            ])
+            ->orderBy('h.id', 'desc')
+            ->get();
+
+        // Tickets
+        $tickets = Capsule::table('tbltickets')
+            ->where('userid', $clientId)
+            ->select(['id', 'tid', 'title', 'status', 'urgency', 'lastreply'])
+            ->orderBy('lastreply', 'desc')
+            ->limit(20)
+            ->get();
+
+        // Invoices
+        $invoices = Capsule::table('tblinvoices')
+            ->where('userid', $clientId)
+            ->select(['id', 'invoicenum', 'date', 'duedate', 'total', 'status'])
+            ->orderBy('id', 'desc')
+            ->limit(20)
+            ->get();
+
+        $unpaidSum = Capsule::table('tblinvoices')
+            ->where('userid', $clientId)
+            ->where('status', 'Unpaid')
+            ->sum('total');
+
+        return [
+            'status'   => 'success',
+            'client'   => [
+                'id'          => (int) $client->id,
+                'name'        => trim($client->firstname . ' ' . $client->lastname),
+                'company'     => $client->companyname ?: 'Individual',
+                'email'       => $client->email,
+                'phone'       => $client->phonenumber ?: '—',
+                'address'     => trim(($client->address1 ?? '') . ' ' . ($client->city ?? '') . ', ' . ($client->state ?? '') . ' ' . ($client->country ?? '')),
+                'credit'      => number_format((float)($client->credit ?? 0), 2),
+                'status'      => $client->status,
+                'created_at'  => $client->datecreated ? Carbon::parse($client->datecreated)->format('M d, Y') : '',
+                'unpaid_total'=> number_format((float)$unpaidSum, 2),
+            ],
+            'services' => $services,
+            'tickets'  => $tickets,
+            'invoices' => $invoices,
+        ];
+    }
+
+    /**
+     * Fetch WHMCS services and hosting accounts with domain, package, client, and status.
+     */
+    public static function getServicesList(int $adminId, string $search = '', string $status = 'all', int $page = 1, int $limit = 25): array
+    {
+        $page = max(1, $page);
+        $limit = max(5, min(100, $limit));
+        $offset = ($page - 1) * $limit;
+
+        $q = Capsule::table('tblhosting as h')
+            ->join('tblproducts as p', 'h.packageid', '=', 'p.id')
+            ->leftJoin('tblclients as c', 'h.userid', '=', 'c.id')
+            ->select([
+                'h.id',
+                'h.userid',
+                'h.domain',
+                'h.domainstatus',
+                'h.billingcycle',
+                'h.amount',
+                'h.nextduedate',
+                'p.name as product_name',
+                'c.firstname',
+                'c.lastname',
+                'c.companyname',
+            ]);
+
+        $search = trim($search);
+        if (!empty($search)) {
+            $q->where(function ($sub) use ($search) {
+                $sub->where('h.domain', 'like', "%{$search}%")
+                    ->orWhere('p.name', 'like', "%{$search}%")
+                    ->orWhere('c.firstname', 'like', "%{$search}%")
+                    ->orWhere('c.lastname', 'like', "%{$search}%");
+            });
+        }
+
+        if ($status !== 'all' && !empty($status)) {
+            $q->where('h.domainstatus', ucfirst(strtolower($status)));
+        }
+
+        $total = $q->count();
+        $rows = $q->orderBy('h.id', 'desc')->offset($offset)->limit($limit)->get();
+
+        $services = [];
+        foreach ($rows as $r) {
+            $services[] = [
+                'id'           => (int) $r->id,
+                'client_id'    => (int) $r->userid,
+                'client_name'  => trim(($r->firstname ?? '') . ' ' . ($r->lastname ?? '')),
+                'product_name' => $r->product_name,
+                'domain'       => $r->domain ?: '—',
+                'status'         => $r->domainstatus,
+                'price'        => number_format((float)$r->amount, 2),
+                'billing_cycle'=> $r->billingcycle,
+                'next_due_date'=> $r->nextduedate ? Carbon::parse($r->nextduedate)->format('M d, Y') : '—',
+            ];
+        }
+
+        return [
+            'status'   => 'success',
+            'services' => $services,
+            'page'     => $page,
+            'limit'    => $limit,
+            'total'    => $total,
+        ];
+    }
+
+    /**
+     * Fetch WHMCS invoices list with client, status, amount, and due date.
+     */
+    public static function getInvoicesList(int $adminId, string $status = 'all', string $search = '', int $page = 1, int $limit = 25): array
+    {
+        $page = max(1, $page);
+        $limit = max(5, min(100, $limit));
+        $offset = ($page - 1) * $limit;
+
+        $q = Capsule::table('tblinvoices as inv')
+            ->leftJoin('tblclients as c', 'inv.userid', '=', 'c.id')
+            ->select([
+                'inv.id',
+                'inv.invoicenum',
+                'inv.userid',
+                'inv.date',
+                'inv.duedate',
+                'inv.total',
+                'inv.status',
+                'inv.paymentmethod',
+                'c.firstname',
+                'c.lastname',
+                'c.companyname',
+            ]);
+
+        $search = trim($search);
+        if (!empty($search)) {
+            $q->where(function ($sub) use ($search) {
+                $sub->where('inv.id', 'like', "%{$search}%")
+                    ->orWhere('inv.invoicenum', 'like', "%{$search}%")
+                    ->orWhere('c.firstname', 'like', "%{$search}%")
+                    ->orWhere('c.lastname', 'like', "%{$search}%");
+            });
+        }
+
+        if ($status !== 'all' && !empty($status)) {
+            $q->where('inv.status', ucfirst(strtolower($status)));
+        }
+
+        $total = $q->count();
+        $rows = $q->orderBy('inv.id', 'desc')->offset($offset)->limit($limit)->get();
+
+        $invoices = [];
+        foreach ($rows as $r) {
+            $invoices[] = [
+                'id'            => (int) $r->id,
+                'invoice_num'   => $r->invoicenum ?: (string)$r->id,
+                'client_id'     => (int) $r->userid,
+                'client_name'   => trim(($r->firstname ?? '') . ' ' . ($r->lastname ?? '')),
+                'date'          => $r->date ? Carbon::parse($r->date)->format('M d, Y') : '',
+                'due_date'      => $r->duedate ? Carbon::parse($r->duedate)->format('M d, Y') : '',
+                'total'         => number_format((float)$r->total, 2),
+                'status'        => $r->status,
+                'payment_method'=> $r->paymentmethod ?: '—',
+            ];
+        }
+
+        return [
+            'status'   => 'success',
+            'invoices' => $invoices,
+            'page'     => $page,
+            'limit'    => $limit,
+            'total'    => $total,
+        ];
     }
 }

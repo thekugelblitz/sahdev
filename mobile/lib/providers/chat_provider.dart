@@ -18,6 +18,7 @@ class ChatProvider extends ChangeNotifier {
   ClientProfile? _clientProfile;
   List<dynamic> _cannedResponses = [];
   Timer? _chatPollTimer;
+  String? _errorMessage;
 
   int? get activeSessionId => _activeSessionId;
   List<ChatMessage> get messages => _messages;
@@ -29,6 +30,12 @@ class ChatProvider extends ChangeNotifier {
   bool get isTakenOver => _isTakenOver;
   ClientProfile? get clientProfile => _clientProfile;
   List<dynamic> get cannedResponses => _cannedResponses;
+  String? get errorMessage => _errorMessage;
+
+  void clearError() {
+    _errorMessage = null;
+    notifyListeners();
+  }
 
   void openSession({
     required int sessionId,
@@ -43,6 +50,7 @@ class ChatProvider extends ChangeNotifier {
     _typingPreview = '';
     _isClientTyping = false;
     _clientProfile = null;
+    _errorMessage = null;
 
     fetchMessages(baseUrl: baseUrl, token: token, isInitial: true);
     loadClientProfile(baseUrl: baseUrl, token: token, clientId: clientId, sessionId: sessionId);
@@ -60,6 +68,7 @@ class ChatProvider extends ChangeNotifier {
     _chatPollTimer = null;
     _activeSessionId = null;
     _messages = [];
+    _errorMessage = null;
   }
 
   Future<void> fetchMessages({
@@ -87,7 +96,11 @@ class ChatProvider extends ChangeNotifier {
     if (res.success && res.data != null) {
       final data = res.data!;
       final rawList = (data['messages'] as List?) ?? [];
-      _messages = rawList.map((m) => ChatMessage.fromJson(m)).toList();
+      final fetchedMessages = rawList.map((m) => ChatMessage.fromJson(m)).toList();
+
+      // Preserve any local messages currently marked as sending
+      final sending = _messages.where((m) => m.isSending).toList();
+      _messages = [...fetchedMessages, ...sending];
 
       final typingMap = data['typing'] as Map? ?? {};
       _isClientTyping = typingMap['is_typing'] == true;
@@ -102,14 +115,34 @@ class ChatProvider extends ChangeNotifier {
     }
   }
 
+  /// Sends a message with instant optimistic UI insertion
   Future<bool> sendMessage({
     required String baseUrl,
     required String token,
     required String text,
+    String staffName = 'You',
   }) async {
     if (_activeSessionId == null || text.trim().isEmpty) return false;
 
     _isSending = true;
+    _errorMessage = null;
+
+    final tempId = -DateTime.now().millisecondsSinceEpoch;
+    final optimisticMsg = ChatMessage(
+      id: tempId,
+      sessionId: _activeSessionId!,
+      senderType: 'admin',
+      senderName: staffName,
+      text: text.trim(),
+      isStaff: true,
+      isAi: false,
+      isClient: false,
+      isSystem: false,
+      timeFormat: 'Sending...',
+      isSending: true,
+    );
+
+    _messages.add(optimisticMsg);
     notifyListeners();
 
     final res = await _api.sendMessage(
@@ -124,11 +157,15 @@ class ChatProvider extends ChangeNotifier {
       _isTakenOver = true;
       _typingPreview = '';
       _isClientTyping = false;
+      _messages.removeWhere((m) => m.id == tempId);
       await fetchMessages(baseUrl: baseUrl, token: token);
       return true;
+    } else {
+      _messages.removeWhere((m) => m.id == tempId);
+      _errorMessage = res.message ?? 'Message delivery failed. Please verify server connection.';
+      notifyListeners();
+      return false;
     }
-    notifyListeners();
-    return false;
   }
 
   Future<bool> toggleTakeover({

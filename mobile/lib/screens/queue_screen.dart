@@ -60,7 +60,6 @@ class _QueueScreenState extends State<QueueScreen> {
     final queue = Provider.of<QueueProvider>(context);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
         title: Row(
           children: [
@@ -271,6 +270,8 @@ class _QueueScreenState extends State<QueueScreen> {
     bool isAlert = false,
   }) {
     final isSelected = queue.activeFilter == filterKey;
+    final theme = Theme.of(context);
+    final primary = theme.colorScheme.primary;
 
     return Padding(
       padding: const EdgeInsets.only(right: 6),
@@ -281,20 +282,20 @@ class _QueueScreenState extends State<QueueScreen> {
           fontSize: 12,
           fontWeight: FontWeight.w600,
           color: isSelected
-              ? Colors.white
+              ? Colors.black
               : isAlert
                   ? ThemeConfig.statusUrgent
-                  : const Color(0xFF475569),
+                  : theme.textTheme.bodyMedium?.color,
         ),
-        backgroundColor: isAlert ? const Color(0xFFFEE2E2) : Colors.white,
-        selectedColor: isAlert ? ThemeConfig.statusUrgent : ThemeConfig.darkBg,
-        checkmarkColor: Colors.white,
+        backgroundColor: isAlert ? const Color(0xFF3B0D14) : theme.cardColor,
+        selectedColor: isAlert ? ThemeConfig.statusUrgent : primary,
+        checkmarkColor: Colors.black,
         side: BorderSide(
           color: isAlert
               ? ThemeConfig.statusUrgent
               : isSelected
-                  ? ThemeConfig.darkBg
-                  : const Color(0xFFCBD5E1),
+                  ? primary
+                  : theme.dividerColor,
         ),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         onSelected: (_) {

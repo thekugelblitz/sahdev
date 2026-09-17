@@ -479,6 +479,260 @@ class ApiService {
     }
   }
 
+  /// Fetch WHMCS Tickets list
+  Future<ApiResponse<Map<String, dynamic>>> getTickets({
+    required String baseUrl,
+    required String token,
+    String status = 'all',
+    String search = '',
+    int page = 1,
+    int limit = 25,
+  }) async {
+    try {
+      final response = await _getWithFallback(
+        baseUrl: baseUrl,
+        action: 'mobile_tickets',
+        token: token,
+        extraQuery: "status=${Uri.encodeComponent(status)}&search=${Uri.encodeComponent(search)}&page=$page&limit=$limit",
+      );
+
+      final decoded = _parseJsonSafely(response.body);
+      if (decoded is Map<String, dynamic> && response.statusCode == 200 && decoded['status'] == 'success') {
+        return ApiResponse(success: true, data: decoded);
+      }
+      return ApiResponse(success: false, message: _extractErrorMessage(response, 'Could not load tickets'));
+    } catch (e) {
+      return ApiResponse(success: false, message: e.toString());
+    }
+  }
+
+  /// Fetch single ticket with conversation thread and notes
+  Future<ApiResponse<Map<String, dynamic>>> getTicketDetails({
+    required String baseUrl,
+    required String token,
+    required int ticketId,
+  }) async {
+    try {
+      final response = await _getWithFallback(
+        baseUrl: baseUrl,
+        action: 'mobile_ticket_detail',
+        token: token,
+        extraQuery: "ticket_id=$ticketId",
+      );
+
+      final decoded = _parseJsonSafely(response.body);
+      if (decoded is Map<String, dynamic> && response.statusCode == 200 && decoded['status'] == 'success') {
+        return ApiResponse(success: true, data: decoded);
+      }
+      return ApiResponse(success: false, message: _extractErrorMessage(response, 'Could not load ticket details'));
+    } catch (e) {
+      return ApiResponse(success: false, message: e.toString());
+    }
+  }
+
+  /// Submit reply or private staff note to ticket
+  Future<ApiResponse<Map<String, dynamic>>> replyTicket({
+    required String baseUrl,
+    required String token,
+    required int ticketId,
+    required String message,
+    bool isNote = false,
+    String? status,
+  }) async {
+    try {
+      final body = <String, String>{
+        'ticket_id': ticketId.toString(),
+        'message': message,
+        'is_note': isNote ? '1' : '0',
+      };
+      if (status != null && status.isNotEmpty) {
+        body['status'] = status;
+      }
+      final response = await _postWithFallback(
+        baseUrl: baseUrl,
+        action: 'mobile_ticket_reply',
+        token: token,
+        body: body,
+      );
+
+      final decoded = _parseJsonSafely(response.body);
+      if (decoded is Map<String, dynamic> && response.statusCode == 200 && decoded['status'] == 'success') {
+        return ApiResponse(success: true, data: decoded);
+      }
+      return ApiResponse(success: false, message: _extractErrorMessage(response, 'Failed to submit ticket reply'));
+    } catch (e) {
+      return ApiResponse(success: false, message: e.toString());
+    }
+  }
+
+  /// Analyze ticket with Sahdev AI Copilot
+  Future<ApiResponse<Map<String, dynamic>>> analyzeTicketAi({
+    required String baseUrl,
+    required String token,
+    required int ticketId,
+    String tone = 'Professional',
+  }) async {
+    try {
+      final response = await _postWithFallback(
+        baseUrl: baseUrl,
+        action: 'mobile_ticket_ai_analyze',
+        token: token,
+        body: {
+          'ticket_id': ticketId.toString(),
+          'tone': tone,
+        },
+        timeout: const Duration(seconds: 35),
+      );
+
+      final decoded = _parseJsonSafely(response.body);
+      if (decoded is Map<String, dynamic> && response.statusCode == 200 && decoded['status'] == 'success') {
+        return ApiResponse(success: true, data: decoded);
+      }
+      return ApiResponse(success: false, message: _extractErrorMessage(response, 'Failed to analyze ticket with AI'));
+    } catch (e) {
+      return ApiResponse(success: false, message: e.toString());
+    }
+  }
+
+  /// Update ticket status, priority, or department
+  Future<ApiResponse<void>> updateTicketStatus({
+    required String baseUrl,
+    required String token,
+    required int ticketId,
+    String? status,
+    String? priority,
+    int? deptId,
+  }) async {
+    try {
+      final body = <String, String>{
+        'ticket_id': ticketId.toString(),
+      };
+      if (status != null) body['status'] = status;
+      if (priority != null) body['priority'] = priority;
+      if (deptId != null) body['dept_id'] = deptId.toString();
+
+      final response = await _postWithFallback(
+        baseUrl: baseUrl,
+        action: 'mobile_ticket_update',
+        token: token,
+        body: body,
+      );
+
+      final decoded = _parseJsonSafely(response.body);
+      if (decoded is Map<String, dynamic> && response.statusCode == 200 && decoded['status'] == 'success') {
+        return ApiResponse(success: true);
+      }
+      return ApiResponse(success: false, message: _extractErrorMessage(response, 'Failed to update ticket'));
+    } catch (e) {
+      return ApiResponse(success: false, message: e.toString());
+    }
+  }
+
+  /// Fetch WHMCS clients list
+  Future<ApiResponse<Map<String, dynamic>>> getClients({
+    required String baseUrl,
+    required String token,
+    String search = '',
+    String status = 'all',
+    int page = 1,
+    int limit = 25,
+  }) async {
+    try {
+      final response = await _getWithFallback(
+        baseUrl: baseUrl,
+        action: 'mobile_clients',
+        token: token,
+        extraQuery: "search=${Uri.encodeComponent(search)}&status=${Uri.encodeComponent(status)}&page=$page&limit=$limit",
+      );
+
+      final decoded = _parseJsonSafely(response.body);
+      if (decoded is Map<String, dynamic> && response.statusCode == 200 && decoded['status'] == 'success') {
+        return ApiResponse(success: true, data: decoded);
+      }
+      return ApiResponse(success: false, message: _extractErrorMessage(response, 'Could not load clients'));
+    } catch (e) {
+      return ApiResponse(success: false, message: e.toString());
+    }
+  }
+
+  /// Fetch full client profile
+  Future<ApiResponse<Map<String, dynamic>>> getClientProfile({
+    required String baseUrl,
+    required String token,
+    required int clientId,
+  }) async {
+    try {
+      final response = await _getWithFallback(
+        baseUrl: baseUrl,
+        action: 'mobile_client_detail',
+        token: token,
+        extraQuery: "client_id=$clientId",
+      );
+
+      final decoded = _parseJsonSafely(response.body);
+      if (decoded is Map<String, dynamic> && response.statusCode == 200 && decoded['status'] == 'success') {
+        return ApiResponse(success: true, data: decoded);
+      }
+      return ApiResponse(success: false, message: _extractErrorMessage(response, 'Could not load client profile'));
+    } catch (e) {
+      return ApiResponse(success: false, message: e.toString());
+    }
+  }
+
+  /// Fetch WHMCS services list
+  Future<ApiResponse<Map<String, dynamic>>> getServices({
+    required String baseUrl,
+    required String token,
+    String search = '',
+    String status = 'all',
+    int page = 1,
+    int limit = 25,
+  }) async {
+    try {
+      final response = await _getWithFallback(
+        baseUrl: baseUrl,
+        action: 'mobile_services',
+        token: token,
+        extraQuery: "search=${Uri.encodeComponent(search)}&status=${Uri.encodeComponent(status)}&page=$page&limit=$limit",
+      );
+
+      final decoded = _parseJsonSafely(response.body);
+      if (decoded is Map<String, dynamic> && response.statusCode == 200 && decoded['status'] == 'success') {
+        return ApiResponse(success: true, data: decoded);
+      }
+      return ApiResponse(success: false, message: _extractErrorMessage(response, 'Could not load services'));
+    } catch (e) {
+      return ApiResponse(success: false, message: e.toString());
+    }
+  }
+
+  /// Fetch WHMCS invoices list
+  Future<ApiResponse<Map<String, dynamic>>> getInvoices({
+    required String baseUrl,
+    required String token,
+    String status = 'all',
+    String search = '',
+    int page = 1,
+    int limit = 25,
+  }) async {
+    try {
+      final response = await _getWithFallback(
+        baseUrl: baseUrl,
+        action: 'mobile_invoices',
+        token: token,
+        extraQuery: "status=${Uri.encodeComponent(status)}&search=${Uri.encodeComponent(search)}&page=$page&limit=$limit",
+      );
+
+      final decoded = _parseJsonSafely(response.body);
+      if (decoded is Map<String, dynamic> && response.statusCode == 200 && decoded['status'] == 'success') {
+        return ApiResponse(success: true, data: decoded);
+      }
+      return ApiResponse(success: false, message: _extractErrorMessage(response, 'Could not load invoices'));
+    } catch (e) {
+      return ApiResponse(success: false, message: e.toString());
+    }
+  }
+
   /// Logout and revoke token
   Future<void> logout({required String baseUrl, required String token}) async {
     try {

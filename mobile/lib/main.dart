@@ -4,6 +4,8 @@ import 'config/theme_config.dart';
 import 'providers/auth_provider.dart';
 import 'providers/queue_provider.dart';
 import 'providers/chat_provider.dart';
+import 'providers/ticket_provider.dart';
+import 'providers/theme_provider.dart';
 import 'services/notification_service.dart';
 import 'screens/splash_screen.dart';
 
@@ -14,7 +16,7 @@ void main() async {
   try {
     await NotificationService().init();
   } catch (e) {
-    print("NotificationService init error: $e");
+    debugPrint("NotificationService init error: $e");
   }
 
   runApp(const SahdevMobileApp());
@@ -27,17 +29,23 @@ class SahdevMobileApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
+        ChangeNotifierProvider(create: (_) => ThemeProvider()..init()),
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => QueueProvider()),
         ChangeNotifierProvider(create: (_) => ChatProvider()),
+        ChangeNotifierProvider(create: (_) => TicketProvider()),
       ],
-      child: MaterialApp(
-        title: 'Sahdev Support',
-        debugShowCheckedModeBanner: false,
-        theme: ThemeConfig.lightTheme,
-        darkTheme: ThemeConfig.darkTheme,
-        themeMode: ThemeMode.light,
-        home: const SplashScreen(),
+      child: Consumer<ThemeProvider>(
+        builder: (context, themeProv, _) {
+          return MaterialApp(
+            title: 'Sahdev Support',
+            debugShowCheckedModeBanner: false,
+            theme: themeProv.themeData,
+            darkTheme: ThemeConfig.darkTheme,
+            themeMode: ThemeMode.dark,
+            home: const SplashScreen(),
+          );
+        },
       ),
     );
   }

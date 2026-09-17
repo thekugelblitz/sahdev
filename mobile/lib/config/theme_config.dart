@@ -141,4 +141,91 @@ class ThemeConfig {
       ),
     ),
   );
+
+  // AMOLED True-Black Theme
+  static const Color amoledBlack = Color(0xFF000000);
+  static const Color amoledSurface = Color(0xFF0A0D14);
+  static const Color amoledCard = Color(0xFF0D111A);
+  static const Color amoledBorder = Color(0xFF1A2233);
+  static const Color amoledCyan = Color(0xFF06B6D4);
+  static const Color amoledEmerald = Color(0xFF10B981);
+  static const Color amoledPurple = Color(0xFF8B5CF6);
+
+  static final ThemeData amoledTheme = ThemeData(
+    useMaterial3: true,
+    brightness: Brightness.dark,
+    primaryColor: amoledCyan,
+    scaffoldBackgroundColor: amoledBlack,
+    canvasColor: amoledBlack,
+    colorScheme: const ColorScheme.dark(
+      primary: amoledCyan,
+      secondary: amoledEmerald,
+      tertiary: amoledPurple,
+      surface: amoledSurface,
+      error: Color(0xFFF43F5E),
+      onPrimary: Colors.black,
+      onSecondary: Colors.black,
+      onSurface: Color(0xFFF1F5F9),
+      outline: amoledBorder,
+    ),
+    appBarTheme: const AppBarTheme(
+      backgroundColor: amoledBlack,
+      foregroundColor: Colors.white,
+      elevation: 0,
+      centerTitle: false,
+      titleTextStyle: TextStyle(
+        fontSize: 18,
+        fontWeight: FontWeight.w700,
+        color: Colors.white,
+        letterSpacing: -0.2,
+      ),
+    ),
+    cardTheme: CardTheme(
+      color: amoledCard,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: const BorderSide(color: amoledBorder, width: 1),
+      ),
+    ),
+    bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+      backgroundColor: amoledBlack,
+      selectedItemColor: amoledCyan,
+      unselectedItemColor: Color(0xFF64748B),
+      type: BottomNavigationBarType.fixed,
+      elevation: 0,
+    ),
+    dividerTheme: const DividerThemeData(
+      color: amoledBorder,
+      thickness: 1,
+      space: 1,
+    ),
+    elevatedButtonTheme: ElevatedButtonThemeData(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: amoledCyan,
+        foregroundColor: Colors.black,
+        elevation: 0,
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+      ),
+    ),
+    inputDecorationTheme: InputDecorationTheme(
+      filled: true,
+      fillColor: amoledSurface,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: amoledBorder),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: amoledBorder),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: amoledCyan, width: 1.8),
+      ),
+    ),
+  );
 }

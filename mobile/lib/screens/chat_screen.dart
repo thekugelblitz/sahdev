@@ -74,14 +74,34 @@ class _ChatScreenState extends State<ChatScreen> {
     final chat = Provider.of<ChatProvider>(context, listen: false);
 
     _textController.clear();
+    _scrollToBottom();
+
+    final staffName = auth.adminUser?.name ?? 'You';
     final success = await chat.sendMessage(
       baseUrl: auth.baseUrl!,
       token: auth.token!,
       text: text,
+      staffName: staffName,
     );
 
     if (success) {
       _scrollToBottom();
+    } else if (mounted) {
+      // Restore input text so staff member never loses their work
+      _textController.text = text;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.error_outline, color: Colors.white, size: 18),
+              const SizedBox(width: 8),
+              Expanded(child: Text(chat.errorMessage ?? "Failed to send reply. Please check connection.")),
+            ],
+          ),
+          backgroundColor: const Color(0xFFDC2626),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
   }
 

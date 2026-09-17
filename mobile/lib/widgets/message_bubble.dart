@@ -15,56 +15,74 @@ class MessageBubble extends StatelessWidget {
 
     final isStaff = message.isStaff;
     final isAi = message.isAi;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
       child: Column(
         crossAxisAlignment: isStaff ? CrossAxisAlignment.end : CrossAxisAlignment.start,
         children: [
-          // Sender Header (for non-staff or AI)
-          if (!isStaff)
-            Padding(
-              padding: const EdgeInsets.only(left: 4, bottom: 2),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (isAi) ...[
-                    const Icon(Icons.auto_awesome, size: 12, color: ThemeConfig.statusAi),
-                    const SizedBox(width: 4),
-                    Text(
-                      message.senderName.isNotEmpty ? message.senderName : "Sahdev AI",
-                      style: const TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: ThemeConfig.statusAi,
-                      ),
-                    ),
-                  ] else ...[
-                    Text(
-                      message.senderName.isNotEmpty ? message.senderName : "Visitor",
-                      style: const TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF64748B),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
+          // Sender Header with Real Name & Badge
+          Padding(
+            padding: EdgeInsets.only(
+              left: isStaff ? 0 : 4,
+              right: isStaff ? 4 : 0,
+              bottom: 3,
             ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (isStaff) ...[
+                  const Icon(Icons.support_agent, size: 13, color: Color(0xFF0284C7)),
+                  const SizedBox(width: 4),
+                  Text(
+                    message.senderName.isNotEmpty ? message.senderName : "Staff Specialist",
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF0284C7),
+                      letterSpacing: 0.2,
+                    ),
+                  ),
+                ] else if (isAi) ...[
+                  const Icon(Icons.auto_awesome, size: 12, color: ThemeConfig.statusAi),
+                  const SizedBox(width: 4),
+                  Text(
+                    message.senderName.isNotEmpty ? message.senderName : "Sahdev AI",
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w700,
+                      color: ThemeConfig.statusAi,
+                    ),
+                  ),
+                ] else ...[
+                  const Icon(Icons.person_outline, size: 12, color: Color(0xFF94A3B8)),
+                  const SizedBox(width: 4),
+                  Text(
+                    message.senderName.isNotEmpty ? message.senderName : "Visitor",
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                      color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
 
           // Message Container
           Container(
             constraints: BoxConstraints(
-              maxWidth: MediaQuery.of(context).size.width * 0.78,
+              maxWidth: MediaQuery.of(context).size.width * 0.80,
             ),
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
               color: isStaff
                   ? ThemeConfig.primary
                   : isAi
-                      ? const Color(0xFFF5F3FF)
-                      : Colors.white,
+                      ? (isDark ? const Color(0xFF1E1B4B) : const Color(0xFFF5F3FF))
+                      : (isDark ? const Color(0xFF111827) : Colors.white),
               borderRadius: BorderRadius.only(
                 topLeft: const Radius.circular(14),
                 topRight: const Radius.circular(14),
@@ -75,47 +93,61 @@ class MessageBubble extends StatelessWidget {
                 color: isStaff
                     ? ThemeConfig.primary
                     : isAi
-                        ? const Color(0xFFDDD6FE)
-                        : const Color(0xFFE2E8F0),
+                        ? (isDark ? const Color(0xFF4338CA) : const Color(0xFFDDD6FE))
+                        : (isDark ? const Color(0xFF1F2937) : const Color(0xFFE2E8F0)),
               ),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.02),
-                  blurRadius: 4,
-                  offset: const Offset(0, 1),
+                  color: Colors.black.withOpacity(0.04),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
                 ),
               ],
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                SelectableText(
                   message.text,
                   style: TextStyle(
                     fontSize: 14,
-                    color: isStaff ? Colors.white : const Color(0xFF0F172A),
-                    height: 1.35,
+                    color: isStaff
+                        ? Colors.white
+                        : (isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A)),
+                    height: 1.38,
                   ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 5),
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
                     Text(
-                      message.timeFormat,
+                      message.timeFormat.isNotEmpty ? message.timeFormat : 'Just now',
                       style: TextStyle(
                         fontSize: 10,
-                        color: isStaff ? Colors.white.withOpacity(0.75) : const Color(0xFF94A3B8),
+                        color: isStaff
+                            ? Colors.white.withOpacity(0.75)
+                            : (isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8)),
                       ),
                     ),
                     if (isStaff) ...[
                       const SizedBox(width: 4),
-                      Icon(
-                        Icons.done_all,
-                        size: 13,
-                        color: Colors.white.withOpacity(0.85),
-                      ),
+                      if (message.isSending)
+                        SizedBox(
+                          width: 10,
+                          height: 10,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 1.5,
+                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white.withOpacity(0.8)),
+                          ),
+                        )
+                      else
+                        Icon(
+                          Icons.done_all,
+                          size: 13,
+                          color: Colors.white.withOpacity(0.85),
+                        ),
                     ],
                   ],
                 ),
@@ -131,24 +163,24 @@ class MessageBubble extends StatelessWidget {
     return Center(
       child: Container(
         margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 20),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
         decoration: BoxDecoration(
-          color: const Color(0xFFF1F5F9),
+          color: const Color(0xFF0F172A).withOpacity(0.08),
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: const Color(0xFFE2E8F0)),
+          border: Border.all(color: const Color(0xFF334155).withOpacity(0.2)),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.info_outline, size: 12, color: Color(0xFF64748B)),
+            const Icon(Icons.info_outline, size: 13, color: Color(0xFF64748B)),
             const SizedBox(width: 6),
             Flexible(
               child: Text(
                 message.text,
                 style: const TextStyle(
                   fontSize: 11,
+                  color: Color(0xFF64748B),
                   fontWeight: FontWeight.w500,
-                  color: Color(0xFF475569),
                 ),
                 textAlign: TextAlign.center,
               ),

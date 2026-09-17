@@ -226,6 +226,58 @@ if ($isMobileAction) {
             $response = \Sahdev\Lib\MobileApiService::getClientDetails($clientId, $sessionId);
         } elseif ($action === 'mobile_canned_responses') {
             $response = \Sahdev\Lib\MobileApiService::getCannedResponses();
+        } elseif ($action === 'mobile_tickets') {
+            $status = (string)($_REQUEST['status'] ?? ($jsonData['status'] ?? 'all'));
+            $search = (string)($_REQUEST['search'] ?? ($jsonData['search'] ?? ''));
+            $page = (int)($_REQUEST['page'] ?? ($jsonData['page'] ?? 1));
+            $limit = (int)($_REQUEST['limit'] ?? ($jsonData['limit'] ?? 25));
+            $response = \Sahdev\Lib\MobileApiService::getTickets((int)$adminId, $status, $search, $page, $limit);
+        } elseif ($action === 'mobile_ticket_detail') {
+            $ticketId = (int)($_REQUEST['ticket_id'] ?? ($jsonData['ticket_id'] ?? 0));
+            $response = \Sahdev\Lib\MobileApiService::getTicketDetails((int)$adminId, $ticketId);
+        } elseif ($action === 'mobile_ticket_reply') {
+            $rawInput = @file_get_contents('php://input');
+            $jsonData = !empty($rawInput) ? (@json_decode($rawInput, true) ?: []) : [];
+            $ticketId = (int)($_REQUEST['ticket_id'] ?? ($jsonData['ticket_id'] ?? 0));
+            $message = (string)($_REQUEST['message'] ?? ($jsonData['message'] ?? ''));
+            $isNote = !empty($_REQUEST['is_note']) || !empty($jsonData['is_note']);
+            $newStatus = (string)($_REQUEST['status'] ?? ($jsonData['status'] ?? ''));
+            $response = \Sahdev\Lib\MobileApiService::replyTicket((int)$adminId, $ticketId, $message, (bool)$isNote, $newStatus ?: null);
+        } elseif ($action === 'mobile_ticket_ai_analyze') {
+            $rawInput = @file_get_contents('php://input');
+            $jsonData = !empty($rawInput) ? (@json_decode($rawInput, true) ?: []) : [];
+            $ticketId = (int)($_REQUEST['ticket_id'] ?? ($jsonData['ticket_id'] ?? 0));
+            $tone = (string)($_REQUEST['tone'] ?? ($jsonData['tone'] ?? 'Professional'));
+            $response = \Sahdev\Lib\MobileApiService::analyzeTicketAi((int)$adminId, $ticketId, $tone);
+        } elseif ($action === 'mobile_ticket_update') {
+            $rawInput = @file_get_contents('php://input');
+            $jsonData = !empty($rawInput) ? (@json_decode($rawInput, true) ?: []) : [];
+            $ticketId = (int)($_REQUEST['ticket_id'] ?? ($jsonData['ticket_id'] ?? 0));
+            $status = isset($_REQUEST['status']) ? (string)$_REQUEST['status'] : ($jsonData['status'] ?? null);
+            $priority = isset($_REQUEST['priority']) ? (string)$_REQUEST['priority'] : ($jsonData['priority'] ?? null);
+            $deptId = isset($_REQUEST['dept_id']) ? (int)$_REQUEST['dept_id'] : ($jsonData['dept_id'] ?? null);
+            $response = \Sahdev\Lib\MobileApiService::updateTicketStatus((int)$adminId, $ticketId, $status, $priority, $deptId);
+        } elseif ($action === 'mobile_clients') {
+            $search = (string)($_REQUEST['search'] ?? ($jsonData['search'] ?? ''));
+            $status = (string)($_REQUEST['status'] ?? ($jsonData['status'] ?? 'all'));
+            $page = (int)($_REQUEST['page'] ?? ($jsonData['page'] ?? 1));
+            $limit = (int)($_REQUEST['limit'] ?? ($jsonData['limit'] ?? 25));
+            $response = \Sahdev\Lib\MobileApiService::getClientsList((int)$adminId, $search, $status, $page, $limit);
+        } elseif ($action === 'mobile_client_detail') {
+            $clientId = (int)($_REQUEST['client_id'] ?? ($jsonData['client_id'] ?? 0));
+            $response = \Sahdev\Lib\MobileApiService::getClientProfile((int)$adminId, $clientId);
+        } elseif ($action === 'mobile_services') {
+            $search = (string)($_REQUEST['search'] ?? ($jsonData['search'] ?? ''));
+            $status = (string)($_REQUEST['status'] ?? ($jsonData['status'] ?? 'all'));
+            $page = (int)($_REQUEST['page'] ?? ($jsonData['page'] ?? 1));
+            $limit = (int)($_REQUEST['limit'] ?? ($jsonData['limit'] ?? 25));
+            $response = \Sahdev\Lib\MobileApiService::getServicesList((int)$adminId, $search, $status, $page, $limit);
+        } elseif ($action === 'mobile_invoices') {
+            $status = (string)($_REQUEST['status'] ?? ($jsonData['status'] ?? 'all'));
+            $search = (string)($_REQUEST['search'] ?? ($jsonData['search'] ?? ''));
+            $page = (int)($_REQUEST['page'] ?? ($jsonData['page'] ?? 1));
+            $limit = (int)($_REQUEST['limit'] ?? ($jsonData['limit'] ?? 25));
+            $response = \Sahdev\Lib\MobileApiService::getInvoicesList((int)$adminId, $status, $search, $page, $limit);
         } elseif ($action === 'mobile_heartbeat') {
             $response = ['status' => 'success', 'timestamp' => time()];
         } elseif ($action === 'mobile_logout') {
