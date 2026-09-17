@@ -1,0 +1,43 @@
+name: sahdev_mobile
+description: Sahdev Mobile Live Chat & Human Support Console for WHMCS staff (Tawk.to style).
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State Management & Storage
+  provider: ^6.1.1
+  shared_preferences: ^2.2.2
+
+  # Networking
+  http: ^1.2.0
+
+  # Notifications & Media
+  flutter_local_notifications: ^17.0.0
+  audioplayers: ^5.2.1
+  vibration: ^1.8.4
+
+  # QR Code Camera Scanner
+  mobile_scanner: ^5.1.1
+
+  # UI Utilities & Icons
+  intl: ^0.19.0
+  cupertino_icons: ^1.0.6
+  flutter_spinkit: ^5.2.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/sounds/
+    - assets/images/

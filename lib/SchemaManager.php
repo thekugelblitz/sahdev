@@ -29,6 +29,7 @@ class SchemaManager
         self::ensureRateLimitsTable();
         self::ensureWebsiteDataSourcesTable();
         self::ensureAdminPresenceTable();
+        self::ensureMobileTokensTable();
     }
 
     /**
@@ -586,6 +587,33 @@ class SchemaManager
                     $table->timestamp('last_seen_at')->nullable()->index();
                     $table->boolean('is_online')->default(1)->index();
                     $table->integer('active_session_id')->unsigned()->default(0);
+                    $table->timestamps();
+                });
+            }
+        } catch (\Throwable $e) {
+            // Benign failure
+        }
+    }
+
+    /**
+     * Ensure mobile tokens table exists for mobile app staff authentication and QR pairing.
+     */
+    public static function ensureMobileTokensTable(): void
+    {
+        try {
+            if (!Capsule::schema()->hasTable('tblsahdev_mobile_tokens')) {
+                Capsule::schema()->create('tblsahdev_mobile_tokens', function ($table) {
+                    $table->increments('id');
+                    $table->integer('admin_id')->unsigned()->index();
+                    $table->string('token', 128)->unique();
+                    $table->string('qr_pairing_code', 64)->nullable()->index();
+                    $table->timestamp('qr_expires_at')->nullable();
+                    $table->string('device_name', 128)->nullable();
+                    $table->string('device_id', 128)->nullable();
+                    $table->string('last_ip', 64)->nullable();
+                    $table->timestamp('last_active_at')->nullable();
+                    $table->timestamp('expires_at')->nullable();
+                    $table->boolean('is_revoked')->default(0)->index();
                     $table->timestamps();
                 });
             }

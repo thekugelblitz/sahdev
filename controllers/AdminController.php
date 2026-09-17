@@ -12239,6 +12239,10 @@ class AdminController
                         <i class="fas fa-play"></i> <span class="sdv-btn-label">Test Chime</span>
                     </button>
 
+                    <button type="button" id="linkMobileAppBtn" class="btn btn-sm" style="background:#0284c7;border:none;color:#fff;font-weight:600;border-radius:6px;" title="Link Sahdev Mobile App (Android/Flutter) via QR Code">
+                        <i class="fas fa-mobile-alt"></i> <span class="sdv-btn-label">Pair Mobile App</span>
+                    </button>
+
                     <?php if (!$isStandalone): ?>
                         <button type="button" id="popOutConsoleBtn" class="btn btn-sm" style="background:#3b82f6;border:none;color:#fff;font-weight:600;border-radius:6px;" title="Pop-out to dedicated full-screen window for multi-monitor setups">
                             <i class="fas fa-external-link-alt"></i> <span class="sdv-btn-label">Pop Out Window</span>
@@ -12427,6 +12431,50 @@ class AdminController
                         <button type="button" id="btnSubmitConvertTicket" class="btn btn-primary" style="font-weight:700;">
                             <i class="fas fa-check"></i> Create Ticket in WHMCS
                         </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal: Link Mobile App (QR Code) -->
+        <div class="modal fade" id="modalLinkMobileApp" tabindex="-1" role="dialog" aria-labelledby="modalLinkMobileAppTitle">
+            <div class="modal-dialog" role="document" style="max-width:480px;">
+                <div class="modal-content" style="border-radius:12px;overflow:hidden;border:none;box-shadow:0 20px 40px rgba(0,0,0,0.25);">
+                    <div class="modal-header" style="background:#0f172a;color:#fff;padding:16px 20px;display:flex;align-items:center;justify-content:space-between;">
+                        <h4 class="modal-title" id="modalLinkMobileAppTitle" style="font-weight:700;font-size:16px;display:flex;align-items:center;gap:8px;margin:0;">
+                            <i class="fas fa-mobile-alt text-primary"></i> Pair Sahdev Mobile Support App
+                        </h4>
+                        <button type="button" class="close" data-dismiss="modal" aria-label="Close" style="color:#fff;opacity:0.8;"><span aria-hidden="true">&times;</span></button>
+                    </div>
+                    <div class="modal-body" style="padding:24px;text-align:center;">
+                        <p style="color:#64748b;font-size:13px;margin-bottom:18px;">
+                            Scan this QR code from the <strong>Sahdev Mobile App</strong> on your Android phone to connect instantly.
+                        </p>
+                        
+                        <div id="qrCodeContainer" style="display:inline-flex;padding:16px;background:#ffffff;border:2px dashed #cbd5e1;border-radius:12px;margin-bottom:18px;min-width:230px;min-height:230px;align-items:center;justify-content:center;">
+                            <div id="qrLoadingSpinner" style="color:#64748b;font-size:13px;">
+                                <i class="fas fa-spinner fa-spin fa-2x text-primary" style="margin-bottom:8px;display:block;"></i>
+                                Generating secure pairing token...
+                            </div>
+                            <img id="qrCodeImage" src="" alt="Pairing QR Code" style="display:none;width:200px;height:200px;border-radius:8px;" />
+                        </div>
+
+                        <div id="manualPairBox" style="display:none;background:#f1f5f9;padding:12px;border-radius:8px;text-align:left;font-size:12px;color:#334155;">
+                            <div style="font-weight:700;margin-bottom:4px;color:#0f172a;">Manual Connection Code:</div>
+                            <div style="display:flex;align-items:center;gap:8px;">
+                                <input type="text" id="manualPairInput" readonly class="form-control input-sm" style="font-family:monospace;font-weight:700;background:#fff;" />
+                                <button type="button" id="copyPairCodeBtn" class="btn btn-default btn-sm" title="Copy code"><i class="far fa-copy"></i></button>
+                            </div>
+                        </div>
+
+                        <div style="margin-top:16px;display:flex;justify-content:center;gap:12px;">
+                            <button type="button" id="refreshPairCodeBtn" class="btn btn-default btn-sm">
+                                <i class="fas fa-sync-alt"></i> Refresh QR Code
+                            </button>
+                        </div>
+                    </div>
+                    <div class="modal-footer" style="background:#f8fafc;border-top:1px solid #e2e8f0;padding:12px 20px;">
+                        <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
                     </div>
                 </div>
             </div>
@@ -12936,6 +12984,69 @@ class AdminController
                 popBtn.addEventListener('click', function() {
                     var w = window.open('<?php echo $moduleLink; ?>&action=live_console&standalone=1', 'SahdevLiveConsole', 'width=1380,height=860,resizable=yes,scrollbars=yes,status=no');
                     if (w) w.focus();
+                });
+            }
+
+            // Mobile App Pairing QR Code Modal
+            var linkMobileBtn = document.getElementById('linkMobileAppBtn');
+            var refreshPairCodeBtn = document.getElementById('refreshPairCodeBtn');
+            var copyPairCodeBtn = document.getElementById('copyPairCodeBtn');
+
+            function loadMobileQr() {
+                var spinner = document.getElementById('qrLoadingSpinner');
+                var qrImg = document.getElementById('qrCodeImage');
+                var manualBox = document.getElementById('manualPairBox');
+                var manualInput = document.getElementById('manualPairInput');
+
+                if (spinner) spinner.style.display = 'block';
+                if (qrImg) qrImg.style.display = 'none';
+                if (manualBox) manualBox.style.display = 'none';
+
+                fetch(AJAX_URL + '&action=mobile_qr_generate', { method: 'POST' })
+                    .then(function(r) { return r.json(); })
+                    .then(function(res) {
+                        if (res && res.status === 'success') {
+                            var payload = res.pairing_payload;
+                            var qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=' + encodeURIComponent(payload);
+                            if (qrImg) {
+                                qrImg.onload = function() {
+                                    if (spinner) spinner.style.display = 'none';
+                                    qrImg.style.display = 'block';
+                                };
+                                qrImg.src = qrUrl;
+                            }
+                            if (manualInput) manualInput.value = res.pairing_code;
+                            if (manualBox) manualBox.style.display = 'block';
+                        } else {
+                            if (spinner) spinner.innerHTML = '<span class="text-danger">Failed to generate pairing token.</span>';
+                        }
+                    })
+                    .catch(function() {
+                        if (spinner) spinner.innerHTML = '<span class="text-danger">Connection error.</span>';
+                    });
+            }
+
+            if (linkMobileBtn) {
+                linkMobileBtn.addEventListener('click', function() {
+                    $('#modalLinkMobileApp').modal('show');
+                    loadMobileQr();
+                });
+            }
+
+            if (refreshPairCodeBtn) {
+                refreshPairCodeBtn.addEventListener('click', function() {
+                    loadMobileQr();
+                });
+            }
+
+            if (copyPairCodeBtn) {
+                copyPairCodeBtn.addEventListener('click', function() {
+                    var input = document.getElementById('manualPairInput');
+                    if (input) {
+                        input.select();
+                        document.execCommand('copy');
+                        alert('Pairing code copied to clipboard!');
+                    }
                 });
             }
 
