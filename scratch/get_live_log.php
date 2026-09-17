@@ -16,7 +16,8 @@ if (is_resource($proc)) {
     if (preg_match('/password=(.+)/', $out, $m)) $token = trim($m[1]);
 }
 
-$ch = curl_init('https://api.github.com/repos/thekugelblitz/sahdev/actions/runs/35207829462/jobs');
+$runId = $argv[1] ?? '35216192511';
+$ch = curl_init("https://api.github.com/repos/thekugelblitz/sahdev/actions/runs/{$runId}/jobs");
 curl_setopt($ch, CURLOPT_USERAGENT, 'LogChecker');
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 if ($token) curl_setopt($ch, CURLOPT_HTTPHEADER, ["Authorization: Bearer {$token}"]);
@@ -36,6 +37,6 @@ if ($jobId) {
 
     $lines = explode("\n", $log);
     echo "Total lines: " . count($lines) . "\n";
-    $tail = array_slice($lines, -25);
+    $tail = array_slice($lines, -60);
     echo implode("\n", $tail) . "\n";
 }

@@ -1,5 +1,6 @@
 <?php
-$ch = curl_init('https://api.github.com/repos/thekugelblitz/sahdev/actions/runs/35207829462/jobs');
+$runId = $argv[1] ?? '35216192511';
+$ch = curl_init("https://api.github.com/repos/thekugelblitz/sahdev/actions/runs/{$runId}/jobs");
 curl_setopt($ch, CURLOPT_USERAGENT, 'CheckRun');
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 $data = json_decode(curl_exec($ch), true);

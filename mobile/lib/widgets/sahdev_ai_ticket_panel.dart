@@ -725,7 +725,7 @@ class _SahdevAiTicketPanelState extends State<SahdevAiTicketPanel> with SingleTi
                 onPressed: _isRewriting ? null : _runDraftRewrite,
                 icon: _isRewriting
                     ? const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : const Icon(Icons.magic_button, size: 13),
+                    : const Icon(Icons.auto_fix_high, size: 13),
                 label: Text(_isRewriting ? "Polishing..." : "Rewrite It", style: const TextStyle(fontSize: 11)),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF06B6D4),
