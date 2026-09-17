@@ -2,7 +2,8 @@ name: Build Sahdev Android APK
 
 on:
   push:
-    branches: [ "main", "master" ]
+    branches:
+      - "**"
     paths:
       - "mobile/**"
       - ".github/workflows/build_apk.yml"
