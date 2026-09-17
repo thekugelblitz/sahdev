@@ -11,3 +11,7 @@ ajax_debug.log
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Mobile binaries
+*.apk
+mobile_apk/
