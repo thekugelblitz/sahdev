@@ -85,9 +85,19 @@ class ApiService {
     String extraQuery = '',
     Duration? timeout,
   }) async {
-    final candidates = ApiConfig.candidateEndpoints(baseUrl, action, extraQuery);
+    var finalQuery = extraQuery;
+    if (token != null && token.isNotEmpty) {
+      final tokenParam = "mobile_token=${Uri.encodeComponent(token)}";
+      finalQuery = finalQuery.isEmpty ? tokenParam : "$finalQuery&$tokenParam";
+    }
+    final candidates = ApiConfig.candidateEndpoints(baseUrl, action, finalQuery);
     final headers = _headers(token);
     final reqTimeout = timeout ?? _timeout;
+
+    final postBody = Map<String, String>.from(body);
+    if (token != null && token.isNotEmpty && !postBody.containsKey('mobile_token')) {
+      postBody['mobile_token'] = token;
+    }
 
     // Prioritize previously verified working endpoint candidate
     final ordered = <int>[];
@@ -107,7 +117,7 @@ class ApiService {
         var response = await _client.post(
           Uri.parse(currentUrl),
           headers: headers,
-          body: body,
+          body: postBody,
         ).timeout(reqTimeout);
 
         // Follow HTTP redirects (301, 302, 307, 308) automatically
@@ -121,7 +131,7 @@ class ApiService {
             response = await _client.post(
               redirectUri,
               headers: headers,
-              body: body,
+              body: postBody,
             ).timeout(reqTimeout);
           } else {
             break;
@@ -155,7 +165,12 @@ class ApiService {
     String extraQuery = '',
     Duration? timeout,
   }) async {
-    final candidates = ApiConfig.candidateEndpoints(baseUrl, action, extraQuery);
+    var finalQuery = extraQuery;
+    if (token != null && token.isNotEmpty) {
+      final tokenParam = "mobile_token=${Uri.encodeComponent(token)}";
+      finalQuery = finalQuery.isEmpty ? tokenParam : "$finalQuery&$tokenParam";
+    }
+    final candidates = ApiConfig.candidateEndpoints(baseUrl, action, finalQuery);
     final headers = _headers(token);
     final reqTimeout = timeout ?? _timeout;
 
