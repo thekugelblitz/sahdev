@@ -102,7 +102,7 @@ $isClientChatAction = in_array($action, [
     'client_chat_summon', 'client_chat_link_email', 'client_chat_rate_message'
 ], true);
 
-$isPublicMobileAuth = in_array($action, ['mobile_login', 'mobile_qr_verify'], true);
+$isPublicMobileAuth = in_array($action, ['mobile_login', 'mobile_qr_verify', 'mobile_apk_download'], true);
 
 if (!$adminId && !$isClientChatAction && !$isPublicMobileAuth) {
     header('HTTP/1.1 403 Forbidden');
@@ -521,9 +521,10 @@ $allowedActions = [
     'admin_live_console_takeover', 'admin_live_console_release', 'admin_live_console_suggest_reply',
     'admin_live_console_convert_ticket', 'admin_live_console_account_info',
     // Sahdev Mobile Support App (Android/Flutter)
-    'mobile_login', 'mobile_qr_generate', 'mobile_qr_verify', 'mobile_poll',
-    'mobile_chat_history', 'mobile_send', 'mobile_takeover', 'mobile_ai_suggest',
-    'mobile_client_info', 'mobile_canned_responses', 'mobile_heartbeat', 'mobile_logout'
+    'mobile_login', 'mobile_qr_generate', 'mobile_qr_verify', 'mobile_qr_status',
+    'mobile_poll', 'mobile_chat_history', 'mobile_send', 'mobile_takeover', 'mobile_ai_suggest',
+    'mobile_client_info', 'mobile_canned_responses', 'mobile_heartbeat', 'mobile_logout',
+    'mobile_apk_download'
 ];
 if (!in_array($action, $allowedActions, true)) {
     header('HTTP/1.1 400 Bad Request');
@@ -1785,6 +1786,10 @@ try {
     } elseif ($action === 'mobile_qr_generate') {
         require_once __DIR__ . '/lib/MobileApiService.php';
         $response = \Sahdev\Lib\MobileApiService::generateQrPairingToken((int)$adminId);
+    } elseif ($action === 'mobile_qr_status') {
+        require_once __DIR__ . '/lib/MobileApiService.php';
+        $tokenId = (int)($_REQUEST['token_id'] ?? 0);
+        $response = \Sahdev\Lib\MobileApiService::checkQrStatus($tokenId, (int)$adminId);
     } elseif ($action === 'mobile_qr_verify') {
         require_once __DIR__ . '/lib/MobileApiService.php';
         $code = (string)($_REQUEST['code'] ?? '');
@@ -1827,6 +1832,29 @@ try {
     } elseif ($action === 'mobile_logout') {
         require_once __DIR__ . '/lib/MobileApiService.php';
         $response = \Sahdev\Lib\MobileApiService::revokeToken($mobileToken);
+    } elseif ($action === 'mobile_apk_download') {
+        $apkPath = __DIR__ . '/mobile/app-release.apk';
+        if (!file_exists($apkPath)) {
+            $apkPath = __DIR__ . '/mobile_apk/app-release.apk';
+        }
+        if (!file_exists($apkPath)) {
+            header("HTTP/1.1 404 Not Found");
+            echo "APK file not found on server.";
+            exit;
+        }
+        while (ob_get_level()) {
+            ob_end_clean();
+        }
+        header('Content-Description: File Transfer');
+        header('Content-Type: application/vnd.android.package-archive');
+        header('Content-Disposition: attachment; filename="sahdev-livechat.apk"');
+        header('Content-Transfer-Encoding: binary');
+        header('Expires: 0');
+        header('Cache-Control: must-revalidate, post-check=0, pre-check=0');
+        header('Pragma: public');
+        header('Content-Length: ' . filesize($apkPath));
+        readfile($apkPath);
+        exit;
     } else {
         // Default analyze_ticket (server-side generation)
         $response = $controller->getAnalysis($tone, $instruction, $forceRegenerate, $forceFallback, $intent, $useSummary, $includeHistory, $technicalContext, $overrideProviderId, $includeTools, $includeAdminNotes);

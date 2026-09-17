@@ -100,7 +100,7 @@ class MobileApiService
         $expiresAt = Carbon::now()->addMinutes(10);
         $tempToken = 'temp_' . bin2hex(random_bytes(24));
 
-        Capsule::table('tblsahdev_mobile_tokens')->insert([
+        $id = Capsule::table('tblsahdev_mobile_tokens')->insertGetId([
             'admin_id'        => $adminId,
             'token'           => $tempToken,
             'qr_pairing_code' => $pairingCode,
@@ -128,6 +128,7 @@ class MobileApiService
 
         return [
             'status'          => 'success',
+            'token_id'        => (int) $id,
             'pairing_code'    => $pairingCode,
             'pairing_payload' => json_encode($pairingPayload),
             'expires_in_secs' => 600,
@@ -796,5 +797,119 @@ class MobileApiService
             ->update(['is_revoked' => 1, 'updated_at' => Carbon::now()]);
 
         return ['status' => 'success', 'message' => 'Logged out successfully.'];
+    }
+
+    /**
+     * Check if a pending QR code has been scanned and verified by the mobile phone.
+     */
+    public static function checkQrStatus(int $tokenId, int $adminId): array
+    {
+        SchemaManager::ensureMobileTokensTable();
+
+        if ($tokenId <= 0) {
+            return ['status' => 'error', 'message' => 'Invalid token ID.'];
+        }
+
+        $row = Capsule::table('tblsahdev_mobile_tokens')
+            ->where('id', $tokenId)
+            ->where('admin_id', $adminId)
+            ->first();
+
+        if (!$row) {
+            return ['status' => 'not_found', 'message' => 'Token not found.'];
+        }
+
+        if ($row->is_revoked) {
+            return ['status' => 'revoked', 'message' => 'Pairing session was revoked.'];
+        }
+
+        // Successfully paired if permanent token assigned and device name updated
+        if (strpos($row->token, 'temp_') !== 0 && !empty($row->device_name) && $row->device_name !== 'Pending QR Scan') {
+            return [
+                'status'      => 'paired',
+                'device_name' => $row->device_name,
+                'last_ip'     => $row->last_ip ?: 'Unknown',
+                'paired_at'   => $row->updated_at ? Carbon::parse($row->updated_at)->toIso8601String() : Carbon::now()->toIso8601String(),
+            ];
+        }
+
+        if ($row->qr_expires_at && Carbon::parse($row->qr_expires_at)->isPast()) {
+            return ['status' => 'expired', 'message' => 'Pairing code has expired.'];
+        }
+
+        return ['status' => 'pending'];
+    }
+
+    /**
+     * Revoke a mobile token by its primary key ID.
+     */
+    public static function revokeTokenById(int $tokenId, int $adminId, bool $isSuperAdmin = false): bool
+    {
+        SchemaManager::ensureMobileTokensTable();
+
+        $query = Capsule::table('tblsahdev_mobile_tokens')->where('id', $tokenId);
+        if (!$isSuperAdmin) {
+            $query->where('admin_id', $adminId);
+        }
+
+        $affected = $query->update([
+            'is_revoked' => 1,
+            'updated_at' => Carbon::now(),
+        ]);
+
+        return $affected > 0;
+    }
+
+    /**
+     * List all paired devices for an admin or all admins.
+     */
+    public static function getPairedDevices(int $adminId, bool $isSuperAdmin = false): array
+    {
+        SchemaManager::ensureMobileTokensTable();
+
+        $query = Capsule::table('tblsahdev_mobile_tokens as mt')
+            ->leftJoin('tbladmins as a', 'a.id', '=', 'mt.admin_id')
+            ->select([
+                'mt.id',
+                'mt.admin_id',
+                'mt.device_name',
+                'mt.device_id',
+                'mt.last_ip',
+                'mt.last_active_at',
+                'mt.is_revoked',
+                'mt.created_at',
+                'mt.updated_at',
+                'a.firstname',
+                'a.lastname',
+                'a.username',
+            ])
+            ->where('mt.token', 'not like', 'temp_%'); // Only real authenticated tokens
+
+        if (!$isSuperAdmin) {
+            $query->where('mt.admin_id', $adminId);
+        }
+
+        $rows = $query->orderBy('mt.last_active_at', 'desc')->get();
+
+        $devices = [];
+        foreach ($rows as $r) {
+            $adminName = trim(($r->firstname ?? '') . ' ' . ($r->lastname ?? ''));
+            if (empty($adminName)) {
+                $adminName = $r->username ?? ('Admin #' . $r->admin_id);
+            }
+
+            $devices[] = [
+                'id'             => (int) $r->id,
+                'admin_id'       => (int) $r->admin_id,
+                'admin_name'     => $adminName,
+                'device_name'    => $r->device_name ?: 'Android Device',
+                'last_ip'        => $r->last_ip ?: '—',
+                'last_active_at' => $r->last_active_at,
+                'created_at'     => $r->created_at,
+                'is_revoked'     => (bool) $r->is_revoked,
+            ];
+        }
+
+        return $devices;
     }
 }

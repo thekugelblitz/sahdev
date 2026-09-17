@@ -541,6 +541,12 @@ class AdminController
                 'url'   => $base . '&action=client_chat',
                 'desc'  => 'Customer portal live widget & sessions'
             ];
+            $categories['chat']['tools']['mobile_app'] = [
+                'label' => 'Mobile App (QR)',
+                'icon'  => 'fas fa-mobile-alt',
+                'url'   => $base . '&action=mobile_app',
+                'desc'  => 'Android Live Chat App pairing & QR screen'
+            ];
         }
 
         // 2. Intelligence & Analytics
@@ -13781,6 +13787,983 @@ class AdminController
                 doPoll(true);
             });
 
+        })();
+        </script>
+        <?php
+        return ob_get_clean();
+    }
+
+    /**
+     * Dedicated Sahdev Mobile Live Support App & QR Code Pairing Screen.
+     */
+    public function mobile_app(): string
+    {
+        $adminId = (int) ($_SESSION['adminid'] ?? 0);
+        require_once dirname(__DIR__) . '/lib/PermissionService.php';
+        require_once dirname(__DIR__) . '/lib/MobileApiService.php';
+        require_once dirname(__DIR__) . '/lib/SchemaManager.php';
+        \Sahdev\Lib\SchemaManager::ensureAll();
+
+        $isSuper = ($adminId === 1) || \Sahdev\Lib\PermissionService::isSuperAdmin($adminId);
+        $hasPerm = $isSuper || \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_CLIENT_CHAT_MANAGE);
+
+        if (!$hasPerm) {
+            return $this->getNavigationMarkup('mobile_app') . '<div class="sahdev-page-container"><div class="alert alert-danger" style="margin:20px;"><i class="fas fa-lock"></i> Access Denied: Missing permissions for Sahdev Mobile Live Chat.</div></div>';
+        }
+
+        // Direct APK download streaming handler
+        if (!empty($_GET['download']) || !empty($_GET['download_apk'])) {
+            $apkPath = dirname(__DIR__) . '/mobile/app-release.apk';
+            if (!file_exists($apkPath)) {
+                $apkPath = dirname(__DIR__) . '/mobile_apk/app-release.apk';
+            }
+            if (file_exists($apkPath)) {
+                while (ob_get_level()) {
+                    ob_end_clean();
+                }
+                header('Content-Description: File Transfer');
+                header('Content-Type: application/vnd.android.package-archive');
+                header('Content-Disposition: attachment; filename="sahdev-livechat.apk"');
+                header('Content-Transfer-Encoding: binary');
+                header('Expires: 0');
+                header('Cache-Control: must-revalidate, post-check=0, pre-check=0');
+                header('Pragma: public');
+                header('Content-Length: ' . filesize($apkPath));
+                readfile($apkPath);
+                exit;
+            } else {
+                $flashError = "APK package file not found on server. Please ensure the build is placed in mobile/app-release.apk.";
+            }
+        }
+
+        // Device revocation handler
+        $flashSuccess = null;
+        if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'revoke_device') {
+            check_token('WHMCS.admin.default');
+            $tokenIdToRevoke = (int) ($_POST['token_id'] ?? 0);
+            if ($tokenIdToRevoke > 0) {
+                \Sahdev\Lib\MobileApiService::revokeTokenById($tokenIdToRevoke, $adminId, $isSuper);
+                $flashSuccess = "Mobile device has been disconnected and its access token revoked.";
+            }
+        }
+
+        // APK metadata
+        $apkPath = dirname(__DIR__) . '/mobile/app-release.apk';
+        if (!file_exists($apkPath)) {
+            $apkPath = dirname(__DIR__) . '/mobile_apk/app-release.apk';
+        }
+        $apkExists = file_exists($apkPath);
+        $apkSizeBytes = $apkExists ? filesize($apkPath) : 0;
+        $apkSizeMb = $apkExists ? (round($apkSizeBytes / (1024 * 1024), 1) . ' MB') : '33.8 MB';
+        $apkBuildDate = $apkExists ? date('M j, Y g:i A', filemtime($apkPath)) : 'Production Build';
+
+        // Base URLs
+        $whmcsUrl = rtrim((string) Capsule::table('tblconfiguration')->where('setting', 'SystemURL')->value('value'), '/');
+        if (empty($whmcsUrl)) {
+            $proto = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https://' : 'http://';
+            $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+            $whmcsUrl = $proto . $host;
+        }
+        $moduleLink = htmlspecialchars($this->moduleVars['modulelink']);
+        $ajaxEndpoint = 'addonmodules.php?module=sahdev&sahdev_act=ajax_handler';
+        $directApkDownloadUrl = $whmcsUrl . '/modules/addons/sahdev/ajax.php?action=mobile_apk_download';
+        $moduleDownloadUrl = $moduleLink . '&action=mobile_app&download=1';
+        $liveConsoleUrl = $moduleLink . '&action=live_console';
+
+        // Generate initial QR pairing token
+        $initialPair = \Sahdev\Lib\MobileApiService::generateQrPairingToken($adminId);
+        $initialTokenId = (int) ($initialPair['token_id'] ?? 0);
+        $initialPairingCode = (string) ($initialPair['pairing_code'] ?? '');
+        $initialPairingPayload = (string) ($initialPair['pairing_payload'] ?? '');
+
+        // Fetch paired devices
+        $pairedDevices = \Sahdev\Lib\MobileApiService::getPairedDevices($adminId, $isSuper);
+
+        $csrfToken = generate_token('form');
+
+        ob_start();
+        ?>
+        <style>
+            .sdv-mobile-wrap {
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+                color: #1e293b;
+            }
+            .sdv-hero-banner {
+                background: linear-gradient(135deg, #0f172a 0%, #1e293b 60%, #312e81 100%);
+                color: #ffffff;
+                border-radius: 14px;
+                padding: 24px 28px;
+                margin-bottom: 24px;
+                box-shadow: 0 10px 25px -5px rgba(15,23,42,0.25);
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                flex-wrap: wrap;
+                gap: 20px;
+                position: relative;
+                overflow: hidden;
+            }
+            .sdv-hero-banner::after {
+                content: '';
+                position: absolute;
+                top: -50%;
+                right: -10%;
+                width: 320px;
+                height: 320px;
+                background: radial-gradient(circle, rgba(99,102,241,0.25) 0%, transparent 70%);
+                border-radius: 50%;
+                pointer-events: none;
+            }
+            .sdv-hero-title {
+                margin: 0 0 8px 0;
+                font-size: 22px;
+                font-weight: 700;
+                letter-spacing: -0.3px;
+                display: flex;
+                align-items: center;
+                gap: 12px;
+            }
+            .sdv-hero-desc {
+                margin: 0;
+                font-size: 13.5px;
+                color: #94a3b8;
+                max-width: 650px;
+                line-height: 1.5;
+            }
+            .sdv-badge-pill {
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+                padding: 4px 10px;
+                border-radius: 20px;
+                font-size: 11px;
+                font-weight: 700;
+                letter-spacing: 0.3px;
+                text-transform: uppercase;
+            }
+            .sdv-badge-emerald { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16,185,129,0.3); }
+            .sdv-badge-indigo { background: rgba(99, 102, 241, 0.15); color: #a5b4fc; border: 1px solid rgba(99,102,241,0.3); }
+            .sdv-badge-slate { background: rgba(148, 163, 184, 0.15); color: #94a3b8; border: 1px solid rgba(148,163,184,0.3); }
+
+            /* Two Column Grid */
+            .sdv-mobile-grid {
+                display: grid;
+                grid-template-columns: 460px 1fr;
+                gap: 24px;
+                align-items: start;
+            }
+            @media (max-width: 1100px) {
+                .sdv-mobile-grid { grid-template-columns: 1fr; }
+            }
+
+            /* Terminal Card */
+            .sdv-terminal-card {
+                background: #0f172a;
+                color: #f8fafc;
+                border-radius: 14px;
+                border: 1px solid #334155;
+                padding: 24px;
+                box-shadow: 0 15px 35px -10px rgba(15,23,42,0.4);
+                position: relative;
+            }
+            .sdv-terminal-header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                margin-bottom: 20px;
+                border-bottom: 1px solid #1e293b;
+                padding-bottom: 14px;
+            }
+            .sdv-tab-group {
+                display: flex;
+                gap: 8px;
+                background: #1e293b;
+                padding: 4px;
+                border-radius: 8px;
+            }
+            .sdv-tab-btn {
+                background: transparent;
+                color: #94a3b8;
+                border: none;
+                padding: 6px 12px;
+                border-radius: 6px;
+                font-size: 12px;
+                font-weight: 600;
+                cursor: pointer;
+                transition: all 0.2s;
+            }
+            .sdv-tab-btn.active {
+                background: #3b82f6;
+                color: #ffffff;
+                box-shadow: 0 2px 8px rgba(59,130,246,0.4);
+            }
+
+            /* QR Viewport */
+            .sdv-qr-box {
+                background: #ffffff;
+                border-radius: 14px;
+                padding: 16px;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                min-height: 290px;
+                position: relative;
+                box-shadow: inset 0 2px 6px rgba(0,0,0,0.08);
+                transition: all 0.3s;
+            }
+            .sdv-qr-target {
+                position: relative;
+                padding: 12px;
+                background: #ffffff;
+                border-radius: 10px;
+                display: inline-block;
+            }
+            .sdv-qr-target::before {
+                content: '';
+                position: absolute;
+                top: 0; left: 0; right: 0; bottom: 0;
+                border: 2px dashed #93c5fd;
+                border-radius: 12px;
+                pointer-events: none;
+                animation: sdvPulseBorder 2.5s infinite;
+            }
+            @keyframes sdvPulseBorder {
+                0%, 100% { border-color: #93c5fd; }
+                50% { border-color: #3b82f6; }
+            }
+            #sdvPairQrImg, #sdvDownloadQrImg {
+                width: 230px;
+                height: 230px;
+                display: block;
+                border-radius: 6px;
+            }
+
+            /* Success Celebration Overlay */
+            .sdv-paired-overlay {
+                display: none;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                text-align: center;
+                padding: 20px;
+                background: #064e3b;
+                border: 2px solid #10b981;
+                border-radius: 12px;
+                color: #ffffff;
+                animation: sdvSlideUp 0.4s ease-out forwards;
+                margin-top: 14px;
+            }
+            @keyframes sdvSlideUp {
+                from { opacity: 0; transform: translateY(12px); }
+                to { opacity: 1; transform: translateY(0); }
+            }
+            .sdv-paired-icon {
+                width: 56px;
+                height: 56px;
+                background: #10b981;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 26px;
+                color: #ffffff;
+                margin-bottom: 12px;
+                box-shadow: 0 0 20px rgba(16,185,129,0.5);
+                animation: sdvBounce 1s infinite alternate;
+            }
+            @keyframes sdvBounce {
+                from { transform: scale(1); }
+                to { transform: scale(1.08); }
+            }
+
+            /* Countdown Progress Bar */
+            .sdv-timer-track {
+                width: 100%;
+                height: 4px;
+                background: #1e293b;
+                border-radius: 2px;
+                overflow: hidden;
+                margin-top: 14px;
+            }
+            .sdv-timer-bar {
+                height: 100%;
+                background: linear-gradient(90deg, #10b981, #3b82f6);
+                width: 100%;
+                transition: width 1s linear;
+            }
+
+            /* Info Card Panels */
+            .sdv-panel-card {
+                background: #ffffff;
+                border: 1px solid #e2e8f0;
+                border-radius: 14px;
+                padding: 22px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+                margin-bottom: 24px;
+            }
+            .sdv-panel-title {
+                font-size: 16px;
+                font-weight: 700;
+                color: #0f172a;
+                margin: 0 0 16px 0;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+            }
+
+            /* Setup Steps */
+            .sdv-steps-row {
+                display: grid;
+                grid-template-columns: repeat(3, 1fr);
+                gap: 16px;
+                margin-bottom: 20px;
+            }
+            @media (max-width: 800px) {
+                .sdv-steps-row { grid-template-columns: 1fr; }
+            }
+            .sdv-step-box {
+                background: #f8fafc;
+                border: 1px solid #e2e8f0;
+                border-radius: 10px;
+                padding: 16px;
+                position: relative;
+                transition: transform 0.15s;
+            }
+            .sdv-step-box:hover {
+                transform: translateY(-2px);
+                border-color: #cbd5e1;
+            }
+            .sdv-step-num {
+                width: 26px;
+                height: 26px;
+                border-radius: 50%;
+                background: #0f172a;
+                color: #fff;
+                font-size: 12px;
+                font-weight: 700;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                margin-bottom: 10px;
+            }
+            .sdv-step-title {
+                font-size: 13.5px;
+                font-weight: 700;
+                color: #0f172a;
+                margin-bottom: 4px;
+            }
+            .sdv-step-desc {
+                font-size: 12px;
+                color: #64748b;
+                line-height: 1.45;
+                margin: 0;
+            }
+
+            /* Features Grid */
+            .sdv-feature-chips {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px;
+                margin-top: 14px;
+            }
+            .sdv-feature-chip {
+                background: #f1f5f9;
+                border: 1px solid #e2e8f0;
+                border-radius: 20px;
+                padding: 5px 12px;
+                font-size: 11.5px;
+                font-weight: 600;
+                color: #334155;
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+            }
+
+            /* Table Styling */
+            .sdv-table {
+                width: 100%;
+                border-collapse: collapse;
+                font-size: 13px;
+            }
+            .sdv-table th {
+                background: #f8fafc;
+                border-bottom: 2px solid #e2e8f0;
+                padding: 10px 14px;
+                text-align: left;
+                font-weight: 700;
+                color: #475569;
+                font-size: 11.5px;
+                text-transform: uppercase;
+                letter-spacing: 0.4px;
+            }
+            .sdv-table td {
+                padding: 12px 14px;
+                border-bottom: 1px solid #f1f5f9;
+                vertical-align: middle;
+            }
+            .sdv-table tr:hover td {
+                background: #f8fafc;
+            }
+        </style>
+
+        <?php echo $this->getNavigationMarkup('mobile_app'); ?>
+
+        <div class="sahdev-page-container sdv-mobile-wrap" style="margin-top: 20px;">
+
+            <?php if (!empty($flashSuccess)): ?>
+                <div class="alert alert-success alert-dismissible" style="border-radius: 10px;">
+                    <button type="button" class="close" data-dismiss="alert">&times;</button>
+                    <i class="fas fa-check-circle"></i> <?php echo htmlspecialchars($flashSuccess); ?>
+                </div>
+            <?php endif; ?>
+
+            <?php if (!empty($flashError)): ?>
+                <div class="alert alert-danger alert-dismissible" style="border-radius: 10px;">
+                    <button type="button" class="close" data-dismiss="alert">&times;</button>
+                    <i class="fas fa-exclamation-triangle"></i> <?php echo htmlspecialchars($flashError); ?>
+                </div>
+            <?php endif; ?>
+
+            <!-- Hero Banner -->
+            <div class="sdv-hero-banner">
+                <div>
+                    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+                        <span class="sdv-badge-pill sdv-badge-emerald"><i class="fas fa-circle" style="font-size:7px;"></i> Staff Live Support</span>
+                        <span class="sdv-badge-pill sdv-badge-indigo"><i class="fab fa-android"></i> Android Native</span>
+                    </div>
+                    <h1 class="sdv-hero-title">
+                        <i class="fas fa-mobile-alt text-primary"></i> Sahdev Mobile Live Chat & QR Pairing Hub
+                    </h1>
+                    <p class="sdv-hero-desc">
+                        Provide instant, Tawk.to-style customer chat support from your Android smartphone. Preview visitor typing in real-time, get loud chimes when human help is summoned, and pair your device in seconds via QR code.
+                    </p>
+                </div>
+                <div style="display:flex;gap:10px;align-items:center;">
+                    <a href="<?php echo $moduleDownloadUrl; ?>" class="btn btn-success btn-lg" style="font-weight:700;box-shadow:0 4px 14px rgba(16,185,129,0.35);border:none;">
+                        <i class="fas fa-download"></i> Download APK <span style="font-size:12px;opacity:0.85;font-weight:400;">(<?php echo $apkSizeMb; ?>)</span>
+                    </a>
+                    <a href="<?php echo $liveConsoleUrl; ?>" class="btn btn-default btn-lg" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.2);">
+                        <i class="fas fa-satellite-dish"></i> Open Desktop Console
+                    </a>
+                </div>
+            </div>
+
+            <!-- Two Column Grid -->
+            <div class="sdv-mobile-grid">
+
+                <!-- ── COLUMN 1: DEDICATED QR PAIRING TERMINAL ────────────────── -->
+                <div class="sdv-terminal-card">
+                    <div class="sdv-terminal-header">
+                        <div style="font-weight:700;font-size:15px;display:flex;align-items:center;gap:8px;">
+                            <i class="fas fa-satellite-dish text-primary"></i>
+                            <span>Pairing Terminal</span>
+                        </div>
+                        <div class="sdv-tab-group">
+                            <button type="button" id="tabPairBtn" class="sdv-tab-btn active" onclick="switchQrTab('pair')">
+                                <i class="fas fa-qrcode"></i> Pair Device
+                            </button>
+                            <button type="button" id="tabDownloadBtn" class="sdv-tab-btn" onclick="switchQrTab('download')">
+                                <i class="fas fa-cloud-download-alt"></i> Scan for APK
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- VIEW 1: DEVICE PAIRING QR -->
+                    <div id="viewPairSection">
+                        <p style="color:#94a3b8;font-size:12.5px;margin-bottom:14px;line-height:1.45;">
+                            Open the <strong>Sahdev Live Support</strong> app on your Android phone, tap <strong>Scan Desktop QR Code</strong> on the login screen, and aim your camera here:
+                        </p>
+
+                        <div class="sdv-qr-box">
+                            <div class="sdv-qr-target">
+                                <img id="sdvPairQrImg"
+                                     src="https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=<?php echo urlencode($initialPairingPayload); ?>"
+                                     alt="Pairing QR Code" />
+                            </div>
+
+                            <div style="margin-top:12px;display:flex;align-items:center;justify-content:space-between;width:100%;padding:0 6px;">
+                                <span id="sdvPairingStatusBadge" class="sdv-badge-pill sdv-badge-slate" style="text-transform:none;font-size:11px;">
+                                    <i class="fas fa-circle-notch fa-spin text-primary"></i> Listening for scan...
+                                </span>
+                                <span style="font-size:11.5px;color:#64748b;font-weight:600;">
+                                    Expires in <span id="sdvTimerText" style="color:#f59e0b;font-weight:700;">10:00</span>
+                                </span>
+                            </div>
+
+                            <div class="sdv-timer-track">
+                                <div id="sdvTimerBar" class="sdv-timer-bar"></div>
+                            </div>
+                        </div>
+
+                        <!-- Paired Celebration Banner (Shown when phone successfully scans) -->
+                        <div id="sdvPairedCelebration" class="sdv-paired-overlay">
+                            <div class="sdv-paired-icon">
+                                <i class="fas fa-check"></i>
+                            </div>
+                            <h4 style="margin:0 0 6px 0;font-weight:800;font-size:18px;">Device Paired!</h4>
+                            <p id="sdvPairedDetails" style="margin:0 0 14px 0;font-size:13px;color:#a7f3d0;">
+                                Connected to Android staff phone.
+                            </p>
+                            <div style="display:flex;gap:8px;">
+                                <button type="button" class="btn btn-sm btn-default" onclick="location.reload()" style="font-weight:700;">
+                                    <i class="fas fa-sync"></i> Refresh Device List
+                                </button>
+                                <button type="button" class="btn btn-sm btn-success" onclick="resetQrTerminal()" style="font-weight:700;">
+                                    <i class="fas fa-plus"></i> Pair Another Phone
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Manual Code Drawer -->
+                        <div style="margin-top:16px;background:#1e293b;border-radius:10px;padding:12px 14px;border:1px solid #334155;">
+                            <div style="font-size:11.5px;font-weight:700;color:#94a3b8;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;">
+                                <span><i class="fas fa-key text-primary"></i> MANUAL CONNECTION CODE</span>
+                                <span style="font-size:10px;color:#64748b;">(No Camera)</span>
+                            </div>
+                            <div style="display:flex;gap:6px;align-items:center;">
+                                <input type="text" id="sdvManualCodeInput" readonly
+                                       value="<?php echo htmlspecialchars($initialPairingCode); ?>"
+                                       style="background:#0f172a;border:1px solid #334155;color:#38bdf8;font-family:monospace;font-weight:700;font-size:13px;border-radius:6px;padding:6px 10px;flex:1;" />
+                                <button type="button" class="btn btn-default btn-sm" onclick="copyToClipboard('sdvManualCodeInput', this)" title="Copy pairing code" style="background:#334155;color:#fff;border:none;">
+                                    <i class="far fa-copy"></i> Copy
+                                </button>
+                            </div>
+
+                            <div style="font-size:11px;color:#64748b;margin-top:8px;">
+                                WHMCS URL: <strong style="color:#cbd5e1;"><?php echo htmlspecialchars($whmcsUrl); ?></strong>
+                            </div>
+                        </div>
+
+                        <div style="margin-top:14px;display:flex;justify-content:space-between;align-items:center;">
+                            <button type="button" id="sdvRefreshQrBtn" class="btn btn-default btn-sm" onclick="refreshQrCode()" style="background:#1e293b;color:#e2e8f0;border:1px solid #334155;">
+                                <i class="fas fa-sync-alt"></i> Refresh QR Code
+                            </button>
+                            <span style="font-size:11px;color:#64748b;">
+                                <i class="fas fa-lock"></i> Encrypted HMAC Token
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- VIEW 2: PHONE APK DOWNLOAD QR -->
+                    <div id="viewDownloadSection" style="display:none;">
+                        <p style="color:#94a3b8;font-size:12.5px;margin-bottom:14px;line-height:1.45;">
+                            Point your Android phone's standard <strong>Camera app</strong> at this QR code to download the <strong>Sahdev Live Support APK</strong> directly to your phone:
+                        </p>
+
+                        <div class="sdv-qr-box">
+                            <div class="sdv-qr-target">
+                                <img id="sdvDownloadQrImg"
+                                     src="https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=<?php echo urlencode($directApkDownloadUrl); ?>"
+                                     alt="Download APK QR Code" />
+                            </div>
+                            <div style="margin-top:14px;text-align:center;">
+                                <span class="sdv-badge-pill sdv-badge-emerald" style="font-size:11px;">
+                                    <i class="fas fa-download"></i> Direct APK Installer Link
+                                </span>
+                            </div>
+                        </div>
+
+                        <div style="margin-top:16px;background:#1e293b;border-radius:10px;padding:12px 14px;border:1px solid #334155;">
+                            <div style="font-size:11.5px;font-weight:700;color:#94a3b8;margin-bottom:6px;">DIRECT DOWNLOAD LINK:</div>
+                            <div style="display:flex;gap:6px;align-items:center;">
+                                <input type="text" id="sdvDirectApkLinkInput" readonly
+                                       value="<?php echo htmlspecialchars($directApkDownloadUrl); ?>"
+                                       style="background:#0f172a;border:1px solid #334155;color:#a5b4fc;font-family:monospace;font-size:11.5px;border-radius:6px;padding:6px 10px;flex:1;" />
+                                <button type="button" class="btn btn-default btn-sm" onclick="copyToClipboard('sdvDirectApkLinkInput', this)" style="background:#334155;color:#fff;border:none;">
+                                    <i class="far fa-copy"></i> Copy
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+
+                <!-- ── COLUMN 2: ANDROID CENTER & CONNECTED DEVICES ───────────── -->
+                <div>
+
+                    <!-- Card 1: Setup Walkthrough -->
+                    <div class="sdv-panel-card">
+                        <div class="sdv-panel-title">
+                            <div style="display:flex;align-items:center;gap:10px;">
+                                <i class="fab fa-android text-success" style="font-size:20px;"></i>
+                                <span>Sahdev Live Support for Android</span>
+                            </div>
+                            <span class="sdv-badge-pill sdv-badge-emerald">v4.0.0 Production</span>
+                        </div>
+
+                        <div class="sdv-steps-row">
+                            <div class="sdv-step-box">
+                                <div class="sdv-step-num">1</div>
+                                <div class="sdv-step-title">Install APK</div>
+                                <p class="sdv-step-desc">
+                                    Download <a href="<?php echo $moduleDownloadUrl; ?>" style="font-weight:700;color:#0284c7;">app-release.apk</a>. If Android prompts, tap <em>Settings &rarr; Allow from this source</em> to complete installation.
+                                </p>
+                            </div>
+
+                            <div class="sdv-step-box">
+                                <div class="sdv-step-num">2</div>
+                                <div class="sdv-step-title">Launch App</div>
+                                <p class="sdv-step-desc">
+                                    Open the app on your phone. You can either enter your WHMCS URL & credentials or tap <strong>Scan Desktop QR Code</strong>.
+                                </p>
+                            </div>
+
+                            <div class="sdv-step-box">
+                                <div class="sdv-step-num">3</div>
+                                <div class="sdv-step-title">Scan & Connect</div>
+                                <p class="sdv-step-desc">
+                                    Point the phone camera at the QR terminal on the left. The app exchanges the encrypted token and logs you in immediately!
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- Highlights -->
+                        <div style="border-top:1px solid #f1f5f9;padding-top:14px;">
+                            <div style="font-size:12px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.3px;margin-bottom:8px;">
+                                Key Mobile Features:
+                            </div>
+                            <div class="sdv-feature-chips">
+                                <div class="sdv-feature-chip"><i class="fas fa-eye text-primary"></i> Live Keystroke Sneak-Peek</div>
+                                <div class="sdv-feature-chip"><i class="fas fa-bell text-warning"></i> Foreground Summon Chimes</div>
+                                <div class="sdv-feature-chip"><i class="fas fa-hand-paper text-danger"></i> 1-Tap Takeover Toggle</div>
+                                <div class="sdv-feature-chip"><i class="fas fa-robot text-info"></i> AI Co-Pilot Response Suggestions</div>
+                                <div class="sdv-feature-chip"><i class="fas fa-address-card text-success"></i> Client 360&deg; Drawer</div>
+                                <div class="sdv-feature-chip"><i class="fas fa-bolt text-warning"></i> Canned Macro Fast-Replies</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Card 2: Authorized & Paired Devices -->
+                    <div class="sdv-panel-card">
+                        <div class="sdv-panel-title">
+                            <div style="display:flex;align-items:center;gap:10px;">
+                                <i class="fas fa-shield-alt text-primary"></i>
+                                <span>Authorized Mobile Devices</span>
+                            </div>
+                            <span class="badge" style="background:#f1f5f9;color:#475569;font-weight:700;font-size:12px;">
+                                <?php echo count($pairedDevices); ?> Registered
+                            </span>
+                        </div>
+
+                        <?php if (empty($pairedDevices)): ?>
+                            <div style="text-align:center;padding:36px 20px;color:#94a3b8;">
+                                <div style="width:64px;height:64px;border-radius:50%;background:#f1f5f9;display:inline-flex;align-items:center;justify-content:center;font-size:28px;color:#cbd5e1;margin-bottom:12px;">
+                                    <i class="fas fa-mobile-alt"></i>
+                                </div>
+                                <h4 style="margin:0 0 6px 0;font-weight:700;color:#334155;">No Mobile Devices Connected Yet</h4>
+                                <p style="margin:0;font-size:13px;max-width:400px;margin:0 auto;line-height:1.45;">
+                                    Scan the QR code on the left from your Android smartphone to pair your first support device.
+                                </p>
+                            </div>
+                        <?php else: ?>
+                            <div class="table-responsive">
+                                <table class="sdv-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Device</th>
+                                            <th>Staff Member</th>
+                                            <th>Last IP</th>
+                                            <th>Connected</th>
+                                            <th>Status</th>
+                                            <th style="text-align:right;">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <?php foreach ($pairedDevices as $d): ?>
+                                            <?php
+                                            $isActive = empty($d['is_revoked']);
+                                            $lastActive = 'Never';
+                                            if (!empty($d['last_active_at'])) {
+                                                try {
+                                                    $lastActive = \Carbon\Carbon::parse($d['last_active_at'])->diffForHumans();
+                                                } catch (\Throwable $e) {
+                                                    $lastActive = (string)$d['last_active_at'];
+                                                }
+                                            }
+                                            $createdDate = !empty($d['created_at']) ? date('M j, Y', strtotime($d['created_at'])) : '—';
+                                            ?>
+                                            <tr>
+                                                <td>
+                                                    <div style="display:flex;align-items:center;gap:10px;">
+                                                        <div style="width:32px;height:32px;border-radius:8px;background:<?php echo $isActive ? '#e0f2fe' : '#f1f5f9'; ?>;color:<?php echo $isActive ? '#0284c7' : '#94a3b8'; ?>;display:flex;align-items:center;justify-content:center;font-size:15px;">
+                                                            <i class="fas fa-mobile-alt"></i>
+                                                        </div>
+                                                        <div>
+                                                            <div style="font-weight:700;color:#0f172a;"><?php echo htmlspecialchars($d['device_name']); ?></div>
+                                                            <div style="font-size:11px;color:#64748b;">Last active: <?php echo htmlspecialchars($lastActive); ?></div>
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                                <td>
+                                                    <span style="font-weight:600;color:#334155;"><?php echo htmlspecialchars($d['admin_name']); ?></span>
+                                                </td>
+                                                <td>
+                                                    <code style="font-size:11.5px;color:#475569;background:#f8fafc;padding:2px 6px;border-radius:4px;border:1px solid #e2e8f0;"><?php echo htmlspecialchars($d['last_ip']); ?></code>
+                                                </td>
+                                                <td style="color:#64748b;font-size:12px;">
+                                                    <?php echo htmlspecialchars($createdDate); ?>
+                                                </td>
+                                                <td>
+                                                    <?php if ($isActive): ?>
+                                                        <span class="label label-success" style="font-weight:600;padding:3px 8px;border-radius:10px;">
+                                                            <i class="fas fa-check-circle"></i> Active
+                                                        </span>
+                                                    <?php else: ?>
+                                                        <span class="label label-default" style="font-weight:600;padding:3px 8px;border-radius:10px;">
+                                                            <i class="fas fa-ban"></i> Revoked
+                                                        </span>
+                                                    <?php endif; ?>
+                                                </td>
+                                                <td style="text-align:right;">
+                                                    <?php if ($isActive): ?>
+                                                        <form method="post" action="<?php echo $moduleLink . '&action=mobile_app'; ?>" style="display:inline;" onsubmit="return confirm('Are you sure you want to disconnect this device? It will be immediately logged out of Sahdev Live Support.');">
+                                                            <?php echo $csrfToken; ?>
+                                                            <input type="hidden" name="action" value="revoke_device" />
+                                                            <input type="hidden" name="token_id" value="<?php echo $d['id']; ?>" />
+                                                            <button type="submit" class="btn btn-default btn-xs" title="Revoke Device Access" style="color:#dc2626;border-color:#fca5a5;">
+                                                                <i class="fas fa-unlink"></i> Disconnect
+                                                            </button>
+                                                        </form>
+                                                    <?php else: ?>
+                                                        <span class="text-muted" style="font-size:11px;">Disconnected</span>
+                                                    <?php endif; ?>
+                                                </td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+
+                </div>
+
+            </div>
+
+        </div>
+
+        <!-- ── DEDICATED SCRIPT ENGINE ────────────────────────────────────────── -->
+        <script>
+        (function() {
+            var AJAX_URL = '<?php echo $ajaxEndpoint; ?>';
+            var activeTokenId = <?php echo $initialTokenId; ?>;
+            var countdownTotal = 600;
+            var countdownRemaining = 600;
+            var timerInterval = null;
+            var statusPollInterval = null;
+            var isPairSuccess = false;
+
+            // Start countdown & status polling immediately
+            startTimer();
+            startStatusPoll();
+
+            function startTimer() {
+                clearInterval(timerInterval);
+                var timerText = document.getElementById('sdvTimerText');
+                var timerBar = document.getElementById('sdvTimerBar');
+
+                timerInterval = setInterval(function() {
+                    if (isPairSuccess) return;
+                    countdownRemaining--;
+                    if (countdownRemaining <= 0) {
+                        clearInterval(timerInterval);
+                        clearInterval(statusPollInterval);
+                        if (timerText) {
+                            timerText.innerText = 'EXPIRED';
+                            timerText.style.color = '#ef4444';
+                        }
+                        if (timerBar) timerBar.style.width = '0%';
+                        var badge = document.getElementById('sdvPairingStatusBadge');
+                        if (badge) {
+                            badge.className = 'sdv-badge-pill sdv-badge-slate';
+                            badge.innerHTML = '<span class="text-danger"><i class="fas fa-times-circle"></i> Token expired. Click Refresh.</span>';
+                        }
+                        return;
+                    }
+
+                    var mins = Math.floor(countdownRemaining / 60);
+                    var secs = countdownRemaining % 60;
+                    var formatted = (mins < 10 ? '0' : '') + mins + ':' + (secs < 10 ? '0' : '') + secs;
+                    if (timerText) timerText.innerText = formatted;
+
+                    var pct = (countdownRemaining / countdownTotal) * 100;
+                    if (timerBar) timerBar.style.width = pct + '%';
+                }, 1000);
+            }
+
+            function startStatusPoll() {
+                clearInterval(statusPollInterval);
+                if (!activeTokenId || isPairSuccess) return;
+
+                statusPollInterval = setInterval(function() {
+                    if (isPairSuccess) {
+                        clearInterval(statusPollInterval);
+                        return;
+                    }
+
+                    fetch(AJAX_URL + '&action=mobile_qr_status&token_id=' + activeTokenId, { credentials: 'same-origin' })
+                        .then(function(r) { return r.json(); })
+                        .then(function(res) {
+                            if (res && res.status === 'paired') {
+                                handlePairSuccess(res);
+                            } else if (res && res.status === 'expired') {
+                                clearInterval(statusPollInterval);
+                            }
+                        })
+                        .catch(function(e) {
+                            // Non-fatal poll failure
+                        });
+                }, 2500);
+            }
+
+            function handlePairSuccess(data) {
+                isPairSuccess = true;
+                clearInterval(statusPollInterval);
+                clearInterval(timerInterval);
+
+                // Play celebration audio chime via Web Audio API (zero external asset needed)
+                playCelebrationChime();
+
+                // Swap QR card into celebratory overlay
+                var qrBox = document.querySelector('.sdv-qr-box');
+                var overlay = document.getElementById('sdvPairedCelebration');
+                var details = document.getElementById('sdvPairedDetails');
+
+                if (details) {
+                    var devName = data.device_name || 'Android Staff Phone';
+                    var ip = data.last_ip || 'Unknown IP';
+                    details.innerHTML = 'Successfully connected to <strong>' + escapeHtml(devName) + '</strong> (' + escapeHtml(ip) + '). Staff member can now chat live on mobile.';
+                }
+
+                if (qrBox) qrBox.style.display = 'none';
+                if (overlay) overlay.style.display = 'flex';
+            }
+
+            function playCelebrationChime() {
+                try {
+                    var AudioContext = window.AudioContext || window.webkitAudioContext;
+                    if (!AudioContext) return;
+                    var ctx = new AudioContext();
+                    var now = ctx.currentTime;
+
+                    var notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6 arpeggio
+                    notes.forEach(function(freq, i) {
+                        var osc = ctx.createOscillator();
+                        var gain = ctx.createGain();
+                        osc.type = 'sine';
+                        osc.frequency.setValueAtTime(freq, now + (i * 0.1));
+
+                        gain.gain.setValueAtTime(0.2, now + (i * 0.1));
+                        gain.gain.exponentialRampToValueAtTime(0.001, now + (i * 0.1) + 0.35);
+
+                        osc.connect(gain);
+                        gain.connect(ctx.destination);
+
+                        osc.start(now + (i * 0.1));
+                        osc.stop(now + (i * 0.1) + 0.4);
+                    });
+                } catch(e) {
+                    // Audio context blocked or unsupported
+                }
+            }
+
+            window.refreshQrCode = function() {
+                var btn = document.getElementById('sdvRefreshQrBtn');
+                var originalHtml = btn ? btn.innerHTML : '';
+                if (btn) btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Refreshing...';
+
+                fetch(AJAX_URL + '&action=mobile_qr_generate', { method: 'POST', credentials: 'same-origin' })
+                    .then(function(r) { return r.json(); })
+                    .then(function(res) {
+                        if (btn) btn.innerHTML = originalHtml;
+                        if (res && res.status === 'success') {
+                            activeTokenId = res.token_id;
+                            countdownRemaining = res.expires_in_secs || 600;
+                            countdownTotal = countdownRemaining;
+                            isPairSuccess = false;
+
+                            var pairImg = document.getElementById('sdvPairQrImg');
+                            if (pairImg) {
+                                pairImg.src = 'https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=' + encodeURIComponent(res.pairing_payload);
+                            }
+
+                            var manualInput = document.getElementById('sdvManualCodeInput');
+                            if (manualInput) manualInput.value = res.pairing_code;
+
+                            var timerText = document.getElementById('sdvTimerText');
+                            if (timerText) {
+                                timerText.style.color = '#f59e0b';
+                                timerText.innerText = '10:00';
+                            }
+
+                            var badge = document.getElementById('sdvPairingStatusBadge');
+                            if (badge) {
+                                badge.className = 'sdv-badge-pill sdv-badge-slate';
+                                badge.innerHTML = '<i class="fas fa-circle-notch fa-spin text-primary"></i> Listening for scan...';
+                            }
+
+                            resetQrTerminal();
+                            startTimer();
+                            startStatusPoll();
+                        } else {
+                            alert('Failed to generate new pairing code: ' + (res.message || 'Unknown error'));
+                        }
+                    })
+                    .catch(function(e) {
+                        if (btn) btn.innerHTML = originalHtml;
+                        alert('Error connecting to backend.');
+                    });
+            };
+
+            window.resetQrTerminal = function() {
+                var qrBox = document.querySelector('.sdv-qr-box');
+                var overlay = document.getElementById('sdvPairedCelebration');
+                if (qrBox) qrBox.style.display = 'flex';
+                if (overlay) overlay.style.display = 'none';
+            };
+
+            window.switchQrTab = function(mode) {
+                var tabPair = document.getElementById('tabPairBtn');
+                var tabDown = document.getElementById('tabDownloadBtn');
+                var viewPair = document.getElementById('viewPairSection');
+                var viewDown = document.getElementById('viewDownloadSection');
+
+                if (mode === 'pair') {
+                    if (tabPair) tabPair.classList.add('active');
+                    if (tabDown) tabDown.classList.remove('active');
+                    if (viewPair) viewPair.style.display = 'block';
+                    if (viewDown) viewDown.style.display = 'none';
+                } else {
+                    if (tabPair) tabPair.classList.remove('active');
+                    if (tabDown) tabDown.classList.add('active');
+                    if (viewPair) viewPair.style.display = 'none';
+                    if (viewDown) viewDown.style.display = 'block';
+                }
+            };
+
+            window.copyToClipboard = function(inputId, btn) {
+                var el = document.getElementById(inputId);
+                if (!el) return;
+                el.select();
+                el.setSelectionRange(0, 99999);
+                try {
+                    document.execCommand('copy');
+                    var orig = btn.innerHTML;
+                    btn.innerHTML = '<i class="fas fa-check text-success"></i> Copied!';
+                    setTimeout(function() { btn.innerHTML = orig; }, 2000);
+                } catch(e) {
+                    alert('Copied: ' + el.value);
+                }
+            };
+
+            function escapeHtml(str) {
+                return String(str)
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;');
+            }
         })();
         </script>
         <?php
