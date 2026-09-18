@@ -6918,7 +6918,14 @@ DISC;
         padding: 10px 12px max(12px, env(safe-area-inset-bottom, 12px)) !important;
     }
     .sdv-msg-actions {
-        opacity: 0.85 !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
+    }
+    html body #sdv-client-chat-window .sdv-cl-msg.sdv-msg-active .sdv-msg-actions,
+    html body #sdv-client-chat-window .sdv-msg-actions.sdv-has-open-menu {
+        opacity: 1 !important;
+        pointer-events: auto !important;
+        transform: translateY(0) !important;
     }
 }
 
@@ -7090,6 +7097,7 @@ DISC;
     font-size: 13.5px;
     line-height: 1.5;
     word-break: break-word;
+    cursor: pointer;
 }
 .sdv-cl-msg-user {
     align-self: flex-end;
@@ -9082,7 +9090,9 @@ DISC;
     z-index: 10;
 }
 #sdv-client-chat-window.sdv-theme-apple_siri .sdv-cl-msg:hover .sdv-msg-actions,
-#sdv-client-chat-window.sdv-theme-apple_siri .sdv-msg-actions:hover {
+#sdv-client-chat-window.sdv-theme-apple_siri .sdv-cl-msg.sdv-msg-active .sdv-msg-actions,
+#sdv-client-chat-window.sdv-theme-apple_siri .sdv-msg-actions:hover,
+#sdv-client-chat-window.sdv-theme-apple_siri .sdv-msg-actions.sdv-has-open-menu {
     opacity: 1 !important;
     pointer-events: auto !important;
     transform: translateY(0) !important;
@@ -10504,13 +10514,16 @@ DISC;
     padding-top: 2px;
     user-select: none;
     opacity: 0;
+    pointer-events: none;
     transition: opacity 0.15s ease;
     position: relative;
 }
 .sdv-cl-msg:hover .sdv-msg-actions,
+.sdv-cl-msg.sdv-msg-active .sdv-msg-actions,
 .sdv-msg-actions:hover,
 .sdv-msg-actions.sdv-has-open-menu {
     opacity: 1;
+    pointer-events: auto;
 }
 .sdv-msg-time {
     font-size: 10.5px;
@@ -11239,6 +11252,12 @@ DISC;
             if (parent) parent.classList.remove('sdv-has-open-menu');
             m.remove();
         });
+    };
+
+    window.sdvCloseAllActiveMsgs = function() {
+        var msgs = document.querySelectorAll('#sdv-cl-msgs .sdv-cl-msg.sdv-msg-active');
+        msgs.forEach(function(m) { m.classList.remove('sdv-msg-active'); });
+        window.sdvCloseAllMsgMenus && window.sdvCloseAllMsgMenus();
     };
 
     // ── Header ⋯ Dropdown Menu ────────────────────────────────────────────
@@ -13258,6 +13277,7 @@ DISC;
         var userMsgEl = appendClMsg('user', userHtml, true, null, null, Date.now(), clientDisplayName);
         inputEl.value = '';
         sdvUpdateCharCounter();
+        window.sdvCloseAllActiveMsgs && window.sdvCloseAllActiveMsgs();
         // Never disable inputEl so client can type uninterrupted without losing caret focus
         try { inputEl.focus(); } catch(e) {}
         if (sendBtn) sendBtn.style.opacity = '0.65';
@@ -14093,6 +14113,45 @@ DISC;
                     e.preventDefault();
                     window.sdvSendMessage();
                     try { inputEl.focus(); } catch(err) {}
+                }
+            });
+        }
+
+        var msgsContainer = document.getElementById('sdv-cl-msgs');
+        if (msgsContainer && !msgsContainer._sdvBound) {
+            msgsContainer._sdvBound = true;
+            msgsContainer.addEventListener('click', function(e) {
+                // If clicked inside action buttons, context menu, links, or button elements, do not toggle bubble state
+                if (e.target.closest('.sdv-msg-actions') || e.target.closest('.sdv-msg-menu') || e.target.closest('a') || e.target.closest('button')) {
+                    return;
+                }
+                // If text is selected/highlighted, ignore click
+                var sel = window.getSelection ? window.getSelection().toString() : '';
+                if (sel && sel.trim().length > 0) {
+                    return;
+                }
+
+                var msgEl = e.target.closest('.sdv-cl-msg');
+                if (!msgEl) {
+                    window.sdvCloseAllActiveMsgs && window.sdvCloseAllActiveMsgs();
+                    return;
+                }
+
+                var isAlreadyActive = msgEl.classList.contains('sdv-msg-active');
+                window.sdvCloseAllActiveMsgs && window.sdvCloseAllActiveMsgs();
+
+                if (!isAlreadyActive) {
+                    msgEl.classList.add('sdv-msg-active');
+                }
+            });
+        }
+
+        if (!window._sdvGlobalMsgClickBound) {
+            window._sdvGlobalMsgClickBound = true;
+            document.addEventListener('click', function(e) {
+                var activeMsg = document.querySelector('#sdv-cl-msgs .sdv-cl-msg.sdv-msg-active');
+                if (activeMsg && !activeMsg.contains(e.target)) {
+                    window.sdvCloseAllActiveMsgs && window.sdvCloseAllActiveMsgs();
                 }
             });
         }

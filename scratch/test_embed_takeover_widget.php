@@ -40,11 +40,11 @@ $hasInputEnter = strpos($hooksCode, "onkeydown=\"if(event.key==='Enter'){event.p
 $hasSendClick = strpos($hooksCode, "onclick=\"window.sdvSendMessage&&window.sdvSendMessage();\"") !== false;
 echo "7. Inline Enter & Send button event fallbacks: " . (($hasInputEnter && $hasSendClick) ? "PASS" : "FAIL") . "\n";
 
-// 8. Mobile responsiveness for message action buttons
-$hasMobileOpacity = strpos($hooksCode, ".sdv-msg-actions {\n        opacity: 0.85 !important;\n    }") !== false;
-echo "8. Mobile message actions visibility: " . ($hasMobileOpacity ? "PASS" : "FAIL") . "\n";
+// 8. Mobile responsiveness: message action buttons appear on click/active rather than permanently fixed
+$hasMobileActiveActions = strpos($hooksCode, ".sdv-cl-msg.sdv-msg-active .sdv-msg-actions") !== false;
+echo "8. Mobile message actions visibility on click: " . ($hasMobileActiveActions ? "PASS" : "FAIL") . "\n";
 
-if ($hasCleanConsoleUrl && $hasPreventDefault && $hasTargetNav && !$hasDoubledConsoleUrl && $hasButtonReset && $hasSvgReset && $hasSendBtnReset && $hasRootEmbedStrip && $hasModEmbedStrip && $hasStaffConnectedBar && $hasSendEnabled && $hasInputEnter && $hasSendClick && $hasMobileOpacity) {
+if ($hasCleanConsoleUrl && $hasPreventDefault && $hasTargetNav && !$hasDoubledConsoleUrl && $hasButtonReset && $hasSvgReset && $hasSendBtnReset && $hasRootEmbedStrip && $hasModEmbedStrip && $hasStaffConnectedBar && $hasSendEnabled && $hasInputEnter && $hasSendClick && $hasMobileActiveActions) {
     echo "\n>>> ALL WIDGET & EMBED TESTS PASSED SUCCESSFULLY! <<<\n";
 } else {
     echo "\n>>> SOME TESTS FAILED! <<<\n";
