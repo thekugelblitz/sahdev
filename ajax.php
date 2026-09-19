@@ -2094,8 +2094,22 @@ try {
                 $testToken = $recent->fcm_token;
             }
         }
+
         if (empty($testToken)) {
-            $response = ['status' => 'error', 'message' => 'No active mobile device registered yet. Please pair Sahdev Mobile on a staff phone first.'];
+            // Verify Google OAuth 2.0 credentials directly with Google
+            $accessToken = \Sahdev\Lib\FirebasePushService::getAccessToken();
+            if ($accessToken) {
+                $response = [
+                    'status'  => 'success',
+                    'message' => 'Firebase credentials verified successfully! Google OAuth2 connected. (No staff phones are paired yet - install the app and scan the QR code to receive notifications on your phone).',
+                    'oauth_verified' => true,
+                ];
+            } else {
+                $response = [
+                    'status'  => 'error',
+                    'message' => 'Could not authenticate with Google Firebase. Please ensure your Service Account JSON has valid credentials and Google Cloud FCM API is enabled.',
+                ];
+            }
         } else {
             $res = \Sahdev\Lib\FirebasePushService::sendToDevice(
                 $testToken,
@@ -2107,7 +2121,7 @@ try {
             );
             $response = [
                 'status'  => $res['success'] ? 'success' : 'error',
-                'message' => $res['success'] ? 'Test push notification dispatched successfully via FCM!' : ($res['error'] ?? 'Push failed'),
+                'message' => $res['success'] ? 'Test push notification dispatched successfully via FCM to registered staff phone!' : ($res['error'] ?? 'Push failed'),
                 'details' => $res
             ];
         }

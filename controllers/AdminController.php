@@ -2898,14 +2898,15 @@ class AdminController
             var statusSpan = document.getElementById('sdv-test-push-status');
             if (!btn) return;
             btn.disabled = true;
-            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Dispatching...';
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Testing Connection...';
             statusSpan.style.color = '#64748b';
-            statusSpan.textContent = 'Sending test notification via FCM HTTP v1...';
+            statusSpan.textContent = 'Verifying Firebase OAuth2 & dispatching test push...';
 
             var data = new URLSearchParams();
             data.append('action', 'admin_test_firebase_push');
+            data.append('sahdev_act', 'ajax_handler');
 
-            fetch('addonmodules.php?module=sahdev&action=admin_test_firebase_push', {
+            fetch('addonmodules.php?module=sahdev&sahdev_act=ajax_handler&action=admin_test_firebase_push', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded',
@@ -2913,13 +2914,26 @@ class AdminController
                 },
                 body: data.toString()
             })
-            .then(function(res) { return res.json(); })
-            .then(function(json) {
+            .then(function(res) {
+                return res.text();
+            })
+            .then(function(text) {
                 btn.disabled = false;
                 btn.innerHTML = '<i class="fas fa-paper-plane"></i> Send Test Push to Staff Devices';
+                var json;
+                try {
+                    json = JSON.parse(text);
+                } catch(e) {
+                    statusSpan.style.color = '#dc2626';
+                    statusSpan.innerHTML = '<i class="fas fa-exclamation-circle"></i> Server returned unexpected response: ' + (text ? text.substring(0, 100) : 'empty');
+                    return;
+                }
                 if (json.status === 'success') {
                     statusSpan.style.color = '#16a34a';
-                    statusSpan.innerHTML = '<i class="fas fa-check-circle"></i> ' + (json.message || 'Push sent successfully!');
+                    statusSpan.innerHTML = '<i class="fas fa-check-circle"></i> ' + (json.message || 'Connection verified successfully!');
+                } else if (json.status === 'warning') {
+                    statusSpan.style.color = '#d97706';
+                    statusSpan.innerHTML = '<i class="fas fa-info-circle"></i> ' + (json.message || 'Warning');
                 } else {
                     statusSpan.style.color = '#dc2626';
                     statusSpan.innerHTML = '<i class="fas fa-exclamation-circle"></i> ' + (json.message || 'Push failed');
