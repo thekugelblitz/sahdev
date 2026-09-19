@@ -778,6 +778,7 @@ $getAllowedActions = [
     'copilot_stream', 'get_metrics_data', 'client_chat_init',
     'client_chat_get_history', 'client_chat_load_session', 'client_chat_poll',
     'admin_heartbeat', 'admin_live_console_poll', 'admin_live_console_account_info',
+    'admin_test_firebase_push',
     'mobile_poll', 'mobile_chat_history', 'mobile_client_info', 'mobile_canned_responses', 'mobile_heartbeat', 'mobile_apk_download', 'mobile_qr_status'
 ];
 $isGetAllowed = in_array($action, $getAllowedActions, true);
@@ -839,7 +840,7 @@ if ($action === 'server_sso') {
     exit;
 }
 
-$isConsoleAction = strpos($action, 'admin_live_console_') === 0 || $action === 'admin_heartbeat';
+$isConsoleAction = strpos($action, 'admin_live_console_') === 0 || $action === 'admin_heartbeat' || $action === 'admin_test_firebase_push' || $action === 'admin_save_firebase_config';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isGetAllowed && !$isClientChatAction && !$isConsoleAction && !$isMobileAction) {
     $requestToken = (string) ($_REQUEST['token'] ?? '');

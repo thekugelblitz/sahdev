@@ -2906,6 +2906,12 @@ class AdminController
             data.append('action', 'admin_test_firebase_push');
             data.append('sahdev_act', 'ajax_handler');
 
+            // Include CSRF token if present on page for WHMCS compatibility
+            var tokenInput = document.querySelector('input[name="token"]');
+            if (tokenInput && tokenInput.value) {
+                data.append('token', tokenInput.value);
+            }
+
             fetch('addonmodules.php?module=sahdev&sahdev_act=ajax_handler&action=admin_test_firebase_push', {
                 method: 'POST',
                 headers: {
