@@ -1461,6 +1461,10 @@ class AdminController
      */
     public function settings()
     {
+        try {
+            \Sahdev\Lib\SchemaManager::ensureSettingsColumns();
+        } catch (\Throwable $ex) {}
+
         // Inline migration: ensure auto_analyze_on_load column exists on older installs
         try {
             Capsule::table('tblsahdev_settings')->select('auto_analyze_on_load')->first();
@@ -2004,10 +2008,18 @@ class AdminController
                 $updatePayload['task_provider_map'] = $taskProviderMapJson;
             }
 
+            // Subtab navigation state
+            $activeSubtab = !empty($_POST['active_subtab']) ? trim((string)$_POST['active_subtab']) : 'tab-ticket';
+
             // Firebase Cloud Messaging (FCM HTTP v1)
-            if (isset($_POST['firebase_enabled'])) {
-                $updatePayload['firebase_enabled'] = !empty($_POST['firebase_enabled']) ? 1 : 0;
-            }
+            $updatePayload['firebase_enabled'] = !empty($_POST['firebase_enabled']) ? 1 : 0;
+            $updatePayload['firebase_gateway_url'] = trim((string)($_POST['firebase_gateway_url'] ?? ''));
+            $updatePayload['firebase_notify_new_visitor'] = !empty($_POST['firebase_notify_new_visitor']) ? 1 : 0;
+            $updatePayload['firebase_notify_summons'] = !empty($_POST['firebase_notify_summons']) ? 1 : 0;
+            $updatePayload['firebase_notify_chat_messages'] = !empty($_POST['firebase_notify_chat_messages']) ? 1 : 0;
+            $updatePayload['firebase_notify_tickets'] = !empty($_POST['firebase_notify_tickets']) ? 1 : 0;
+            $updatePayload['firebase_notify_system_alerts'] = !empty($_POST['firebase_notify_system_alerts']) ? 1 : 0;
+
             if (isset($_POST['firebase_service_account_json'])) {
                 require_once __DIR__ . '/../lib/FirebasePushService.php';
                 $rawJson = \Sahdev\Lib\FirebasePushService::cleanJsonString((string)$_POST['firebase_service_account_json']);
@@ -2022,50 +2034,20 @@ class AdminController
             if (isset($_POST['firebase_project_id']) && !empty($_POST['firebase_project_id'])) {
                 $updatePayload['firebase_project_id'] = trim((string)$_POST['firebase_project_id']);
             }
-            if (isset($_POST['firebase_gateway_url'])) {
-                $updatePayload['firebase_gateway_url'] = trim((string)$_POST['firebase_gateway_url']);
-            }
-            if (isset($_POST['firebase_notify_summons'])) {
-                $updatePayload['firebase_notify_summons'] = !empty($_POST['firebase_notify_summons']) ? 1 : 0;
-            }
-            if (isset($_POST['firebase_notify_chat_messages'])) {
-                $updatePayload['firebase_notify_chat_messages'] = !empty($_POST['firebase_notify_chat_messages']) ? 1 : 0;
-            }
-            if (isset($_POST['firebase_notify_tickets'])) {
-                $updatePayload['firebase_notify_tickets'] = !empty($_POST['firebase_notify_tickets']) ? 1 : 0;
-            }
-            if (isset($_POST['firebase_notify_system_alerts'])) {
-                $updatePayload['firebase_notify_system_alerts'] = !empty($_POST['firebase_notify_system_alerts']) ? 1 : 0;
-            }
-            if (isset($_POST['firebase_notify_new_visitor'])) {
-                $updatePayload['firebase_notify_new_visitor'] = !empty($_POST['firebase_notify_new_visitor']) ? 1 : 0;
-            }
-            if (isset($_POST['save_settings'])) {
-                if (isset($_POST['client_chat_notify_new_visitor'])) {
-                    $updatePayload['client_chat_notify_new_visitor'] = !empty($_POST['client_chat_notify_new_visitor']) ? 1 : 0;
-                }
-                if (isset($_POST['client_chat_notify_human_summon'])) {
-                    $updatePayload['client_chat_notify_human_summon'] = !empty($_POST['client_chat_notify_human_summon']) ? 1 : 0;
-                }
-                if (isset($_POST['client_chat_alert_focus_mode'])) {
-                    $updatePayload['client_chat_alert_focus_mode'] = !empty($_POST['client_chat_alert_focus_mode']) ? 1 : 0;
-                }
-                if (isset($_POST['client_chat_alert_dedup_active_staff'])) {
-                    $updatePayload['client_chat_alert_dedup_active_staff'] = !empty($_POST['client_chat_alert_dedup_active_staff']) ? 1 : 0;
-                }
-                if (isset($_POST['client_chat_sound_admin_alert'])) {
-                    $updatePayload['client_chat_sound_admin_alert'] = !empty($_POST['client_chat_sound_admin_alert']) ? 1 : 0;
-                }
-                if (isset($_POST['client_chat_sound_type'])) {
-                    $updatePayload['client_chat_sound_type'] = trim((string)$_POST['client_chat_sound_type']);
-                }
-                if (isset($_POST['client_chat_alert_duration'])) {
-                    $updatePayload['client_chat_alert_duration'] = max(3, min(120, (int)$_POST['client_chat_alert_duration']));
-                }
-            }
 
+            // Live Support & Visitor Notification Alerts (Tab 2: Triggers, Focus Mode, Dedup, Audio)
+            $updatePayload['client_chat_notify_new_visitor'] = !empty($_POST['client_chat_notify_new_visitor']) ? 1 : 0;
+            $updatePayload['client_chat_notify_human_summon'] = !empty($_POST['client_chat_notify_human_summon']) ? 1 : 0;
+            $updatePayload['client_chat_alert_focus_mode'] = !empty($_POST['client_chat_alert_focus_mode']) ? 1 : 0;
+            $updatePayload['client_chat_alert_dedup_active_staff'] = !empty($_POST['client_chat_alert_dedup_active_staff']) ? 1 : 0;
+            $updatePayload['client_chat_sound_admin_alert'] = !empty($_POST['client_chat_sound_admin_alert']) ? 1 : 0;
+            $updatePayload['client_chat_sound_type'] = in_array($_POST['client_chat_sound_type'] ?? '', ['chime', 'bell', 'ping'], true) ? $_POST['client_chat_sound_type'] : 'chime';
+            $updatePayload['client_chat_alert_duration'] = max(3, min(120, (int)($_POST['client_chat_alert_duration'] ?? 15)));
+
+            $existingSetting = Capsule::table('tblsahdev_settings')->first();
+            $settingsId = $existingSetting ? $existingSetting->id : 1;
             Capsule::table('tblsahdev_settings')->updateOrInsert(
-                ['id' => 1],
+                ['id' => $settingsId],
                 $updatePayload
             );
 
@@ -2146,8 +2128,26 @@ class AdminController
                 'client_chat_system_prompt' => '',
                 'metrics_cron_enabled' => 1,
                 'metrics_retention_days' => 365,
+                'client_chat_notify_new_visitor' => 1,
+                'client_chat_notify_human_summon' => 1,
+                'client_chat_alert_focus_mode' => 1,
+                'client_chat_alert_dedup_active_staff' => 1,
+                'client_chat_sound_admin_alert' => 1,
+                'client_chat_sound_type' => 'chime',
+                'client_chat_alert_duration' => 15,
+                'firebase_enabled' => 0,
+                'firebase_project_id' => '',
+                'firebase_service_account_json' => '',
+                'firebase_gateway_url' => '',
+                'firebase_notify_new_visitor' => 1,
+                'firebase_notify_summons' => 1,
+                'firebase_notify_chat_messages' => 1,
+                'firebase_notify_tickets' => 1,
+                'firebase_notify_system_alerts' => 1,
             ];
         }
+
+        $activeSubtab = $activeSubtab ?? 'tab-ticket';
 
         $taskMapStored = TaskProviderResolver::parseTaskProviderMap($settings->task_provider_map ?? null);
 
@@ -2189,17 +2189,19 @@ class AdminController
 
             <form method="post" action="<?php echo $actionUrl; ?>">
                 <?php echo $csrfToken; ?>
+                <input type="hidden" name="action" value="settings">
                 <input type="hidden" name="save_settings" value="1">
+                <input type="hidden" name="active_subtab" id="sdv_active_subtab" value="<?php echo htmlspecialchars($activeSubtab); ?>">
 
                 <!-- Settings Navigation Sub-Tabs -->
                 <div class="sahdev-subtabs" style="display: flex; gap: 8px; margin-bottom: 25px; border-bottom: 2px solid #e2e8f0; padding-bottom: 12px; flex-wrap: wrap;">
-                    <button type="button" class="btn btn-primary sdv-settings-tab-btn active" data-tab="tab-ticket" onclick="switchSettingsSection('tab-ticket', this);"><i class="fas fa-ticket-alt"></i> Ticket AI Engine</button>
-                    <button type="button" class="btn btn-default sdv-settings-tab-btn" data-tab="tab-livechat-alerts" onclick="switchSettingsSection('tab-livechat-alerts', this);"><i class="fas fa-satellite-dish text-success"></i> Live Support &amp; Global Alert Rules</button>
-                    <button type="button" class="btn btn-default sdv-settings-tab-btn" data-tab="tab-firebase" onclick="switchSettingsSection('tab-firebase', this);"><i class="fas fa-bell text-warning"></i> Mobile &amp; Firebase Push</button>
+                    <button type="button" class="btn <?php echo ($activeSubtab === 'tab-ticket') ? 'btn-primary active' : 'btn-default'; ?> sdv-settings-tab-btn" data-tab="tab-ticket" onclick="switchSettingsSection('tab-ticket', this);"><i class="fas fa-ticket-alt"></i> Ticket AI Engine</button>
+                    <button type="button" class="btn <?php echo ($activeSubtab === 'tab-livechat-alerts') ? 'btn-primary active' : 'btn-default'; ?> sdv-settings-tab-btn" data-tab="tab-livechat-alerts" onclick="switchSettingsSection('tab-livechat-alerts', this);"><i class="fas fa-satellite-dish text-success"></i> Live Support &amp; Global Alert Rules</button>
+                    <button type="button" class="btn <?php echo ($activeSubtab === 'tab-firebase') ? 'btn-primary active' : 'btn-default'; ?> sdv-settings-tab-btn" data-tab="tab-firebase" onclick="switchSettingsSection('tab-firebase', this);"><i class="fas fa-bell text-warning"></i> Mobile &amp; Firebase Push</button>
                 </div>
 
                 <!-- TAB 1: Ticket AI & Automation -->
-                <div id="tab-ticket" class="sdv-settings-pane">
+                <div id="tab-ticket" class="sdv-settings-pane" style="<?php echo ($activeSubtab === 'tab-ticket') ? 'display:block;' : 'display:none;'; ?>">
 
                 <!-- Active Model Status Banner (Managed in AI Providers) -->
                 <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-left: 4px solid #0d6efd; border-radius: 6px; padding: 14px 18px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
@@ -2542,7 +2544,7 @@ class AdminController
                 </div><!-- end #tab-ticket -->
 
                 <!-- TAB 2: Live Support & Global Alert Rules -->
-                <div id="tab-livechat-alerts" class="sdv-settings-pane" style="display:none;">
+                <div id="tab-livechat-alerts" class="sdv-settings-pane" style="<?php echo ($activeSubtab === 'tab-livechat-alerts') ? 'display:block;' : 'display:none;'; ?>">
                     <div class="panel panel-default" style="margin-bottom: 25px; border-left: 4px solid #10b981;">
                         <div class="panel-heading" style="background: #f0fdf4; display: flex; justify-content: space-between; align-items: center;">
                             <h4 style="margin: 0; font-size: 15px; color: #047857;"><i class="fas fa-satellite-dish"></i> Live Support &amp; Visitor Notification Alerts</h4>
@@ -2632,11 +2634,16 @@ class AdminController
                                     <div class="col-md-4">
                                         <div class="form-group" style="margin-bottom: 0;">
                                             <label style="font-weight: 600; font-size: 12px;">Sound Preset</label>
-                                            <select name="client_chat_sound_type" class="form-control input-sm">
-                                                <option value="chime" <?php echo (($settings->client_chat_sound_type ?? 'chime') === 'chime') ? 'selected' : ''; ?>>Executive Chime (Harmonic D5 &rarr; A5)</option>
-                                                <option value="bell" <?php echo (($settings->client_chat_sound_type ?? '') === 'bell') ? 'selected' : ''; ?>>Triple Bell (Modern Multi-Tone)</option>
-                                                <option value="ping" <?php echo (($settings->client_chat_sound_type ?? '') === 'ping') ? 'selected' : ''; ?>>High Tone Ping (Minimalist)</option>
-                                            </select>
+                                            <div style="display: flex; gap: 8px;">
+                                                <select name="client_chat_sound_type" id="sdv_settings_sound_type" class="form-control input-sm">
+                                                    <option value="chime" <?php echo (($settings->client_chat_sound_type ?? 'chime') === 'chime') ? 'selected' : ''; ?>>Executive Chime (Harmonic D5 &rarr; A5)</option>
+                                                    <option value="bell" <?php echo (($settings->client_chat_sound_type ?? '') === 'bell') ? 'selected' : ''; ?>>Triple Bell (Modern Multi-Tone)</option>
+                                                    <option value="ping" <?php echo (($settings->client_chat_sound_type ?? '') === 'ping') ? 'selected' : ''; ?>>High Tone Ping (Minimalist)</option>
+                                                </select>
+                                                <button type="button" class="btn btn-default btn-sm" onclick="sdvPreviewAlertSound();" title="Preview Alert Chime" style="flex-shrink: 0; font-weight: 600;">
+                                                    <i class="fas fa-volume-up"></i> Test
+                                                </button>
+                                            </div>
                                         </div>
                                     </div>
                                     <div class="col-md-4">
@@ -2715,7 +2722,7 @@ class AdminController
                 } catch (\Throwable $fex) {}
                 $hasServiceAccount = !empty($settings->firebase_service_account_json);
                 ?>
-                <div id="tab-firebase" class="sdv-settings-pane" style="display:none;">
+                <div id="tab-firebase" class="sdv-settings-pane" style="<?php echo ($activeSubtab === 'tab-firebase') ? 'display:block;' : 'display:none;'; ?>">
                     <div class="panel panel-default" style="margin-bottom: 25px; border-left: 4px solid #f59e0b;">
                         <div class="panel-heading" style="background: #fffbeb; display: flex; justify-content: space-between; align-items: center;">
                             <h4 style="margin: 0; font-size: 15px; color: #b45309;"><i class="fas fa-bell text-warning"></i> Firebase Cloud Messaging (FCM HTTP v1) Push Notifications</h4>
@@ -2904,9 +2911,85 @@ class AdminController
             });
             var target = document.getElementById(tabId);
             if (target) target.style.display = 'block';
-            btn.classList.remove('btn-default');
-            btn.classList.add('active', 'btn-primary');
+            if (btn) {
+                btn.classList.remove('btn-default');
+                btn.classList.add('active', 'btn-primary');
+            } else {
+                var matchingBtn = document.querySelector('.sdv-settings-tab-btn[data-tab="' + tabId + '"]');
+                if (matchingBtn) {
+                    matchingBtn.classList.remove('btn-default');
+                    matchingBtn.classList.add('active', 'btn-primary');
+                }
+            }
+            var hiddenSubtab = document.getElementById('sdv_active_subtab');
+            if (hiddenSubtab) {
+                hiddenSubtab.value = tabId;
+            }
+            try {
+                if (window.history && window.history.replaceState) {
+                    window.history.replaceState(null, '', '#' + tabId);
+                } else {
+                    window.location.hash = tabId;
+                }
+            } catch(e) {}
         }
+
+        function sdvPreviewAlertSound() {
+            var sel = document.getElementById('sdv_settings_sound_type');
+            var tone = sel ? sel.value : 'chime';
+            try {
+                var ctx = new (window.AudioContext || window.webkitAudioContext)();
+                if (ctx.state === 'suspended') ctx.resume();
+                var now = ctx.currentTime;
+                if (tone === 'bell') {
+                    [523.25, 659.25, 783.99].forEach(function(freq, idx) {
+                        var osc = ctx.createOscillator();
+                        var gain = ctx.createGain();
+                        osc.type = 'sine';
+                        osc.frequency.setValueAtTime(freq, now + idx * 0.08);
+                        gain.gain.setValueAtTime(0.25, now + idx * 0.08);
+                        gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.08 + 0.6);
+                        osc.connect(gain);
+                        gain.connect(ctx.destination);
+                        osc.start(now + idx * 0.08);
+                        osc.stop(now + idx * 0.08 + 0.65);
+                    });
+                } else if (tone === 'ping') {
+                    var osc = ctx.createOscillator();
+                    var gain = ctx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(987.77, now);
+                    gain.gain.setValueAtTime(0.3, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.start(now);
+                    osc.stop(now + 0.38);
+                } else {
+                    [587.33, 880.00].forEach(function(freq, idx) {
+                        var osc = ctx.createOscillator();
+                        var gain = ctx.createGain();
+                        osc.type = 'sine';
+                        osc.frequency.setValueAtTime(freq, now + idx * 0.12);
+                        gain.gain.setValueAtTime(0.3, now + idx * 0.12);
+                        gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.12 + 0.5);
+                        osc.connect(gain);
+                        gain.connect(ctx.destination);
+                        osc.start(now + idx * 0.12);
+                        osc.stop(now + idx * 0.12 + 0.55);
+                    });
+                }
+            } catch(e) {
+                console.warn('Audio preview error:', e);
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            var hash = (window.location.hash || '').replace('#', '');
+            if (hash && document.getElementById(hash)) {
+                switchSettingsSection(hash);
+            }
+        });
 
         function sendTestFirebasePush() {
             var btn = document.getElementById('btn-sdv-test-push');
