@@ -2754,9 +2754,33 @@ class AdminController
                 <!-- TAB 5: Mobile & Firebase Push Notifications -->
                 <?php
                 $activeFcmCount = 0;
+                $pairedPhonesCount = 0;
+                $pairedPhoneList = [];
                 try {
                     \Sahdev\Lib\SchemaManager::ensureMobileFcmTokensTable();
-                    $activeFcmCount = \WHMCS\Database\Capsule::table('tblsahdev_mobile_fcm_tokens')->where('is_active', 1)->count();
+                    \Sahdev\Lib\SchemaManager::ensureMobileTokensTable();
+                    $activeFcmCount = (int) \WHMCS\Database\Capsule::table('tblsahdev_mobile_fcm_tokens')->where('is_active', 1)->count();
+                    $pairedPhonesCount = (int) \WHMCS\Database\Capsule::table('tblsahdev_mobile_tokens')
+                        ->where('token', 'not like', 'temp_%')
+                        ->where('is_revoked', 0)
+                        ->count();
+
+                    $pairedPhoneList = \WHMCS\Database\Capsule::table('tblsahdev_mobile_tokens as mt')
+                        ->leftJoin('tbladmins as a', 'a.id', '=', 'mt.admin_id')
+                        ->select([
+                            'mt.id',
+                            'mt.admin_id',
+                            'mt.device_name',
+                            'mt.last_ip',
+                            'mt.last_active_at',
+                            'a.username',
+                            'a.firstname',
+                            'a.lastname',
+                        ])
+                        ->where('mt.token', 'not like', 'temp_%')
+                        ->where('mt.is_revoked', 0)
+                        ->orderBy('mt.last_active_at', 'desc')
+                        ->get();
                 } catch (\Throwable $fex) {}
                 $hasServiceAccount = !empty($settings->firebase_service_account_json);
                 ?>
@@ -2777,8 +2801,12 @@ class AdminController
                                 <div class="col-md-6">
                                     <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px;">
                                         <div style="font-size: 12px; text-transform: uppercase; font-weight: 700; color: #64748b;">Registered Staff Devices</div>
-                                        <div style="font-size: 26px; font-weight: 700; color: #1e293b; margin: 4px 0;"><?php echo $activeFcmCount; ?> <small style="font-size: 13px; font-weight: normal; color: #64748b;">devices online</small></div>
-                                        <small class="text-muted">Staff phones paired via QR code in the Live Console.</small>
+                                        <div style="font-size: 24px; font-weight: 700; color: #1e293b; margin: 4px 0;">
+                                            <?php echo $pairedPhonesCount; ?> <small style="font-size: 13px; font-weight: normal; color: #64748b;">paired</small>
+                                            <span style="color: #cbd5e1; margin: 0 6px;">/</span>
+                                            <span style="color: <?php echo $activeFcmCount > 0 ? '#16a34a' : '#f59e0b'; ?>;"><?php echo $activeFcmCount; ?></span> <small style="font-size: 13px; font-weight: normal; color: #64748b;">FCM push active</small>
+                                        </div>
+                                        <small class="text-muted">Staff phones paired with WHMCS via QR code.</small>
                                     </div>
                                 </div>
                                 <div class="col-md-6">
@@ -2796,6 +2824,55 @@ class AdminController
                                     </div>
                                 </div>
                             </div>
+
+                            <?php if (!empty($pairedPhoneList)): ?>
+                                <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px; margin-bottom: 20px;">
+                                    <div style="font-weight: 600; font-size: 13px; color: #334155; margin-bottom: 8px;">
+                                        <i class="fas fa-mobile-alt text-primary"></i> Paired Staff Devices &amp; Push Status
+                                    </div>
+                                    <div class="table-responsive" style="margin-bottom: 0;">
+                                        <table class="table table-condensed table-hover" style="margin-bottom: 0; font-size: 12.5px;">
+                                            <thead>
+                                                <tr style="color: #64748b;">
+                                                    <th>Device</th>
+                                                    <th>Staff Admin</th>
+                                                    <th>Last Active</th>
+                                                    <th>WHMCS Pairing</th>
+                                                    <th>Firebase Push (FCM)</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <?php 
+                                                foreach ($pairedPhoneList as $dev): 
+                                                    $hasFcm = false;
+                                                    try {
+                                                        $hasFcm = \WHMCS\Database\Capsule::table('tblsahdev_mobile_fcm_tokens')
+                                                            ->where('admin_id', $dev->admin_id)
+                                                            ->where('is_active', 1)
+                                                            ->exists();
+                                                    } catch (\Throwable $e) {}
+                                                    $adminLabel = !empty($dev->firstname) ? ($dev->firstname . ' ' . $dev->lastname) : ($dev->username ?: 'Admin #' . $dev->admin_id);
+                                                ?>
+                                                <tr>
+                                                    <td><strong><?php echo htmlspecialchars($dev->device_name ?: 'Android Staff Phone'); ?></strong></td>
+                                                    <td><?php echo htmlspecialchars($adminLabel); ?></td>
+                                                    <td class="text-muted"><?php echo !empty($dev->last_active_at) ? htmlspecialchars($dev->last_active_at) : '—'; ?></td>
+                                                    <td><span class="label label-success"><i class="fas fa-link"></i> Paired</span></td>
+                                                    <td>
+                                                        <?php if ($hasFcm): ?>
+                                                            <span class="label label-success"><i class="fas fa-check-circle"></i> Push Active</span>
+                                                        <?php else: ?>
+                                                            <span class="label label-warning" title="Install updated app build to register push token"><i class="fas fa-clock"></i> Push Token Pending</span>
+                                                            <small class="text-muted" style="display: block; font-size: 11px;">Open the updated Sahdev app to register FCM</small>
+                                                        <?php endif; ?>
+                                                    </td>
+                                                </tr>
+                                                <?php endforeach; ?>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            <?php endif; ?>
 
                             <div class="form-group" style="margin-bottom: 20px;">
                                 <label style="font-weight: 600; font-size: 14px;">

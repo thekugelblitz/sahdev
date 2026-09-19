@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../config/api_config.dart';
 import 'api_service.dart';
 import 'audio_service.dart';
 import 'notification_service.dart';
@@ -61,11 +62,23 @@ class FcmService {
       debugPrint('[FCM] Permission status: ${settings.authorizationStatus}');
 
       // 2. Obtain current device token
-      _fcmToken = await messaging.getToken();
+      try {
+        _fcmToken = await messaging.getToken();
+      } catch (e) {
+        debugPrint('[FCM getToken error] $e');
+      }
+
       if (_fcmToken != null) {
         debugPrint('[FCM] Token: ${_fcmToken!.substring(0, 16)}...');
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('sdv_fcm_token', _fcmToken!);
+
+        // Auto-sync immediately with WHMCS if already logged in / paired
+        final baseUrl = prefs.getString(ApiConfig.keyWhmcsUrl);
+        final token = prefs.getString(ApiConfig.keyMobileToken);
+        if (baseUrl != null && token != null) {
+          await syncTokenWithBackend(baseUrl: baseUrl, token: token);
+        }
       }
 
       // 3. Listen for token refreshes
@@ -74,8 +87,8 @@ class FcmService {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('sdv_fcm_token', newToken);
 
-        final baseUrl = prefs.getString('sdv_base_url');
-        final token = prefs.getString('sdv_token');
+        final baseUrl = prefs.getString(ApiConfig.keyWhmcsUrl);
+        final token = prefs.getString(ApiConfig.keyMobileToken);
         if (baseUrl != null && token != null) {
           await syncTokenWithBackend(baseUrl: baseUrl, token: token);
         }
@@ -115,7 +128,19 @@ class FcmService {
   }) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final savedFcm = _fcmToken ?? prefs.getString('sdv_fcm_token');
+      String? savedFcm = _fcmToken ?? prefs.getString('sdv_fcm_token');
+      if (savedFcm == null || savedFcm.isEmpty) {
+        try {
+          savedFcm = await FirebaseMessaging.instance.getToken();
+          if (savedFcm != null && savedFcm.isNotEmpty) {
+            _fcmToken = savedFcm;
+            await prefs.setString('sdv_fcm_token', savedFcm);
+          }
+        } catch (e) {
+          debugPrint('[FCM GetToken Error] $e');
+        }
+      }
+
       if (savedFcm == null || savedFcm.isEmpty) {
         return false;
       }

@@ -2097,13 +2097,27 @@ try {
         }
 
         if (empty($testToken)) {
+            $pairedCount = 0;
+            try {
+                $pairedCount = (int) \WHMCS\Database\Capsule::table('tblsahdev_mobile_tokens')
+                    ->where('token', 'not like', 'temp_%')
+                    ->where('is_revoked', 0)
+                    ->count();
+            } catch (\Throwable $e) {}
+
             // Verify Google OAuth 2.0 credentials directly with Google
             $accessToken = \Sahdev\Lib\FirebasePushService::getAccessToken();
             if ($accessToken) {
+                if ($pairedCount > 0) {
+                    $msg = "Firebase credentials verified successfully! Google OAuth2 connected. ($pairedCount staff phone(s) are paired with WHMCS, but have not registered an FCM push token yet. Please install the updated app build with Firebase support and open it once to activate push notifications).";
+                } else {
+                    $msg = 'Firebase credentials verified successfully! Google OAuth2 connected. (No staff phones are paired yet - install the app and scan the QR code to receive notifications on your phone).';
+                }
                 $response = [
-                    'status'  => 'success',
-                    'message' => 'Firebase credentials verified successfully! Google OAuth2 connected. (No staff phones are paired yet - install the app and scan the QR code to receive notifications on your phone).',
+                    'status'         => 'success',
+                    'message'        => $msg,
                     'oauth_verified' => true,
+                    'paired_count'   => $pairedCount,
                 ];
             } else {
                 $response = [
