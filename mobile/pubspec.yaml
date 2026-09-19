@@ -1,7 +1,7 @@
 name: sahdev_mobile
 description: Sahdev Mobile Live Chat & Human Support Console for WHMCS staff (Tawk.to style).
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.0.2+2
 
 environment:
   sdk: '>=3.0.0 <4.0.0'

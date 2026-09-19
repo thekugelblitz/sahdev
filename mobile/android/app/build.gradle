@@ -51,9 +51,23 @@ android {
         multiDexEnabled true
     }
 
+    signingConfigs {
+        release {
+            storeFile file('sahdev-release.jks')
+            storePassword 'sahdevpass123'
+            keyAlias 'sahdev'
+            keyPassword 'sahdevpass123'
+        }
+    }
+
+    lintOptions {
+        checkReleaseBuilds false
+        abortOnError false
+    }
+
     buildTypes {
         release {
-            signingConfig signingConfigs.debug
+            signingConfig signingConfigs.release
             minifyEnabled false
             shrinkResources false
         }

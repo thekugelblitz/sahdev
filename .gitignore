@@ -22,3 +22,4 @@ local.properties
 GeneratedPluginRegistrant.java
 build/
 pubspec.lock
+.gradle/
