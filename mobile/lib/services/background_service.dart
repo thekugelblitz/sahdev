@@ -108,20 +108,23 @@ class BackgroundService {
 
           if (!isSilenced) {
             if (isNewSummon || (cooldownExpired && !_audio.isRinging)) {
-              await _notifications.showSummonAlert(
-                clientName: clientName,
-                domain: domain,
-                sessionId: sessionId,
-              );
+              // Deduplicate against FCM push notifications so staff phones never double alert
+              if (!NotificationService.shouldDeduplicate('summon_$sessionId', 45000)) {
+                await _notifications.showSummonAlert(
+                  clientName: clientName,
+                  domain: domain,
+                  sessionId: sessionId,
+                );
 
-              if (_alertMode == 'ringing') {
-                if (!_audio.isRinging) {
-                  await _audio.startAlarmRing();
+                if (_alertMode == 'ringing') {
+                  if (!_audio.isRinging) {
+                    await _audio.startAlarmRing();
+                  }
+                } else {
+                  await _audio.playChime();
                 }
-              } else {
-                await _audio.playChime();
+                _lastAlertTimestamp = now;
               }
-              _lastAlertTimestamp = now;
             }
           }
         } else {

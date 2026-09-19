@@ -2037,6 +2037,32 @@ class AdminController
             if (isset($_POST['firebase_notify_system_alerts'])) {
                 $updatePayload['firebase_notify_system_alerts'] = !empty($_POST['firebase_notify_system_alerts']) ? 1 : 0;
             }
+            if (isset($_POST['firebase_notify_new_visitor'])) {
+                $updatePayload['firebase_notify_new_visitor'] = !empty($_POST['firebase_notify_new_visitor']) ? 1 : 0;
+            }
+            if (isset($_POST['save_settings'])) {
+                if (isset($_POST['client_chat_notify_new_visitor'])) {
+                    $updatePayload['client_chat_notify_new_visitor'] = !empty($_POST['client_chat_notify_new_visitor']) ? 1 : 0;
+                }
+                if (isset($_POST['client_chat_notify_human_summon'])) {
+                    $updatePayload['client_chat_notify_human_summon'] = !empty($_POST['client_chat_notify_human_summon']) ? 1 : 0;
+                }
+                if (isset($_POST['client_chat_alert_focus_mode'])) {
+                    $updatePayload['client_chat_alert_focus_mode'] = !empty($_POST['client_chat_alert_focus_mode']) ? 1 : 0;
+                }
+                if (isset($_POST['client_chat_alert_dedup_active_staff'])) {
+                    $updatePayload['client_chat_alert_dedup_active_staff'] = !empty($_POST['client_chat_alert_dedup_active_staff']) ? 1 : 0;
+                }
+                if (isset($_POST['client_chat_sound_admin_alert'])) {
+                    $updatePayload['client_chat_sound_admin_alert'] = !empty($_POST['client_chat_sound_admin_alert']) ? 1 : 0;
+                }
+                if (isset($_POST['client_chat_sound_type'])) {
+                    $updatePayload['client_chat_sound_type'] = trim((string)$_POST['client_chat_sound_type']);
+                }
+                if (isset($_POST['client_chat_alert_duration'])) {
+                    $updatePayload['client_chat_alert_duration'] = max(3, min(120, (int)$_POST['client_chat_alert_duration']));
+                }
+            }
 
             Capsule::table('tblsahdev_settings')->updateOrInsert(
                 ['id' => 1],
@@ -2167,11 +2193,9 @@ class AdminController
 
                 <!-- Settings Navigation Sub-Tabs -->
                 <div class="sahdev-subtabs" style="display: flex; gap: 8px; margin-bottom: 25px; border-bottom: 2px solid #e2e8f0; padding-bottom: 12px; flex-wrap: wrap;">
-                    <button type="button" class="btn btn-primary sdv-settings-tab-btn active" data-tab="tab-ticket" onclick="switchSettingsSection('tab-ticket', this);"><i class="fas fa-ticket-alt"></i> Ticket AI & Automation</button>
-                    <button type="button" class="btn btn-default sdv-settings-tab-btn" data-tab="tab-copilot" onclick="switchSettingsSection('tab-copilot', this);"><i class="fas fa-terminal"></i> Admin Ops Copilot & Safe Ops</button>
-                    <button type="button" class="btn btn-default sdv-settings-tab-btn" data-tab="tab-clientchat" onclick="switchSettingsSection('tab-clientchat', this);"><i class="fas fa-comments"></i> Client Live Chat Widget</button>
-                    <button type="button" class="btn btn-default sdv-settings-tab-btn" data-tab="tab-intelligence" onclick="switchSettingsSection('tab-intelligence', this);"><i class="fas fa-chart-pie"></i> Organization Intelligence</button>
-                    <button type="button" class="btn btn-default sdv-settings-tab-btn" data-tab="tab-firebase" onclick="switchSettingsSection('tab-firebase', this);"><i class="fas fa-bell text-warning"></i> Mobile & Firebase Push</button>
+                    <button type="button" class="btn btn-primary sdv-settings-tab-btn active" data-tab="tab-ticket" onclick="switchSettingsSection('tab-ticket', this);"><i class="fas fa-ticket-alt"></i> Ticket AI Engine</button>
+                    <button type="button" class="btn btn-default sdv-settings-tab-btn" data-tab="tab-livechat-alerts" onclick="switchSettingsSection('tab-livechat-alerts', this);"><i class="fas fa-satellite-dish text-success"></i> Live Support &amp; Global Alert Rules</button>
+                    <button type="button" class="btn btn-default sdv-settings-tab-btn" data-tab="tab-firebase" onclick="switchSettingsSection('tab-firebase', this);"><i class="fas fa-bell text-warning"></i> Mobile &amp; Firebase Push</button>
                 </div>
 
                 <!-- TAB 1: Ticket AI & Automation -->
@@ -2517,236 +2541,143 @@ class AdminController
 
                 </div><!-- end #tab-ticket -->
 
-                <!-- TAB 2: Admin Ops Copilot & Safe Ops -->
-                <div id="tab-copilot" class="sdv-settings-pane" style="display:none;">
-                    <div class="panel panel-default" style="margin-bottom: 25px; border-left: 4px solid #6366f1;">
-                        <div class="panel-heading" style="background: #faf5ff;">
-                            <h4 style="margin: 0; font-size: 15px; color: #4338ca;"><i class="fas fa-terminal"></i> Admin Ops Copilot Configuration</h4>
-                        </div>
-                        <div class="panel-body">
-                            <input type="hidden" name="copilot_enabled_submitted" value="1">
-                            <div class="form-group" style="margin-bottom: 20px;">
-                                <label style="font-weight: 600; display: block; margin-bottom: 8px;">
-                                    <input type="checkbox" name="copilot_enabled" value="1" <?php echo !empty($settings->copilot_enabled) ? 'checked' : ''; ?>>
-                                    Enable Admin Ops Copilot Floating Drawer & Global Shortcut
-                                </label>
-                                <small class="text-muted">Displays the interactive Copilot launcher in the bottom right of the WHMCS admin interface with keyboard toggle shortcut.</small>
-                            </div>
-
-                            <!-- Active Copilot Model Banner (Managed in AI Providers) -->
-                            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-left: 4px solid #6366f1; border-radius: 6px; padding: 14px 18px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
-                                <div>
-                                    <div style="font-weight: 600; font-size: 14px; color: #1e293b; margin-bottom: 4px;">
-                                        <i class="fas fa-terminal text-success"></i> Assigned Copilot Model:
-                                        <span class="label label-success" style="font-size: 12.5px; font-weight: 600; margin-left: 6px;">
-                                            <?php echo htmlspecialchars($copilotAssignedName); ?>
-                                        </span>
-                                        <?php if ($copilotFallbackName): ?>
-                                            <span class="text-muted" style="margin-left: 8px; font-size: 12px;">(Fallback: <strong><?php echo htmlspecialchars($copilotFallbackName); ?></strong>)</span>
-                                        <?php endif; ?>
-                                    </div>
-                                    <small class="text-muted">Admin Ops Copilot primary and fallback models are managed in the AI Providers hub.</small>
-                                </div>
-                                <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=providers" class="btn btn-sm btn-default" style="font-weight: 600;">
-                                    <i class="fas fa-sliders-h"></i> Manage Model in AI Providers &rarr;
-                                </a>
-                            </div>
-
-                            <div class="row" style="display: flex; gap: 20px; margin-bottom: 15px; flex-wrap: wrap;">
-                                <div class="form-group" style="flex: 1; min-width: 180px;">
-                                    <label style="font-weight: 600; display: block; margin-bottom: 5px;">Temperature</label>
-                                    <input type="number" step="0.05" min="0.0" max="1.0" name="copilot_temperature" class="form-control" value="<?php echo htmlspecialchars($settings->copilot_temperature ?? '0.70'); ?>">
-                                    <small class="text-muted">Recommended: 0.20 - 0.70 for precise operations.</small>
-                                </div>
-                                <div class="form-group" style="flex: 1; min-width: 180px;">
-                                    <label style="font-weight: 600; display: block; margin-bottom: 5px;">Max Tokens</label>
-                                    <input type="number" step="128" min="256" max="8192" name="copilot_max_tokens" class="form-control" value="<?php echo htmlspecialchars($settings->copilot_max_tokens ?? '2048'); ?>">
-                                    <small class="text-muted">Maximum token length per response.</small>
-                                </div>
-                                <div class="form-group" style="flex: 1; min-width: 180px;">
-                                    <label style="font-weight: 600; display: block; margin-bottom: 5px;">Keyboard Shortcut</label>
-                                    <input type="text" name="copilot_shortcut_key" class="form-control" value="<?php echo htmlspecialchars($settings->copilot_shortcut_key ?? 'Ctrl+Space'); ?>">
-                                    <small class="text-muted">Default: Ctrl+Space</small>
-                                </div>
-                            </div>
-
-                            <div class="form-group" style="margin-bottom: 15px;">
-                                <label style="font-weight: 600;">
-                                    <input type="checkbox" name="copilot_stream_enabled" value="1" <?php echo !empty($settings->copilot_stream_enabled) ? 'checked' : ''; ?>>
-                                    Enable Real-Time Streaming (SSE tokens display as they are generated)
-                                </label>
-                            </div>
-
-                            <div class="form-group" style="margin-bottom: 0;">
-                                <label style="font-weight: 600; display: block; margin-bottom: 5px;">Copilot System Prompt & Operational Guidelines</label>
-                                <textarea name="copilot_system_prompt" class="form-control" rows="4" placeholder="Enter custom guidelines for the Admin Ops Copilot (e.g., standard billing escalation policies, verification rules)..."><?php echo htmlspecialchars($settings->copilot_system_prompt ?? ''); ?></textarea>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="panel panel-default" style="margin-bottom: 25px; border-left: 4px solid #ef4444;">
-                        <div class="panel-heading" style="background: #fef2f2;">
-                            <h4 style="margin: 0; font-size: 15px; color: #b91c1c;"><i class="fas fa-shield-alt"></i> Safe Ops & Rollback Governance</h4>
+                <!-- TAB 2: Live Support & Global Alert Rules -->
+                <div id="tab-livechat-alerts" class="sdv-settings-pane" style="display:none;">
+                    <div class="panel panel-default" style="margin-bottom: 25px; border-left: 4px solid #10b981;">
+                        <div class="panel-heading" style="background: #f0fdf4; display: flex; justify-content: space-between; align-items: center;">
+                            <h4 style="margin: 0; font-size: 15px; color: #047857;"><i class="fas fa-satellite-dish"></i> Live Support &amp; Visitor Notification Alerts</h4>
+                            <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=live_console" class="btn btn-xs btn-success" style="font-weight: 600;">
+                                <i class="fas fa-external-link-alt"></i> Launch Live Console &rarr;
+                            </a>
                         </div>
                         <div class="panel-body">
                             <p class="text-muted" style="margin-top: 0; font-size: 13px;">
-                                All WHMCS actions initiated through Copilot pass through a 3-tier risk classification. Safe operations capture a pre-change snapshot and can be reverted with 1-click atomic rollback.
+                                Configure real-time alerts for the WHMCS Admin area, Live Support Console, and paired mobile devices.
                             </p>
-                            <div class="form-group" style="margin-bottom: 15px;">
-                                <label style="font-weight: 600;">
-                                    <input type="checkbox" name="ops_require_password_tier3" value="1" <?php echo !empty($settings->ops_require_password_tier3) ? 'checked' : ''; ?>>
-                                    Require WHMCS Admin Password Verification for Tier 3 Destructive Operations
-                                </label>
-                                <small class="text-muted" style="display: block;">Mandates entering your current WHMCS admin password before executing irreversible actions (account termination, invoice deletion, balance refunds &gt; $100).</small>
-                            </div>
-                            <div class="form-group" style="max-width: 300px; margin-bottom: 0;">
-                                <label style="font-weight: 600; display: block; margin-bottom: 5px;">Ops Journal Retention (Days)</label>
-                                <input type="number" min="7" max="365" name="ops_journal_retention_days" class="form-control" value="<?php echo htmlspecialchars($settings->ops_journal_retention_days ?? 90); ?>">
-                                <small class="text-muted">How long atomic rollback snapshots and operation journals are preserved.</small>
-                            </div>
-                        </div>
-                    </div>
-                </div>
 
-                <!-- TAB 3: Client Live Chat Widget -->
-                <div id="tab-clientchat" class="sdv-settings-pane" style="display:none;">
-                    <div class="panel panel-default" style="margin-bottom: 25px; border-left: 4px solid #0d6efd;">
-                        <div class="panel-heading" style="background: #eff6ff;">
-                            <h4 style="margin: 0; font-size: 15px; color: #1d4ed8;"><i class="fas fa-comments"></i> Client Area Live Chat Widget</h4>
-                        </div>
-                        <div class="panel-body">
-                            <div class="form-group" style="margin-bottom: 20px;">
-                                <label style="font-weight: 600; display: block; margin-bottom: 8px;">
-                                    <input type="checkbox" name="client_chat_enabled" value="1" <?php echo !empty($settings->client_chat_enabled) ? 'checked' : ''; ?>>
-                                    Enable Client Live Chat Widget on WHMCS Client Portal
-                                </label>
-                                <small class="text-muted">Injects the AI chat widget into the client area for instant customer support, knowledge grounding, and 1-click ticket escalation.</small>
-                            </div>
-
-                            <!-- Active Client Chat Model Banner (Managed in AI Providers) -->
-                            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-left: 4px solid #0d6efd; border-radius: 6px; padding: 14px 18px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
-                                <div>
-                                    <div style="font-weight: 600; font-size: 14px; color: #1e293b; margin-bottom: 4px;">
-                                        <i class="fas fa-comments text-info"></i> Assigned Live Chat Model:
-                                        <span class="label label-info" style="font-size: 12.5px; font-weight: 600; margin-left: 6px;">
-                                            <?php echo htmlspecialchars($clientChatAssignedName); ?>
-                                        </span>
+                            <!-- Section A: Triggers -->
+                            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 18px; margin-bottom: 20px;">
+                                <div style="font-weight: 700; font-size: 13.5px; color: #1e293b; margin-bottom: 12px;">
+                                    <i class="fas fa-bell text-primary"></i> 1. Live Chat Alert Event Triggers
+                                </div>
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="checkbox" style="margin-top: 0;">
+                                            <label style="font-weight: 600; font-size: 13px; color: #0f172a;">
+                                                <input type="checkbox" name="client_chat_notify_new_visitor" value="1" <?php echo (!isset($settings->client_chat_notify_new_visitor) || !empty($settings->client_chat_notify_new_visitor)) ? 'checked' : ''; ?>>
+                                                👋 When New Visitor Arrives / Starts Chat
+                                            </label>
+                                            <small class="text-muted" style="display: block; margin-left: 20px;">Triggers an alert as soon as a visitor initiates a live chat on WHMCS or your embedded website.</small>
+                                        </div>
                                     </div>
-                                    <small class="text-muted">Client Live Chat model assignments are managed in the AI Providers hub.</small>
-                                </div>
-                                <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=providers" class="btn btn-sm btn-default" style="font-weight: 600;">
-                                    <i class="fas fa-sliders-h"></i> Manage Model in AI Providers &rarr;
-                                </a>
-                            </div>
-
-                            <div class="row" style="display: flex; gap: 20px; margin-bottom: 15px; flex-wrap: wrap;">
-                                <div class="form-group" style="flex: 1; min-width: 250px;">
-                                    <label style="font-weight: 600; display: block; margin-bottom: 5px;">Widget Header Title</label>
-                                    <input type="text" name="client_chat_title" class="form-control" value="<?php echo htmlspecialchars($settings->client_chat_title ?? 'Hosting Support Assistant'); ?>">
-                                    <small class="text-muted">Displayed in the header bar of the client chat window.</small>
-                                </div>
-                                <div class="form-group" style="flex: 1; min-width: 180px;">
-                                    <label style="font-weight: 600; display: block; margin-bottom: 5px;">Brand Accent Color</label>
-                                    <input type="color" name="client_chat_brand_color" class="form-control" style="height: 38px; padding: 2px;" value="<?php echo htmlspecialchars($settings->client_chat_brand_color ?? '#0d6efd'); ?>">
-                                    <small class="text-muted">Matches your WHMCS client theme accent.</small>
+                                    <div class="col-md-6">
+                                        <div class="checkbox" style="margin-top: 0;">
+                                            <label style="font-weight: 600; font-size: 13px; color: #0f172a;">
+                                                <input type="checkbox" name="client_chat_notify_human_summon" value="1" <?php echo (!isset($settings->client_chat_notify_human_summon) || !empty($settings->client_chat_notify_human_summon)) ? 'checked' : ''; ?>>
+                                                🚨 When Client / Visitor Requests Human Staff
+                                            </label>
+                                            <small class="text-muted" style="display: block; margin-left: 20px;">Triggers immediate high-priority summoning alert when a user clicks 'Request Human Staff' in widget.</small>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
 
-                            <div class="row" style="display: flex; gap: 20px; margin-bottom: 15px; flex-wrap: wrap;">
-                                <div class="form-group" style="flex: 1; min-width: 180px;">
-                                    <label style="font-weight: 600; display: block; margin-bottom: 5px;">Widget Position</label>
-                                    <select name="client_chat_position" class="form-control">
-                                        <option value="bottom-right" <?php echo (($settings->client_chat_position ?? 'bottom-right') === 'bottom-right') ? 'selected' : ''; ?>>Bottom Right</option>
-                                        <option value="bottom-left" <?php echo (($settings->client_chat_position ?? '') === 'bottom-left') ? 'selected' : ''; ?>>Bottom Left</option>
-                                    </select>
+                            <!-- Section B: Focus-Aware Mode -->
+                            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 18px; margin-bottom: 20px;">
+                                <div style="font-weight: 700; font-size: 13.5px; color: #1e293b; margin-bottom: 8px;">
+                                    <i class="fas fa-eye text-info"></i> 2. Focus-Aware Intelligent Alerting Mode
                                 </div>
-                                <div class="form-group" style="flex: 1; min-width: 180px;">
-                                    <label style="font-weight: 600; display: block; margin-bottom: 5px;">Proactive Popup Delay (Seconds)</label>
-                                    <input type="number" min="0" max="300" name="client_chat_proactive_delay" class="form-control" value="<?php echo htmlspecialchars($settings->client_chat_proactive_delay ?? 15); ?>">
-                                    <small class="text-muted">Seconds before teaser bubble pops up (0 to disable).</small>
+                                <div class="checkbox" style="margin-top: 4px;">
+                                    <label style="font-weight: 600; font-size: 13px; color: #0f172a;">
+                                        <input type="checkbox" name="client_chat_alert_focus_mode" value="1" <?php echo (!isset($settings->client_chat_alert_focus_mode) || !empty($settings->client_chat_alert_focus_mode)) ? 'checked' : ''; ?>>
+                                        Enable Focus-Aware Alert Mode (Silent gentle ping when in focus; loud ring when minimized/background)
+                                    </label>
+                                </div>
+                                <div style="margin-left: 20px; font-size: 12.5px; color: #64748b; line-height: 1.5; margin-top: 4px;">
+                                    <div style="margin-bottom: 4px;"><strong class="text-success"><i class="fas fa-check-circle"></i> When WHMCS or Mobile App is OPEN / IN FOCUS:</strong> plays a soft gentle ping chime. Does not ring loud repeating alarm audio.</div>
+                                    <div><strong class="text-danger"><i class="fas fa-exclamation-circle"></i> When WHMCS or Mobile App is MINIMIZED / BACKGROUND / NOT IN FOCUS:</strong> rings repeating alert sound, flashes browser tab title, and sends desktop push notification.</div>
                                 </div>
                             </div>
 
-                            <div class="form-group" style="margin-bottom: 15px;">
-                                <label style="font-weight: 600; display: block; margin-bottom: 5px;">Proactive Teaser Message (Triggered after X seconds)</label>
-                                <input type="text" name="client_chat_proactive_message" class="form-control" placeholder="Hi there! 👋 Need quick assistance with your hosting or account?" value="<?php echo htmlspecialchars($settings->client_chat_proactive_message ?? ''); ?>">
-                                <small class="text-muted">Pops up above the launcher button to engage visitors. If left empty, uses the welcome message.</small>
-                            </div>
-
-                            <div class="form-group" style="margin-bottom: 15px;">
-                                <label style="font-weight: 600; display: block; margin-bottom: 5px;">Welcome Greeting Message</label>
-                                <textarea name="client_chat_welcome_message" class="form-control" rows="2"><?php echo htmlspecialchars($settings->client_chat_welcome_message ?? 'Hello! How can we assist you today? Ask me about your services, billing, or hosting setup.'); ?></textarea>
-                            </div>
-
-                            <div class="form-group" style="margin-bottom: 15px;">
-                                <label style="font-weight: 600;">
-                                    <input type="checkbox" name="client_chat_kb_enabled" value="1" <?php echo !empty($settings->client_chat_kb_enabled) ? 'checked' : ''; ?>>
-                                    Ground Live Chat Replies with WHMCS Knowledge Base Articles (RAG)
-                                </label>
-                                <small class="text-muted" style="display: block;">Automatically searches published KB articles to provide verified, accurate hosting answers.</small>
-                            </div>
-
-                            <div class="form-group" style="margin-bottom: 15px;">
-                                <label style="font-weight: 600;">
-                                    <input type="checkbox" name="client_chat_require_prechat" value="1" <?php echo !empty($settings->client_chat_require_prechat) ? 'checked' : ''; ?>>
-                                    Require Client Login (Suppress widget for unregistered visitors)
-                                </label>
-                            </div>
-
-                            <div class="form-group" style="margin-bottom: 15px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px 14px;">
-                                <label style="font-weight: 600; margin-bottom: 3px;">
-                                    <input type="checkbox" name="client_chat_debug" value="1" <?php echo !empty($settings->client_chat_debug) ? 'checked' : ''; ?>>
-                                    Enable Live Chat Diagnostics & Console Logging
-                                </label>
-                                <small class="text-muted" style="display: block;">
-                                    Logs full AI prompt payloads and interaction steps to <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=module_logs" target="_blank">Module diagnostic log</a>, disk file (<code>modules/addons/sahdev/logs/client_chat_payload_debug.log</code>), and browser DevTools console (F12).
+                            <!-- Section C: Multi-Staff Deduplication -->
+                            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 18px; margin-bottom: 20px;">
+                                <div style="font-weight: 700; font-size: 13.5px; color: #1e293b; margin-bottom: 8px;">
+                                    <i class="fas fa-user-check text-success"></i> 3. Multi-Staff &amp; Channel Deduplication
+                                </div>
+                                <div class="checkbox" style="margin-top: 4px;">
+                                    <label style="font-weight: 600; font-size: 13px; color: #0f172a;">
+                                        <input type="checkbox" name="client_chat_alert_dedup_active_staff" value="1" <?php echo (!isset($settings->client_chat_alert_dedup_active_staff) || !empty($settings->client_chat_alert_dedup_active_staff)) ? 'checked' : ''; ?>>
+                                        Suppress duplicate alerts if a staff member is already actively attending the chat
+                                    </label>
+                                </div>
+                                <small class="text-muted" style="display: block; margin-left: 20px; font-size: 12.5px;">
+                                    Prevents cross-staff alert spam. Once an agent accepts or takes over a conversation, incoming messages are routed exclusively to that assigned agent and will not buzz or alert other staff members.
                                 </small>
                             </div>
 
-                            <div class="form-group" style="margin-bottom: 0;">
-                                <label style="font-weight: 600; display: block; margin-bottom: 5px;">Customer-Facing AI System Prompt</label>
-                                <textarea name="client_chat_system_prompt" class="form-control" rows="4" placeholder="Instructions for customer conversations (e.g. tone, refund limitations, when to escalate to ticket)..."><?php echo htmlspecialchars($settings->client_chat_system_prompt ?? ''); ?></textarea>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- TAB 4: Organization Intelligence -->
-                <div id="tab-intelligence" class="sdv-settings-pane" style="display:none;">
-                    <div class="panel panel-default" style="margin-bottom: 25px; border-left: 4px solid #10b981;">
-                        <div class="panel-heading" style="background: #f0fdf4;">
-                            <h4 style="margin: 0; font-size: 15px; color: #047857;"><i class="fas fa-chart-pie"></i> Organization Intelligence & MetricsCube Engine</h4>
-                        </div>
-                        <div class="panel-body">
-                            <p class="text-muted" style="margin-top: 0; font-size: 13px;">
-                                Natively aggregates WHMCS billing, service, gateway, and ticket logs into real-time business intelligence: MRR, ARR, LTV, Churn, aging accounts receivable, and automated gateway diagnostics.
-                            </p>
-
-                            <div class="form-group" style="margin-bottom: 15px;">
-                                <label style="font-weight: 600;">
-                                    <input type="checkbox" name="metrics_cron_enabled" value="1" <?php echo !empty($settings->metrics_cron_enabled) ? 'checked' : ''; ?>>
-                                    Enable Daily Business Metrics Aggregation (Executes with WHMCS Daily Cron)
-                                </label>
-                                <small class="text-muted" style="display: block;">Computes daily snapshots of MRR, customer counts, aging debt, and gateway health automatically.</small>
-                            </div>
-
-                            <div class="form-group" style="max-width: 300px; margin-bottom: 20px;">
-                                <label style="font-weight: 600; display: block; margin-bottom: 5px;">Historical Snapshot Retention (Days)</label>
-                                <input type="number" min="30" max="730" name="metrics_retention_days" class="form-control" value="<?php echo htmlspecialchars($settings->metrics_retention_days ?? 365); ?>">
-                                <small class="text-muted">Default: 365 days (1 year of historical trends).</small>
-                            </div>
-
-                            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 18px; margin-top: 15px;">
-                                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
-                                    <div>
-                                        <strong style="font-size: 14px; color: #1e293b; display: block; margin-bottom: 4px;">Explore Live Intelligence Dashboard</strong>
-                                        <span style="font-size: 12px; color: #64748b;">View real-time revenue analytics, customer churn charts, gateway diagnostics, and AI anomaly alerts.</span>
+                            <!-- Section D: Audio Synthesizer & Ring Duration -->
+                            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 18px; margin-bottom: 20px;">
+                                <div style="font-weight: 700; font-size: 13.5px; color: #1e293b; margin-bottom: 12px;">
+                                    <i class="fas fa-volume-up text-warning"></i> 4. Audio Synthesizer &amp; Ring Duration
+                                </div>
+                                <div class="row">
+                                    <div class="col-md-4">
+                                        <div class="checkbox" style="margin-top: 0; margin-bottom: 12px;">
+                                            <label style="font-weight: 600; font-size: 13px;">
+                                                <input type="checkbox" name="client_chat_sound_admin_alert" value="1" <?php echo (!isset($settings->client_chat_sound_admin_alert) || !empty($settings->client_chat_sound_admin_alert)) ? 'checked' : ''; ?>>
+                                                Enable Web Audio Chime in WHMCS
+                                            </label>
+                                        </div>
                                     </div>
-                                    <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=organization_intelligence" class="btn btn-success" style="font-weight: 600;">
-                                        <i class="fas fa-chart-line"></i> Open Organization Intelligence
-                                    </a>
+                                    <div class="col-md-4">
+                                        <div class="form-group" style="margin-bottom: 0;">
+                                            <label style="font-weight: 600; font-size: 12px;">Sound Preset</label>
+                                            <select name="client_chat_sound_type" class="form-control input-sm">
+                                                <option value="chime" <?php echo (($settings->client_chat_sound_type ?? 'chime') === 'chime') ? 'selected' : ''; ?>>Executive Chime (Harmonic D5 &rarr; A5)</option>
+                                                <option value="bell" <?php echo (($settings->client_chat_sound_type ?? '') === 'bell') ? 'selected' : ''; ?>>Triple Bell (Modern Multi-Tone)</option>
+                                                <option value="ping" <?php echo (($settings->client_chat_sound_type ?? '') === 'ping') ? 'selected' : ''; ?>>High Tone Ping (Minimalist)</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="form-group" style="margin-bottom: 0;">
+                                            <label style="font-weight: 600; font-size: 12px;">Alarm Ring Window (Seconds)</label>
+                                            <input type="number" min="3" max="120" name="client_chat_alert_duration" class="form-control input-sm" value="<?php echo htmlspecialchars((string)($settings->client_chat_alert_duration ?? 15)); ?>">
+                                            <small class="text-muted">Maximum seconds repeating alarm plays before auto-silencing.</small>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
+
+                            <!-- Quick Hub Navigation Cards -->
+                            <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px;">
+                                <div style="font-weight: 700; font-size: 13px; color: #475569; text-transform: uppercase; margin-bottom: 12px;">
+                                    Dedicated Hubs &amp; Deep Management
+                                </div>
+                                <div class="row" style="display: flex; gap: 12px; flex-wrap: wrap;">
+                                    <div style="flex: 1; min-width: 220px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px;">
+                                        <div style="font-weight: 600; font-size: 13px; margin-bottom: 4px;"><i class="fas fa-satellite-dish text-primary"></i> Live Support Console</div>
+                                        <p style="font-size: 11.5px; color: #64748b; margin-bottom: 8px;">Real-time visitor sneak-peek, 1-click takeover, and live typing stream.</p>
+                                        <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=live_console" class="btn btn-xs btn-primary">Open Console &rarr;</a>
+                                    </div>
+                                    <div style="flex: 1; min-width: 220px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px;">
+                                        <div style="font-weight: 600; font-size: 13px; margin-bottom: 4px;"><i class="fas fa-headset text-info"></i> Client Live Chat Hub</div>
+                                        <p style="font-size: 11.5px; color: #64748b; margin-bottom: 8px;">Portal widget design, branding, system prompts, quotas, and embed codes.</p>
+                                        <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=client_chat" class="btn btn-xs btn-default">Open Chat Hub &rarr;</a>
+                                    </div>
+                                    <div style="flex: 1; min-width: 220px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px;">
+                                        <div style="font-weight: 600; font-size: 13px; margin-bottom: 4px;"><i class="fas fa-terminal text-purple"></i> Admin Ops Copilot</div>
+                                        <p style="font-size: 11.5px; color: #64748b; margin-bottom: 8px;">Autonomous server operations, journal logs, and Safe Ops rollback.</p>
+                                        <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=admin_copilot" class="btn btn-xs btn-default">Open Copilot &rarr;</a>
+                                    </div>
+                                    <div style="flex: 1; min-width: 220px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px;">
+                                        <div style="font-weight: 600; font-size: 13px; margin-bottom: 4px;"><i class="fas fa-chart-pie text-success"></i> Org Intelligence</div>
+                                        <p style="font-size: 11.5px; color: #64748b; margin-bottom: 8px;">Executive MRR, Churn, LTV, and AI-driven business analytics.</p>
+                                        <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=organization_intelligence" class="btn btn-xs btn-default">Open Intelligence &rarr;</a>
+                                    </div>
+                                </div>
+                            </div>
+
                         </div>
                     </div>
                 </div>
@@ -2905,6 +2836,13 @@ class AdminController
                                 <div class="row">
                                     <div class="col-md-6">
                                         <div class="checkbox" style="margin-top: 0;">
+                                            <label style="font-weight: 600; font-size: 13px;">
+                                                <input type="checkbox" name="firebase_notify_new_visitor" value="1" <?php echo (!isset($settings->firebase_notify_new_visitor) || !empty($settings->firebase_notify_new_visitor)) ? 'checked' : ''; ?>>
+                                                👋 New Live Chat Visitor Arrival
+                                            </label>
+                                            <small class="text-muted" style="display: block; margin-left: 20px;">Pushes an instant alert when a new visitor starts a live chat session.</small>
+                                        </div>
+                                        <div class="checkbox" style="margin-top: 12px;">
                                             <label style="font-weight: 600; font-size: 13px;">
                                                 <input type="checkbox" name="firebase_notify_summons" value="1" <?php echo (!isset($settings->firebase_notify_summons) || !empty($settings->firebase_notify_summons)) ? 'checked' : ''; ?>>
                                                 🚨 Urgent Live Chat Human Summons
@@ -13480,13 +13418,22 @@ class AdminController
 
                 container.innerHTML = html;
 
-                // Sound & Title alert on incoming summon or background new message
+                // Sound & Title alert on incoming summon or background new message (focus-aware)
+                var isConsoleFocused = (!document.hidden && document.hasFocus());
                 if (hasNewSummon) {
-                    startAlertRing('chime', ALERT_DURATION);
-                    document.title = '🚨 (1) LIVE SUMMON - Sahdev Console';
+                    if (isConsoleFocused) {
+                        playSynthesizedSound('ping');
+                    } else {
+                        startAlertRing('chime', ALERT_DURATION);
+                        document.title = '🚨 (1) LIVE SUMMON - Sahdev Console';
+                    }
                 } else if (hasNewBackgroundMsg) {
-                    startAlertRing('chime', ALERT_DURATION);
-                    document.title = '💬 New Message in Queue - Sahdev Console';
+                    if (isConsoleFocused) {
+                        playSynthesizedSound('ping');
+                    } else {
+                        startAlertRing('chime', ALERT_DURATION);
+                        document.title = '💬 New Message in Queue - Sahdev Console';
+                    }
                 }
 
                 // Handle initial session selection & auto-claim from query string

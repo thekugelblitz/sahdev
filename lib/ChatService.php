@@ -506,20 +506,32 @@ class ChatService
         $sourcePage = !empty($metadata['page_url']) ? trim($metadata['page_url']) : ($_SERVER['HTTP_REFERER'] ?? '');
 
         $id = Capsule::table('tblsahdev_chat_sessions')->insertGetId([
-            'session_uuid'    => $uuid,
-            'session_type'    => 'client_livechat',
-            'admin_id'        => 0,
-            'client_id'       => $clientId ?: 0,
-            'visitor_token'   => $visitorToken,
-            'status'          => 'active',
-            'title'           => $title,
-            'source_domain'   => $sourceDomain,
-            'source_page'     => $sourcePage,
-            'metadata_json'   => json_encode($metadata),
-            'last_message_at' => Carbon::now(),
-            'created_at'      => Carbon::now(),
-            'updated_at'      => Carbon::now(),
+            'session_uuid'         => $uuid,
+            'session_type'         => 'client_livechat',
+            'admin_id'             => 0,
+            'client_id'            => $clientId ?: 0,
+            'visitor_token'        => $visitorToken,
+            'status'               => 'active',
+            'title'                => $title,
+            'source_domain'        => $sourceDomain,
+            'source_page'          => $sourcePage,
+            'metadata_json'        => json_encode($metadata),
+            'last_message_at'      => Carbon::now(),
+            'new_visitor_alerted'  => 0,
+            'created_at'           => Carbon::now(),
+            'updated_at'           => Carbon::now(),
         ]);
+
+        // Dispatch instant new visitor FCM push to staff phones if enabled
+        try {
+            $settings = Capsule::table('tblsahdev_settings')->first();
+            $notifyVisitor = !isset($settings->client_chat_notify_new_visitor) || !empty($settings->client_chat_notify_new_visitor);
+            if ($notifyVisitor && !empty($settings->firebase_notify_new_visitor ?? 1)) {
+                require_once __DIR__ . '/FirebasePushService.php';
+                $visitorName = !empty($metadata['name']) ? $metadata['name'] : ($clientId ? "Client #{$clientId}" : "New Visitor");
+                FirebasePushService::sendNewVisitorAlert((int)$id, (string)$visitorName, (string)$sourceDomain);
+            }
+        } catch (\Throwable $pe) {}
 
         return (array) Capsule::table('tblsahdev_chat_sessions')->where('id', $id)->first();
     }
@@ -2744,25 +2756,31 @@ class ChatService
     {
         try {
             $session = Capsule::table('tblsahdev_chat_sessions')->where('id', $sessionId)->first();
-            if (!$session || $session->summon_status === 'requested' || $session->status === 'taken_over') {
+            if (!$session || $session->status === 'taken_over') {
                 return false;
             }
 
+            $alreadyRequested = ($session->summon_status === 'requested');
+
+            // Always update summoned_at to now, guaranteeing that the alerting window refreshes immediately
             Capsule::table('tblsahdev_chat_sessions')->where('id', $sessionId)->update([
                 'summon_status' => 'requested',
                 'summoned_at'   => Carbon::now(),
                 'updated_at'    => Carbon::now(),
             ]);
 
-            // Add notification message in the chat
-            $msgId = Capsule::table('tblsahdev_chat_messages')->insertGetId([
-                'session_id'   => $sessionId,
-                'sender_type'  => 'system',
-                'sender_id'    => 0,
-                'sender_name'  => 'System',
-                'message_text' => '🔔 A live human support agent has been notified and summoned to assist you. A team member will join shortly! You may continue chatting with our AI in the meantime.',
-                'created_at'   => Carbon::now(),
-            ]);
+            $msgId = 0;
+            // Add notification message in the chat if not already summoned
+            if (!$alreadyRequested) {
+                $msgId = Capsule::table('tblsahdev_chat_messages')->insertGetId([
+                    'session_id'   => $sessionId,
+                    'sender_type'  => 'system',
+                    'sender_id'    => 0,
+                    'sender_name'  => 'System',
+                    'message_text' => '🔔 A live human support agent has been notified and summoned to assist you. A team member will join shortly! You may continue chatting with our AI in the meantime.',
+                    'created_at'   => Carbon::now(),
+                ]);
+            }
 
             // Dispatch instant high-priority FCM push to mobile devices
             try {
@@ -2813,50 +2831,89 @@ class ChatService
                 );
             }
 
-            // Pending human summons
-            $summons = Capsule::table('tblsahdev_chat_sessions')
-                ->where('session_type', 'client_livechat')
-                ->where('summon_status', 'requested')
-                ->whereIn('status', ['active', 'taken_over'])
-                ->orderBy('summoned_at', 'desc')
-                ->limit(5)
-                ->get();
-
-            $summonList = [];
-            foreach ($summons as $s) {
-                $clientName = 'Guest Visitor';
-                if ($s->client_id > 0) {
-                    $cl = Capsule::table('tblclients')->where('id', $s->client_id)->first(['firstname', 'lastname']);
-                    if ($cl) $clientName = trim($cl->firstname . ' ' . $cl->lastname);
-                }
-
-                $lastUserMsg = !empty($s->last_message) ? (string)$s->last_message : '';
-                if (empty($lastUserMsg)) {
-                    $lastMsgRow = Capsule::table('tblsahdev_chat_messages')
-                        ->where('session_id', $s->id)
-                        ->where('sender_type', 'user')
-                        ->orderBy('id', 'desc')
-                        ->first(['message_text']);
-                    if ($lastMsgRow) {
-                        $lastUserMsg = (string)$lastMsgRow->message_text;
-                    }
-                }
-
-                $summonList[] = [
-                    'id'            => (int)$s->id,
-                    'session_uuid'  => $s->session_uuid,
-                    'client_name'   => $clientName,
-                    'summoned_at'   => $s->summoned_at ? Carbon::parse($s->summoned_at)->diffForHumans() : 'Just now',
-                    'title'         => $s->title ?: 'Live Support Request',
-                    'last_message'  => $lastUserMsg ?: 'Client requested human staff assistance.',
-                    'source_domain' => $s->source_domain ?: '',
-                ];
-            }
-
             $settings = Capsule::table('tblsahdev_settings')->first();
             $alertDuration = max(3, min(120, (int)($settings->client_chat_alert_duration ?? 15)));
             $soundType = !empty($settings->client_chat_sound_type) ? (string)$settings->client_chat_sound_type : 'chime';
             $soundAlertEnabled = !isset($settings->client_chat_sound_admin_alert) || !empty($settings->client_chat_sound_admin_alert);
+            $notifySummons = !isset($settings->client_chat_notify_human_summon) || !empty($settings->client_chat_notify_human_summon);
+            $dedupActiveStaff = !isset($settings->client_chat_alert_dedup_active_staff) || !empty($settings->client_chat_alert_dedup_active_staff);
+            $notifyNewVisitor = !isset($settings->client_chat_notify_new_visitor) || !empty($settings->client_chat_notify_new_visitor);
+            $focusModeEnabled = !isset($settings->client_chat_alert_focus_mode) || !empty($settings->client_chat_alert_focus_mode);
+
+            // Pending human summons
+            $summonList = [];
+            if ($notifySummons) {
+                $summonsQuery = Capsule::table('tblsahdev_chat_sessions')
+                    ->where('session_type', 'client_livechat')
+                    ->where('summon_status', 'requested')
+                    ->whereIn('status', ['active', 'taken_over']);
+
+                // If multi-staff deduplication enabled: exclude sessions taken over by other staff
+                if ($dedupActiveStaff && $adminId > 0) {
+                    $summonsQuery->where(function($q) use ($adminId) {
+                        $q->where('assigned_admin_id', 0)
+                          ->orWhereNull('assigned_admin_id')
+                          ->orWhere('assigned_admin_id', $adminId);
+                    });
+                }
+
+                $summons = $summonsQuery->orderBy('summoned_at', 'desc')->limit(5)->get();
+
+                foreach ($summons as $s) {
+                    $clientName = 'Guest Visitor';
+                    if ($s->client_id > 0) {
+                        $cl = Capsule::table('tblclients')->where('id', $s->client_id)->first(['firstname', 'lastname']);
+                        if ($cl) $clientName = trim($cl->firstname . ' ' . $cl->lastname);
+                    }
+
+                    $lastUserMsg = !empty($s->last_message) ? (string)$s->last_message : '';
+                    if (empty($lastUserMsg)) {
+                        $lastMsgRow = Capsule::table('tblsahdev_chat_messages')
+                            ->where('session_id', $s->id)
+                            ->where('sender_type', 'user')
+                            ->orderBy('id', 'desc')
+                            ->first(['message_text']);
+                        if ($lastMsgRow) {
+                            $lastUserMsg = (string)$lastMsgRow->message_text;
+                        }
+                    }
+
+                    $summonList[] = [
+                        'id'            => (int)$s->id,
+                        'session_uuid'  => $s->session_uuid,
+                        'client_name'   => $clientName,
+                        'summoned_at'   => $s->summoned_at ? Carbon::parse($s->summoned_at)->diffForHumans() : 'Just now',
+                        'title'         => $s->title ?: 'Live Support Request',
+                        'last_message'  => $lastUserMsg ?: 'Client requested human staff assistance.',
+                        'source_domain' => $s->source_domain ?: '',
+                    ];
+                }
+            }
+
+            // New unalerted visitors
+            $newVisitorList = [];
+            if ($notifyNewVisitor) {
+                $newVisitors = Capsule::table('tblsahdev_chat_sessions')
+                    ->where('session_type', 'client_livechat')
+                    ->where('new_visitor_alerted', 0)
+                    ->where('status', 'active')
+                    ->where('created_at', '>=', Carbon::now()->subMinutes(2))
+                    ->orderBy('id', 'desc')
+                    ->limit(5)
+                    ->get();
+
+                foreach ($newVisitors as $nv) {
+                    $meta = !empty($nv->metadata_json) ? json_decode($nv->metadata_json, true) : [];
+                    $vName = $meta['name'] ?? ($nv->title ?: 'Guest Visitor');
+                    $newVisitorList[] = [
+                        'id'            => (int)$nv->id,
+                        'session_uuid'  => $nv->session_uuid,
+                        'client_name'   => $vName,
+                        'source_domain' => $nv->source_domain ?: '',
+                        'created_at'    => $nv->created_at ? Carbon::parse($nv->created_at)->diffForHumans() : 'Just now',
+                    ];
+                }
+            }
 
             // Active chats count
             $activeCount = Capsule::table('tblsahdev_chat_sessions')
@@ -2910,10 +2967,12 @@ class ChatService
                 'summon_count'      => count($summonList),
                 'summons'           => $summonList,
                 'pending_summons'   => $summonList,
+                'new_visitors'      => $newVisitorList,
                 'new_messages'      => $activeAssignedMessages,
                 'alert_duration'    => $alertDuration,
                 'sound_type'        => $soundType,
-                'sound_alert'       => $soundAlertEnabled && (count($summonList) > 0 || count($activeAssignedMessages) > 0),
+                'sound_alert'       => $soundAlertEnabled && (count($summonList) > 0 || count($newVisitorList) > 0 || count($activeAssignedMessages) > 0),
+                'focus_mode'        => $focusModeEnabled,
                 'timestamp'         => time(),
             ];
         } catch (\Throwable $e) {

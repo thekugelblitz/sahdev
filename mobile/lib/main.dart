@@ -12,26 +12,37 @@ import 'screens/splash_screen.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'services/fcm_service.dart';
 
-final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
+import 'services/notification_router.dart';
+
+final GlobalKey<NavigatorState> appNavigatorKey = NotificationRouter.navigatorKey;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 1. Initialize Android local notification channels
+  // 1. Wire routing callbacks before initializing services
+  NotificationService.onNotificationTapped = (payload) {
+    NotificationRouter.onNotificationOpened(payload);
+  };
+
+  FcmService.onNotificationNavigate = (eventType, data) {
+    NotificationRouter.onNotificationOpened(data);
+  };
+
+  // 2. Initialize Android local notification channels
   try {
     await NotificationService().init();
   } catch (e) {
     debugPrint("NotificationService init error: $e");
   }
 
-  // 2. Register FCM top-level background handler
+  // 3. Register FCM top-level background handler
   try {
     FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
   } catch (e) {
     debugPrint("FCM background handler registration error: $e");
   }
 
-  // 3. Initialize Firebase & FCM service
+  // 4. Initialize Firebase & FCM service
   try {
     await FcmService().init();
   } catch (e) {

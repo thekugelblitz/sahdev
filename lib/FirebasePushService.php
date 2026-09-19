@@ -97,6 +97,7 @@ class FirebasePushService
             'private_key'           => $serviceAccount['private_key'] ?? '',
             'raw_json'              => $serviceAccountJson,
             'gateway_url'           => (string) ($settings->firebase_gateway_url ?? ''),
+            'notify_new_visitor'    => isset($settings->firebase_notify_new_visitor) ? (bool)$settings->firebase_notify_new_visitor : true,
             'notify_summons'        => isset($settings->firebase_notify_summons) ? (bool)$settings->firebase_notify_summons : true,
             'notify_chat_messages'  => isset($settings->firebase_notify_chat_messages) ? (bool)$settings->firebase_notify_chat_messages : true,
             'notify_tickets'        => isset($settings->firebase_notify_tickets) ? (bool)$settings->firebase_notify_tickets : true,
@@ -442,6 +443,31 @@ class FirebasePushService
         }
 
         return $sentCount;
+    }
+
+    /**
+     * Dispatch notification when a new visitor starts a live chat session.
+     */
+    public static function sendNewVisitorAlert(int $sessionId, string $clientName, string $domain): int
+    {
+        $settings = self::getSettings();
+        if (empty($settings['notify_new_visitor'])) {
+            return 0;
+        }
+
+        $title = "👋 New Visitor Started Live Chat";
+        $body = "{$clientName} is browsing on {$domain}";
+
+        $data = [
+            'event_type'    => 'new_visitor',
+            'session_id'    => (string)$sessionId,
+            'client_name'   => $clientName,
+            'domain'        => $domain,
+            'urgent'        => 'false',
+            'sound'         => 'ping',
+        ];
+
+        return self::sendToAllStaff($title, $body, $data, 'sahdev_messages_channel');
     }
 
     /**

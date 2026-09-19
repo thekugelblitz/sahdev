@@ -194,10 +194,17 @@ class SchemaManager
                 'firebase_project_id'           => ['type' => 'string', 'length' => 128, 'default' => ''],
                 'firebase_service_account_json' => ['type' => 'longtext'],
                 'firebase_gateway_url'          => ['type' => 'string', 'length' => 255, 'default' => ''],
+                'firebase_notify_new_visitor'   => ['type' => 'boolean', 'default' => 1],
                 'firebase_notify_summons'       => ['type' => 'boolean', 'default' => 1],
                 'firebase_notify_chat_messages' => ['type' => 'boolean', 'default' => 1],
                 'firebase_notify_tickets'       => ['type' => 'boolean', 'default' => 1],
                 'firebase_notify_system_alerts' => ['type' => 'boolean', 'default' => 1],
+
+                // Granular Live Chat Notification & Multi-Staff Deduplication
+                'client_chat_notify_new_visitor'       => ['type' => 'boolean', 'default' => 1],
+                'client_chat_notify_human_summon'      => ['type' => 'boolean', 'default' => 1],
+                'client_chat_alert_focus_mode'         => ['type' => 'boolean', 'default' => 1],
+                'client_chat_alert_dedup_active_staff' => ['type' => 'boolean', 'default' => 1],
             ];
 
             foreach ($columns as $name => $spec) {
@@ -298,6 +305,7 @@ class SchemaManager
                 'source_page'            => function ($table) { $table->text('source_page')->nullable(); },
                 'takeover_timeout_mins'  => function ($table) { $table->integer('takeover_timeout_mins')->default(0); },
                 'last_staff_message_at'  => function ($table) { $table->timestamp('last_staff_message_at')->nullable(); },
+                'new_visitor_alerted'    => function ($table) { $table->boolean('new_visitor_alerted')->default(0)->index(); },
             ];
             foreach ($sessionCols as $col => $fn) {
                 if (!Capsule::schema()->hasColumn('tblsahdev_chat_sessions', $col)) {

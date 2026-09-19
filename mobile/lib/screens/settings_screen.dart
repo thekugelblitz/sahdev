@@ -20,6 +20,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final AudioService _audio = AudioService();
   String? _previewingSoundKey;
   bool _notifySummons = true;
+  bool _notifyVisitors = true;
   bool _notifyChats = true;
   bool _notifyTickets = true;
   bool _notifySystem = true;
@@ -36,6 +37,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (mounted) {
       setState(() {
         _notifySummons = prefs.getBool('pref_notify_summons') ?? true;
+        _notifyVisitors = prefs.getBool('pref_notify_visitors') ?? true;
         _notifyChats = prefs.getBool('pref_notify_chats') ?? true;
         _notifyTickets = prefs.getBool('pref_notify_tickets') ?? true;
         _notifySystem = prefs.getBool('pref_notify_system') ?? true;
@@ -537,6 +539,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
               onChanged: (val) {
                 setState(() => _notifySummons = val);
                 _setPreference('pref_notify_summons', val);
+              },
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              title: const Text("New Website Visitors", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+              subtitle: const Text("A new visitor opens chat widget or starts browsing", style: TextStyle(fontSize: 11)),
+              value: _notifyVisitors,
+              activeColor: const Color(0xFF06B6D4),
+              onChanged: (val) {
+                setState(() => _notifyVisitors = val);
+                _setPreference('pref_notify_visitors', val);
               },
             ),
             SwitchListTile(

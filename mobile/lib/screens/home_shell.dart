@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/queue_provider.dart';
 import '../providers/ticket_provider.dart';
+import '../services/notification_router.dart';
 import 'queue_screen.dart';
 import 'tickets_screen.dart';
 import 'clients_screen.dart';
@@ -32,6 +33,9 @@ class _HomeShellState extends State<HomeShell> {
   void initState() {
     super.initState();
     _currentIndex = widget.initialTab;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      NotificationRouter.checkAndRoutePending(context);
+    });
   }
 
   @override

@@ -14670,6 +14670,81 @@ function sahdev_render_admin_live_chat_alert_listener(array $vars = []): string
         });
     }
 
+    // ── Guaranteed New Visitor Toast Renderer ─────────────────────────────
+    function renderNewVisitorToast(visitor) {
+        var container = getOrCreateToastContainer();
+        if (!container) return;
+        var toastId = 'sdv-toast-visitor-' + visitor.id;
+        if (document.getElementById(toastId)) return;
+
+        var dismissedKey = 'sdv_visitor_dismissed_' + visitor.id;
+        try {
+            if (localStorage.getItem(dismissedKey) === '1') return;
+        } catch(e) {}
+
+        var toast = document.createElement('div');
+        toast.id = toastId;
+        toast.style.cssText = 'pointer-events:auto;width:380px;max-width:100%;background:#ffffff;border-radius:12px;box-shadow:0 16px 48px -6px rgba(15,23,42,0.38), 0 0 0 1px rgba(0,0,0,0.08);border-left:5px solid #10b981;padding:16px 18px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;animation:sdvToastIn 0.3s cubic-bezier(0.16,1,0.3,1);position:relative;';
+
+        var clientName = visitor.client_name || 'Website Visitor';
+        var sourceDomain = visitor.source_domain ? (' • ' + visitor.source_domain) : '';
+
+        var html = '<div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px;">' +
+            '<div style="display:flex;align-items:center;gap:8px;">' +
+                '<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#10b981;box-shadow:0 0 0 3px rgba(16,185,129,0.25);"></span>' +
+                '<span style="font-size:12px;font-weight:800;color:#047857;letter-spacing:0.3px;text-transform:uppercase;">👋 New Live Chat Visitor</span>' +
+            '</div>' +
+            '<button type="button" class="sdv-toast-dismiss-btn" style="background:none;border:none;color:#94a3b8;font-size:20px;cursor:pointer;line-height:1;padding:0 4px;" title="Dismiss">&times;</button>' +
+        '</div>' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">' +
+            '<div style="font-size:14.5px;font-weight:700;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + sdvEscapeHtml(clientName) + '</div>' +
+            '<span style="font-size:11px;color:#64748b;font-weight:600;flex-shrink:0;margin-left:8px;">' + sdvEscapeHtml(visitor.created_at || 'Just now') + '</span>' +
+        '</div>' +
+        '<div style="font-size:12px;color:#64748b;margin-bottom:12px;"><i class="fas fa-globe"></i> ' + sdvEscapeHtml(visitor.source_domain || 'Client Portal') + '</div>' +
+        '<div style="display:flex;gap:8px;align-items:center;">' +
+            '<a href="' + consoleUrl + '&session_uuid=' + encodeURIComponent(visitor.session_uuid) + '" class="sdv-toast-accept-btn" style="flex:1;text-align:center;text-decoration:none;background:#10b981;color:#ffffff;font-size:12.5px;font-weight:600;padding:9px 12px;border-radius:7px;transition:background 0.2s ease;">' +
+                'View in Console &rarr;' +
+            '</a>' +
+            '<button type="button" class="sdv-toast-silence-btn" style="background:#f1f5f9;border:1px solid #cbd5e1;color:#475569;font-size:12.5px;font-weight:600;padding:9px 12px;border-radius:7px;cursor:pointer;">' +
+                'Dismiss' +
+            '</button>' +
+        '</div>';
+
+        toast.innerHTML = html;
+        container.appendChild(toast);
+
+        var dismiss = function() {
+            try { localStorage.setItem(dismissedKey, '1'); } catch(e) {}
+            toast.style.opacity = '0';
+            toast.style.transform = 'translateY(12px) scale(0.96)';
+            setTimeout(function() { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 220);
+        };
+
+        toast.querySelector('.sdv-toast-dismiss-btn').addEventListener('click', dismiss);
+        toast.querySelector('.sdv-toast-silence-btn').addEventListener('click', dismiss);
+    }
+
+    // Auto-silence when tab/window gains focus
+    window.addEventListener('focus', function() {
+        stopAlertRing();
+        stopTitleBlink();
+    });
+    document.addEventListener('visibilitychange', function() {
+        if (!document.hidden) {
+            stopAlertRing();
+            stopTitleBlink();
+        }
+    });
+
+    // Request notification permission on first interaction if supported
+    if (window.Notification && Notification.permission === 'default') {
+        var askPerm = function() {
+            try { Notification.requestPermission(); } catch(e) {}
+            window.removeEventListener('click', askPerm, true);
+        };
+        window.addEventListener('click', askPerm, true);
+    }
+
     // ── Background Admin Heartbeat Poller ─────────────────────────────────
     var heartbeatTimer = null;
     function pollAdminHeartbeat() {
@@ -14683,6 +14758,30 @@ function sahdev_render_admin_live_chat_alert_listener(array $vars = []): string
         }).then(function(r){ return r.json(); }).then(function(res){
             if (!res || !res.success) return;
 
+            var isTabFocused = (!document.hidden && document.hasFocus());
+            var focusMode = (res.focus_mode !== false);
+
+            // 1. Handle New Visitors
+            var newVisitors = res.new_visitors || [];
+            if (newVisitors.length > 0) {
+                newVisitors.forEach(function(nv) {
+                    var dismissedKey = 'sdv_visitor_dismissed_' + nv.id;
+                    try {
+                        if (localStorage.getItem(dismissedKey) === '1') return;
+                    } catch(e) {}
+
+                    renderNewVisitorToast(nv);
+                    playSynthesizedSound('ping');
+
+                    // Acknowledge new visitor
+                    var fdAck = new FormData();
+                    fdAck.append('action', 'admin_ack_new_visitor');
+                    fdAck.append('session_id', nv.id);
+                    fetch(ajaxUrl, { method: 'POST', body: fdAck, credentials: 'include' }).catch(function(){});
+                });
+            }
+
+            // 2. Handle Human Summons
             var summons = res.pending_summons || res.summons || [];
             if (summons.length > 0) {
                 var hasUnalertedSummon = false;
@@ -14703,12 +14802,36 @@ function sahdev_render_admin_live_chat_alert_listener(array $vars = []): string
                     var totalDurMs = (res.alert_duration || defaultAlertDuration || 15) * 1000;
                     if (!t0 || (Date.now() - t0) < totalDurMs) {
                         hasUnalertedSummon = true;
-                        triggerStrictSummonAlert(s.id, res.sound_type || defaultSoundType, res.alert_duration || defaultAlertDuration);
                     }
                 });
 
                 if (hasUnalertedSummon) {
-                    startTitleBlink(summons.length);
+                    if (focusMode && isTabFocused) {
+                        // In focus: gentle soft ping chime, do NOT ring loud alarm
+                        playSynthesizedSound('ping');
+                    } else {
+                        // Not in focus / background: repeating alarm ring + document title flash + Desktop Notification
+                        summons.forEach(function(s) {
+                            triggerStrictSummonAlert(s.id, res.sound_type || defaultSoundType, res.alert_duration || defaultAlertDuration);
+                        });
+                        startTitleBlink(summons.length);
+
+                        if (window.Notification && Notification.permission === 'granted') {
+                            var firstSummon = summons[0];
+                            try {
+                                var notif = new Notification('🚨 Live Support Request (' + (firstSummon.client_name || 'Visitor') + ')', {
+                                    body: firstSummon.last_message || 'Client requested human support assistance.',
+                                    icon: adminBase + '../favicon.ico',
+                                    tag: 'sdv_summon_' + firstSummon.id,
+                                    requireInteraction: true
+                                });
+                                notif.onclick = function() {
+                                    window.focus();
+                                    window.location.href = consoleUrl + '&session_uuid=' + encodeURIComponent(firstSummon.session_uuid) + '&auto_claim=1';
+                                };
+                            } catch(e) {}
+                        }
+                    }
                 }
             } else {
                 if (Object.keys(activeSummonIds).length > 0) {
@@ -14722,9 +14845,9 @@ function sahdev_render_admin_live_chat_alert_listener(array $vars = []): string
         }).catch(function(){});
     }
 
-    // Run poll every 8 seconds with initial heartbeat after 1.2s
-    heartbeatTimer = setInterval(pollAdminHeartbeat, 8000);
-    setTimeout(pollAdminHeartbeat, 1200);
+    // Run poll every 7 seconds with initial heartbeat after 1.0s
+    heartbeatTimer = setInterval(pollAdminHeartbeat, 7000);
+    setTimeout(pollAdminHeartbeat, 1000);
 
     // Clean up on tab unload
     window.addEventListener('beforeunload', function() {

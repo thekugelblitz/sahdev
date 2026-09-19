@@ -166,10 +166,18 @@ class FcmService {
     final data = message.data;
     final eventType = data['event_type'] ?? 'general';
 
+    // Global FCM deduplication key: prevent duplicate dispatches of the same message or event
+    final dedupKey = 'fcm_${eventType}_${data['session_id'] ?? data['ticket_id'] ?? message.messageId}';
+    if (NotificationService.shouldDeduplicate(dedupKey, 25000)) {
+      debugPrint('[FCM] Suppressing duplicate FCM dispatch: $dedupKey');
+      return;
+    }
+
     final prefs = await SharedPreferences.getInstance();
 
     // User preference checks
     final notifySummons = prefs.getBool('pref_notify_summons') ?? true;
+    final notifyVisitors = prefs.getBool('pref_notify_visitors') ?? true;
     final notifyChats = prefs.getBool('pref_notify_chats') ?? true;
     final notifyTickets = prefs.getBool('pref_notify_tickets') ?? true;
     final notifySystem = prefs.getBool('pref_notify_system') ?? true;
@@ -178,34 +186,69 @@ class FcmService {
     final notifService = NotificationService();
     final audioService = AudioService();
 
+    // CRITICAL: When an FCM message contains a notification payload ('message.notification != null')
+    // AND the app is in the background or killed, Google Play Services on Android automatically
+    // renders the notification in the system drawer. Calling local notification plugin here would
+    // produce a DUPLICATE notification banner. Only show local notification if system did NOT render it!
+    final bool systemAlreadyRendered = isBackground && (message.notification != null);
+
     if (eventType == 'summon' && notifySummons) {
       final clientName = data['client_name'] ?? (message.notification?.title ?? 'Website Visitor');
       final domain = data['domain'] ?? 'Your Website';
       final int sessionId = int.tryParse(data['session_id']?.toString() ?? '1') ?? 1;
 
-      await notifService.showSummonAlert(
-        clientName: clientName,
-        domain: domain,
-        sessionId: sessionId,
-      );
+      // Coordinate deduplication with BackgroundService polling
+      NotificationService.shouldDeduplicate('summon_$sessionId', 45000);
 
-      if (alertMode == 'ringing') {
-        if (!audioService.isRinging) {
-          await audioService.startAlarmRing();
-        }
-      } else {
-        await audioService.playChime();
+      if (!systemAlreadyRendered) {
+        await notifService.showSummonAlert(
+          clientName: clientName,
+          domain: domain,
+          sessionId: sessionId,
+        );
       }
+
+      if (!isBackground) {
+        // App is open and in focus: gentle soft ping chime only, do not ring loudly
+        await audioService.playChime();
+      } else {
+        // App is closed / in background: ring loudly if configured
+        if (alertMode == 'ringing') {
+          if (!audioService.isRinging) {
+            await audioService.startAlarmRing();
+          }
+        } else {
+          await audioService.playChime();
+        }
+      }
+    } else if (eventType == 'new_visitor' && notifyVisitors) {
+      final clientName = data['client_name'] ?? (message.notification?.title ?? 'Website Visitor');
+      final domain = data['domain'] ?? 'Your Website';
+      final int sessionId = int.tryParse(data['session_id']?.toString() ?? '0') ?? 0;
+
+      NotificationService.shouldDeduplicate('visitor_$sessionId', 45000);
+
+      if (!systemAlreadyRendered) {
+        await notifService.showNewVisitorNotification(
+          sessionId: sessionId,
+          clientName: clientName,
+          domain: domain,
+        );
+      }
+
+      await audioService.playChime();
     } else if (eventType == 'chat_message' && notifyChats) {
       final int sessionId = int.tryParse(data['session_id']?.toString() ?? '0') ?? 0;
       final senderName = data['sender_name'] ?? 'Visitor';
       final messageText = data['message_text'] ?? (message.notification?.body ?? 'New message');
 
-      await notifService.showNewMessageNotification(
-        sessionId: sessionId,
-        senderName: senderName,
-        messageText: messageText,
-      );
+      if (!systemAlreadyRendered) {
+        await notifService.showNewMessageNotification(
+          sessionId: sessionId,
+          senderName: senderName,
+          messageText: messageText,
+        );
+      }
 
       await audioService.playChime();
     } else if (eventType == 'ticket' && notifyTickets) {
@@ -213,21 +256,25 @@ class FcmService {
       final subject = data['subject'] ?? (message.notification?.body ?? 'Support ticket update');
       final actionType = data['action_type'] ?? 'opened';
 
-      await notifService.showTicketNotification(
-        ticketId: ticketId,
-        subject: subject,
-        actionType: actionType,
-      );
+      if (!systemAlreadyRendered) {
+        await notifService.showTicketNotification(
+          ticketId: ticketId,
+          subject: subject,
+          actionType: actionType,
+        );
+      }
 
       await audioService.playChime();
     } else if (eventType == 'system_alert' && notifySystem) {
       final title = data['title'] ?? (message.notification?.title ?? 'System Alert');
       final body = data['body'] ?? (message.notification?.body ?? 'Alert from Sahdev Copilot');
 
-      await notifService.showSystemNotification(
-        title: title,
-        body: body,
-      );
+      if (!systemAlreadyRendered) {
+        await notifService.showSystemNotification(
+          title: title,
+          body: body,
+        );
+      }
     }
   }
 

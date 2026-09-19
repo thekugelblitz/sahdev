@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 class NotificationService {
@@ -9,6 +11,20 @@ class NotificationService {
   bool _initialized = false;
 
   static void Function(String payload)? onNotificationTapped;
+
+  // In-memory deduplication cache: avoids double-alerting from simultaneous FCM + polling
+  static final Map<String, int> _dedupCache = {};
+
+  /// Check whether an alert with this key was processed recently (default: 30 seconds)
+  static bool shouldDeduplicate(String key, [int ttlMs = 30000]) {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final last = _dedupCache[key] ?? 0;
+    if (now - last < ttlMs) {
+      return true;
+    }
+    _dedupCache[key] = now;
+    return false;
+  }
 
   Future<void> init() async {
     if (_initialized) return;
@@ -76,6 +92,23 @@ class NotificationService {
       );
     }
 
+    // Check if app was cold-launched directly by tapping a notification
+    try {
+      final launchDetails = await _plugin.getNotificationAppLaunchDetails();
+      if (launchDetails != null && launchDetails.didNotificationLaunchApp) {
+        final payload = launchDetails.notificationResponse?.payload;
+        if (payload != null && payload.isNotEmpty) {
+          Future.delayed(const Duration(milliseconds: 700), () {
+            if (onNotificationTapped != null) {
+              onNotificationTapped!(payload);
+            }
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('[NotificationService] launchDetails error: $e');
+    }
+
     _initialized = true;
   }
 
@@ -85,6 +118,12 @@ class NotificationService {
     required String domain,
     required int sessionId,
   }) async {
+    final dedupKey = 'summon_$sessionId';
+    if (shouldDeduplicate(dedupKey, 30000)) {
+      debugPrint('[NotificationService] Suppressing duplicate summon notification for session #$sessionId');
+      return;
+    }
+
     const androidDetails = AndroidNotificationDetails(
       'sahdev_summon_channel',
       'Human Support Summons',
@@ -100,12 +139,57 @@ class NotificationService {
 
     const notificationDetails = NotificationDetails(android: androidDetails);
 
+    final payload = jsonEncode({
+      'event_type': 'summon',
+      'session_id': sessionId,
+      'client_name': clientName,
+      'domain': domain,
+    });
+
     await _plugin.show(
       sessionId,
       '🚨 Human Support Summoned!',
       '$clientName is waiting for a live agent on $domain',
       notificationDetails,
-      payload: 'session:$sessionId',
+      payload: payload,
+    );
+  }
+
+  /// Show notification for new website visitor arrival
+  Future<void> showNewVisitorNotification({
+    required int sessionId,
+    required String clientName,
+    required String domain,
+  }) async {
+    final dedupKey = 'visitor_$sessionId';
+    if (shouldDeduplicate(dedupKey, 30000)) {
+      return;
+    }
+
+    const androidDetails = AndroidNotificationDetails(
+      'sahdev_messages_channel',
+      'Chat Messages',
+      channelDescription: 'Notifications for new visitors starting chats',
+      importance: Importance.high,
+      priority: Priority.high,
+      playSound: true,
+    );
+
+    const notificationDetails = NotificationDetails(android: androidDetails);
+
+    final payload = jsonEncode({
+      'event_type': 'new_visitor',
+      'session_id': sessionId,
+      'client_name': clientName,
+      'domain': domain,
+    });
+
+    await _plugin.show(
+      sessionId + 30000,
+      '👋 New Live Chat Visitor',
+      '$clientName started browsing on $domain',
+      notificationDetails,
+      payload: payload,
     );
   }
 
@@ -115,6 +199,11 @@ class NotificationService {
     required String senderName,
     required String messageText,
   }) async {
+    final dedupKey = 'msg_${sessionId}_${messageText.hashCode}';
+    if (shouldDeduplicate(dedupKey, 15000)) {
+      return;
+    }
+
     const androidDetails = AndroidNotificationDetails(
       'sahdev_messages_channel',
       'Chat Messages',
@@ -126,12 +215,20 @@ class NotificationService {
 
     const notificationDetails = NotificationDetails(android: androidDetails);
 
+    final payload = jsonEncode({
+      'event_type': 'chat_message',
+      'session_id': sessionId,
+      'client_name': senderName,
+      'sender_name': senderName,
+      'message_text': messageText,
+    });
+
     await _plugin.show(
       sessionId + 10000,
       'New message from $senderName',
       messageText,
       notificationDetails,
-      payload: 'session:$sessionId',
+      payload: payload,
     );
   }
 
@@ -156,12 +253,19 @@ class NotificationService {
         ? '📩 Ticket Reply: #$ticketId'
         : '🎫 New Ticket: #$ticketId';
 
+    final payload = jsonEncode({
+      'event_type': 'ticket',
+      'ticket_id': ticketId,
+      'action_type': actionType,
+      'subject': subject,
+    });
+
     await _plugin.show(
       ticketId + 20000,
       title,
       subject,
       notificationDetails,
-      payload: 'ticket:$ticketId',
+      payload: payload,
     );
   }
 
@@ -181,12 +285,18 @@ class NotificationService {
 
     const notificationDetails = NotificationDetails(android: androidDetails);
 
+    final payload = jsonEncode({
+      'event_type': 'system_alert',
+      'title': title,
+      'body': body,
+    });
+
     await _plugin.show(
       30001,
       title,
       body,
       notificationDetails,
-      payload: 'system_alert',
+      payload: payload,
     );
   }
 

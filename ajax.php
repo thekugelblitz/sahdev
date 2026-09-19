@@ -75,8 +75,12 @@ if ($isMobileAction || !empty($_SERVER['HTTP_AUTHORIZATION']) || !empty($_REQUES
     }
 }
 
-// Check if admin is logged in securely via session or mobile bearer token
-$adminId = $_SESSION['adminid'] ?? null;
+// Check if admin is logged in securely via session, WHMCS auth, or mobile bearer token
+require_once __DIR__ . '/lib/PermissionService.php';
+$adminId = \Sahdev\Lib\PermissionService::resolveCurrentAdminId();
+if (!$adminId && !empty($_SESSION['adminid'])) {
+    $adminId = (int) $_SESSION['adminid'];
+}
 $mobileToken = (string)($_REQUEST['mobile_token'] ?? '');
 if (empty($mobileToken)) {
     $authHeader = $_SERVER['HTTP_AUTHORIZATION'] ?? ($_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '');
@@ -808,7 +812,7 @@ $allowedActions = [
     'client_chat_poll', 'client_chat_typing', 'client_chat_summon', 'client_chat_link_email',
     'client_chat_rate_message',
     // Live Agent Console & Global Alerts
-    'admin_heartbeat', 'admin_live_console_poll', 'admin_live_console_send',
+    'admin_heartbeat', 'admin_ack_new_visitor', 'admin_live_console_poll', 'admin_live_console_send',
     'admin_live_console_takeover', 'admin_live_console_release', 'admin_live_console_suggest_reply',
     'admin_live_console_convert_ticket', 'admin_live_console_account_info',
     // Sahdev Mobile Support App (Android/Flutter)
@@ -919,7 +923,7 @@ if ($intensity > 3) {
         'client_chat_get_history', 'client_chat_load_session', 'client_chat_new_session',
         'client_chat_poll', 'client_chat_typing', 'client_chat_summon', 'client_chat_link_email',
         'client_chat_rate_message',
-        'admin_heartbeat', 'admin_live_console_poll', 'admin_live_console_send',
+        'admin_heartbeat', 'admin_ack_new_visitor', 'admin_live_console_poll', 'admin_live_console_send',
         'admin_live_console_takeover', 'admin_live_console_release', 'admin_live_console_suggest_reply',
         'admin_live_console_convert_ticket', 'admin_live_console_account_info',
         // Sahdev Mobile Live Chat / Support App (Android/Flutter)
@@ -1920,6 +1924,20 @@ try {
         $res['sound_type'] = $settings->client_chat_sound_type ?? 'chime';
         $res['alert_duration'] = max(3, min(120, (int)($settings->client_chat_alert_duration ?? 15)));
         $response = $res;
+    } elseif ($action === 'admin_ack_new_visitor') {
+        $sessionId = (int)($_REQUEST['session_id'] ?? 0);
+        $sessionUuid = trim((string)($_REQUEST['session_uuid'] ?? ''));
+        if ($sessionId > 0) {
+            Capsule::table('tblsahdev_chat_sessions')->where('id', $sessionId)->update(['new_visitor_alerted' => 1]);
+        } elseif (!empty($sessionUuid)) {
+            Capsule::table('tblsahdev_chat_sessions')->where('session_uuid', $sessionUuid)->update(['new_visitor_alerted' => 1]);
+        } else {
+            Capsule::table('tblsahdev_chat_sessions')
+                ->where('session_type', 'client_livechat')
+                ->where('new_visitor_alerted', 0)
+                ->update(['new_visitor_alerted' => 1]);
+        }
+        $response = ['status' => 'success', 'acknowledged' => true];
     } elseif ($action === 'admin_live_console_poll') {
         \Sahdev\Lib\ChatService::checkTakeoverTimeouts();
         \Sahdev\Lib\ChatService::adminHeartbeat((int)$adminId);
