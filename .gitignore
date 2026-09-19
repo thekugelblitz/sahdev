@@ -14,7 +14,7 @@ Thumbs.db
 
 # Mobile binaries & build cache
 *.apk
-mobile_apk/
+!mobile_apk/app-release.apk
 .dart_tool/
 .flutter-plugins
 .flutter-plugins-dependencies
