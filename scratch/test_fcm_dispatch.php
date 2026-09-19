@@ -124,4 +124,26 @@ foreach ($mobileMethods as $m) {
     }
 }
 
+// 4. Test cleanJsonString with HTML entity encoded JSON
+echo "\n=== 4. Test cleanJsonString with &quot; Entity Encodings ===\n";
+$messyJson = <<<EOD
+{
+  &quot;type&quot;: &quot;service_account&quot;,
+  &quot;project_id&quot;: &quot;sahdev-ai&quot;,
+  &quot;private_key_id&quot;: &quot;0c63f2c640835b771a8345eb25b6e9c707ade972&quot;,
+  &quot;client_email&quot;: &quot;firebase-adminsdk-fbsvc@sahdev-ai.iam.gserviceaccount.com&quot;
+}
+EOD;
+
+$cleaned = \Sahdev\Lib\FirebasePushService::cleanJsonString($messyJson);
+$parsed = json_decode($cleaned, true);
+
+if (is_array($parsed) && ($parsed['project_id'] ?? '') === 'sahdev-ai') {
+    echo "  [PASS] cleanJsonString successfully restored entity-encoded JSON: project_id is {$parsed['project_id']}\n";
+} else {
+    echo "  [FAIL] cleanJsonString failed to clean entity-encoded JSON: " . var_export($cleaned, true) . "\n";
+    exit(1);
+}
+
 echo "\nAll verification checks passed successfully!\n";
+

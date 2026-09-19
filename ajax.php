@@ -2114,7 +2114,7 @@ try {
     } elseif ($action === 'admin_save_firebase_config') {
         require_once __DIR__ . '/lib/FirebasePushService.php';
         $enabled = !empty($_REQUEST['firebase_enabled']) && ($_REQUEST['firebase_enabled'] === '1' || $_REQUEST['firebase_enabled'] === 'true');
-        $rawJson = trim((string)($_REQUEST['firebase_service_account_json'] ?? ''));
+        $rawJson = \Sahdev\Lib\FirebasePushService::cleanJsonString((string)($_REQUEST['firebase_service_account_json'] ?? ''));
         $gatewayUrl = trim((string)($_REQUEST['firebase_gateway_url'] ?? ''));
         $notifySummons = !isset($_REQUEST['firebase_notify_summons']) || $_REQUEST['firebase_notify_summons'] === '1' || $_REQUEST['firebase_notify_summons'] === 'true';
         $notifyChats = !isset($_REQUEST['firebase_notify_chat_messages']) || $_REQUEST['firebase_notify_chat_messages'] === '1' || $_REQUEST['firebase_notify_chat_messages'] === 'true';

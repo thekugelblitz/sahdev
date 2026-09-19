@@ -22,6 +22,40 @@ class FirebasePushService
     private static int $cachedTokenExpiresAt = 0;
 
     /**
+     * Clean and decode HTML entities and slashes from JSON strings (fixes WHMCS $_POST entity encoding).
+     */
+    public static function cleanJsonString(string $input): string
+    {
+        $input = trim($input);
+        if (empty($input)) {
+            return '';
+        }
+
+        // Decode HTML entities if doubly or triply encoded by WHMCS (e.g. &quot;, &amp;quot;)
+        $decoded = $input;
+        $prev = '';
+        $maxPasses = 3;
+        while ($prev !== $decoded && $maxPasses-- > 0) {
+            $prev = $decoded;
+            $decoded = html_entity_decode($decoded, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        }
+
+        $test = json_decode($decoded, true);
+        if (is_array($test)) {
+            return $decoded;
+        }
+
+        if (strpos($decoded, '\"') !== false) {
+            $stripped = stripslashes($decoded);
+            if (is_array(json_decode($stripped, true))) {
+                return $stripped;
+            }
+        }
+
+        return trim($decoded);
+    }
+
+    /**
      * Get Firebase settings from database.
      */
     public static function getSettings(): array
@@ -32,7 +66,18 @@ class FirebasePushService
             return [];
         }
 
-        $serviceAccountJson = (string) ($settings->firebase_service_account_json ?? '');
+        $rawDbJson = (string) ($settings->firebase_service_account_json ?? '');
+        $serviceAccountJson = self::cleanJsonString($rawDbJson);
+
+        // Self-heal: If database contained &quot; entities, update DB with clean JSON automatically
+        if (!empty($rawDbJson) && strpos($rawDbJson, '&quot;') !== false && !empty($serviceAccountJson)) {
+            try {
+                Capsule::table('tblsahdev_settings')
+                    ->where('id', $settings->id ?? 1)
+                    ->update(['firebase_service_account_json' => $serviceAccountJson]);
+            } catch (\Throwable $e) {}
+        }
+
         $serviceAccount = [];
         if (!empty($serviceAccountJson)) {
             $decoded = json_decode($serviceAccountJson, true);

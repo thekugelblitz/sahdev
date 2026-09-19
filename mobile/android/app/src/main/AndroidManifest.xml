@@ -1,5 +1,5 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.sahdev.livechat">
+    package="com.sahdev.ai">
 
     <!-- Permissions required for live chat, background alerts, and QR pairing -->
     <uses-permission android:name="android.permission.INTERNET" />

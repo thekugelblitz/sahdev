@@ -142,7 +142,7 @@ class BackgroundService {
   /// Opens Android system Battery Optimization settings for the app
   static Future<bool> requestIgnoreBatteryOptimizations() async {
     try {
-      final uri = Uri.parse("package:com.sahdev.livechat");
+      final uri = Uri.parse("package:com.sahdev.ai");
       // Intent for requesting direct ignore
       final intentUri = Uri.parse("android.settings.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS");
       if (await canLaunchUrl(uri)) {

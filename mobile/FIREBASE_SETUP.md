@@ -27,7 +27,7 @@ Notifications wake devices even if the app is closed, swiped away from recent ap
 1. On your Firebase Project Overview page, click the **Android** icon to add an Android app.
 2. Enter the Android package name:
    ```
-   com.sahdev.livechat
+   com.sahdev.ai
    ```
    *(If you customized the application ID in `mobile/android/app/build.gradle`, enter your custom ID here).*
 3. App nickname (optional): `Sahdev Mobile Support`

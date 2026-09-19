@@ -2009,7 +2009,8 @@ class AdminController
                 $updatePayload['firebase_enabled'] = !empty($_POST['firebase_enabled']) ? 1 : 0;
             }
             if (isset($_POST['firebase_service_account_json'])) {
-                $rawJson = trim((string)$_POST['firebase_service_account_json']);
+                require_once __DIR__ . '/../lib/FirebasePushService.php';
+                $rawJson = \Sahdev\Lib\FirebasePushService::cleanJsonString((string)$_POST['firebase_service_account_json']);
                 if (!empty($rawJson)) {
                     $updatePayload['firebase_service_account_json'] = $rawJson;
                     $decoded = json_decode($rawJson, true);
@@ -2806,7 +2807,11 @@ class AdminController
 
                             <div class="form-group" style="margin-bottom: 20px;">
                                 <label style="font-weight: 600;">Firebase Service Account Private Key JSON (FCM HTTP v1)</label>
-                                <textarea name="firebase_service_account_json" rows="6" class="form-control" placeholder='{"type": "service_account", "project_id": "...", "private_key": "-----BEGIN PRIVATE KEY-----\n...", "client_email": "..."}' style="font-family: monospace; font-size: 12px;"><?php echo htmlspecialchars((string)($settings->firebase_service_account_json ?? '')); ?></textarea>
+                                <?php 
+                                require_once __DIR__ . '/../lib/FirebasePushService.php';
+                                $displayServiceAccountJson = \Sahdev\Lib\FirebasePushService::cleanJsonString((string)($settings->firebase_service_account_json ?? ''));
+                                ?>
+                                <textarea name="firebase_service_account_json" rows="8" class="form-control" placeholder='{"type": "service_account", "project_id": "...", "private_key": "-----BEGIN PRIVATE KEY-----\n...", "client_email": "..."}' style="font-family: monospace; font-size: 12px;"><?php echo htmlspecialchars($displayServiceAccountJson, ENT_QUOTES, 'UTF-8'); ?></textarea>
                                 <small class="text-muted" style="display: block; margin-top: 5px;">
                                     Download this from Google Cloud / Firebase Console: <strong>Project Settings &gt; Service Accounts &gt; Generate New Private Key</strong>. Paste the entire JSON content here.
                                 </small>

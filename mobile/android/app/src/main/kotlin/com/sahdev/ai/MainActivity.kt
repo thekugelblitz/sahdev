@@ -1,4 +1,4 @@
-package com.sahdev.livechat
+package com.sahdev.ai
 
 import io.flutter.embedding.android.FlutterActivity
 
