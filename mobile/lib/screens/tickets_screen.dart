@@ -112,16 +112,45 @@ class _TicketsScreenState extends State<TicketsScreen> {
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                   children: [
-                    _buildFilterChip('Awaiting Reply', 'awaiting_reply', ticketProv.counts['awaiting_reply'] ?? 0, ticketProv, auth, theme, badgeColor: const Color(0xFFEF4444)),
+                    _buildFilterChip(
+                      'Awaiting Reply',
+                      'awaiting_reply',
+                      ticketProv.counts['awaiting_reply'] ?? 0,
+                      ticketProv,
+                      auth,
+                      theme,
+                      badgeColor: const Color(0xFFEF4444),
+                    ),
                     const SizedBox(width: 8),
-                    _buildFilterChip('Open', 'open', ticketProv.counts['open'] ?? 0, ticketProv, auth, theme),
-                    const SizedBox(width: 8),
-                    _buildFilterChip('Customer-Reply', 'customer_reply', ticketProv.counts['customer_reply'] ?? 0, ticketProv, auth, theme, badgeColor: const Color(0xFFEF4444)),
-                    const SizedBox(width: 8),
-                    _buildFilterChip('Answered', 'answered', ticketProv.counts['answered'] ?? 0, ticketProv, auth, theme),
-                    const SizedBox(width: 8),
-                    _buildFilterChip('Closed', 'closed', ticketProv.counts['closed'] ?? 0, ticketProv, auth, theme),
-                    const SizedBox(width: 8),
+                    if (ticketProv.statuses.isNotEmpty) ...[
+                      ...ticketProv.statuses.map((st) {
+                        final title = st['title']?.toString() ?? '';
+                        final key = title.toLowerCase().replaceAll(RegExp(r'[ -]'), '_');
+                        final count = ticketProv.counts[key] ?? 0;
+                        final color = _parseHexColor(st['color']?.toString(), theme.colorScheme.primary);
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: _buildFilterChip(
+                            title,
+                            title,
+                            count,
+                            ticketProv,
+                            auth,
+                            theme,
+                            badgeColor: color,
+                          ),
+                        );
+                      }),
+                    ] else ...[
+                      _buildFilterChip('Open', 'open', ticketProv.counts['open'] ?? 0, ticketProv, auth, theme),
+                      const SizedBox(width: 8),
+                      _buildFilterChip('Customer-Reply', 'customer_reply', ticketProv.counts['customer_reply'] ?? 0, ticketProv, auth, theme, badgeColor: const Color(0xFFEF4444)),
+                      const SizedBox(width: 8),
+                      _buildFilterChip('Answered', 'answered', ticketProv.counts['answered'] ?? 0, ticketProv, auth, theme),
+                      const SizedBox(width: 8),
+                      _buildFilterChip('Closed', 'closed', ticketProv.counts['closed'] ?? 0, ticketProv, auth, theme),
+                      const SizedBox(width: 8),
+                    ],
                     _buildFilterChip('All', 'all', ticketProv.counts['total'] ?? 0, ticketProv, auth, theme),
                   ],
                 ),
@@ -150,6 +179,19 @@ class _TicketsScreenState extends State<TicketsScreen> {
     );
   }
 
+  Color _parseHexColor(String? hexString, Color defaultColor) {
+    if (hexString == null || hexString.isEmpty) return defaultColor;
+    try {
+      String clean = hexString.replaceAll('#', '').trim();
+      if (clean.length == 6) {
+        clean = 'FF$clean';
+      }
+      return Color(int.parse('0x$clean'));
+    } catch (_) {
+      return defaultColor;
+    }
+  }
+
   Widget _buildFilterChip(
     String label,
     String key,
@@ -159,7 +201,7 @@ class _TicketsScreenState extends State<TicketsScreen> {
     ThemeData theme, {
     Color? badgeColor,
   }) {
-    final isSelected = provider.statusFilter == key;
+    final isSelected = provider.statusFilter.toLowerCase() == key.toLowerCase();
     final primary = theme.colorScheme.primary;
 
     return FilterChip(
@@ -216,25 +258,13 @@ class _TicketsScreenState extends State<TicketsScreen> {
     final title = ticket['title']?.toString() ?? 'No Subject';
     final dept = ticket['department']?.toString() ?? 'Support';
     final lastReply = ticket['last_reply']?.toString() ?? '';
+    final isAwaiting = ticket['is_awaiting_reply'] == true;
+    final flag = (ticket['flag'] as num?)?.toInt() ?? 0;
 
-    Color statusColor;
-    switch (status.toLowerCase()) {
-      case 'customer-reply':
-      case 'customer_reply':
-        statusColor = const Color(0xFFEF4444);
-        break;
-      case 'open':
-        statusColor = const Color(0xFFF59E0B);
-        break;
-      case 'answered':
-        statusColor = const Color(0xFF10B981);
-        break;
-      case 'in progress':
-        statusColor = const Color(0xFF06B6D4);
-        break;
-      default:
-        statusColor = const Color(0xFF64748B);
-    }
+    final statusColor = _parseHexColor(
+      ticket['status_color']?.toString(),
+      isAwaiting ? const Color(0xFFEF4444) : const Color(0xFF10B981),
+    );
 
     Color priorityColor;
     switch (priority.toLowerCase()) {

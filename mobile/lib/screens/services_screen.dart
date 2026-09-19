@@ -75,9 +75,13 @@ class _ServicesScreenState extends State<ServicesScreen> {
 
   void _openServiceDetail(Map<String, dynamic> s) {
     final clientId = (s['client_id'] as num?)?.toInt();
+    final auth = context.read<AuthProvider>();
     ServiceDetailModal.show(
       context,
       s,
+      baseUrl: auth.baseUrl,
+      token: auth.token,
+      onServiceUpdated: _loadServices,
       onViewClient: (clientId != null && clientId > 0)
           ? () => _showClientProfile(clientId, s['client_name']?.toString() ?? 'Client', s['client_email']?.toString() ?? '')
           : null,
@@ -88,20 +92,17 @@ class _ServicesScreenState extends State<ServicesScreen> {
     final auth = context.read<AuthProvider>();
     if (auth.baseUrl == null || auth.token == null) return;
 
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => ClientProfileModal(
-        clientId: clientId,
-        baseUrl: auth.baseUrl!,
-        token: auth.token!,
-        initialSummary: {
-          'id': clientId,
-          'name': clientName,
-          'email': clientEmail,
-        },
-      ),
+    ClientProfileModal.show(
+      context,
+      clientId: clientId,
+      baseUrl: auth.baseUrl!,
+      token: auth.token!,
+      initialSummary: {
+        'id': clientId,
+        'name': clientName,
+        'email': clientEmail,
+      },
+      onClientUpdated: _loadServices,
     );
   }
 

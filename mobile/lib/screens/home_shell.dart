@@ -46,7 +46,7 @@ class _HomeShellState extends State<HomeShell> {
     final ticket = context.watch<TicketProvider>();
 
     final urgentSummons = queue.urgentSummonsCount;
-    final openTickets = ticket.counts['customer_reply'] ?? 0;
+    final awaitingTickets = ticket.counts['awaiting_reply'] ?? (ticket.counts['customer_reply'] ?? 0);
 
     return Scaffold(
       body: IndexedStack(
@@ -89,14 +89,14 @@ class _HomeShellState extends State<HomeShell> {
             ),
             BottomNavigationBarItem(
               icon: Badge(
-                isLabelVisible: openTickets > 0,
-                label: Text('$openTickets'),
+                isLabelVisible: awaitingTickets > 0,
+                label: Text('$awaitingTickets'),
                 backgroundColor: const Color(0xFFF59E0B),
                 child: const Icon(Icons.confirmation_number_outlined),
               ),
               activeIcon: Badge(
-                isLabelVisible: openTickets > 0,
-                label: Text('$openTickets'),
+                isLabelVisible: awaitingTickets > 0,
+                label: Text('$awaitingTickets'),
                 backgroundColor: const Color(0xFFF59E0B),
                 child: const Icon(Icons.confirmation_number),
               ),

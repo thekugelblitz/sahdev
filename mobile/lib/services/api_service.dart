@@ -620,7 +620,7 @@ class ApiService {
     }
   }
 
-  /// Update ticket status, priority, or department
+  /// Update ticket status, priority, department, or assigned staff flag
   Future<ApiResponse<void>> updateTicketStatus({
     required String baseUrl,
     required String token,
@@ -628,6 +628,7 @@ class ApiService {
     String? status,
     String? priority,
     int? deptId,
+    int? flag,
   }) async {
     try {
       final body = <String, String>{
@@ -636,6 +637,7 @@ class ApiService {
       if (status != null) body['status'] = status;
       if (priority != null) body['priority'] = priority;
       if (deptId != null) body['dept_id'] = deptId.toString();
+      if (flag != null) body['flag'] = flag.toString();
 
       final response = await _postWithFallback(
         baseUrl: baseUrl,
@@ -754,6 +756,120 @@ class ApiService {
         return ApiResponse(success: true, data: decoded);
       }
       return ApiResponse(success: false, message: _extractErrorMessage(response, 'Could not load invoices'));
+    } catch (e) {
+      return ApiResponse(success: false, message: e.toString());
+    }
+  }
+
+  /// Add private staff note to client profile
+  Future<ApiResponse<Map<String, dynamic>>> addClientNote({
+    required String baseUrl,
+    required String token,
+    required int clientId,
+    required String note,
+  }) async {
+    try {
+      final body = <String, String>{
+        'client_id': clientId.toString(),
+        'note': note,
+      };
+      final response = await _postWithFallback(
+        baseUrl: baseUrl,
+        action: 'mobile_client_add_note',
+        token: token,
+        body: body,
+      );
+
+      final decoded = _parseJsonSafely(response.body);
+      if (decoded is Map<String, dynamic> && response.statusCode == 200 && decoded['status'] == 'success') {
+        return ApiResponse(success: true, data: decoded);
+      }
+      return ApiResponse(success: false, message: _extractErrorMessage(response, 'Failed to add client note'));
+    } catch (e) {
+      return ApiResponse(success: false, message: e.toString());
+    }
+  }
+
+  /// Update service status (Suspend, Unsuspend, Terminate, Active)
+  Future<ApiResponse<Map<String, dynamic>>> updateServiceStatus({
+    required String baseUrl,
+    required String token,
+    required int serviceId,
+    required String status,
+    String? reason,
+  }) async {
+    try {
+      final body = <String, String>{
+        'service_id': serviceId.toString(),
+        'status': status,
+      };
+      if (reason != null && reason.isNotEmpty) {
+        body['reason'] = reason;
+      }
+
+      final response = await _postWithFallback(
+        baseUrl: baseUrl,
+        action: 'mobile_service_update_status',
+        token: token,
+        body: body,
+      );
+
+      final decoded = _parseJsonSafely(response.body);
+      if (decoded is Map<String, dynamic> && response.statusCode == 200 && decoded['status'] == 'success') {
+        return ApiResponse(success: true, data: decoded);
+      }
+      return ApiResponse(success: false, message: _extractErrorMessage(response, 'Failed to update service status'));
+    } catch (e) {
+      return ApiResponse(success: false, message: e.toString());
+    }
+  }
+
+  /// Fetch full invoice details with line items
+  Future<ApiResponse<Map<String, dynamic>>> getInvoiceDetails({
+    required String baseUrl,
+    required String token,
+    required int invoiceId,
+  }) async {
+    try {
+      final response = await _getWithFallback(
+        baseUrl: baseUrl,
+        action: 'mobile_invoice_detail',
+        token: token,
+        extraQuery: "invoice_id=$invoiceId",
+      );
+
+      final decoded = _parseJsonSafely(response.body);
+      if (decoded is Map<String, dynamic> && response.statusCode == 200 && decoded['status'] == 'success') {
+        return ApiResponse(success: true, data: decoded);
+      }
+      return ApiResponse(success: false, message: _extractErrorMessage(response, 'Could not load invoice details'));
+    } catch (e) {
+      return ApiResponse(success: false, message: e.toString());
+    }
+  }
+
+  /// Mark an invoice as Paid
+  Future<ApiResponse<Map<String, dynamic>>> markInvoicePaid({
+    required String baseUrl,
+    required String token,
+    required int invoiceId,
+  }) async {
+    try {
+      final body = <String, String>{
+        'invoice_id': invoiceId.toString(),
+      };
+      final response = await _postWithFallback(
+        baseUrl: baseUrl,
+        action: 'mobile_invoice_mark_paid',
+        token: token,
+        body: body,
+      );
+
+      final decoded = _parseJsonSafely(response.body);
+      if (decoded is Map<String, dynamic> && response.statusCode == 200 && decoded['status'] == 'success') {
+        return ApiResponse(success: true, data: decoded);
+      }
+      return ApiResponse(success: false, message: _extractErrorMessage(response, 'Failed to mark invoice as paid'));
     } catch (e) {
       return ApiResponse(success: false, message: e.toString());
     }

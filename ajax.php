@@ -285,7 +285,27 @@ if ($isMobileAction) {
             $status = isset($_REQUEST['status']) ? (string)$_REQUEST['status'] : ($jsonData['status'] ?? null);
             $priority = isset($_REQUEST['priority']) ? (string)$_REQUEST['priority'] : ($jsonData['priority'] ?? null);
             $deptId = isset($_REQUEST['dept_id']) ? (int)$_REQUEST['dept_id'] : ($jsonData['dept_id'] ?? null);
-            $response = \Sahdev\Lib\MobileApiService::updateTicketStatus((int)$adminId, $ticketId, $status, $priority, $deptId);
+            $flag = isset($_REQUEST['flag']) ? (int)$_REQUEST['flag'] : (isset($jsonData['flag']) ? (int)$jsonData['flag'] : null);
+            $response = \Sahdev\Lib\MobileApiService::updateTicketStatus((int)$adminId, $ticketId, $status, $priority, $deptId, $flag);
+        } elseif ($action === 'mobile_client_add_note') {
+            $rawInput = @file_get_contents('php://input');
+            $jsonData = !empty($rawInput) ? (@json_decode($rawInput, true) ?: []) : [];
+            $clientId = (int)($_REQUEST['client_id'] ?? ($jsonData['client_id'] ?? 0));
+            $note = (string)($_REQUEST['note'] ?? ($jsonData['note'] ?? ''));
+            $response = \Sahdev\Lib\MobileApiService::addClientNote((int)$adminId, $clientId, $note);
+        } elseif ($action === 'mobile_service_update_status') {
+            $rawInput = @file_get_contents('php://input');
+            $jsonData = !empty($rawInput) ? (@json_decode($rawInput, true) ?: []) : [];
+            $serviceId = (int)($_REQUEST['service_id'] ?? ($jsonData['service_id'] ?? 0));
+            $status = (string)($_REQUEST['status'] ?? ($jsonData['status'] ?? ''));
+            $reason = (string)($_REQUEST['reason'] ?? ($jsonData['reason'] ?? ''));
+            $response = \Sahdev\Lib\MobileApiService::updateServiceStatus((int)$adminId, $serviceId, $status, $reason ?: null);
+        } elseif ($action === 'mobile_invoice_detail') {
+            $invoiceId = (int)($_REQUEST['invoice_id'] ?? ($jsonData['invoice_id'] ?? 0));
+            $response = \Sahdev\Lib\MobileApiService::getInvoiceDetails((int)$adminId, $invoiceId);
+        } elseif ($action === 'mobile_invoice_mark_paid') {
+            $invoiceId = (int)($_REQUEST['invoice_id'] ?? ($jsonData['invoice_id'] ?? 0));
+            $response = \Sahdev\Lib\MobileApiService::markInvoicePaid((int)$adminId, $invoiceId);
         } elseif ($action === 'mobile_clients') {
             $search = (string)($_REQUEST['search'] ?? ($jsonData['search'] ?? ''));
             $status = (string)($_REQUEST['status'] ?? ($jsonData['status'] ?? 'all'));
@@ -819,6 +839,10 @@ $allowedActions = [
     'mobile_login', 'mobile_qr_generate', 'mobile_qr_verify', 'mobile_qr_status',
     'mobile_poll', 'mobile_chat_history', 'mobile_send', 'mobile_takeover', 'mobile_ai_suggest',
     'mobile_client_info', 'mobile_canned_responses', 'mobile_heartbeat', 'mobile_logout',
+    'mobile_tickets', 'mobile_ticket_detail', 'mobile_ticket_reply', 'mobile_ticket_ai_analyze', 'mobile_ticket_update',
+    'mobile_clients', 'mobile_client_detail', 'mobile_client_add_note',
+    'mobile_services', 'mobile_service_update_status',
+    'mobile_invoices', 'mobile_invoice_detail', 'mobile_invoice_mark_paid',
     'mobile_register_fcm', 'mobile_unregister_fcm',
     'admin_test_firebase_push', 'admin_save_firebase_config',
     'mobile_apk_download'
@@ -930,7 +954,12 @@ if ($intensity > 3) {
         'mobile_login', 'mobile_qr_generate', 'mobile_qr_verify', 'mobile_qr_status',
         'mobile_poll', 'mobile_chat_history', 'mobile_send', 'mobile_takeover',
         'mobile_ai_suggest', 'mobile_client_info', 'mobile_canned_responses',
-        'mobile_heartbeat', 'mobile_logout', 'mobile_register_fcm', 'mobile_unregister_fcm',
+        'mobile_heartbeat', 'mobile_logout',
+        'mobile_tickets', 'mobile_ticket_detail', 'mobile_ticket_reply', 'mobile_ticket_ai_analyze', 'mobile_ticket_update',
+        'mobile_clients', 'mobile_client_detail', 'mobile_client_add_note',
+        'mobile_services', 'mobile_service_update_status',
+        'mobile_invoices', 'mobile_invoice_detail', 'mobile_invoice_mark_paid',
+        'mobile_register_fcm', 'mobile_unregister_fcm',
         'admin_test_firebase_push', 'admin_save_firebase_config',
         'mobile_apk_download'
     ];

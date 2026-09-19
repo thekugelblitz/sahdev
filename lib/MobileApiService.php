@@ -1037,6 +1037,47 @@ class MobileApiService
         $limit = max(5, min(100, $limit));
         $offset = ($page - 1) * $limit;
 
+        // 1. Fetch WHMCS dynamic ticket statuses from tblticketstatuses
+        $whmcsStatuses = [];
+        $awaitingStatusTitles = [];
+        $statusColorMap = [];
+        try {
+            $statusRows = Capsule::table('tblticketstatuses')
+                ->orderBy('sortorder', 'asc')
+                ->get();
+            foreach ($statusRows as $st) {
+                $whmcsStatuses[] = [
+                    'id'           => (int)$st->id,
+                    'title'        => (string)$st->title,
+                    'color'        => !empty($st->color) ? (string)$st->color : '#64748b',
+                    'showactive'   => !empty($st->showactive),
+                    'showawaiting' => !empty($st->showawaiting),
+                    'sortorder'    => (int)$st->sortorder,
+                ];
+                $statusColorMap[$st->title] = !empty($st->color) ? (string)$st->color : '#64748b';
+                if (!empty($st->showawaiting)) {
+                    $awaitingStatusTitles[] = $st->title;
+                }
+            }
+        } catch (\Throwable $e) {}
+
+        if (empty($awaitingStatusTitles)) {
+            $awaitingStatusTitles = ['Customer-Reply', 'Open'];
+        }
+        if (empty($whmcsStatuses)) {
+            $whmcsStatuses = [
+                ['id' => 1, 'title' => 'Open', 'color' => '#779500', 'showactive' => true, 'showawaiting' => true, 'sortorder' => 1],
+                ['id' => 2, 'title' => 'Customer-Reply', 'color' => '#ff0000', 'showactive' => true, 'showawaiting' => true, 'sortorder' => 2],
+                ['id' => 3, 'title' => 'In Progress', 'color' => '#990000', 'showactive' => true, 'showawaiting' => false, 'sortorder' => 3],
+                ['id' => 4, 'title' => 'On Hold', 'color' => '#224488', 'showactive' => true, 'showawaiting' => false, 'sortorder' => 4],
+                ['id' => 5, 'title' => 'Answered', 'color' => '#000000', 'showactive' => true, 'showawaiting' => false, 'sortorder' => 5],
+                ['id' => 6, 'title' => 'Closed', 'color' => '#888888', 'showactive' => false, 'showawaiting' => false, 'sortorder' => 6],
+            ];
+            foreach ($whmcsStatuses as $defSt) {
+                $statusColorMap[$defSt['title']] = $defSt['color'];
+            }
+        }
+
         $q = Capsule::table('tbltickets as t')
             ->leftJoin('tblticketdepartments as d', 't.did', '=', 'd.id')
             ->select([
@@ -1049,6 +1090,7 @@ class MobileApiService
                 't.title',
                 't.status',
                 't.urgency',
+                't.flag',
                 't.date',
                 't.lastreply',
                 'd.name as dept_name',
@@ -1066,17 +1108,23 @@ class MobileApiService
 
         $status = strtolower(trim($status));
         if ($status === 'awaiting_reply' || $status === 'awaiting-reply' || $status === 'awaiting') {
-            $q->whereIn('t.status', ['Customer-Reply', 'Open']);
-        } elseif ($status === 'open') {
-            $q->where('t.status', 'Open');
-        } elseif ($status === 'customer_reply' || $status === 'customer-reply') {
-            $q->where('t.status', 'Customer-Reply');
-        } elseif ($status === 'in_progress' || $status === 'in progress') {
-            $q->where('t.status', 'In Progress');
-        } elseif ($status === 'answered') {
-            $q->where('t.status', 'Answered');
-        } elseif ($status === 'closed') {
-            $q->where('t.status', 'Closed');
+            $q->whereIn('t.status', $awaitingStatusTitles);
+        } elseif ($status !== 'all' && !empty($status)) {
+            // Match against dynamic WHMCS status titles
+            $matchedTitle = null;
+            foreach ($whmcsStatuses as $st) {
+                $normTitle = strtolower(str_replace([' ', '-'], '_', $st['title']));
+                $normStatus = strtolower(str_replace([' ', '-'], '_', $status));
+                if (strtolower($st['title']) === $status || $normTitle === $normStatus) {
+                    $matchedTitle = $st['title'];
+                    break;
+                }
+            }
+            if ($matchedTitle) {
+                $q->where('t.status', $matchedTitle);
+            } else {
+                $q->where('t.status', $status);
+            }
         }
 
         $total = $q->count();
@@ -1085,12 +1133,15 @@ class MobileApiService
             ->limit($limit)
             ->get();
 
-        // Calculate counts
-        $awaitingReplyCount = Capsule::table('tbltickets')->whereIn('status', ['Customer-Reply', 'Open'])->count();
-        $openCount = Capsule::table('tbltickets')->where('status', 'Open')->count();
-        $customerReplyCount = Capsule::table('tbltickets')->where('status', 'Customer-Reply')->count();
-        $answeredCount = Capsule::table('tbltickets')->where('status', 'Answered')->count();
-        $closedCount = Capsule::table('tbltickets')->where('status', 'Closed')->count();
+        // Calculate dynamic counts based on native WHMCS statuses
+        $counts = [
+            'awaiting_reply' => Capsule::table('tbltickets')->whereIn('status', $awaitingStatusTitles)->count(),
+            'total'          => Capsule::table('tbltickets')->count(),
+        ];
+        foreach ($whmcsStatuses as $st) {
+            $key = strtolower(str_replace([' ', '-'], '_', $st['title']));
+            $counts[$key] = Capsule::table('tbltickets')->where('status', $st['title'])->count();
+        }
 
         $tickets = [];
         foreach ($rows as $r) {
@@ -1100,38 +1151,36 @@ class MobileApiService
                 if ($cl) $clientName = trim($cl->firstname . ' ' . $cl->lastname);
             }
 
-            $isAwaiting = in_array($r->status, ['Customer-Reply', 'Open']);
+            $isAwaiting = in_array($r->status, $awaitingStatusTitles, true);
+            $color = $statusColorMap[$r->status] ?? ($isAwaiting ? '#ef4444' : '#64748b');
 
             $tickets[] = [
-                'id'          => (int) $r->id,
-                'tid'         => $r->tid,
-                'client_id'   => (int) $r->userid,
-                'client_name' => $clientName ?: ($r->email ?: 'Client'),
-                'client_email'=> $r->email,
-                'department'  => $r->dept_name ?: 'Support',
-                'title'       => $r->title,
-                'status'      => $r->status,
+                'id'                => (int) $r->id,
+                'tid'               => $r->tid,
+                'client_id'         => (int) $r->userid,
+                'client_name'       => $clientName ?: ($r->email ?: 'Client'),
+                'client_email'      => $r->email,
+                'department'        => $r->dept_name ?: 'Support',
+                'dept_id'           => (int) $r->did,
+                'title'             => $r->title,
+                'status'            => $r->status,
+                'status_color'      => $color,
                 'is_awaiting_reply' => $isAwaiting,
-                'priority'    => $r->urgency ?: 'Medium',
-                'last_reply'  => $r->lastreply ? Carbon::parse($r->lastreply)->diffForHumans() : 'Never',
-                'created_at'  => $r->date ? Carbon::parse($r->date)->format('M d, Y g:i A') : '',
+                'priority'          => $r->urgency ?: 'Medium',
+                'flag'              => (int) ($r->flag ?? 0),
+                'last_reply'        => $r->lastreply ? Carbon::parse($r->lastreply)->diffForHumans() : 'Never',
+                'created_at'        => $r->date ? Carbon::parse($r->date)->format('M d, Y g:i A') : '',
             ];
         }
 
         return [
-            'status'  => 'success',
-            'tickets' => $tickets,
-            'counts'  => [
-                'awaiting_reply' => $awaitingReplyCount,
-                'open'           => $openCount,
-                'customer_reply' => $customerReplyCount,
-                'answered'       => $answeredCount,
-                'closed'         => $closedCount,
-                'total'          => $total,
-            ],
-            'page'    => $page,
-            'limit'   => $limit,
-            'total'   => $total,
+            'status'   => 'success',
+            'tickets'  => $tickets,
+            'statuses' => $whmcsStatuses,
+            'counts'   => $counts,
+            'page'     => $page,
+            'limit'    => $limit,
+            'total'    => $total,
         ];
     }
 
@@ -1228,26 +1277,94 @@ class MobileApiService
         // Departments for transfer
         $departments = Capsule::table('tblticketdepartments')->select(['id', 'name'])->get();
 
+        // Dynamic statuses from tblticketstatuses
+        $whmcsStatuses = [];
+        $awaitingStatusTitles = [];
+        $statusColorMap = [];
+        try {
+            $statusRows = Capsule::table('tblticketstatuses')
+                ->orderBy('sortorder', 'asc')
+                ->get();
+            foreach ($statusRows as $st) {
+                $whmcsStatuses[] = [
+                    'id'           => (int)$st->id,
+                    'title'        => (string)$st->title,
+                    'color'        => !empty($st->color) ? (string)$st->color : '#64748b',
+                    'showactive'   => !empty($st->showactive),
+                    'showawaiting' => !empty($st->showawaiting),
+                    'sortorder'    => (int)$st->sortorder,
+                ];
+                $statusColorMap[$st->title] = !empty($st->color) ? (string)$st->color : '#64748b';
+                if (!empty($st->showawaiting)) {
+                    $awaitingStatusTitles[] = $st->title;
+                }
+            }
+        } catch (\Throwable $e) {}
+
+        if (empty($whmcsStatuses)) {
+            $whmcsStatuses = [
+                ['id' => 1, 'title' => 'Open', 'color' => '#779500', 'showactive' => true, 'showawaiting' => true, 'sortorder' => 1],
+                ['id' => 2, 'title' => 'Customer-Reply', 'color' => '#ff0000', 'showactive' => true, 'showawaiting' => true, 'sortorder' => 2],
+                ['id' => 3, 'title' => 'In Progress', 'color' => '#990000', 'showactive' => true, 'showawaiting' => false, 'sortorder' => 3],
+                ['id' => 4, 'title' => 'On Hold', 'color' => '#224488', 'showactive' => true, 'showawaiting' => false, 'sortorder' => 4],
+                ['id' => 5, 'title' => 'Answered', 'color' => '#000000', 'showactive' => true, 'showawaiting' => false, 'sortorder' => 5],
+                ['id' => 6, 'title' => 'Closed', 'color' => '#888888', 'showactive' => false, 'showawaiting' => false, 'sortorder' => 6],
+            ];
+            $awaitingStatusTitles = ['Customer-Reply', 'Open'];
+        }
+
+        // Active staff list for assignment
+        $staffList = [];
+        try {
+            $adminRows = Capsule::table('tbladmins')
+                ->where('disabled', 0)
+                ->select(['id', 'firstname', 'lastname', 'username'])
+                ->get();
+            foreach ($adminRows as $a) {
+                $staffList[] = [
+                    'id'   => (int)$a->id,
+                    'name' => trim($a->firstname . ' ' . $a->lastname) ?: $a->username,
+                ];
+            }
+        } catch (\Throwable $e) {}
+
+        // Assigned staff name
+        $assignedStaff = 'Unassigned';
+        if (!empty($ticket->flag)) {
+            $adm = Capsule::table('tbladmins')->where('id', $ticket->flag)->first(['firstname', 'lastname', 'username']);
+            if ($adm) {
+                $assignedStaff = trim($adm->firstname . ' ' . $adm->lastname) ?: $adm->username;
+            }
+        }
+
+        $isAwaiting = in_array($ticket->status, $awaitingStatusTitles, true);
+        $color = $statusColorMap[$ticket->status] ?? ($isAwaiting ? '#ef4444' : '#64748b');
+
         return [
             'status'      => 'success',
             'ticket'      => [
-                'id'          => (int) $ticket->id,
-                'tid'         => $ticket->tid,
-                'subject'     => $ticket->title,
-                'status'      => $ticket->status,
-                'priority'    => $ticket->urgency ?: 'Medium',
-                'department'  => $ticket->dept_name ?: 'Support',
-                'dept_id'     => (int) $ticket->did,
-                'client_id'   => (int) $ticket->userid,
-                'client_name' => $clientName,
-                'client_email'=> $clientEmail,
-                'company'     => $clientCompany,
-                'created_at'  => $ticket->date ? Carbon::parse($ticket->date)->format('M d, Y g:i A') : '',
-                'last_reply'  => $ticket->lastreply ? Carbon::parse($ticket->lastreply)->diffForHumans() : '',
+                'id'                => (int) $ticket->id,
+                'tid'               => $ticket->tid,
+                'subject'           => $ticket->title,
+                'status'            => $ticket->status,
+                'status_color'      => $color,
+                'is_awaiting_reply' => $isAwaiting,
+                'priority'          => $ticket->urgency ?: 'Medium',
+                'department'        => $ticket->dept_name ?: 'Support',
+                'dept_id'           => (int) $ticket->did,
+                'flag'              => (int) ($ticket->flag ?? 0),
+                'assigned_staff'    => $assignedStaff,
+                'client_id'         => (int) $ticket->userid,
+                'client_name'       => $clientName,
+                'client_email'      => $clientEmail,
+                'company'           => $clientCompany,
+                'created_at'        => $ticket->date ? Carbon::parse($ticket->date)->format('M d, Y g:i A') : '',
+                'last_reply'        => $ticket->lastreply ? Carbon::parse($ticket->lastreply)->diffForHumans() : '',
             ],
             'thread'      => $thread,
             'departments' => $departments,
-            'statuses'    => ['Open', 'Customer-Reply', 'In Progress', 'On Hold', 'Answered', 'Closed'],
+            'statuses'    => $whmcsStatuses,
+            'staff_list'  => $staffList,
             'priorities'  => ['Low', 'Medium', 'High', 'Critical'],
         ];
     }
@@ -1292,6 +1409,29 @@ class MobileApiService
 
         // Public Staff Reply
         $status = $newStatus ?: 'Answered';
+
+        // Check if WHMCS native localAPI is available for automatic customer email notification
+        if (function_exists('localAPI')) {
+            try {
+                $apiRes = localAPI('AddTicketReply', [
+                    'ticketid'      => $ticketId,
+                    'message'       => $message,
+                    'adminusername' => $admin->username ?? 'admin',
+                    'status'        => $status,
+                ]);
+                if (!empty($apiRes['result']) && $apiRes['result'] === 'success') {
+                    return [
+                        'status'     => 'success',
+                        'message_id' => (int)($apiRes['replyid'] ?? 0),
+                        'is_note'    => false,
+                        'admin'      => $adminName,
+                        'new_status' => $status,
+                        'date'       => Carbon::now()->format('M d, Y g:i A'),
+                    ];
+                }
+            } catch (\Throwable $e) {}
+        }
+
         $replyId = Capsule::table('tblticketreplies')->insertGetId([
             'tid'        => $ticketId,
             'userid'     => 0,
@@ -1464,9 +1604,16 @@ class MobileApiService
     }
 
     /**
-     * Update ticket priority, status, or department.
+     * Update ticket priority, status, department, or assigned staff.
      */
-    public static function updateTicketStatus(int $adminId, int $ticketId, ?string $status = null, ?string $priority = null, ?int $deptId = null): array
+    public static function updateTicketStatus(
+        int $adminId,
+        int $ticketId,
+        ?string $status = null,
+        ?string $priority = null,
+        ?int $deptId = null,
+        ?int $flag = null
+    ): array
     {
         $update = [];
         if ($status !== null && !empty($status)) {
@@ -1478,13 +1625,20 @@ class MobileApiService
         if ($deptId !== null && $deptId > 0) {
             $update['did'] = $deptId;
         }
+        if ($flag !== null) {
+            $update['flag'] = max(0, (int)$flag);
+        }
 
         if (!empty($update)) {
             $update['lastreply'] = Carbon::now();
             Capsule::table('tbltickets')->where('id', $ticketId)->update($update);
+
+            if (function_exists('logActivity')) {
+                logActivity("Ticket #{$ticketId} updated via Sahdev Mobile App by Admin ID {$adminId}");
+            }
         }
 
-        return ['status' => 'success'];
+        return ['status' => 'success', 'updated' => array_keys($update)];
     }
 
     /**
@@ -1606,6 +1760,29 @@ class MobileApiService
             ->where('status', 'Unpaid')
             ->sum('total');
 
+        // Staff notes for this client
+        $notes = [];
+        try {
+            $noteRows = Capsule::table('tblnotes as n')
+                ->leftJoin('tbladmins as a', 'n.adminid', '=', 'a.id')
+                ->where('n.userid', $clientId)
+                ->select([
+                    'n.id', 'n.note', 'n.created', 'n.adminid',
+                    Capsule::raw("CONCAT(a.firstname, ' ', a.lastname) as admin_name")
+                ])
+                ->orderBy('n.id', 'desc')
+                ->limit(20)
+                ->get();
+            foreach ($noteRows as $nr) {
+                $notes[] = [
+                    'id'         => (int)$nr->id,
+                    'note'       => (string)$nr->note,
+                    'admin_name' => trim((string)$nr->admin_name) ?: 'Staff',
+                    'date'       => !empty($nr->created) ? Carbon::parse($nr->created)->format('M d, Y g:i A') : '',
+                ];
+            }
+        } catch (\Throwable $e) {}
+
         return [
             'status'   => 'success',
             'client'   => [
@@ -1623,6 +1800,7 @@ class MobileApiService
             'services' => $services,
             'tickets'  => $tickets,
             'invoices' => $invoices,
+            'notes'    => $notes,
         ];
     }
 
@@ -1767,5 +1945,168 @@ class MobileApiService
             'limit'    => $limit,
             'total'    => $total,
         ];
+    }
+
+    /**
+     * Add a private staff note to a client profile.
+     */
+    public static function addClientNote(int $adminId, int $clientId, string $note): array
+    {
+        $note = trim($note);
+        if (empty($note)) {
+            return ['status' => 'error', 'message' => 'Note cannot be empty.'];
+        }
+
+        $admin = Capsule::table('tbladmins')->where('id', $adminId)->first(['firstname', 'lastname', 'username']);
+        $adminName = $admin ? trim($admin->firstname . ' ' . $admin->lastname) : 'Staff';
+
+        $id = Capsule::table('tblnotes')->insertGetId([
+            'userid'   => $clientId,
+            'adminid'  => $adminId,
+            'created'  => Carbon::now(),
+            'modified' => Carbon::now(),
+            'note'     => $note,
+            'sticky'   => 0,
+        ]);
+
+        return [
+            'status'     => 'success',
+            'note_id'    => (int)$id,
+            'admin_name' => $adminName,
+            'date'       => Carbon::now()->format('M d, Y g:i A'),
+        ];
+    }
+
+    /**
+     * Update service status (Suspend, Unsuspend, Terminate, Active).
+     */
+    public static function updateServiceStatus(int $adminId, int $serviceId, string $status, ?string $reason = null): array
+    {
+        $service = Capsule::table('tblhosting')->where('id', $serviceId)->first();
+        if (!$service) {
+            return ['status' => 'error', 'message' => 'Service not found.'];
+        }
+
+        $validStatuses = ['Active', 'Suspended', 'Pending', 'Terminated', 'Cancelled', 'Fraction'];
+        $newStatus = ucfirst(strtolower($status));
+        if (!in_array($newStatus, $validStatuses, true)) {
+            return ['status' => 'error', 'message' => "Invalid service status: {$status}"];
+        }
+
+        $update = ['domainstatus' => $newStatus];
+        if ($newStatus === 'Suspended' && !empty($reason)) {
+            $update['suspendreason'] = trim($reason);
+        } elseif ($newStatus === 'Active') {
+            $update['suspendreason'] = '';
+        }
+
+        Capsule::table('tblhosting')->where('id', $serviceId)->update($update);
+
+        if (function_exists('logActivity')) {
+            logActivity("Service #{$serviceId} status updated to {$newStatus} via Sahdev Mobile App by Admin ID {$adminId}", $service->userid);
+        }
+
+        return ['status' => 'success', 'new_status' => $newStatus];
+    }
+
+    /**
+     * Fetch complete invoice details with line items, tax, and client information.
+     */
+    public static function getInvoiceDetails(int $adminId, int $invoiceId): array
+    {
+        $inv = Capsule::table('tblinvoices as inv')
+            ->leftJoin('tblclients as c', 'inv.userid', '=', 'c.id')
+            ->where('inv.id', $invoiceId)
+            ->select([
+                'inv.*',
+                'c.firstname',
+                'c.lastname',
+                'c.companyname',
+                'c.email as client_email',
+            ])
+            ->first();
+
+        if (!$inv) {
+            return ['status' => 'error', 'message' => 'Invoice not found.'];
+        }
+
+        $clientName = trim(($inv->firstname ?? '') . ' ' . ($inv->lastname ?? ''));
+        $items = Capsule::table('tblinvoiceitems')
+            ->where('invoiceid', $invoiceId)
+            ->select(['id', 'type', 'relid', 'description', 'amount', 'taxed'])
+            ->get();
+
+        $lineItems = [];
+        foreach ($items as $item) {
+            $lineItems[] = [
+                'id'          => (int)$item->id,
+                'description' => (string)$item->description,
+                'amount'      => number_format((float)$item->amount, 2),
+                'taxed'       => !empty($item->taxed),
+            ];
+        }
+
+        return [
+            'status'  => 'success',
+            'invoice' => [
+                'id'             => (int)$inv->id,
+                'invoicenum'     => $inv->invoicenum ?: (string)$inv->id,
+                'client_id'      => (int)$inv->userid,
+                'client_name'    => $clientName ?: 'Client',
+                'client_email'   => $inv->client_email ?? '',
+                'company'        => $inv->companyname ?: '',
+                'date'           => $inv->date ? Carbon::parse($inv->date)->format('M d, Y') : '',
+                'due_date'       => $inv->duedate ? Carbon::parse($inv->duedate)->format('M d, Y') : '',
+                'date_paid'      => $inv->datepaid ? Carbon::parse($inv->datepaid)->format('M d, Y') : '—',
+                'subtotal'       => number_format((float)($inv->subtotal ?? 0), 2),
+                'credit'         => number_format((float)($inv->credit ?? 0), 2),
+                'tax'            => number_format((float)(($inv->tax ?? 0) + ($inv->tax2 ?? 0)), 2),
+                'total'          => number_format((float)($inv->total ?? 0), 2),
+                'status'         => $inv->status,
+                'payment_method' => $inv->paymentmethod ?: '—',
+                'notes'          => (string)($inv->notes ?? ''),
+                'items'          => $lineItems,
+            ],
+        ];
+    }
+
+    /**
+     * Mark an invoice as Paid.
+     */
+    public static function markInvoicePaid(int $adminId, int $invoiceId): array
+    {
+        $inv = Capsule::table('tblinvoices')->where('id', $invoiceId)->first();
+        if (!$inv) {
+            return ['status' => 'error', 'message' => 'Invoice not found.'];
+        }
+
+        if (strtolower($inv->status) === 'paid') {
+            return ['status' => 'success', 'already_paid' => true];
+        }
+
+        if (function_exists('localAPI')) {
+            try {
+                $res = localAPI('AddInvoicePayment', [
+                    'invoiceid' => $invoiceId,
+                    'transid'   => 'MOBILE_STAFF_' . time(),
+                    'gateway'   => $inv->paymentmethod ?: 'mailin',
+                    'date'      => Carbon::now()->toDateString(),
+                ]);
+                if (!empty($res['result']) && $res['result'] === 'success') {
+                    return ['status' => 'success', 'new_status' => 'Paid'];
+                }
+            } catch (\Throwable $e) {}
+        }
+
+        Capsule::table('tblinvoices')->where('id', $invoiceId)->update([
+            'status'   => 'Paid',
+            'datepaid' => Carbon::now(),
+        ]);
+
+        if (function_exists('logActivity')) {
+            logActivity("Invoice #{$invoiceId} marked as Paid via Sahdev Mobile App by Admin ID {$adminId}", $inv->userid);
+        }
+
+        return ['status' => 'success', 'new_status' => 'Paid'];
     }
 }

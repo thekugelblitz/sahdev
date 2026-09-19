@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../providers/auth_provider.dart';
 import '../services/api_service.dart';
+import '../widgets/invoice_detail_modal.dart';
 import '../widgets/service_detail_modal.dart';
 import 'ticket_detail_screen.dart';
 
@@ -80,16 +81,27 @@ class _ClientsScreenState extends State<ClientsScreen> {
     final auth = context.read<AuthProvider>();
     if (auth.baseUrl == null || auth.token == null) return;
 
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => ClientProfileModal(
-        clientId: clientId,
-        baseUrl: auth.baseUrl!,
-        token: auth.token!,
-        initialSummary: clientSummary,
-      ),
+    ClientProfileModal.show(
+      context,
+      clientId: clientId,
+      baseUrl: auth.baseUrl!,
+      token: auth.token!,
+      initialSummary: clientSummary,
+      onClientUpdated: _loadClients,
+    );
+  }
+
+  Widget _buildStatusChip(String value, String label) {
+    final isSelected = _statusFilter.toLowerCase() == value.toLowerCase();
+    return FilterChip(
+      label: Text(label, style: const TextStyle(fontSize: 12)),
+      selected: isSelected,
+      onSelected: (selected) {
+        if (selected) {
+          setState(() => _statusFilter = value);
+          _loadClients();
+        }
+      },
     );
   }
 
@@ -121,31 +133,53 @@ class _ClientsScreenState extends State<ClientsScreen> {
           ),
         ],
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(60),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: SizedBox(
-              height: 44,
-              child: TextField(
-                controller: _searchController,
-                style: const TextStyle(fontSize: 14),
-                decoration: InputDecoration(
-                  hintText: 'Search clients by name, email, company...',
-                  prefixIcon: const Icon(Icons.search, size: 20),
-                  suffixIcon: _searchController.text.isNotEmpty
-                      ? IconButton(
-                          icon: const Icon(Icons.clear, size: 18),
-                          onPressed: () {
-                            _searchController.clear();
-                            _loadClients();
-                          },
-                        )
-                      : null,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+          preferredSize: const Size.fromHeight(100),
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: SizedBox(
+                  height: 40,
+                  child: TextField(
+                    controller: _searchController,
+                    style: const TextStyle(fontSize: 14),
+                    decoration: InputDecoration(
+                      hintText: 'Search clients by name, email, company...',
+                      prefixIcon: const Icon(Icons.search, size: 20),
+                      suffixIcon: _searchController.text.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear, size: 18),
+                              onPressed: () {
+                                _searchController.clear();
+                                _loadClients();
+                              },
+                            )
+                          : null,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                    ),
+                    onSubmitted: (_) => _loadClients(),
+                  ),
                 ),
-                onSubmitted: (_) => _loadClients(),
               ),
-            ),
+              const SizedBox(height: 6),
+              SizedBox(
+                height: 38,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  children: [
+                    _buildStatusChip('all', 'All Clients'),
+                    const SizedBox(width: 8),
+                    _buildStatusChip('Active', 'Active'),
+                    const SizedBox(width: 8),
+                    _buildStatusChip('Inactive', 'Inactive'),
+                    const SizedBox(width: 8),
+                    _buildStatusChip('Closed', 'Closed'),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 6),
+            ],
           ),
         ),
       ),
@@ -312,6 +346,7 @@ class ClientProfileModal extends StatefulWidget {
   final String baseUrl;
   final String token;
   final Map<String, dynamic> initialSummary;
+  final VoidCallback? onClientUpdated;
 
   const ClientProfileModal({
     super.key,
@@ -319,7 +354,30 @@ class ClientProfileModal extends StatefulWidget {
     required this.baseUrl,
     required this.token,
     required this.initialSummary,
+    this.onClientUpdated,
   });
+
+  static void show(
+    BuildContext context, {
+    required int clientId,
+    required String baseUrl,
+    required String token,
+    Map<String, dynamic>? initialSummary,
+    VoidCallback? onClientUpdated,
+  }) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => ClientProfileModal(
+        clientId: clientId,
+        baseUrl: baseUrl,
+        token: token,
+        initialSummary: initialSummary ?? {'id': clientId},
+        onClientUpdated: onClientUpdated,
+      ),
+    );
+  }
 
   @override
   State<ClientProfileModal> createState() => _ClientProfileModalState();
@@ -375,6 +433,74 @@ class _ClientProfileModalState extends State<ClientProfileModal> {
     );
   }
 
+  Future<void> _showAddNoteDialog() async {
+    final noteController = TextEditingController();
+    final added = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Add Staff Note'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Enter private internal staff note for this client (WHMCS tblnotes):',
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: noteController,
+              minLines: 3,
+              maxLines: 6,
+              decoration: const InputDecoration(
+                hintText: 'Note details...',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Add Note'),
+          ),
+        ],
+      ),
+    );
+
+    if (added == true && noteController.text.trim().isNotEmpty) {
+      final res = await _api.addClientNote(
+        baseUrl: widget.baseUrl,
+        token: widget.token,
+        clientId: widget.clientId,
+        note: noteController.text.trim(),
+      );
+
+      if (res.success && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Staff note added successfully!'),
+            backgroundColor: Color(0xFF10B981),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        _loadProfile();
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(res.message ?? 'Failed to add note.'),
+            backgroundColor: const Color(0xFFEF4444),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -384,6 +510,7 @@ class _ClientProfileModalState extends State<ClientProfileModal> {
     final services = (_profile?['services'] as List<dynamic>?) ?? [];
     final tickets = (_profile?['tickets'] as List<dynamic>?) ?? [];
     final invoices = (_profile?['invoices'] as List<dynamic>?) ?? [];
+    final notes = (_profile?['notes'] as List<dynamic>?) ?? [];
 
     final name = client['name']?.toString() ?? 'Client Profile';
     final email = client['email']?.toString() ?? '';
@@ -625,11 +752,17 @@ class _ClientProfileModalState extends State<ClientProfileModal> {
                           child: InkWell(
                             borderRadius: BorderRadius.circular(10),
                             onTap: () {
-                              ServiceDetailModal.show(context, {
-                                ...sMap,
-                                'client_name': name,
-                                'client_email': email,
-                              });
+                              ServiceDetailModal.show(
+                                context,
+                                {
+                                  ...sMap,
+                                  'client_name': name,
+                                  'client_email': email,
+                                },
+                                baseUrl: widget.baseUrl,
+                                token: widget.token,
+                                onServiceUpdated: _loadProfile,
+                              );
                             },
                             child: Padding(
                               padding: const EdgeInsets.all(12),
@@ -764,23 +897,28 @@ class _ClientProfileModalState extends State<ClientProfileModal> {
                         );
                       }),
 
-                    if (invoices.isNotEmpty) ...[
-                      const SizedBox(height: 16),
-                      const Divider(),
-                      const SizedBox(height: 12),
+                    const SizedBox(height: 16),
+                    const Divider(),
+                    const SizedBox(height: 12),
 
-                      // Invoices Section
-                      Row(
-                        children: [
-                          const Icon(Icons.receipt_long_outlined, size: 18, color: Color(0xFF10B981)),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Invoices (${invoices.length})',
-                            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
+                    // Invoices Section
+                    Row(
+                      children: [
+                        const Icon(Icons.receipt_long_outlined, size: 18, color: Color(0xFF10B981)),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Invoices (${invoices.length})',
+                          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    if (invoices.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 8),
+                        child: Text('No invoices recorded.', style: TextStyle(fontSize: 13, color: Colors.grey)),
+                      )
+                    else
                       ...invoices.map((inv) {
                         final invMap = Map<String, dynamic>.from(inv as Map);
                         final invStatus = invMap['status']?.toString() ?? 'Unpaid';
@@ -788,51 +926,132 @@ class _ClientProfileModalState extends State<ClientProfileModal> {
                         final numStr = invMap['invoicenum']?.toString() ?? invMap['id']?.toString() ?? '';
                         final total = invMap['total']?.toString() ?? '0.00';
                         final due = invMap['duedate']?.toString() ?? '—';
+                        final invId = (invMap['id'] as num?)?.toInt();
 
                         return Container(
                           margin: const EdgeInsets.only(bottom: 8),
-                          padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
                             color: isAmoled ? const Color(0xFF111726) : Colors.grey.shade100,
                             borderRadius: BorderRadius.circular(10),
                             border: Border.all(color: theme.dividerColor),
                           ),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text('Invoice #$numStr', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                                    const SizedBox(height: 2),
-                                    Text('Due: $due', style: const TextStyle(fontSize: 11, color: Colors.grey)),
-                                  ],
-                                ),
-                              ),
-                              Text('\$$total', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                              const SizedBox(width: 8),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: (isPaid ? const Color(0xFF10B981) : const Color(0xFFEF4444)).withOpacity(0.15),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: Text(
-                                  invStatus,
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.bold,
-                                    color: isPaid ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(10),
+                            onTap: () {
+                              if (invId != null) {
+                                InvoiceDetailModal.show(
+                                  context,
+                                  invoiceId: invId,
+                                  baseUrl: widget.baseUrl,
+                                  token: widget.token,
+                                  onInvoiceUpdated: _loadProfile,
+                                );
+                              }
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.all(12),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text('Invoice #$numStr', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                                        const SizedBox(height: 2),
+                                        Text('Due: $due', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                                      ],
+                                    ),
                                   ),
-                                ),
+                                  Text('\$$total', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                                  const SizedBox(width: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: (isPaid ? const Color(0xFF10B981) : const Color(0xFFEF4444)).withOpacity(0.15),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      invStatus,
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.bold,
+                                        color: isPaid ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  const Icon(Icons.chevron_right, size: 18, color: Colors.grey),
+                                ],
                               ),
+                            ),
+                          ),
+                        );
+                      }),
+
+                    const SizedBox(height: 16),
+                    const Divider(),
+                    const SizedBox(height: 12),
+
+                    // Staff Notes Section
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.sticky_note_2_outlined, size: 18, color: Color(0xFFF59E0B)),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Staff Notes (${notes.length})',
+                              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                            ),
+                          ],
+                        ),
+                        TextButton.icon(
+                          icon: const Icon(Icons.add, size: 16),
+                          label: const Text('Add Note', style: TextStyle(fontSize: 12)),
+                          onPressed: _showAddNoteDialog,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    if (notes.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 8),
+                        child: Text('No internal staff notes recorded.', style: TextStyle(fontSize: 13, color: Colors.grey)),
+                      )
+                    else
+                      ...notes.map((n) {
+                        final nMap = Map<String, dynamic>.from(n as Map);
+                        final admin = nMap['admin_name']?.toString() ?? (nMap['admin']?.toString() ?? 'Staff');
+                        final date = nMap['date']?.toString() ?? (nMap['created']?.toString() ?? '');
+                        final note = nMap['note']?.toString() ?? '';
+
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: isAmoled ? const Color(0xFF161305) : const Color(0xFFFEF3C7).withOpacity(0.4),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: const Color(0xFFF59E0B).withOpacity(0.3)),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(admin, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFFF59E0B))),
+                                  Text(date, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              SelectableText(note, style: const TextStyle(fontSize: 13, height: 1.35)),
                             ],
                           ),
                         );
                       }),
-                    ],
 
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 24),
                   ],
                 ),
               ),

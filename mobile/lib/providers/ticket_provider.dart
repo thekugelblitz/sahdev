@@ -5,6 +5,8 @@ class TicketProvider extends ChangeNotifier {
   final ApiService _api = ApiService();
 
   List<Map<String, dynamic>> _tickets = [];
+  List<Map<String, dynamic>> _statuses = [];
+  List<Map<String, dynamic>> _staffList = [];
   Map<String, int> _counts = {
     'awaiting_reply': 0,
     'open': 0,
@@ -33,6 +35,8 @@ class TicketProvider extends ChangeNotifier {
 
   // Getters
   List<Map<String, dynamic>> get tickets => _tickets;
+  List<Map<String, dynamic>> get statuses => _statuses;
+  List<Map<String, dynamic>> get staffList => _staffList;
   Map<String, int> get counts => _counts;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
@@ -77,16 +81,18 @@ class TicketProvider extends ChangeNotifier {
         final rawList = data['tickets'] as List<dynamic>? ?? [];
         _tickets = rawList.map((e) => Map<String, dynamic>.from(e as Map)).toList();
 
+        final rawStatuses = data['statuses'] as List<dynamic>? ?? [];
+        if (rawStatuses.isNotEmpty) {
+          _statuses = rawStatuses.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+        }
+
         final rawCounts = data['counts'] as Map<String, dynamic>?;
         if (rawCounts != null) {
-          _counts = {
-            'awaiting_reply': (rawCounts['awaiting_reply'] as num?)?.toInt() ?? 0,
-            'open': (rawCounts['open'] as num?)?.toInt() ?? 0,
-            'customer_reply': (rawCounts['customer_reply'] as num?)?.toInt() ?? 0,
-            'answered': (rawCounts['answered'] as num?)?.toInt() ?? 0,
-            'closed': (rawCounts['closed'] as num?)?.toInt() ?? 0,
-            'total': (rawCounts['total'] as num?)?.toInt() ?? 0,
-          };
+          final newCounts = <String, int>{};
+          rawCounts.forEach((k, v) {
+            newCounts[k] = (v as num?)?.toInt() ?? 0;
+          });
+          _counts = newCounts;
         }
         _totalTickets = (data['total'] as num?)?.toInt() ?? _tickets.length;
       } else {
@@ -135,6 +141,16 @@ class TicketProvider extends ChangeNotifier {
         final rawThread = data['thread'] as List<dynamic>? ?? [];
         _activeThread = rawThread.map((e) => Map<String, dynamic>.from(e as Map)).toList();
         _departments = data['departments'] as List<dynamic>? ?? [];
+
+        final rawStatuses = data['statuses'] as List<dynamic>? ?? [];
+        if (rawStatuses.isNotEmpty) {
+          _statuses = rawStatuses.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+        }
+
+        final rawStaff = data['staff_list'] as List<dynamic>? ?? [];
+        if (rawStaff.isNotEmpty) {
+          _staffList = rawStaff.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+        }
       } else {
         _errorMessage = res.message ?? 'Failed to load ticket conversation.';
       }
@@ -277,6 +293,7 @@ class TicketProvider extends ChangeNotifier {
     String? status,
     String? priority,
     int? deptId,
+    int? flag,
   }) async {
     final res = await _api.updateTicketStatus(
       baseUrl: baseUrl,
@@ -285,15 +302,69 @@ class TicketProvider extends ChangeNotifier {
       status: status,
       priority: priority,
       deptId: deptId,
+      flag: flag,
     );
 
     if (res.success && _activeTicket != null) {
-      if (status != null) _activeTicket!['status'] = status;
+      if (status != null) {
+        _activeTicket!['status'] = status;
+        final matchedSt = _statuses.firstWhere(
+          (s) => s['title'] == status,
+          orElse: () => {},
+        );
+        if (matchedSt.isNotEmpty) {
+          _activeTicket!['status_color'] = matchedSt['color'];
+          _activeTicket!['is_awaiting_reply'] = matchedSt['showawaiting'] == true;
+        }
+      }
       if (priority != null) _activeTicket!['priority'] = priority;
+      if (deptId != null && _departments.isNotEmpty) {
+        final d = _departments.firstWhere((e) => (e['id'] as num?)?.toInt() == deptId, orElse: () => null);
+        if (d != null) {
+          _activeTicket!['department'] = d['name'];
+          _activeTicket!['dept_id'] = deptId;
+        }
+      }
+      if (flag != null) {
+        _activeTicket!['flag'] = flag;
+        if (flag == 0) {
+          _activeTicket!['assigned_staff'] = 'Unassigned';
+        } else {
+          final s = _staffList.firstWhere((e) => (e['id'] as num?)?.toInt() == flag, orElse: () => null);
+          if (s != null) {
+            _activeTicket!['assigned_staff'] = s['name'];
+          }
+        }
+      }
       notifyListeners();
       return true;
     }
     return false;
+  }
+
+  Future<bool> closeTicket({
+    required String baseUrl,
+    required String token,
+    required int ticketId,
+  }) {
+    return updateTicket(baseUrl: baseUrl, token: token, ticketId: ticketId, status: 'Closed');
+  }
+
+  Future<bool> markAnswered({
+    required String baseUrl,
+    required String token,
+    required int ticketId,
+  }) {
+    return updateTicket(baseUrl: baseUrl, token: token, ticketId: ticketId, status: 'Answered');
+  }
+
+  Future<bool> assignStaff({
+    required String baseUrl,
+    required String token,
+    required int ticketId,
+    required int adminId,
+  }) {
+    return updateTicket(baseUrl: baseUrl, token: token, ticketId: ticketId, flag: adminId);
   }
 
   void clearActiveTicket() {
