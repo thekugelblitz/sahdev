@@ -265,14 +265,23 @@ class FirebasePushService
                 ],
                 'data' => $stringData,
                 'android' => [
-                    'priority' => $priority,
+                    'priority' => (strtolower($priority) === 'high') ? 'HIGH' : 'NORMAL',
                     'ttl'      => '86400s',
                     'notification' => [
                         'channel_id'              => $channelId,
-                        'priority'                => ($priority === 'high') ? 'PRIORITY_MAX' : 'PRIORITY_DEFAULT',
+                        'notification_priority'   => (strtolower($priority) === 'high') ? 'PRIORITY_MAX' : 'PRIORITY_DEFAULT',
                         'default_sound'           => true,
                         'default_vibrate_timings' => true,
                         'click_action'            => 'FLUTTER_NOTIFICATION_CLICK',
+                    ],
+                ],
+                'apns' => [
+                    'payload' => [
+                        'aps' => [
+                            'sound' => 'default',
+                            'badge' => 1,
+                            'content-available' => 1,
+                        ],
                     ],
                 ],
             ],
