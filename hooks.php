@@ -14853,6 +14853,51 @@ JS;
     exit;
 }
 
+// ---------------------------------------------------------------------------
+// Sahdev Mobile Support App: WHMCS Support Ticket Push Notifications
+// ---------------------------------------------------------------------------
+add_hook('TicketOpen', 1, function ($vars) {
+    try {
+        require_once __DIR__ . '/lib/FirebasePushService.php';
+        $ticketId = (int)($vars['ticketid'] ?? 0);
+        if ($ticketId <= 0) {
+            return;
+        }
+        $subject = (string)($vars['subject'] ?? 'New Support Ticket');
+        $clientName = (string)($vars['name'] ?? ($vars['clientname'] ?? 'Client'));
+        $deptId = !empty($vars['deptid']) ? (int)$vars['deptid'] : null;
 
+        \Sahdev\Lib\FirebasePushService::sendTicketAlert(
+            $ticketId,
+            $subject,
+            $clientName,
+            'opened',
+            $deptId
+        );
+    } catch (\Throwable $e) {
+        // Safe guard - never block WHMCS ticket creation
+    }
+});
 
+add_hook('TicketUserReply', 1, function ($vars) {
+    try {
+        require_once __DIR__ . '/lib/FirebasePushService.php';
+        $ticketId = (int)($vars['ticketid'] ?? 0);
+        if ($ticketId <= 0) {
+            return;
+        }
+        $subject = (string)($vars['subject'] ?? 'Ticket Reply');
+        $clientName = (string)($vars['name'] ?? ($vars['clientname'] ?? 'Client'));
+        $deptId = !empty($vars['deptid']) ? (int)$vars['deptid'] : null;
 
+        \Sahdev\Lib\FirebasePushService::sendTicketAlert(
+            $ticketId,
+            $subject,
+            $clientName,
+            'reply',
+            $deptId
+        );
+    } catch (\Throwable $e) {
+        // Safe guard - never block WHMCS ticket replies
+    }
+});

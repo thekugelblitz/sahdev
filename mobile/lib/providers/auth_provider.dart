@@ -5,6 +5,7 @@ import '../config/api_config.dart';
 import '../models/admin_user.dart';
 import '../services/api_service.dart';
 import '../services/background_service.dart';
+import '../services/fcm_service.dart';
 
 class AuthProvider extends ChangeNotifier {
   final ApiService _api = ApiService();
@@ -56,6 +57,7 @@ class AuthProvider extends ChangeNotifier {
         isOnline: _isOnline,
         alertMode: _alertMode,
       );
+      FcmService().syncTokenWithBackend(baseUrl: _baseUrl!, token: _token!);
     }
   }
 
@@ -185,7 +187,8 @@ class AuthProvider extends ChangeNotifier {
 
   Future<void> logout() async {
     if (_baseUrl != null && _token != null) {
-      _api.logout(baseUrl: _baseUrl!, token: _token!);
+      final fcmToken = FcmService().fcmToken;
+      _api.logout(baseUrl: _baseUrl!, token: _token!, fcmToken: fcmToken);
     }
     BackgroundService().stopPolling();
 

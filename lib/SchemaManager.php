@@ -30,6 +30,7 @@ class SchemaManager
         self::ensureWebsiteDataSourcesTable();
         self::ensureAdminPresenceTable();
         self::ensureMobileTokensTable();
+        self::ensureMobileFcmTokensTable();
     }
 
     /**
@@ -187,6 +188,16 @@ class SchemaManager
                 // Organization Intelligence & Metrics
                 'metrics_cron_enabled'         => ['type' => 'boolean', 'default' => 1],
                 'metrics_retention_days'       => ['type' => 'integer', 'default' => 365],
+
+                // Firebase Cloud Messaging (FCM HTTP v1) Push Notifications
+                'firebase_enabled'              => ['type' => 'boolean', 'default' => 0],
+                'firebase_project_id'           => ['type' => 'string', 'length' => 128, 'default' => ''],
+                'firebase_service_account_json' => ['type' => 'longtext'],
+                'firebase_gateway_url'          => ['type' => 'string', 'length' => 255, 'default' => ''],
+                'firebase_notify_summons'       => ['type' => 'boolean', 'default' => 1],
+                'firebase_notify_chat_messages' => ['type' => 'boolean', 'default' => 1],
+                'firebase_notify_tickets'       => ['type' => 'boolean', 'default' => 1],
+                'firebase_notify_system_alerts' => ['type' => 'boolean', 'default' => 1],
             ];
 
             foreach ($columns as $name => $spec) {
@@ -619,6 +630,31 @@ class SchemaManager
                     $table->timestamp('last_active_at')->nullable();
                     $table->timestamp('expires_at')->nullable();
                     $table->boolean('is_revoked')->default(0)->index();
+                    $table->timestamps();
+                });
+            }
+        } catch (\Throwable $e) {
+            // Benign failure
+        }
+    }
+
+    /**
+     * Ensure mobile FCM tokens table exists for Firebase Cloud Messaging push dispatch.
+     */
+    public static function ensureMobileFcmTokensTable(): void
+    {
+        try {
+            if (!Capsule::schema()->hasTable('tblsahdev_mobile_fcm_tokens')) {
+                Capsule::schema()->create('tblsahdev_mobile_fcm_tokens', function ($table) {
+                    $table->increments('id');
+                    $table->integer('admin_id')->unsigned()->index();
+                    $table->string('fcm_token', 512)->unique();
+                    $table->string('device_name', 128)->nullable();
+                    $table->string('device_id', 128)->nullable();
+                    $table->string('platform', 32)->default('android');
+                    $table->string('app_version', 32)->nullable();
+                    $table->timestamp('last_seen_at')->nullable()->index();
+                    $table->boolean('is_active')->default(1)->index();
                     $table->timestamps();
                 });
             }

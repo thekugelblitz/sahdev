@@ -2004,6 +2004,39 @@ class AdminController
                 $updatePayload['task_provider_map'] = $taskProviderMapJson;
             }
 
+            // Firebase Cloud Messaging (FCM HTTP v1)
+            if (isset($_POST['firebase_enabled'])) {
+                $updatePayload['firebase_enabled'] = !empty($_POST['firebase_enabled']) ? 1 : 0;
+            }
+            if (isset($_POST['firebase_service_account_json'])) {
+                $rawJson = trim((string)$_POST['firebase_service_account_json']);
+                if (!empty($rawJson)) {
+                    $updatePayload['firebase_service_account_json'] = $rawJson;
+                    $decoded = json_decode($rawJson, true);
+                    if (is_array($decoded) && !empty($decoded['project_id'])) {
+                        $updatePayload['firebase_project_id'] = (string)$decoded['project_id'];
+                    }
+                }
+            }
+            if (isset($_POST['firebase_project_id']) && !empty($_POST['firebase_project_id'])) {
+                $updatePayload['firebase_project_id'] = trim((string)$_POST['firebase_project_id']);
+            }
+            if (isset($_POST['firebase_gateway_url'])) {
+                $updatePayload['firebase_gateway_url'] = trim((string)$_POST['firebase_gateway_url']);
+            }
+            if (isset($_POST['firebase_notify_summons'])) {
+                $updatePayload['firebase_notify_summons'] = !empty($_POST['firebase_notify_summons']) ? 1 : 0;
+            }
+            if (isset($_POST['firebase_notify_chat_messages'])) {
+                $updatePayload['firebase_notify_chat_messages'] = !empty($_POST['firebase_notify_chat_messages']) ? 1 : 0;
+            }
+            if (isset($_POST['firebase_notify_tickets'])) {
+                $updatePayload['firebase_notify_tickets'] = !empty($_POST['firebase_notify_tickets']) ? 1 : 0;
+            }
+            if (isset($_POST['firebase_notify_system_alerts'])) {
+                $updatePayload['firebase_notify_system_alerts'] = !empty($_POST['firebase_notify_system_alerts']) ? 1 : 0;
+            }
+
             Capsule::table('tblsahdev_settings')->updateOrInsert(
                 ['id' => 1],
                 $updatePayload
@@ -2137,6 +2170,7 @@ class AdminController
                     <button type="button" class="btn btn-default sdv-settings-tab-btn" data-tab="tab-copilot" onclick="switchSettingsSection('tab-copilot', this);"><i class="fas fa-terminal"></i> Admin Ops Copilot & Safe Ops</button>
                     <button type="button" class="btn btn-default sdv-settings-tab-btn" data-tab="tab-clientchat" onclick="switchSettingsSection('tab-clientchat', this);"><i class="fas fa-comments"></i> Client Live Chat Widget</button>
                     <button type="button" class="btn btn-default sdv-settings-tab-btn" data-tab="tab-intelligence" onclick="switchSettingsSection('tab-intelligence', this);"><i class="fas fa-chart-pie"></i> Organization Intelligence</button>
+                    <button type="button" class="btn btn-default sdv-settings-tab-btn" data-tab="tab-firebase" onclick="switchSettingsSection('tab-firebase', this);"><i class="fas fa-bell text-warning"></i> Mobile & Firebase Push</button>
                 </div>
 
                 <!-- TAB 1: Ticket AI & Automation -->
@@ -2716,6 +2750,121 @@ class AdminController
                     </div>
                 </div>
 
+                <!-- TAB 5: Mobile & Firebase Push Notifications -->
+                <?php
+                $activeFcmCount = 0;
+                try {
+                    \Sahdev\Lib\SchemaManager::ensureMobileFcmTokensTable();
+                    $activeFcmCount = \WHMCS\Database\Capsule::table('tblsahdev_mobile_fcm_tokens')->where('is_active', 1)->count();
+                } catch (\Throwable $fex) {}
+                $hasServiceAccount = !empty($settings->firebase_service_account_json);
+                ?>
+                <div id="tab-firebase" class="sdv-settings-pane" style="display:none;">
+                    <div class="panel panel-default" style="margin-bottom: 25px; border-left: 4px solid #f59e0b;">
+                        <div class="panel-heading" style="background: #fffbeb; display: flex; justify-content: space-between; align-items: center;">
+                            <h4 style="margin: 0; font-size: 15px; color: #b45309;"><i class="fas fa-bell text-warning"></i> Firebase Cloud Messaging (FCM HTTP v1) Push Notifications</h4>
+                            <span class="label <?php echo (!empty($settings->firebase_enabled) && $hasServiceAccount) ? 'label-success' : 'label-warning'; ?>">
+                                <?php echo (!empty($settings->firebase_enabled) && $hasServiceAccount) ? 'Active & Ready' : 'Setup Required'; ?>
+                            </span>
+                        </div>
+                        <div class="panel-body">
+                            <p class="text-muted" style="margin-top: 0; font-size: 13px;">
+                                Direct native push notifications wake the Sahdev Mobile Support App (Android/Flutter) even when the phone is locked, swiped away from recent apps, or in deep Android Doze mode.
+                            </p>
+
+                            <div class="row" style="margin-bottom: 20px;">
+                                <div class="col-md-6">
+                                    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px;">
+                                        <div style="font-size: 12px; text-transform: uppercase; font-weight: 700; color: #64748b;">Registered Staff Devices</div>
+                                        <div style="font-size: 26px; font-weight: 700; color: #1e293b; margin: 4px 0;"><?php echo $activeFcmCount; ?> <small style="font-size: 13px; font-weight: normal; color: #64748b;">devices online</small></div>
+                                        <small class="text-muted">Staff phones paired via QR code in the Live Console.</small>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; display: flex; flex-direction: column; justify-content: space-between; height: 100%;">
+                                        <div>
+                                            <div style="font-size: 12px; text-transform: uppercase; font-weight: 700; color: #64748b;">Connection Verification</div>
+                                            <div style="font-size: 13px; color: #334155; margin-top: 4px;">Send a test push to verify your Firebase credentials and device connectivity.</div>
+                                        </div>
+                                        <div style="margin-top: 10px;">
+                                            <button type="button" class="btn btn-warning btn-sm" id="btn-sdv-test-push" onclick="sendTestFirebasePush();">
+                                                <i class="fas fa-paper-plane"></i> Send Test Push to Staff Devices
+                                            </button>
+                                            <span id="sdv-test-push-status" style="margin-left: 10px; font-size: 12px; font-weight: 600;"></span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="form-group" style="margin-bottom: 20px;">
+                                <label style="font-weight: 600; font-size: 14px;">
+                                    <input type="checkbox" name="firebase_enabled" value="1" <?php echo !empty($settings->firebase_enabled) ? 'checked' : ''; ?>>
+                                    Enable Firebase Cloud Messaging Push Notifications
+                                </label>
+                                <small class="text-muted" style="display: block;">When enabled, urgent summons and support events will dispatch instant push notifications to staff phones.</small>
+                            </div>
+
+                            <div class="form-group" style="margin-bottom: 20px;">
+                                <label style="font-weight: 600;">Firebase Service Account Private Key JSON (FCM HTTP v1)</label>
+                                <textarea name="firebase_service_account_json" rows="6" class="form-control" placeholder='{"type": "service_account", "project_id": "...", "private_key": "-----BEGIN PRIVATE KEY-----\n...", "client_email": "..."}' style="font-family: monospace; font-size: 12px;"><?php echo htmlspecialchars((string)($settings->firebase_service_account_json ?? '')); ?></textarea>
+                                <small class="text-muted" style="display: block; margin-top: 5px;">
+                                    Download this from Google Cloud / Firebase Console: <strong>Project Settings &gt; Service Accounts &gt; Generate New Private Key</strong>. Paste the entire JSON content here.
+                                </small>
+                            </div>
+
+                            <div class="form-group" style="max-width: 450px; margin-bottom: 20px;">
+                                <label style="font-weight: 600;">Firebase Project ID</label>
+                                <input type="text" name="firebase_project_id" class="form-control" value="<?php echo htmlspecialchars((string)($settings->firebase_project_id ?? '')); ?>" placeholder="e.g. sahdev-support-app">
+                                <small class="text-muted">Auto-extracted from your Service Account JSON, or enter manually.</small>
+                            </div>
+
+                            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 18px; margin-bottom: 20px;">
+                                <div style="font-weight: 600; font-size: 13.5px; color: #1e293b; margin-bottom: 10px;"><i class="fas fa-sliders-h text-primary"></i> Notification Event Dispatch Triggers</div>
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="checkbox" style="margin-top: 0;">
+                                            <label style="font-weight: 600; font-size: 13px;">
+                                                <input type="checkbox" name="firebase_notify_summons" value="1" <?php echo (!isset($settings->firebase_notify_summons) || !empty($settings->firebase_notify_summons)) ? 'checked' : ''; ?>>
+                                                🚨 Urgent Live Chat Human Summons
+                                            </label>
+                                            <small class="text-muted" style="display: block; margin-left: 20px;">High-priority full-screen alarm alert when website visitor requests a live agent.</small>
+                                        </div>
+                                        <div class="checkbox" style="margin-top: 12px;">
+                                            <label style="font-weight: 600; font-size: 13px;">
+                                                <input type="checkbox" name="firebase_notify_chat_messages" value="1" <?php echo (!isset($settings->firebase_notify_chat_messages) || !empty($settings->firebase_notify_chat_messages)) ? 'checked' : ''; ?>>
+                                                💬 Active Chat Incoming Messages
+                                            </label>
+                                            <small class="text-muted" style="display: block; margin-left: 20px;">Alerts staff when a customer sends a message on taken-over chats.</small>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="checkbox" style="margin-top: 0;">
+                                            <label style="font-weight: 600; font-size: 13px;">
+                                                <input type="checkbox" name="firebase_notify_tickets" value="1" <?php echo (!isset($settings->firebase_notify_tickets) || !empty($settings->firebase_notify_tickets)) ? 'checked' : ''; ?>>
+                                                🎫 WHMCS Tickets & Customer Replies
+                                            </label>
+                                            <small class="text-muted" style="display: block; margin-left: 20px;">Pushes new ticket dispatches and client responses to staff with department access.</small>
+                                        </div>
+                                        <div class="checkbox" style="margin-top: 12px;">
+                                            <label style="font-weight: 600; font-size: 13px;">
+                                                <input type="checkbox" name="firebase_notify_system_alerts" value="1" <?php echo (!isset($settings->firebase_notify_system_alerts) || !empty($settings->firebase_notify_system_alerts)) ? 'checked' : ''; ?>>
+                                                ⚠️ Autonomous AI & System Critical Notices
+                                            </label>
+                                            <small class="text-muted" style="display: block; margin-left: 20px;">Alerts when AI fallback occurs or API rate limits/quotas require attention.</small>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="form-group" style="max-width: 550px; margin-bottom: 0;">
+                                <label style="font-weight: 600;">Push Relay Gateway URL <span class="label label-default" style="font-size: 10px;">Optional / Future Commercial Marketplace</span></label>
+                                <input type="url" name="firebase_gateway_url" class="form-control" value="<?php echo htmlspecialchars((string)($settings->firebase_gateway_url ?? '')); ?>" placeholder="https://toolsapi.2hs.in/api/v1/push/send">
+                                <small class="text-muted">Leave blank to dispatch directly from this WHMCS server to Google FCM v1.</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <div style="margin-top: 25px; padding-top: 15px; border-top: 1px solid #e2e8f0;">
                     <button type="submit" class="btn btn-primary btn-lg" style="padding: 10px 28px; font-weight: 600;">
                         <i class="fas fa-save" style="margin-right: 6px;"></i> Save All Settings
@@ -2737,6 +2886,46 @@ class AdminController
             if (target) target.style.display = 'block';
             btn.classList.remove('btn-default');
             btn.classList.add('active', 'btn-primary');
+        }
+
+        function sendTestFirebasePush() {
+            var btn = document.getElementById('btn-sdv-test-push');
+            var statusSpan = document.getElementById('sdv-test-push-status');
+            if (!btn) return;
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Dispatching...';
+            statusSpan.style.color = '#64748b';
+            statusSpan.textContent = 'Sending test notification via FCM HTTP v1...';
+
+            var data = new URLSearchParams();
+            data.append('action', 'admin_test_firebase_push');
+
+            fetch('addonmodules.php?module=sahdev&action=admin_test_firebase_push', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'Accept': 'application/json'
+                },
+                body: data.toString()
+            })
+            .then(function(res) { return res.json(); })
+            .then(function(json) {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-paper-plane"></i> Send Test Push to Staff Devices';
+                if (json.status === 'success') {
+                    statusSpan.style.color = '#16a34a';
+                    statusSpan.innerHTML = '<i class="fas fa-check-circle"></i> ' + (json.message || 'Push sent successfully!');
+                } else {
+                    statusSpan.style.color = '#dc2626';
+                    statusSpan.innerHTML = '<i class="fas fa-exclamation-circle"></i> ' + (json.message || 'Push failed');
+                }
+            })
+            .catch(function(err) {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-paper-plane"></i> Send Test Push to Staff Devices';
+                statusSpan.style.color = '#dc2626';
+                statusSpan.innerHTML = '<i class="fas fa-times-circle"></i> Network error: ' + err.message;
+            });
         }
         </script>
         <?php

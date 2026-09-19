@@ -8,6 +8,8 @@ class NotificationService {
   final FlutterLocalNotificationsPlugin _plugin = FlutterLocalNotificationsPlugin();
   bool _initialized = false;
 
+  static void Function(String payload)? onNotificationTapped;
+
   Future<void> init() async {
     if (_initialized) return;
 
@@ -17,9 +19,62 @@ class NotificationService {
     await _plugin.initialize(
       initSettings,
       onDidReceiveNotificationResponse: (NotificationResponse response) {
-        // Handled via navigation
+        if (response.payload != null && onNotificationTapped != null) {
+          onNotificationTapped!(response.payload!);
+        }
       },
     );
+
+    // Create high-priority notification channels on Android
+    final androidPlugin = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+    if (androidPlugin != null) {
+      // 1. Urgent Human Summon Channel
+      await androidPlugin.createNotificationChannel(
+        const AndroidNotificationChannel(
+          'sahdev_summon_channel',
+          'Human Support Summons',
+          description: 'High-priority full-screen alerts when a website visitor requests human support',
+          importance: Importance.max,
+          playSound: true,
+          enableVibration: true,
+        ),
+      );
+
+      // 2. Active Chat Messages Channel
+      await androidPlugin.createNotificationChannel(
+        const AndroidNotificationChannel(
+          'sahdev_messages_channel',
+          'Chat Messages',
+          description: 'Notifications for incoming customer live chat messages',
+          importance: Importance.high,
+          playSound: true,
+          enableVibration: true,
+        ),
+      );
+
+      // 3. WHMCS Support Tickets Channel
+      await androidPlugin.createNotificationChannel(
+        const AndroidNotificationChannel(
+          'sahdev_tickets_channel',
+          'Support Tickets',
+          description: 'Notifications for new support tickets and customer replies',
+          importance: Importance.high,
+          playSound: true,
+          enableVibration: true,
+        ),
+      );
+
+      // 4. System & AI Alerts Channel
+      await androidPlugin.createNotificationChannel(
+        const AndroidNotificationChannel(
+          'sahdev_system_channel',
+          'System & AI Notices',
+          description: 'Alerts regarding AI autonomous fallback and system notices',
+          importance: Importance.defaultImportance,
+          playSound: true,
+        ),
+      );
+    }
 
     _initialized = true;
   }
@@ -50,7 +105,7 @@ class NotificationService {
       '🚨 Human Support Summoned!',
       '$clientName is waiting for a live agent on $domain',
       notificationDetails,
-      payload: sessionId.toString(),
+      payload: 'session:$sessionId',
     );
   }
 
@@ -76,7 +131,62 @@ class NotificationService {
       'New message from $senderName',
       messageText,
       notificationDetails,
-      payload: sessionId.toString(),
+      payload: 'session:$sessionId',
+    );
+  }
+
+  /// Show notification for WHMCS support ticket or reply
+  Future<void> showTicketNotification({
+    required int ticketId,
+    required String subject,
+    required String actionType,
+  }) async {
+    const androidDetails = AndroidNotificationDetails(
+      'sahdev_tickets_channel',
+      'Support Tickets',
+      channelDescription: 'Notifications for WHMCS support tickets',
+      importance: Importance.high,
+      priority: Priority.high,
+      playSound: true,
+    );
+
+    const notificationDetails = NotificationDetails(android: androidDetails);
+
+    final title = (actionType == 'reply')
+        ? '📩 Ticket Reply: #$ticketId'
+        : '🎫 New Ticket: #$ticketId';
+
+    await _plugin.show(
+      ticketId + 20000,
+      title,
+      subject,
+      notificationDetails,
+      payload: 'ticket:$ticketId',
+    );
+  }
+
+  /// Show notification for system or AI notice
+  Future<void> showSystemNotification({
+    required String title,
+    required String body,
+  }) async {
+    const androidDetails = AndroidNotificationDetails(
+      'sahdev_system_channel',
+      'System & AI Notices',
+      channelDescription: 'Notifications for system status and autonomous AI notices',
+      importance: Importance.defaultImportance,
+      priority: Priority.defaultPriority,
+      playSound: true,
+    );
+
+    const notificationDetails = NotificationDetails(android: androidDetails);
+
+    await _plugin.show(
+      30001,
+      title,
+      body,
+      notificationDetails,
+      payload: 'system_alert',
     );
   }
 

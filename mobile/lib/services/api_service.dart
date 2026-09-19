@@ -759,14 +759,76 @@ class ApiService {
     }
   }
 
-  /// Logout and revoke token
-  Future<void> logout({required String baseUrl, required String token}) async {
+  /// Register FCM push notification token with WHMCS backend
+  Future<ApiResponse<Map<String, dynamic>>> registerFcmToken({
+    required String baseUrl,
+    required String token,
+    required String fcmToken,
+    String deviceName = 'Android Staff Phone',
+    String platform = 'android',
+    String appVersion = '1.0.0',
+    String? deviceId,
+  }) async {
     try {
+      final body = <String, String>{
+        'fcm_token': fcmToken,
+        'device_name': deviceName,
+        'platform': platform,
+        'app_version': appVersion,
+      };
+      if (deviceId != null && deviceId.isNotEmpty) {
+        body['device_id'] = deviceId;
+      }
+
+      final response = await _postWithFallback(
+        baseUrl: baseUrl,
+        action: 'mobile_register_fcm',
+        token: token,
+        body: body,
+        timeout: const Duration(seconds: 10),
+      );
+
+      final decoded = _parseJsonSafely(response.body);
+      if (decoded is Map<String, dynamic> && response.statusCode == 200) {
+        if (decoded['status'] == 'success') {
+          return ApiResponse(success: true, data: decoded);
+        }
+      }
+      return ApiResponse(success: false, message: _extractErrorMessage(response, 'Could not register FCM token'));
+    } catch (e) {
+      return ApiResponse(success: false, message: e.toString());
+    }
+  }
+
+  /// Unregister FCM token on logout
+  Future<void> unregisterFcmToken({
+    required String baseUrl,
+    required String token,
+    required String fcmToken,
+  }) async {
+    try {
+      await _postWithFallback(
+        baseUrl: baseUrl,
+        action: 'mobile_unregister_fcm',
+        token: token,
+        body: {'fcm_token': fcmToken},
+        timeout: const Duration(seconds: 5),
+      );
+    } catch (_) {}
+  }
+
+  /// Logout and revoke token
+  Future<void> logout({required String baseUrl, required String token, String? fcmToken}) async {
+    try {
+      final body = <String, String>{};
+      if (fcmToken != null && fcmToken.isNotEmpty) {
+        body['fcm_token'] = fcmToken;
+      }
       await _postWithFallback(
         baseUrl: baseUrl,
         action: 'mobile_logout',
         token: token,
-        body: {},
+        body: body,
         timeout: const Duration(seconds: 5),
       );
     } catch (_) {}

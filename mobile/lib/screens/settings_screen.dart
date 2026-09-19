@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../config/theme_config.dart';
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import '../services/audio_service.dart';
 import '../services/background_service.dart';
+import '../services/fcm_service.dart';
 import 'login_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -17,6 +19,39 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   final AudioService _audio = AudioService();
   String? _previewingSoundKey;
+  bool _notifySummons = true;
+  bool _notifyChats = true;
+  bool _notifyTickets = true;
+  bool _notifySystem = true;
+  String _alertMode = 'ringing';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadNotificationPreferences();
+  }
+
+  Future<void> _loadNotificationPreferences() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) {
+      setState(() {
+        _notifySummons = prefs.getBool('pref_notify_summons') ?? true;
+        _notifyChats = prefs.getBool('pref_notify_chats') ?? true;
+        _notifyTickets = prefs.getBool('pref_notify_tickets') ?? true;
+        _notifySystem = prefs.getBool('pref_notify_system') ?? true;
+        _alertMode = prefs.getString('pref_alert_mode') ?? 'ringing';
+      });
+    }
+  }
+
+  Future<void> _setPreference(String key, dynamic value) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (value is bool) {
+      await prefs.setBool(key, value);
+    } else if (value is String) {
+      await prefs.setString(key, value);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -52,6 +87,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
           // Notification Sound Library Card (12 Sounds)
           _buildSectionHeader("ALERT SOUND LIBRARY (12 SOUNDS)"),
           _buildSoundPickerCard(theme, isAmoled),
+
+          const SizedBox(height: 18),
+
+          // Push Notifications & Firebase Toggles
+          _buildSectionHeader("PUSH NOTIFICATIONS & FIREBASE (FCM)"),
+          _buildPushNotificationTogglesCard(theme, isAmoled),
 
           const SizedBox(height: 18),
 
@@ -433,6 +474,144 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   }
                 },
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPushNotificationTogglesCard(ThemeData theme, bool isAmoled) {
+    final fcmToken = FcmService().fcmToken;
+    final hasFcm = fcmToken != null && fcmToken.isNotEmpty;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.notifications_active, size: 20, color: Color(0xFFF59E0B)),
+                    SizedBox(width: 8),
+                    Text("Push Notification Channels", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                  ],
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: hasFcm ? const Color(0xFF10B981).withOpacity(0.15) : Colors.orange.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(hasFcm ? Icons.check_circle : Icons.warning_amber_rounded, size: 12, color: hasFcm ? const Color(0xFF10B981) : Colors.orange),
+                      const SizedBox(width: 4),
+                      Text(
+                        hasFcm ? "FCM Active" : "FCM Pending",
+                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: hasFcm ? const Color(0xFF10B981) : Colors.orange),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              "Control which support events wake your phone via native Google Cloud push messaging.",
+              style: TextStyle(fontSize: 12, color: Colors.grey, height: 1.4),
+            ),
+            const Divider(height: 20),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              title: const Text("Urgent Human Summons", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+              subtitle: const Text("Visitor clicks 'Talk to Human' on website live chat", style: TextStyle(fontSize: 11)),
+              value: _notifySummons,
+              activeColor: const Color(0xFFF59E0B),
+              onChanged: (val) {
+                setState(() => _notifySummons = val);
+                _setPreference('pref_notify_summons', val);
+              },
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              title: const Text("Active Chat Messages", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+              subtitle: const Text("New incoming messages on live visitor sessions", style: TextStyle(fontSize: 11)),
+              value: _notifyChats,
+              activeColor: const Color(0xFF3B82F6),
+              onChanged: (val) {
+                setState(() => _notifyChats = val);
+                _setPreference('pref_notify_chats', val);
+              },
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              title: const Text("WHMCS Support Tickets", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+              subtitle: const Text("New tickets and customer replies in WHMCS", style: TextStyle(fontSize: 11)),
+              value: _notifyTickets,
+              activeColor: const Color(0xFF10B981),
+              onChanged: (val) {
+                setState(() => _notifyTickets = val);
+                _setPreference('pref_notify_tickets', val);
+              },
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              title: const Text("System & AI Status Alerts", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+              subtitle: const Text("AI fallback events and critical API notices", style: TextStyle(fontSize: 11)),
+              value: _notifySystem,
+              activeColor: const Color(0xFF8B5CF6),
+              onChanged: (val) {
+                setState(() => _notifySystem = val);
+                _setPreference('pref_notify_system', val);
+              },
+            ),
+            const Divider(height: 16),
+            const Text(
+              "SUMMON ALERT STYLE",
+              style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF94A3B8), letterSpacing: 0.5),
+            ),
+            const SizedBox(height: 4),
+            RadioListTile<String>(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              title: const Text("Continuous Ringing Alarm", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+              subtitle: const Text("Rings like an urgent incoming call until opened or silenced", style: TextStyle(fontSize: 11)),
+              value: 'ringing',
+              groupValue: _alertMode,
+              activeColor: const Color(0xFFF59E0B),
+              onChanged: (val) {
+                if (val != null) {
+                  setState(() => _alertMode = val);
+                  _setPreference('pref_alert_mode', val);
+                  context.read<AuthProvider>().setAlertMode(val);
+                }
+              },
+            ),
+            RadioListTile<String>(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              title: const Text("Single Notification Chime", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+              subtitle: const Text("Plays one sound alert without ongoing ringing", style: TextStyle(fontSize: 11)),
+              value: 'chime',
+              groupValue: _alertMode,
+              activeColor: const Color(0xFFF59E0B),
+              onChanged: (val) {
+                if (val != null) {
+                  setState(() => _alertMode = val);
+                  _setPreference('pref_alert_mode', val);
+                  context.read<AuthProvider>().setAlertMode(val);
+                }
+              },
             ),
           ],
         ),

@@ -716,6 +716,19 @@ class ChatService
                     $assignedAdminName = $lastStaff->sender_name;
                 }
             }
+
+            try {
+                require_once __DIR__ . '/FirebasePushService.php';
+                FirebasePushService::sendChatMessageAlert(
+                    $sessionId,
+                    $senderName,
+                    $messageText,
+                    !empty($session['assigned_admin_id']) ? (int)$session['assigned_admin_id'] : null
+                );
+            } catch (\Throwable $pe) {
+                // Ignore push dispatch errors
+            }
+
             return [
                 'success'             => true,
                 'is_takeover'         => true,
@@ -729,6 +742,17 @@ class ChatService
 
         // 2.5 If customer summoned a human agent and is awaiting staff pickup
         if (in_array(($session['summon_status'] ?? ''), ['requested', 'claimed'], true)) {
+            try {
+                require_once __DIR__ . '/FirebasePushService.php';
+                FirebasePushService::sendChatMessageAlert(
+                    $sessionId,
+                    $senderName,
+                    $messageText,
+                    !empty($session['assigned_admin_id']) ? (int)$session['assigned_admin_id'] : null
+                );
+            } catch (\Throwable $pe) {
+                // Ignore push dispatch errors
+            }
             return [
                 'success'         => true,
                 'is_summoned'     => true,
@@ -2739,6 +2763,25 @@ class ChatService
                 'message_text' => '🔔 A live human support agent has been notified and summoned to assist you. A team member will join shortly! You may continue chatting with our AI in the meantime.',
                 'created_at'   => Carbon::now(),
             ]);
+
+            // Dispatch instant high-priority FCM push to mobile devices
+            try {
+                $meta = [];
+                if (!empty($session->metadata_json)) {
+                    $meta = json_decode($session->metadata_json, true) ?: [];
+                }
+                $clientName = $meta['client_name'] ?? ($meta['name'] ?? ($session->title ?: 'Website Visitor'));
+                $domain = $meta['domain'] ?? ($meta['current_url'] ?? 'Your Website');
+                if (strpos($domain, 'http') === 0) {
+                    $parsed = parse_url($domain);
+                    $domain = $parsed['host'] ?? $domain;
+                }
+
+                require_once __DIR__ . '/FirebasePushService.php';
+                FirebasePushService::sendSummonAlert($sessionId, (string)$clientName, (string)$domain);
+            } catch (\Throwable $pe) {
+                ModuleLogger::error('firebase', "Error dispatching summon push: " . $pe->getMessage());
+            }
 
             ModuleLogger::info('client_chat', "Human agent summoned for session #{$sessionId} (Reason: {$reason})");
             return $msgId ?: true;

@@ -825,7 +825,7 @@ class MobileApiService
     /**
      * Revoke a mobile token on logout.
      */
-    public static function revokeToken(string $token): array
+    public static function revokeToken(string $token, ?string $fcmToken = null): array
     {
         SchemaManager::ensureMobileTokensTable();
 
@@ -833,7 +833,81 @@ class MobileApiService
             ->where('token', $token)
             ->update(['is_revoked' => 1, 'updated_at' => Carbon::now()]);
 
+        if (!empty($fcmToken)) {
+            self::unregisterFcmToken($fcmToken);
+        }
+
         return ['status' => 'success', 'message' => 'Logged out successfully.'];
+    }
+
+    /**
+     * Register or update an FCM push notification device token for an admin.
+     */
+    public static function registerFcmToken(
+        int $adminId,
+        string $fcmToken,
+        string $deviceName = 'Android Staff Device',
+        string $platform = 'android',
+        string $appVersion = '1.0.0',
+        ?string $deviceId = null
+    ): array {
+        SchemaManager::ensureMobileFcmTokensTable();
+
+        $fcmToken = trim($fcmToken);
+        if (empty($fcmToken)) {
+            return ['status' => 'error', 'message' => 'FCM token is required.'];
+        }
+
+        $existing = Capsule::table('tblsahdev_mobile_fcm_tokens')
+            ->where('fcm_token', $fcmToken)
+            ->first();
+
+        if ($existing) {
+            Capsule::table('tblsahdev_mobile_fcm_tokens')
+                ->where('fcm_token', $fcmToken)
+                ->update([
+                    'admin_id'     => $adminId,
+                    'device_name'  => $deviceName ?: $existing->device_name,
+                    'device_id'    => $deviceId ?: $existing->device_id,
+                    'platform'     => $platform ?: $existing->platform,
+                    'app_version'  => $appVersion ?: $existing->app_version,
+                    'last_seen_at' => Carbon::now(),
+                    'is_active'    => 1,
+                    'updated_at'   => Carbon::now(),
+                ]);
+        } else {
+            Capsule::table('tblsahdev_mobile_fcm_tokens')->insert([
+                'admin_id'     => $adminId,
+                'fcm_token'    => $fcmToken,
+                'device_name'  => $deviceName,
+                'device_id'    => $deviceId,
+                'platform'     => $platform,
+                'app_version'  => $appVersion,
+                'last_seen_at' => Carbon::now(),
+                'is_active'    => 1,
+                'created_at'   => Carbon::now(),
+                'updated_at'   => Carbon::now(),
+            ]);
+        }
+
+        return ['status' => 'success', 'message' => 'FCM token registered successfully.'];
+    }
+
+    /**
+     * Unregister an FCM push notification device token.
+     */
+    public static function unregisterFcmToken(string $fcmToken): array
+    {
+        SchemaManager::ensureMobileFcmTokensTable();
+
+        $fcmToken = trim($fcmToken);
+        if (!empty($fcmToken)) {
+            Capsule::table('tblsahdev_mobile_fcm_tokens')
+                ->where('fcm_token', $fcmToken)
+                ->update(['is_active' => 0, 'updated_at' => Carbon::now()]);
+        }
+
+        return ['status' => 'success', 'message' => 'FCM token unregistered successfully.'];
     }
 
     /**

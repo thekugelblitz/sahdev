@@ -9,14 +9,33 @@ import 'providers/theme_provider.dart';
 import 'services/notification_service.dart';
 import 'screens/splash_screen.dart';
 
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'services/fcm_service.dart';
+
+final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize Android local notification channels
+  // 1. Initialize Android local notification channels
   try {
     await NotificationService().init();
   } catch (e) {
     debugPrint("NotificationService init error: $e");
+  }
+
+  // 2. Register FCM top-level background handler
+  try {
+    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+  } catch (e) {
+    debugPrint("FCM background handler registration error: $e");
+  }
+
+  // 3. Initialize Firebase & FCM service
+  try {
+    await FcmService().init();
+  } catch (e) {
+    debugPrint("FcmService init error: $e");
   }
 
   runApp(const SahdevMobileApp());
@@ -38,6 +57,7 @@ class SahdevMobileApp extends StatelessWidget {
       child: Consumer<ThemeProvider>(
         builder: (context, themeProv, _) {
           return MaterialApp(
+            navigatorKey: appNavigatorKey,
             title: 'Sahdev Support',
             debugShowCheckedModeBanner: false,
             theme: ThemeConfig.lightTheme,

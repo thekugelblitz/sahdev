@@ -305,8 +305,19 @@ if ($isMobileAction) {
             $response = \Sahdev\Lib\MobileApiService::getInvoicesList((int)$adminId, $status, $search, $page, $limit);
         } elseif ($action === 'mobile_heartbeat') {
             $response = ['status' => 'success', 'timestamp' => time()];
+        } elseif ($action === 'mobile_register_fcm') {
+            $fcmToken = (string)($_REQUEST['fcm_token'] ?? ($jsonData['fcm_token'] ?? ''));
+            $deviceName = (string)($_REQUEST['device_name'] ?? ($jsonData['device_name'] ?? 'Android Staff Device'));
+            $platform = (string)($_REQUEST['platform'] ?? ($jsonData['platform'] ?? 'android'));
+            $appVersion = (string)($_REQUEST['app_version'] ?? ($jsonData['app_version'] ?? '1.0.0'));
+            $deviceId = (string)($_REQUEST['device_id'] ?? ($jsonData['device_id'] ?? ''));
+            $response = \Sahdev\Lib\MobileApiService::registerFcmToken((int)$adminId, $fcmToken, $deviceName, $platform, $appVersion, $deviceId);
+        } elseif ($action === 'mobile_unregister_fcm') {
+            $fcmToken = (string)($_REQUEST['fcm_token'] ?? ($jsonData['fcm_token'] ?? ''));
+            $response = \Sahdev\Lib\MobileApiService::unregisterFcmToken($fcmToken);
         } elseif ($action === 'mobile_logout') {
-            $response = \Sahdev\Lib\MobileApiService::revokeToken($mobileToken);
+            $fcmToken = (string)($_REQUEST['fcm_token'] ?? ($jsonData['fcm_token'] ?? ''));
+            $response = \Sahdev\Lib\MobileApiService::revokeToken($mobileToken, $fcmToken);
         } elseif ($action === 'mobile_apk_download') {
             $apkPath = __DIR__ . '/mobile/app-release.apk';
             if (!file_exists($apkPath)) {
@@ -803,6 +814,8 @@ $allowedActions = [
     'mobile_login', 'mobile_qr_generate', 'mobile_qr_verify', 'mobile_qr_status',
     'mobile_poll', 'mobile_chat_history', 'mobile_send', 'mobile_takeover', 'mobile_ai_suggest',
     'mobile_client_info', 'mobile_canned_responses', 'mobile_heartbeat', 'mobile_logout',
+    'mobile_register_fcm', 'mobile_unregister_fcm',
+    'admin_test_firebase_push', 'admin_save_firebase_config',
     'mobile_apk_download'
 ];
 if (!in_array($action, $allowedActions, true)) {
@@ -912,7 +925,9 @@ if ($intensity > 3) {
         'mobile_login', 'mobile_qr_generate', 'mobile_qr_verify', 'mobile_qr_status',
         'mobile_poll', 'mobile_chat_history', 'mobile_send', 'mobile_takeover',
         'mobile_ai_suggest', 'mobile_client_info', 'mobile_canned_responses',
-        'mobile_heartbeat', 'mobile_logout', 'mobile_apk_download'
+        'mobile_heartbeat', 'mobile_logout', 'mobile_register_fcm', 'mobile_unregister_fcm',
+        'admin_test_firebase_push', 'admin_save_firebase_config',
+        'mobile_apk_download'
     ];
     if (!$ticketId && !in_array($action, $ticketNotRequiredActions, true) && !$isGetAllowed && !$isMobileAction) {
         header('HTTP/1.1 400 Bad Request');
@@ -1040,7 +1055,9 @@ try {
         'mobile_login', 'mobile_qr_generate', 'mobile_qr_verify', 'mobile_qr_status',
         'mobile_poll', 'mobile_chat_history', 'mobile_send', 'mobile_takeover',
         'mobile_ai_suggest', 'mobile_client_info', 'mobile_canned_responses',
-        'mobile_heartbeat', 'mobile_logout', 'mobile_apk_download'
+        'mobile_heartbeat', 'mobile_logout', 'mobile_register_fcm', 'mobile_unregister_fcm',
+        'admin_test_firebase_push', 'admin_save_firebase_config',
+        'mobile_apk_download'
     ];
     $actionMap = \Sahdev\Lib\AdminPreferences::actionFeatureMap();
     if (!$isMobileAction && !in_array($action, \Sahdev\Lib\AdminPreferences::unguardedActions(), true) && !in_array($action, $skipPrefGuardActions, true)) {
@@ -2065,6 +2082,73 @@ try {
         $visitorToken = !empty($_REQUEST['visitor_token']) ? (string)$_REQUEST['visitor_token'] : null;
         $data = \Sahdev\Lib\ChatService::getVisitorAccountDetails($clientId, $visitorToken, $sessionId);
         $response = array_merge(['status' => 'success'], $data);
+    } elseif ($action === 'admin_test_firebase_push') {
+        require_once __DIR__ . '/lib/FirebasePushService.php';
+        $testToken = trim((string)($_REQUEST['fcm_token'] ?? ''));
+        if (empty($testToken)) {
+            $recent = \WHMCS\Database\Capsule::table('tblsahdev_mobile_fcm_tokens')
+                ->where('is_active', 1)
+                ->orderBy('updated_at', 'desc')
+                ->first();
+            if ($recent) {
+                $testToken = $recent->fcm_token;
+            }
+        }
+        if (empty($testToken)) {
+            $response = ['status' => 'error', 'message' => 'No active mobile device registered yet. Please pair Sahdev Mobile on a staff phone first.'];
+        } else {
+            $res = \Sahdev\Lib\FirebasePushService::sendToDevice(
+                $testToken,
+                '🔥 Sahdev Push Test',
+                'Firebase Cloud Messaging HTTP v1 connection is active and working!',
+                ['event_type' => 'test_push', 'timestamp' => (string)time()],
+                'sahdev_system_channel',
+                'high'
+            );
+            $response = [
+                'status'  => $res['success'] ? 'success' : 'error',
+                'message' => $res['success'] ? 'Test push notification dispatched successfully via FCM!' : ($res['error'] ?? 'Push failed'),
+                'details' => $res
+            ];
+        }
+    } elseif ($action === 'admin_save_firebase_config') {
+        require_once __DIR__ . '/lib/FirebasePushService.php';
+        $enabled = !empty($_REQUEST['firebase_enabled']) && ($_REQUEST['firebase_enabled'] === '1' || $_REQUEST['firebase_enabled'] === 'true');
+        $rawJson = trim((string)($_REQUEST['firebase_service_account_json'] ?? ''));
+        $gatewayUrl = trim((string)($_REQUEST['firebase_gateway_url'] ?? ''));
+        $notifySummons = !isset($_REQUEST['firebase_notify_summons']) || $_REQUEST['firebase_notify_summons'] === '1' || $_REQUEST['firebase_notify_summons'] === 'true';
+        $notifyChats = !isset($_REQUEST['firebase_notify_chat_messages']) || $_REQUEST['firebase_notify_chat_messages'] === '1' || $_REQUEST['firebase_notify_chat_messages'] === 'true';
+        $notifyTickets = !isset($_REQUEST['firebase_notify_tickets']) || $_REQUEST['firebase_notify_tickets'] === '1' || $_REQUEST['firebase_notify_tickets'] === 'true';
+        $notifyAlerts = !isset($_REQUEST['firebase_notify_system_alerts']) || $_REQUEST['firebase_notify_system_alerts'] === '1' || $_REQUEST['firebase_notify_system_alerts'] === 'true';
+
+        $projectId = '';
+        if (!empty($rawJson)) {
+            $parsed = json_decode($rawJson, true);
+            if (!is_array($parsed) || empty($parsed['project_id']) || empty($parsed['client_email']) || empty($parsed['private_key'])) {
+                $response = ['status' => 'error', 'message' => 'Invalid Firebase Service Account JSON. Ensure project_id, client_email, and private_key are present.'];
+                header('Content-Type: application/json; charset=utf-8');
+                echo json_encode($response);
+                exit;
+            }
+            $projectId = (string)$parsed['project_id'];
+        }
+
+        $update = [
+            'firebase_enabled'              => $enabled ? 1 : 0,
+            'firebase_project_id'           => $projectId,
+            'firebase_gateway_url'          => $gatewayUrl,
+            'firebase_notify_summons'       => $notifySummons ? 1 : 0,
+            'firebase_notify_chat_messages' => $notifyChats ? 1 : 0,
+            'firebase_notify_tickets'       => $notifyTickets ? 1 : 0,
+            'firebase_notify_system_alerts' => $notifyAlerts ? 1 : 0,
+            'updated_at'                    => \Carbon\Carbon::now(),
+        ];
+        if (!empty($rawJson)) {
+            $update['firebase_service_account_json'] = $rawJson;
+        }
+
+        \WHMCS\Database\Capsule::table('tblsahdev_settings')->update($update);
+        $response = ['status' => 'success', 'message' => 'Firebase settings saved successfully.'];
     // ── Sahdev Mobile Live Support (Android / Flutter) Endpoints ─────────────
     } elseif ($action === 'mobile_login') {
         require_once __DIR__ . '/lib/MobileApiService.php';
