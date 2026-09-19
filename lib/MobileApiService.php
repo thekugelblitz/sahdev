@@ -412,9 +412,11 @@ class MobileApiService
 
         $rawMessages = Capsule::table('tblsahdev_chat_messages')
             ->where('session_id', $sessionId)
-            ->orderBy('id', 'asc')
+            ->orderBy('id', 'desc')
             ->limit($limit)
-            ->get();
+            ->get()
+            ->reverse()
+            ->values();
 
         $messages = [];
         foreach ($rawMessages as $m) {
@@ -781,44 +783,66 @@ class MobileApiService
     }
 
     /**
-     * Pre-saved quick canned responses for common support scenarios.
+     * Pre-saved quick canned responses for common support scenarios, merged with WHMCS predefined replies.
      */
     public static function getCannedResponses(): array
     {
+        $defaultResponses = [
+            [
+                'id'       => 1,
+                'title'    => 'Standard Greeting',
+                'shortcut' => '/hi',
+                'text'     => 'Hello! Thank you for reaching out to support. How may I assist you today?',
+            ],
+            [
+                'id'       => 2,
+                'title'    => 'Investigating Account',
+                'shortcut' => '/wait',
+                'text'     => 'I am reviewing your account and service configuration right now. Please allow me just 1-2 minutes.',
+            ],
+            [
+                'id'       => 3,
+                'title'    => 'DNS & Propagation',
+                'shortcut' => '/dns',
+                'text'     => 'DNS changes typically take 1 to 24 hours to propagate globally. You can monitor the status at whatsmydns.net.',
+            ],
+            [
+                'id'       => 4,
+                'title'    => 'Ticket Escalation',
+                'shortcut' => '/escalate',
+                'text'     => 'I have opened a priority ticket with our engineering team for this. You will receive an email update shortly.',
+            ],
+            [
+                'id'       => 5,
+                'title'    => 'Closing & Follow-up',
+                'shortcut' => '/bye',
+                'text'     => 'Is there anything else I can help you with today? Thank you for choosing us!',
+            ],
+        ];
+
+        $whmcsReplies = [];
+        try {
+            if (Capsule::schema()->hasTable('tblticketpredefinedreplies')) {
+                $rows = Capsule::table('tblticketpredefinedreplies')
+                    ->orderBy('name', 'asc')
+                    ->limit(50)
+                    ->get(['id', 'name', 'reply']);
+
+                foreach ($rows as $r) {
+                    $slug = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', (string)$r->name));
+                    $whmcsReplies[] = [
+                        'id'       => 1000 + (int)$r->id,
+                        'title'    => (string)$r->name,
+                        'shortcut' => '/' . (!empty($slug) ? $slug : ('reply' . $r->id)),
+                        'text'     => (string)$r->reply,
+                    ];
+                }
+            }
+        } catch (\Throwable $e) {}
+
         return [
             'status'    => 'success',
-            'responses' => [
-                [
-                    'id'       => 1,
-                    'title'    => 'Standard Greeting',
-                    'shortcut' => '/hi',
-                    'text'     => 'Hello! Thank you for reaching out to support. How may I assist you today?',
-                ],
-                [
-                    'id'       => 2,
-                    'title'    => 'Investigating Account',
-                    'shortcut' => '/wait',
-                    'text'     => 'I am reviewing your account and service configuration right now. Please allow me just 1-2 minutes.',
-                ],
-                [
-                    'id'       => 3,
-                    'title'    => 'DNS & Propagation',
-                    'shortcut' => '/dns',
-                    'text'     => 'DNS changes typically take 1 to 24 hours to propagate globally. You can monitor the status at whatsmydns.net.',
-                ],
-                [
-                    'id'       => 4,
-                    'title'    => 'Ticket Escalation',
-                    'shortcut' => '/escalate',
-                    'text'     => 'I have opened a priority ticket with our engineering team for this. You will receive an email update shortly.',
-                ],
-                [
-                    'id'       => 5,
-                    'title'    => 'Closing & Follow-up',
-                    'shortcut' => '/bye',
-                    'text'     => 'Is there anything else I can help you with today? Thank you for choosing us!',
-                ],
-            ],
+            'responses' => array_merge($defaultResponses, $whmcsReplies),
         ];
     }
 
@@ -856,6 +880,14 @@ class MobileApiService
         $fcmToken = trim($fcmToken);
         if (empty($fcmToken)) {
             return ['status' => 'error', 'message' => 'FCM token is required.'];
+        }
+
+        // Deactivate any prior tokens for this same physical device to eliminate duplicate push notifications
+        if (!empty($deviceId)) {
+            Capsule::table('tblsahdev_mobile_fcm_tokens')
+                ->where('device_id', $deviceId)
+                ->where('fcm_token', '!=', $fcmToken)
+                ->update(['is_active' => 0, 'updated_at' => Carbon::now()]);
         }
 
         $existing = Capsule::table('tblsahdev_mobile_fcm_tokens')

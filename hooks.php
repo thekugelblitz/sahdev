@@ -14029,12 +14029,23 @@ DISC;
 
     // ── Live Human Agent Summon Handler (Hybrid Transition) ────────────────
     window.sdvSummonHuman = function() {
+        var btnSummon = document.getElementById('sdv-btn-summon-agent');
+        var origSummonHtml = btnSummon ? btnSummon.innerHTML : '';
+        if (btnSummon) {
+            btnSummon.disabled = true;
+            btnSummon.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        }
+
         if (!sessionUuid) {
             var formInit = new FormData();
             formInit.append('action', 'client_chat_init');
             formInit.append('visitor_token', visitorToken);
             formInit.append('page_url', window.location.href);
             postAjaxWithFallback(formInit, function(err, data) {
+                if (btnSummon) {
+                    btnSummon.disabled = false;
+                    btnSummon.innerHTML = origSummonHtml;
+                }
                 if (!err && data && data.session_uuid) {
                     sessionUuid = data.session_uuid;
                     sdvSafeSet(activeSessionKey, sessionUuid);
@@ -14051,6 +14062,32 @@ DISC;
         form.append('reason', 'Client requested live agent via chat widget');
 
         postAjaxWithFallback(form, function(err, data) {
+            if (btnSummon) {
+                btnSummon.disabled = false;
+                btnSummon.innerHTML = origSummonHtml;
+            }
+
+            if (err || (data && data.status === 'error')) {
+                // If session not found or invalid on server, clear stale session and re-initialize
+                if (data && data.message && data.message.indexOf('Session not found') !== -1) {
+                    sessionUuid = null;
+                    try { localStorage.removeItem(activeSessionKey); } catch(e) {}
+                    var formInit2 = new FormData();
+                    formInit2.append('action', 'client_chat_init');
+                    formInit2.append('visitor_token', visitorToken);
+                    formInit2.append('page_url', window.location.href);
+                    postAjaxWithFallback(formInit2, function(eInit, dInit) {
+                        if (!eInit && dInit && dInit.session_uuid) {
+                            sessionUuid = dInit.session_uuid;
+                            sdvSafeSet(activeSessionKey, sessionUuid);
+                            window.sdvSummonHuman();
+                        }
+                    });
+                    return;
+                }
+                return;
+            }
+
             isHumanSessionActive = true;
             sdvClearLimitState(false, null);
             window.sdvUpdateHeaderState && window.sdvUpdateHeaderState(false, null, true);
@@ -14724,6 +14761,63 @@ function sahdev_render_admin_live_chat_alert_listener(array $vars = []): string
         toast.querySelector('.sdv-toast-silence-btn').addEventListener('click', dismiss);
     }
 
+    // ── Guaranteed Active Chat New Message Toast Renderer ─────────────────
+    function renderNewMessageToast(msg) {
+        var container = getOrCreateToastContainer();
+        if (!container) return;
+
+        var toastId = 'sdv-toast-msg-' + msg.session_id;
+        // Remove existing toast for this session if any to show latest message
+        var existing = document.getElementById(toastId);
+        if (existing && existing.parentNode) {
+            existing.parentNode.removeChild(existing);
+        }
+
+        var toast = document.createElement('div');
+        toast.id = toastId;
+        toast.setAttribute('data-uuid', msg.session_uuid || '');
+        toast.style.cssText = 'pointer-events:auto;width:380px;max-width:100%;background:#ffffff;border-radius:12px;box-shadow:0 16px 48px -6px rgba(15,23,42,0.38), 0 0 0 1px rgba(0,0,0,0.08);border-left:5px solid #2563eb;padding:16px 18px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;animation:sdvToastIn 0.3s cubic-bezier(0.16,1,0.3,1);position:relative;';
+
+        var clientName = msg.client_name || 'Website Visitor';
+        var sourceDomain = msg.source_domain ? (' • ' + msg.source_domain) : '';
+        var text = msg.message_text || 'New message in active chat session.';
+
+        var html = '<div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px;">' +
+            '<div style="display:flex;align-items:center;gap:8px;">' +
+                '<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,0.25);"></span>' +
+                '<span style="font-size:12px;font-weight:800;color:#1d4ed8;letter-spacing:0.3px;text-transform:uppercase;">💬 Live Chat Reply</span>' +
+            '</div>' +
+            '<button type="button" class="sdv-toast-dismiss-btn" style="background:none;border:none;color:#94a3b8;font-size:20px;cursor:pointer;line-height:1;padding:0 4px;" title="Dismiss">&times;</button>' +
+        '</div>' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">' +
+            '<div style="font-size:14.5px;font-weight:700;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + sdvEscapeHtml(clientName) + '</div>' +
+            '<span style="font-size:11px;color:#64748b;font-weight:600;flex-shrink:0;margin-left:8px;">' + sdvEscapeHtml(msg.created_at || 'Just now') + '</span>' +
+        '</div>' +
+        '<div style="font-size:12.5px;color:#334155;line-height:1.45;margin-bottom:12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:9px 12px;word-break:break-word;">' +
+            sdvEscapeHtml(text) + (sourceDomain ? ('<div style="font-size:11px;color:#94a3b8;margin-top:4px;"><i class="fas fa-globe"></i> ' + sdvEscapeHtml(msg.source_domain) + '</div>') : '') +
+        '</div>' +
+        '<div style="display:flex;gap:8px;align-items:center;">' +
+            '<a href="' + consoleUrl + '&session_uuid=' + encodeURIComponent(msg.session_uuid) + '" class="sdv-toast-accept-btn" style="flex:1;text-align:center;text-decoration:none;background:#2563eb;color:#ffffff;font-size:12.5px;font-weight:600;padding:9px 12px;border-radius:7px;transition:background 0.2s ease;">' +
+                'Reply in Console &rarr;' +
+            '</a>' +
+            '<button type="button" class="sdv-toast-silence-btn" style="background:#f1f5f9;border:1px solid #cbd5e1;color:#475569;font-size:12.5px;font-weight:600;padding:9px 12px;border-radius:7px;cursor:pointer;">' +
+                'Dismiss' +
+            '</button>' +
+        '</div>';
+
+        toast.innerHTML = html;
+        container.appendChild(toast);
+
+        var dismiss = function() {
+            toast.style.opacity = '0';
+            toast.style.transform = 'translateY(12px) scale(0.96)';
+            setTimeout(function() { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 220);
+        };
+
+        toast.querySelector('.sdv-toast-dismiss-btn').addEventListener('click', dismiss);
+        toast.querySelector('.sdv-toast-silence-btn').addEventListener('click', dismiss);
+    }
+
     // Auto-silence when tab/window gains focus
     window.addEventListener('focus', function() {
         stopAlertRing();
@@ -14841,6 +14935,35 @@ function sahdev_render_admin_live_chat_alert_listener(array $vars = []): string
                     var container = document.getElementById('sdv-admin-global-toast-container');
                     if (container) container.innerHTML = '';
                 }
+            }
+
+            // 3. Handle Incoming Chat Messages in Active Taken-Over Chats
+            var newMessages = res.new_messages || [];
+            if (newMessages.length > 0) {
+                newMessages.forEach(function(nm) {
+                    var seenMsgKey = 'sdv_seen_msg_' + nm.session_id + '_' + (nm.created_at || '');
+                    try {
+                        if (sessionStorage.getItem(seenMsgKey) === '1') return;
+                        sessionStorage.setItem(seenMsgKey, '1');
+                    } catch(e) {}
+
+                    renderNewMessageToast(nm);
+                    playSynthesizedSound('ping');
+
+                    if (window.Notification && Notification.permission === 'granted' && (!isTabFocused || !focusMode)) {
+                        try {
+                            var notif = new Notification('💬 ' + (nm.client_name || 'Customer'), {
+                                body: nm.message_text,
+                                icon: adminBase + '../favicon.ico',
+                                tag: 'sdv_msg_' + nm.session_id
+                            });
+                            notif.onclick = function() {
+                                window.focus();
+                                window.location.href = consoleUrl + '&session_uuid=' + encodeURIComponent(nm.session_uuid);
+                            };
+                        } catch(e) {}
+                    }
+                });
             }
         }).catch(function(){});
     }

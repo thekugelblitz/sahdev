@@ -157,7 +157,23 @@ class ChatProvider extends ChangeNotifier {
       _isTakenOver = true;
       _typingPreview = '';
       _isClientTyping = false;
-      _messages.removeWhere((m) => m.id == tempId);
+
+      // Swap temporary message with server-confirmed message immediately
+      final serverMsgMap = res.data!['message'] as Map<String, dynamic>?;
+      if (serverMsgMap != null) {
+        final confirmedMsg = ChatMessage.fromJson(serverMsgMap);
+        final idx = _messages.indexWhere((m) => m.id == tempId);
+        if (idx != -1) {
+          _messages[idx] = confirmedMsg;
+        } else {
+          _messages.removeWhere((m) => m.id == tempId);
+          _messages.add(confirmedMsg);
+        }
+        notifyListeners();
+      } else {
+        _messages.removeWhere((m) => m.id == tempId);
+      }
+
       await fetchMessages(baseUrl: baseUrl, token: token);
       return true;
     } else {

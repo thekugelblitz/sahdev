@@ -87,7 +87,7 @@ class SchemaManager
                 'copilot_shortcut_key'         => ['type' => 'string', 'length' => 32, 'default' => 'Ctrl+Space'],
 
                 // Client Live Chat
-                'client_chat_enabled'          => ['type' => 'boolean', 'default' => 0],
+                'client_chat_enabled'          => ['type' => 'boolean', 'default' => 1],
                 'client_chat_provider_id'      => ['type' => 'integer', 'default' => 0],
                 'client_chat_admin_id'         => ['type' => 'integer', 'default' => null, 'nullable' => true],
                 'client_chat_department_id'    => ['type' => 'integer', 'default' => null, 'nullable' => true],
@@ -248,17 +248,38 @@ class SchemaManager
             try {
                 if (Capsule::table('tblsahdev_settings')->count() === 0) {
                     Capsule::table('tblsahdev_settings')->insert([
-                        'copilot_enabled' => 1,
-                        'created_at'      => \Carbon\Carbon::now(),
-                        'updated_at'      => \Carbon\Carbon::now(),
+                        'copilot_enabled'     => 1,
+                        'client_chat_enabled' => 1,
+                        'client_chat_kb_enabled' => 1,
+                        'client_chat_brand_color' => '#0d6efd',
+                        'created_at'          => \Carbon\Carbon::now(),
+                        'updated_at'          => \Carbon\Carbon::now(),
                     ]);
                 } else {
                     Capsule::table('tblsahdev_settings')
                         ->whereNull('copilot_enabled')
                         ->orWhere('copilot_enabled', 0)
                         ->update(['copilot_enabled' => 1]);
+
+                    // Self-heal: ensure client_chat_kb_enabled is enabled and restore client_chat_enabled if wiped by settings bug
+                    $currentSettings = Capsule::table('tblsahdev_settings')->first();
+                    if ($currentSettings) {
+                        $heal = [];
+                        if (empty($currentSettings->client_chat_kb_enabled)) {
+                            $heal['client_chat_kb_enabled'] = 1;
+                        }
+                        if (empty($currentSettings->client_chat_enabled)) {
+                            $heal['client_chat_enabled'] = 1;
+                        }
+                        if (empty($currentSettings->client_chat_brand_color)) {
+                            $heal['client_chat_brand_color'] = '#0d6efd';
+                        }
+                        if (!empty($heal)) {
+                            Capsule::table('tblsahdev_settings')->where('id', $currentSettings->id)->update($heal);
+                        }
+                    }
                 }
-            } catch (\Throwable $ex) {}
+            } catch (\Throwable $e) {}
         } catch (\Throwable $e) {
             // Benign column migration
         }

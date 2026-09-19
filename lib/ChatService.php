@@ -2756,18 +2756,23 @@ class ChatService
     {
         try {
             $session = Capsule::table('tblsahdev_chat_sessions')->where('id', $sessionId)->first();
-            if (!$session || $session->status === 'taken_over') {
+            if (!$session) {
                 return false;
             }
 
             $alreadyRequested = ($session->summon_status === 'requested');
 
-            // Always update summoned_at to now, guaranteeing that the alerting window refreshes immediately
-            Capsule::table('tblsahdev_chat_sessions')->where('id', $sessionId)->update([
+            $updateData = [
                 'summon_status' => 'requested',
                 'summoned_at'   => Carbon::now(),
                 'updated_at'    => Carbon::now(),
-            ]);
+            ];
+            if ($session->status === 'closed') {
+                $updateData['status'] = 'active';
+            }
+
+            // Always update summoned_at to now, guaranteeing that the alerting window refreshes immediately
+            Capsule::table('tblsahdev_chat_sessions')->where('id', $sessionId)->update($updateData);
 
             $msgId = 0;
             // Add notification message in the chat if not already summoned

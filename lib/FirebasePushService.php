@@ -378,10 +378,21 @@ class FirebasePushService
         $tokens = Capsule::table('tblsahdev_mobile_fcm_tokens')
             ->where('admin_id', $adminId)
             ->where('is_active', 1)
-            ->pluck('fcm_token');
+            ->orderBy('last_seen_at', 'desc')
+            ->get(['fcm_token', 'device_id']);
+
+        $seenDevices = [];
+        $uniqueTokens = [];
+        foreach ($tokens as $t) {
+            $devKey = !empty($t->device_id) ? $t->device_id : ('tok_' . md5($t->fcm_token));
+            if (!isset($seenDevices[$devKey])) {
+                $seenDevices[$devKey] = true;
+                $uniqueTokens[] = $t->fcm_token;
+            }
+        }
 
         $sentCount = 0;
-        foreach ($tokens as $token) {
+        foreach ($uniqueTokens as $token) {
             $res = self::sendToDevice($token, $title, $body, $data, $channelId);
             if ($res['success']) {
                 $sentCount++;
@@ -433,9 +444,21 @@ class FirebasePushService
             }
         }
 
-        $tokens = $query->pluck('fcm_token');
+        $tokens = $query->orderBy('last_seen_at', 'desc')
+            ->get(['fcm_token', 'device_id', 'admin_id']);
+
+        $seenDevices = [];
+        $uniqueTokens = [];
+        foreach ($tokens as $t) {
+            $devKey = !empty($t->device_id) ? $t->device_id : ('tok_' . md5($t->fcm_token));
+            if (!isset($seenDevices[$devKey])) {
+                $seenDevices[$devKey] = true;
+                $uniqueTokens[] = $t->fcm_token;
+            }
+        }
+
         $sentCount = 0;
-        foreach ($tokens as $token) {
+        foreach ($uniqueTokens as $token) {
             $res = self::sendToDevice($token, $title, $body, $data, $channelId);
             if ($res['success']) {
                 $sentCount++;

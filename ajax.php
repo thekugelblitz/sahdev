@@ -868,7 +868,7 @@ if ($action === 'server_sso') {
     exit;
 }
 
-$isConsoleAction = strpos($action, 'admin_live_console_') === 0 || $action === 'admin_heartbeat' || $action === 'admin_test_firebase_push' || $action === 'admin_save_firebase_config';
+$isConsoleAction = strpos($action, 'admin_live_console_') === 0 || $action === 'admin_heartbeat' || $action === 'admin_test_firebase_push' || $action === 'admin_save_firebase_config' || $action === 'admin_ack_new_visitor' || $action === 'admin_dismiss_summon' || $action === 'admin_claim_summon';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isGetAllowed && !$isClientChatAction && !$isConsoleAction && !$isMobileAction) {
     $requestToken = (string) ($_REQUEST['token'] ?? '');
@@ -2225,106 +2225,6 @@ try {
 
         \WHMCS\Database\Capsule::table('tblsahdev_settings')->update($update);
         $response = ['status' => 'success', 'message' => 'Firebase settings saved successfully.'];
-    // ── Sahdev Mobile Live Support (Android / Flutter) Endpoints ─────────────
-    } elseif ($action === 'mobile_login') {
-        require_once __DIR__ . '/lib/MobileApiService.php';
-        $username = (string)($_REQUEST['username'] ?? ($_POST['username'] ?? ''));
-        $password = (string)($_REQUEST['password'] ?? ($_POST['password'] ?? ''));
-        $deviceName = (string)($_REQUEST['device_name'] ?? ($_POST['device_name'] ?? 'Android Staff Phone'));
-        if (empty($username) || empty($password)) {
-            $rawInput = @file_get_contents('php://input');
-            if (!empty($rawInput)) {
-                $jsonData = @json_decode($rawInput, true);
-                if (is_array($jsonData)) {
-                    $username = $username ?: ($jsonData['username'] ?? '');
-                    $password = $password ?: ($jsonData['password'] ?? '');
-                    $deviceName = $deviceName ?: ($jsonData['device_name'] ?? 'Android Staff Phone');
-                }
-            }
-        }
-        $response = \Sahdev\Lib\MobileApiService::authenticate($username, $password, $deviceName);
-    } elseif ($action === 'mobile_qr_generate') {
-        require_once __DIR__ . '/lib/MobileApiService.php';
-        $response = \Sahdev\Lib\MobileApiService::generateQrPairingToken((int)$adminId);
-    } elseif ($action === 'mobile_qr_status') {
-        require_once __DIR__ . '/lib/MobileApiService.php';
-        $tokenId = (int)($_REQUEST['token_id'] ?? 0);
-        $response = \Sahdev\Lib\MobileApiService::checkQrStatus($tokenId, (int)$adminId);
-    } elseif ($action === 'mobile_qr_verify') {
-        require_once __DIR__ . '/lib/MobileApiService.php';
-        $code = (string)($_REQUEST['code'] ?? ($_POST['code'] ?? ''));
-        $deviceName = (string)($_REQUEST['device_name'] ?? ($_POST['device_name'] ?? 'Android Staff Phone'));
-        if (empty($code)) {
-            $rawInput = @file_get_contents('php://input');
-            if (!empty($rawInput)) {
-                $jsonData = @json_decode($rawInput, true);
-                if (is_array($jsonData)) {
-                    $code = $code ?: ($jsonData['code'] ?? '');
-                    $deviceName = $deviceName ?: ($jsonData['device_name'] ?? 'Android Staff Phone');
-                }
-            }
-        }
-        $response = \Sahdev\Lib\MobileApiService::verifyQrPairingToken($code, $deviceName);
-    } elseif ($action === 'mobile_poll') {
-        require_once __DIR__ . '/lib/MobileApiService.php';
-        $filter = (string)($_REQUEST['filter'] ?? 'all');
-        $afterMsgId = (int)($_REQUEST['after_msg_id'] ?? 0);
-        $response = \Sahdev\Lib\MobileApiService::pollQueue((int)$adminId, $filter, $afterMsgId);
-    } elseif ($action === 'mobile_chat_history') {
-        require_once __DIR__ . '/lib/MobileApiService.php';
-        $sessionId = (int)($_REQUEST['session_id'] ?? 0);
-        $limit = (int)($_REQUEST['limit'] ?? 60);
-        $response = \Sahdev\Lib\MobileApiService::getChatHistory($sessionId, $limit);
-    } elseif ($action === 'mobile_send') {
-        require_once __DIR__ . '/lib/MobileApiService.php';
-        $sessionId = (int)($_REQUEST['session_id'] ?? 0);
-        $message = (string)($_REQUEST['message'] ?? '');
-        $response = \Sahdev\Lib\MobileApiService::sendMessage($sessionId, (int)$adminId, $message);
-    } elseif ($action === 'mobile_takeover') {
-        require_once __DIR__ . '/lib/MobileApiService.php';
-        $sessionId = (int)($_REQUEST['session_id'] ?? 0);
-        $takeover = !empty($_REQUEST['takeover']) && ($_REQUEST['takeover'] === '1' || $_REQUEST['takeover'] === 'true');
-        $response = \Sahdev\Lib\MobileApiService::takeoverSession($sessionId, (int)$adminId, $takeover);
-    } elseif ($action === 'mobile_ai_suggest') {
-        require_once __DIR__ . '/lib/MobileApiService.php';
-        $sessionId = (int)($_REQUEST['session_id'] ?? 0);
-        $response = \Sahdev\Lib\MobileApiService::generateAiSuggestion($sessionId);
-    } elseif ($action === 'mobile_client_info') {
-        require_once __DIR__ . '/lib/MobileApiService.php';
-        $clientId = (int)($_REQUEST['client_id'] ?? 0);
-        $sessionId = (int)($_REQUEST['session_id'] ?? 0);
-        $response = \Sahdev\Lib\MobileApiService::getClientDetails($clientId, $sessionId);
-    } elseif ($action === 'mobile_canned_responses') {
-        require_once __DIR__ . '/lib/MobileApiService.php';
-        $response = \Sahdev\Lib\MobileApiService::getCannedResponses();
-    } elseif ($action === 'mobile_heartbeat') {
-        $response = ['status' => 'success', 'timestamp' => time()];
-    } elseif ($action === 'mobile_logout') {
-        require_once __DIR__ . '/lib/MobileApiService.php';
-        $response = \Sahdev\Lib\MobileApiService::revokeToken($mobileToken);
-    } elseif ($action === 'mobile_apk_download') {
-        $apkPath = __DIR__ . '/mobile/app-release.apk';
-        if (!file_exists($apkPath)) {
-            $apkPath = __DIR__ . '/mobile_apk/app-release.apk';
-        }
-        if (!file_exists($apkPath)) {
-            header("HTTP/1.1 404 Not Found");
-            echo "APK file not found on server.";
-            exit;
-        }
-        while (ob_get_level()) {
-            ob_end_clean();
-        }
-        header('Content-Description: File Transfer');
-        header('Content-Type: application/vnd.android.package-archive');
-        header('Content-Disposition: attachment; filename="sahdev-livechat.apk"');
-        header('Content-Transfer-Encoding: binary');
-        header('Expires: 0');
-        header('Cache-Control: must-revalidate, post-check=0, pre-check=0');
-        header('Pragma: public');
-        header('Content-Length: ' . filesize($apkPath));
-        readfile($apkPath);
-        exit;
     } else {
         // Default analyze_ticket (server-side generation)
         $response = $controller->getAnalysis($tone, $instruction, $forceRegenerate, $forceFallback, $intent, $useSummary, $includeHistory, $technicalContext, $overrideProviderId, $includeTools, $includeAdminNotes);

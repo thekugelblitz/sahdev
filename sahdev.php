@@ -304,7 +304,7 @@ function sahdev_activate()
                     $table->boolean('scrub_phones')->default(1);
                     $table->boolean('metrics_cron_enabled')->default(1);
                     $table->integer('metrics_retention_days')->default(365);
-                    $table->boolean('client_chat_enabled')->default(0);
+                    $table->boolean('client_chat_enabled')->default(1);
                     $table->integer('client_chat_provider_id')->default(0);
                     $table->string('client_chat_model_name', 128)->default('openai/gpt-4o-mini');
                     $table->string('client_chat_title', 128)->default('Hosting Support Assistant');

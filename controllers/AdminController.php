@@ -487,119 +487,89 @@ class AdminController
         $hasClientChatPerm = $isSuper || \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_CLIENT_CHAT_MANAGE);
 
         $categories = [
-            'chat' => [
-                'title' => 'Chat & Copilot',
-                'icon'  => 'fas fa-comments',
+            'live_support' => [
+                'title' => 'Live Support',
+                'icon'  => 'fas fa-headset',
                 'tools' => []
             ],
-            'intelligence' => [
-                'title' => 'Intelligence & Analytics',
-                'icon'  => 'fas fa-chart-pie',
+            'ticket_ai' => [
+                'title' => 'Ticket AI',
+                'icon'  => 'fas fa-ticket-alt',
                 'tools' => []
             ],
             'knowledge' => [
-                'title' => 'Knowledge & Prompts',
-                'icon'  => 'fas fa-book-open',
+                'title' => 'Knowledge & Content',
+                'icon'  => 'fas fa-book',
                 'tools' => []
             ],
-            'automation' => [
-                'title' => 'Automation & Ops',
-                'icon'  => 'fas fa-robot',
+            'operations' => [
+                'title' => 'Operations & Automation',
+                'icon'  => 'fas fa-tools',
                 'tools' => []
             ],
-            'logs' => [
-                'title' => 'Logs & Audit',
-                'icon'  => 'fas fa-shield-alt',
+            'analytics_logs' => [
+                'title' => 'Analytics & Logs',
+                'icon'  => 'fas fa-chart-line',
                 'tools' => []
             ],
             'settings' => [
-                'title' => 'Settings & Security',
+                'title' => 'Configuration',
                 'icon'  => 'fas fa-cog',
                 'tools' => []
             ],
         ];
 
-        // 1. Chat & Copilot
-        if ($hasCopilotPerm) {
-            $categories['chat']['tools']['admin_copilot'] = [
-                'label' => 'Admin Ops Copilot',
-                'icon'  => 'fas fa-terminal',
-                'url'   => $base . '&action=admin_copilot',
-                'desc'  => 'Autonomous operations & command dispatcher'
-            ];
-        }
+        // 1. Live Support (Console, Widget Customizer, Mobile Staff App)
         if ($hasClientChatPerm) {
-            $categories['chat']['tools']['live_console'] = [
-                'label' => 'Live Support Console',
+            $categories['live_support']['tools']['live_console'] = [
+                'label' => 'Live Console',
                 'icon'  => 'fas fa-satellite-dish',
                 'url'   => $base . '&action=live_console',
-                'desc'  => 'Real-time operator dashboard & sneak-peek'
+                'desc'  => 'Real-time operator dashboard & visitor sneak-peek'
             ];
-            $categories['chat']['tools']['client_chat'] = [
-                'label' => 'Client Live Chat',
-                'icon'  => 'fas fa-headset',
+            $categories['live_support']['tools']['client_chat'] = [
+                'label' => 'Widget & Customizer',
+                'icon'  => 'fas fa-palette',
                 'url'   => $base . '&action=client_chat',
-                'desc'  => 'Customer portal live widget & sessions'
+                'desc'  => 'Customer chat widget, design, appearance & rules'
             ];
-            $categories['chat']['tools']['mobile_app'] = [
-                'label' => 'Mobile App (QR)',
+            $categories['live_support']['tools']['mobile_app'] = [
+                'label' => 'Mobile Staff App',
                 'icon'  => 'fas fa-mobile-alt',
                 'url'   => $base . '&action=mobile_app',
-                'desc'  => 'Android Live Chat App pairing & QR screen'
+                'desc'  => 'Android Live Chat App pairing, QR code & push'
             ];
         }
 
-        // 2. Intelligence & Analytics
-        if ($hasMetricsPerm) {
-            $categories['intelligence']['tools']['organization_intelligence'] = [
-                'label' => 'Org Intelligence',
-                'icon'  => 'fas fa-chart-pie',
-                'url'   => $base . '&action=organization_intelligence',
-                'desc'  => 'Executive KPIs, department metrics & trends'
+        // 2. Ticket AI (Autopilot, Ticket Insights, Summaries)
+        if ($hasSettingsPerm) {
+            $categories['ticket_ai']['tools']['autopilot'] = [
+                'label' => 'Ticket Autopilot',
+                'icon'  => 'fas fa-robot',
+                'url'   => $base . '&action=autopilot',
+                'desc'  => 'Autonomous ticket triage, auto-drafting & replies'
             ];
         }
-        if ($hasAnalyticsPerm) {
-            $categories['intelligence']['tools']['analytics'] = [
-                'label' => 'Analytics & ROI',
-                'icon'  => 'fas fa-chart-line',
-                'url'   => $base . '&action=analytics',
-                'desc'  => 'Token usage, costs, efficiency & time saved'
-            ];
-        }
-        $categories['intelligence']['tools']['ticket_insights'] = [
+        $categories['ticket_ai']['tools']['ticket_insights'] = [
             'label' => 'Ticket Insights',
             'icon'  => 'fas fa-brain',
             'url'   => $base . '&action=ticket_insights',
             'desc'  => 'Real-time classification, triage badges & sentiment'
         ];
-        $categories['intelligence']['tools']['summaries'] = [
+        $categories['ticket_ai']['tools']['summaries'] = [
             'label' => 'Ticket Summaries',
             'icon'  => 'fas fa-file-alt',
             'url'   => $base . '&action=summaries',
             'desc'  => 'AI interaction summaries & resolution digest'
         ];
 
-        // 3. Knowledge & Prompts
+        // 3. Knowledge & Content (Knowledge Base, Canned Responses, Prompts, Intents)
         if ($hasKbPerm) {
             $categories['knowledge']['tools']['knowledgebase'] = [
-                'label' => 'Knowledgebase Grounding',
-                'icon'  => 'fas fa-book',
+                'label' => 'Knowledge Base',
+                'icon'  => 'fas fa-book-open',
                 'url'   => $base . '&action=knowledgebase',
-                'desc'  => 'Article indexing & dynamic RAG vectors'
-            ];
-        }
-        if ($hasSettingsPerm) {
-            $categories['knowledge']['tools']['prompt_manager'] = [
-                'label' => 'Prompt Manager',
-                'icon'  => 'fas fa-magic',
-                'url'   => $base . '&action=prompt_manager',
-                'desc'  => 'System instructions, system persona & prompt presets'
-            ];
-            $categories['knowledge']['tools']['intents'] = [
-                'label' => 'Intents Manager',
-                'icon'  => 'fas fa-bullseye',
-                'url'   => $base . '&action=intents',
-                'desc'  => 'Custom trigger phrases, intent classification & actions'
+                'desc'  => 'Article vector indexing & dynamic RAG snippets'
             ];
         }
         if ($hasCannedPerm) {
@@ -607,74 +577,106 @@ class AdminController
                 'label' => 'Canned Responses',
                 'icon'  => 'fas fa-save',
                 'url'   => $base . '&action=canned_responses',
-                'desc'  => 'Macros, quick canned snippets & templates'
+                'desc'  => 'Quick macros, canned snippets & templates'
+            ];
+        }
+        if ($hasSettingsPerm) {
+            $categories['knowledge']['tools']['prompt_manager'] = [
+                'label' => 'Prompts & Personas',
+                'icon'  => 'fas fa-magic',
+                'url'   => $base . '&action=prompt_manager',
+                'desc'  => 'System instructions, AI persona & preset library'
+            ];
+            $categories['knowledge']['tools']['intents'] = [
+                'label' => 'Intents & Actions',
+                'icon'  => 'fas fa-bullseye',
+                'url'   => $base . '&action=intents',
+                'desc'  => 'Trigger phrases, keyword matching & actions'
             ];
         }
 
-        // 4. Automation & Ops
-        if ($hasSettingsPerm) {
-            $categories['automation']['tools']['autopilot'] = [
-                'label' => 'Autopilot',
-                'icon'  => 'fas fa-robot',
-                'url'   => $base . '&action=autopilot',
-                'desc'  => 'Autonomous ticket triage & auto-drafting'
+        // 4. Operations & Automation (Admin Copilot, Incidents, Diagnostic Tools, Cron)
+        if ($hasCopilotPerm) {
+            $categories['operations']['tools']['admin_copilot'] = [
+                'label' => 'Admin Ops Copilot',
+                'icon'  => 'fas fa-terminal',
+                'url'   => $base . '&action=admin_copilot',
+                'desc'  => 'Autonomous operations & command dispatcher'
             ];
-            $categories['automation']['tools']['cron_center'] = [
+        }
+        if ($hasIncidentsPerm) {
+            $categories['operations']['tools']['incidents'] = [
+                'label' => 'Server & Incident Watch',
+                'icon'  => 'fas fa-server',
+                'url'   => $base . '&action=incidents',
+                'desc'  => 'Server health, outage detection & client alerts'
+            ];
+        }
+        if ($hasToolsPerm) {
+            $categories['operations']['tools']['tools'] = [
+                'label' => 'Diagnostic Tools',
+                'icon'  => 'fas fa-wrench',
+                'url'   => $base . '&action=tools',
+                'desc'  => 'Diagnostic server commands & network tests'
+            ];
+        }
+        if ($hasSettingsPerm) {
+            $categories['operations']['tools']['cron_center'] = [
                 'label' => 'Automation Cron Center',
                 'icon'  => 'fas fa-clock',
                 'url'   => $base . '&action=cron_center',
                 'desc'  => 'Scheduled tasks, background workers & queue health'
             ];
         }
-        if ($hasIncidentsPerm) {
-            $categories['automation']['tools']['incidents'] = [
-                'label' => 'Incident Monitoring',
-                'icon'  => 'fas fa-satellite-dish',
-                'url'   => $base . '&action=incidents',
-                'desc'  => 'Server uptime, outage detection & client alerts'
-            ];
-        }
-        if ($hasToolsPerm) {
-            $categories['automation']['tools']['tools'] = [
-                'label' => 'Diagnostic Tools',
-                'icon'  => 'fas fa-tools',
-                'url'   => $base . '&action=tools',
-                'desc'  => 'Diagnostic server commands & network tests'
-            ];
-        }
 
-        // 5. Logs & Audit (Consolidated & clarified)
+        // 5. Analytics & Logs (Org Intelligence, Usage ROI, Audit Trail, System Logs)
+        if ($hasMetricsPerm) {
+            $categories['analytics_logs']['tools']['organization_intelligence'] = [
+                'label' => 'Org Intelligence',
+                'icon'  => 'fas fa-chart-pie',
+                'url'   => $base . '&action=organization_intelligence',
+                'desc'  => 'Executive KPIs, department metrics & trends'
+            ];
+        }
+        if ($hasAnalyticsPerm) {
+            $categories['analytics_logs']['tools']['analytics'] = [
+                'label' => 'Usage & ROI',
+                'icon'  => 'fas fa-chart-bar',
+                'url'   => $base . '&action=analytics',
+                'desc'  => 'Token usage, costs, efficiency & time saved'
+            ];
+        }
         if ($hasAuditPerm) {
-            $categories['logs']['tools']['audit_trail'] = [
-                'label' => 'Audit Trail',
+            $categories['analytics_logs']['tools']['audit_trail'] = [
+                'label' => 'Security Audit Trail',
                 'icon'  => 'fas fa-history',
                 'url'   => $base . '&action=audit_trail',
                 'desc'  => 'Security audit log, tokens & prompt inspection'
             ];
-            $categories['logs']['tools']['module_logs'] = [
-                'label' => 'Module Logs',
+            $categories['analytics_logs']['tools']['module_logs'] = [
+                'label' => 'System & Debug Logs',
                 'icon'  => 'fas fa-clipboard-list',
                 'url'   => $base . '&action=module_logs',
                 'desc'  => 'System debug logger & API communications'
             ];
-            $categories['logs']['tools']['logs_maintenance'] = [
-                'label' => 'Logs & Maintenance',
+            $categories['analytics_logs']['tools']['logs_maintenance'] = [
+                'label' => 'Maintenance & Cleanup',
                 'icon'  => 'fas fa-database',
                 'url'   => $base . '&action=logs_maintenance',
                 'desc'  => 'Table sizes, archiving & retention cleanup'
             ];
         }
 
-        // 6. Settings & Security
+        // 6. Configuration (General Settings, AI Providers, Permissions, Preferences)
         if ($hasSettingsPerm) {
             $categories['settings']['tools']['settings'] = [
                 'label' => 'General Settings',
-                'icon'  => 'fas fa-cog',
+                'icon'  => 'fas fa-sliders-h',
                 'url'   => $base,
-                'desc'  => 'Global feature switches, models & UI'
+                'desc'  => 'Global feature switches, alert rules & notifications'
             ];
             $categories['settings']['tools']['providers'] = [
-                'label' => 'AI Providers',
+                'label' => 'AI Providers & Models',
                 'icon'  => 'fas fa-microchip',
                 'url'   => $base . '&action=providers',
                 'desc'  => 'LLM gateways, OpenAI, Anthropic, Gemini API keys'
@@ -1817,20 +1819,6 @@ class AdminController
             $opsRequirePasswordTier3 = !empty($_POST['ops_require_password_tier3']) ? 1 : 0;
             $opsJournalRetentionDays = max(7, min(365, (int) ($_POST['ops_journal_retention_days'] ?? 90)));
 
-            // Client Live Chat Settings
-            $clientChatEnabled = !empty($_POST['client_chat_enabled']) ? 1 : 0;
-            $clientChatProviderId = (int) ($_POST['client_chat_provider_id'] ?? 0);
-            $clientChatTitle = trim($_POST['client_chat_title'] ?? 'Hosting Support Assistant');
-            $clientChatBrandColor = trim($_POST['client_chat_brand_color'] ?? '#0d6efd');
-            $clientChatPosition = in_array($_POST['client_chat_position'] ?? '', ['bottom-left', 'bottom-right']) ? $_POST['client_chat_position'] : 'bottom-right';
-            $clientChatWelcomeMessage = trim($_POST['client_chat_welcome_message'] ?? 'Hello! How can we assist you today?');
-            $clientChatKbEnabled = !empty($_POST['client_chat_kb_enabled']) ? 1 : 0;
-            $clientChatRequirePrechat = !empty($_POST['client_chat_require_prechat']) ? 1 : 0;
-            $clientChatProactiveDelay = max(0, (int) ($_POST['client_chat_proactive_delay'] ?? 15));
-            $clientChatProactiveMessage = trim($_POST['client_chat_proactive_message'] ?? '');
-            $clientChatSystemPrompt = trim($_POST['client_chat_system_prompt'] ?? '');
-            $clientChatDebug = !empty($_POST['client_chat_debug']) ? 1 : 0;
-
             // Organization Intelligence Settings
             $metricsCronEnabled = !empty($_POST['metrics_cron_enabled']) ? 1 : 0;
             $metricsRetentionDays = max(30, min(730, (int) ($_POST['metrics_retention_days'] ?? 365)));
@@ -1895,21 +1883,45 @@ class AdminController
                 'copilot_system_prompt' => $copilotSystemPrompt,
                 'ops_require_password_tier3' => $opsRequirePasswordTier3,
                 'ops_journal_retention_days' => $opsJournalRetentionDays,
-                'client_chat_enabled' => $clientChatEnabled,
-                'client_chat_title' => $clientChatTitle,
-                'client_chat_brand_color' => $clientChatBrandColor,
-                'client_chat_position' => $clientChatPosition,
-                'client_chat_welcome_message' => $clientChatWelcomeMessage,
-                'client_chat_kb_enabled' => $clientChatKbEnabled,
-                'client_chat_require_prechat' => $clientChatRequirePrechat,
-                'client_chat_proactive_delay' => $clientChatProactiveDelay,
-                'client_chat_proactive_message' => $clientChatProactiveMessage,
-                'client_chat_system_prompt' => $clientChatSystemPrompt,
-                'client_chat_debug' => $clientChatDebug,
                 'metrics_cron_enabled' => $metricsCronEnabled,
                 'metrics_retention_days' => $metricsRetentionDays,
                 'updated_at' => \Carbon\Carbon::now(),
             ];
+
+            // Client Live Chat Settings (Only update if explicitly present in POST, avoiding accidental wipes from general settings)
+            if (isset($_POST['client_chat_enabled'])) {
+                $updatePayload['client_chat_enabled'] = !empty($_POST['client_chat_enabled']) ? 1 : 0;
+            }
+            if (isset($_POST['client_chat_title'])) {
+                $updatePayload['client_chat_title'] = trim((string)$_POST['client_chat_title']);
+            }
+            if (isset($_POST['client_chat_brand_color'])) {
+                $updatePayload['client_chat_brand_color'] = trim((string)$_POST['client_chat_brand_color']);
+            }
+            if (isset($_POST['client_chat_position'])) {
+                $updatePayload['client_chat_position'] = in_array($_POST['client_chat_position'] ?? '', ['bottom-left', 'bottom-right'], true) ? $_POST['client_chat_position'] : 'bottom-right';
+            }
+            if (isset($_POST['client_chat_welcome_message'])) {
+                $updatePayload['client_chat_welcome_message'] = trim((string)$_POST['client_chat_welcome_message']);
+            }
+            if (isset($_POST['client_chat_kb_enabled'])) {
+                $updatePayload['client_chat_kb_enabled'] = !empty($_POST['client_chat_kb_enabled']) ? 1 : 0;
+            }
+            if (isset($_POST['client_chat_require_prechat'])) {
+                $updatePayload['client_chat_require_prechat'] = !empty($_POST['client_chat_require_prechat']) ? 1 : 0;
+            }
+            if (isset($_POST['client_chat_proactive_delay'])) {
+                $updatePayload['client_chat_proactive_delay'] = max(0, (int) $_POST['client_chat_proactive_delay']);
+            }
+            if (isset($_POST['client_chat_proactive_message'])) {
+                $updatePayload['client_chat_proactive_message'] = trim((string)$_POST['client_chat_proactive_message']);
+            }
+            if (isset($_POST['client_chat_system_prompt'])) {
+                $updatePayload['client_chat_system_prompt'] = trim((string)$_POST['client_chat_system_prompt']);
+            }
+            if (isset($_POST['client_chat_debug'])) {
+                $updatePayload['client_chat_debug'] = !empty($_POST['client_chat_debug']) ? 1 : 0;
+            }
 
             if (isset($_POST['primary_provider_id'])) {
                 $updatePayload['primary_provider_id'] = $primaryProviderId ?: null;
@@ -2116,7 +2128,7 @@ class AdminController
                 'copilot_system_prompt' => '',
                 'ops_require_password_tier3' => 1,
                 'ops_journal_retention_days' => 90,
-                'client_chat_enabled' => 0,
+                'client_chat_enabled' => 1,
                 'client_chat_provider_id' => null,
                 'client_chat_title' => 'Hosting Support Assistant',
                 'client_chat_brand_color' => '#0d6efd',
