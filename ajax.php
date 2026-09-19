@@ -228,8 +228,50 @@ if ($isMobileAction) {
             $clientId = (int)($_REQUEST['client_id'] ?? 0);
             $sessionId = (int)($_REQUEST['session_id'] ?? 0);
             $response = \Sahdev\Lib\MobileApiService::getClientDetails($clientId, $sessionId);
+        } elseif ($action === 'mobile_chat_edit_msg') {
+            $rawInput = @file_get_contents('php://input');
+            $jsonData = !empty($rawInput) ? (@json_decode($rawInput, true) ?: []) : [];
+            $sessionId = (int)($_REQUEST['session_id'] ?? ($jsonData['session_id'] ?? 0));
+            $messageId = (int)($_REQUEST['message_id'] ?? ($jsonData['message_id'] ?? 0));
+            $newText = (string)($_REQUEST['new_text'] ?? ($jsonData['new_text'] ?? ''));
+            $notifyClient = !empty($_REQUEST['notify_client']) || !empty($jsonData['notify_client']);
+            $response = \Sahdev\Lib\MobileApiService::editMessage($sessionId, $messageId, (int)$adminId, $newText, (bool)$notifyClient);
+        } elseif ($action === 'mobile_chat_delete_msg') {
+            $rawInput = @file_get_contents('php://input');
+            $jsonData = !empty($rawInput) ? (@json_decode($rawInput, true) ?: []) : [];
+            $sessionId = (int)($_REQUEST['session_id'] ?? ($jsonData['session_id'] ?? 0));
+            $messageId = (int)($_REQUEST['message_id'] ?? ($jsonData['message_id'] ?? 0));
+            $notifyClient = !empty($_REQUEST['notify_client']) || !empty($jsonData['notify_client']);
+            $response = \Sahdev\Lib\MobileApiService::deleteMessage($sessionId, $messageId, (int)$adminId, (bool)$notifyClient);
         } elseif ($action === 'mobile_canned_responses') {
             $response = \Sahdev\Lib\MobileApiService::getCannedResponses();
+        } elseif ($action === 'mobile_canned_responses_create') {
+            $rawInput = @file_get_contents('php://input');
+            $jsonData = !empty($rawInput) ? (@json_decode($rawInput, true) ?: []) : [];
+            $title = (string)($_REQUEST['title'] ?? ($jsonData['title'] ?? ''));
+            $shortcut = (string)($_REQUEST['shortcut'] ?? ($jsonData['shortcut'] ?? ''));
+            $content = (string)($_REQUEST['content'] ?? ($jsonData['content'] ?? ''));
+            $category = (string)($_REQUEST['category'] ?? ($jsonData['category'] ?? 'General'));
+            $response = \Sahdev\Lib\MobileApiService::createCannedResponse($title, $shortcut, $content, $category, (int)$adminId);
+        } elseif ($action === 'mobile_canned_responses_update') {
+            $rawInput = @file_get_contents('php://input');
+            $jsonData = !empty($rawInput) ? (@json_decode($rawInput, true) ?: []) : [];
+            $id = (int)($_REQUEST['id'] ?? ($jsonData['id'] ?? 0));
+            $title = (string)($_REQUEST['title'] ?? ($jsonData['title'] ?? ''));
+            $shortcut = (string)($_REQUEST['shortcut'] ?? ($jsonData['shortcut'] ?? ''));
+            $content = (string)($_REQUEST['content'] ?? ($jsonData['content'] ?? ''));
+            $category = (string)($_REQUEST['category'] ?? ($jsonData['category'] ?? 'General'));
+            $response = \Sahdev\Lib\MobileApiService::updateCannedResponse($id, $title, $shortcut, $content, $category);
+        } elseif ($action === 'mobile_canned_responses_delete') {
+            $rawInput = @file_get_contents('php://input');
+            $jsonData = !empty($rawInput) ? (@json_decode($rawInput, true) ?: []) : [];
+            $id = (int)($_REQUEST['id'] ?? ($jsonData['id'] ?? 0));
+            $response = \Sahdev\Lib\MobileApiService::deleteCannedResponse($id);
+        } elseif ($action === 'mobile_service_sso') {
+            $rawInput = @file_get_contents('php://input');
+            $jsonData = !empty($rawInput) ? (@json_decode($rawInput, true) ?: []) : [];
+            $serviceId = (int)($_REQUEST['service_id'] ?? ($jsonData['service_id'] ?? 0));
+            $response = \Sahdev\Lib\MobileApiService::getServiceSsoUrl((int)$adminId, $serviceId);
         } elseif ($action === 'mobile_tickets') {
             $status = (string)($_REQUEST['status'] ?? ($jsonData['status'] ?? 'all'));
             $search = (string)($_REQUEST['search'] ?? ($jsonData['search'] ?? ''));
@@ -247,6 +289,15 @@ if ($isMobileAction) {
             $isNote = !empty($_REQUEST['is_note']) || !empty($jsonData['is_note']);
             $newStatus = (string)($_REQUEST['status'] ?? ($jsonData['status'] ?? ''));
             $response = \Sahdev\Lib\MobileApiService::replyTicket((int)$adminId, $ticketId, $message, (bool)$isNote, $newStatus ?: null);
+        } elseif ($action === 'mobile_ticket_create') {
+            $rawInput = @file_get_contents('php://input');
+            $jsonData = !empty($rawInput) ? (@json_decode($rawInput, true) ?: []) : [];
+            $clientId = (int)($_REQUEST['client_id'] ?? ($jsonData['client_id'] ?? 0));
+            $deptId = (int)($_REQUEST['dept_id'] ?? ($jsonData['dept_id'] ?? 1));
+            $subject = (string)($_REQUEST['subject'] ?? ($jsonData['subject'] ?? ''));
+            $message = (string)($_REQUEST['message'] ?? ($jsonData['message'] ?? ''));
+            $priority = (string)($_REQUEST['priority'] ?? ($jsonData['priority'] ?? 'Medium'));
+            $response = \Sahdev\Lib\MobileApiService::createTicket((int)$adminId, $clientId, $deptId, $subject, $message, $priority);
         } elseif ($action === 'mobile_ticket_ai_analyze') {
             $rawInput = @file_get_contents('php://input');
             $jsonData = !empty($rawInput) ? (@json_decode($rawInput, true) ?: []) : [];
@@ -839,7 +890,7 @@ $allowedActions = [
     'mobile_login', 'mobile_qr_generate', 'mobile_qr_verify', 'mobile_qr_status',
     'mobile_poll', 'mobile_chat_history', 'mobile_send', 'mobile_takeover', 'mobile_ai_suggest',
     'mobile_client_info', 'mobile_canned_responses', 'mobile_heartbeat', 'mobile_logout',
-    'mobile_tickets', 'mobile_ticket_detail', 'mobile_ticket_reply', 'mobile_ticket_ai_analyze', 'mobile_ticket_update',
+    'mobile_tickets', 'mobile_ticket_detail', 'mobile_ticket_reply', 'mobile_ticket_create', 'mobile_ticket_ai_analyze', 'mobile_ticket_update',
     'mobile_clients', 'mobile_client_detail', 'mobile_client_add_note',
     'mobile_services', 'mobile_service_update_status',
     'mobile_invoices', 'mobile_invoice_detail', 'mobile_invoice_mark_paid',
@@ -955,7 +1006,7 @@ if ($intensity > 3) {
         'mobile_poll', 'mobile_chat_history', 'mobile_send', 'mobile_takeover',
         'mobile_ai_suggest', 'mobile_client_info', 'mobile_canned_responses',
         'mobile_heartbeat', 'mobile_logout',
-        'mobile_tickets', 'mobile_ticket_detail', 'mobile_ticket_reply', 'mobile_ticket_ai_analyze', 'mobile_ticket_update',
+        'mobile_tickets', 'mobile_ticket_detail', 'mobile_ticket_reply', 'mobile_ticket_create', 'mobile_ticket_ai_analyze', 'mobile_ticket_update',
         'mobile_clients', 'mobile_client_detail', 'mobile_client_add_note',
         'mobile_services', 'mobile_service_update_status',
         'mobile_invoices', 'mobile_invoice_detail', 'mobile_invoice_mark_paid',
@@ -2107,6 +2158,35 @@ try {
         $messageText = trim((string)($_POST['message'] ?? ''));
         $res = \Sahdev\Lib\ChatService::recordStaffMessage($sessionUuid, (int)$adminId, $messageText);
         $response = array_merge(['status' => ($res['success'] ?? false) ? 'success' : 'error'], $res);
+    } elseif ($action === 'admin_live_console_edit_msg') {
+        $messageId = (int)($_POST['message_id'] ?? ($_REQUEST['message_id'] ?? 0));
+        $newText = trim((string)($_POST['message'] ?? ($_REQUEST['message'] ?? '')));
+        $notifyClient = !empty($_POST['notify_client']) || !empty($_REQUEST['notify_client']);
+        $res = \Sahdev\Lib\ChatService::editStaffMessage($messageId, (int)$adminId, $newText, (bool)$notifyClient);
+        $response = array_merge(['status' => ($res['success'] ?? false) ? 'success' : 'error'], $res);
+    } elseif ($action === 'admin_live_console_delete_msg') {
+        $messageId = (int)($_POST['message_id'] ?? ($_REQUEST['message_id'] ?? 0));
+        $notifyClient = !empty($_POST['notify_client']) || !empty($_REQUEST['notify_client']);
+        $res = \Sahdev\Lib\ChatService::deleteStaffMessage($messageId, (int)$adminId, (bool)$notifyClient);
+        $response = array_merge(['status' => ($res['success'] ?? false) ? 'success' : 'error'], $res);
+    } elseif ($action === 'admin_live_console_canned_responses') {
+        $response = ['status' => 'success', 'responses' => \Sahdev\Lib\ChatService::getCannedResponses()];
+    } elseif ($action === 'admin_live_console_canned_create') {
+        $title = trim((string)($_POST['title'] ?? ''));
+        $shortcut = trim((string)($_POST['shortcut'] ?? ''));
+        $content = trim((string)($_POST['content'] ?? ''));
+        $category = trim((string)($_POST['category'] ?? 'General'));
+        $response = \Sahdev\Lib\MobileApiService::createCannedResponse($title, $shortcut, $content, $category, (int)$adminId);
+    } elseif ($action === 'admin_live_console_canned_update') {
+        $id = (int)($_POST['id'] ?? 0);
+        $title = trim((string)($_POST['title'] ?? ''));
+        $shortcut = trim((string)($_POST['shortcut'] ?? ''));
+        $content = trim((string)($_POST['content'] ?? ''));
+        $category = trim((string)($_POST['category'] ?? 'General'));
+        $response = \Sahdev\Lib\MobileApiService::updateCannedResponse($id, $title, $shortcut, $content, $category);
+    } elseif ($action === 'admin_live_console_canned_delete') {
+        $id = (int)($_POST['id'] ?? 0);
+        $response = \Sahdev\Lib\MobileApiService::deleteCannedResponse($id);
     } elseif ($action === 'admin_live_console_takeover') {
         $sessionUuid = trim((string)($_POST['session_uuid'] ?? ''));
         $timeoutMins = (int)($_POST['timeout_mins'] ?? 0);

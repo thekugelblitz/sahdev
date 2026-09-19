@@ -1,39 +1,44 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../providers/auth_provider.dart';
+import '../providers/chat_provider.dart';
+import '../services/api_service.dart';
 
 class CannedResponsesSheet extends StatefulWidget {
   final List<dynamic>? responses;
   final ValueChanged<String> onSelect;
+  final VoidCallback? onUpdated;
 
   static const List<Map<String, dynamic>> defaultResponses = [
     {
       'id': 1,
       'title': 'Standard Greeting',
       'shortcut': '/hi',
-      'text': 'Hello! Thank you for reaching out to support. How may I assist you today?',
+      'content': 'Hello! Thank you for reaching out to support. How may I assist you today?',
     },
     {
       'id': 2,
       'title': 'Investigating Account',
       'shortcut': '/wait',
-      'text': 'I am reviewing your account and service configuration right now. Please allow me just 1-2 minutes.',
+      'content': 'I am reviewing your account and service configuration right now. Please allow me just 1-2 minutes.',
     },
     {
       'id': 3,
       'title': 'DNS & Propagation',
       'shortcut': '/dns',
-      'text': 'DNS changes typically take 1 to 24 hours to propagate globally. You can monitor the status at whatsmydns.net.',
+      'content': 'DNS changes typically take 1 to 24 hours to propagate globally. You can monitor the status at whatsmydns.net.',
     },
     {
       'id': 4,
       'title': 'Ticket Escalation',
       'shortcut': '/escalate',
-      'text': 'I have opened a priority ticket with our engineering team for this. You will receive an email update shortly.',
+      'content': 'I have opened a priority ticket with our engineering team for this. You will receive an email update shortly.',
     },
     {
       'id': 5,
       'title': 'Closing & Follow-up',
       'shortcut': '/bye',
-      'text': 'Is there anything else I can help you with today? Thank you for choosing us!',
+      'content': 'Is there anything else I can help you with today? Thank you for choosing us!',
     },
   ];
 
@@ -41,6 +46,7 @@ class CannedResponsesSheet extends StatefulWidget {
     super.key,
     this.responses,
     required this.onSelect,
+    this.onUpdated,
   });
 
   @override
@@ -48,28 +54,236 @@ class CannedResponsesSheet extends StatefulWidget {
 }
 
 class _CannedResponsesSheetState extends State<CannedResponsesSheet> {
+  final ApiService _api = ApiService();
   String _filter = '';
+  late List<dynamic> _items;
+
+  @override
+  void initState() {
+    super.initState();
+    _initItems();
+  }
+
+  void _initItems() {
+    if (widget.responses != null && widget.responses!.isNotEmpty) {
+      _items = List<dynamic>.from(widget.responses!);
+    } else {
+      _items = List<dynamic>.from(CannedResponsesSheet.defaultResponses);
+    }
+  }
+
+  void _showCreateEditDialog({Map<String, dynamic>? existing}) {
+    final auth = Provider.of<AuthProvider>(context, listen: false);
+    final isEditing = existing != null;
+    final titleController = TextEditingController(text: existing?['title']?.toString() ?? '');
+    final shortcutController = TextEditingController(text: existing?['shortcut']?.toString() ?? '/');
+    final contentController = TextEditingController(
+      text: (existing?['content'] ?? existing?['text'])?.toString() ?? '',
+    );
+    final categoryController = TextEditingController(text: existing?['category']?.toString() ?? 'General');
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(isEditing ? 'Edit Canned Response' : 'New Canned Response',
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: titleController,
+                decoration: const InputDecoration(
+                  labelText: 'Title / Label',
+                  hintText: 'e.g. Standard Greeting',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: shortcutController,
+                decoration: const InputDecoration(
+                  labelText: 'Shortcut',
+                  hintText: 'e.g. /hi, /wait, /dns',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: categoryController,
+                decoration: const InputDecoration(
+                  labelText: 'Category',
+                  hintText: 'e.g. General, Hosting, Billing',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: contentController,
+                maxLines: 4,
+                decoration: const InputDecoration(
+                  labelText: 'Response Text',
+                  hintText: 'The full text to insert when applied...',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () async {
+              final title = titleController.text.trim();
+              var shortcut = shortcutController.text.trim();
+              final content = contentController.text.trim();
+              final category = categoryController.text.trim();
+
+              if (title.isEmpty || content.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Title and Response Text are required.')),
+                );
+                return;
+              }
+
+              if (shortcut.isNotEmpty && !shortcut.startsWith('/')) {
+                shortcut = '/$shortcut';
+              }
+
+              Navigator.pop(ctx);
+
+              if (auth.baseUrl != null && auth.token != null) {
+                if (isEditing) {
+                  final id = int.tryParse(existing['id'].toString()) ?? 0;
+                  final res = await _api.updateCannedResponse(
+                    baseUrl: auth.baseUrl!,
+                    token: auth.token!,
+                    id: id,
+                    title: title,
+                    shortcut: shortcut,
+                    content: content,
+                    category: category.isNotEmpty ? category : 'General',
+                  );
+                  if (res.success && mounted) {
+                    setState(() {
+                      final idx = _items.indexWhere((e) => (e['id']?.toString() ?? '') == id.toString());
+                      if (idx != -1) {
+                        _items[idx] = {
+                          'id': id,
+                          'title': title,
+                          'shortcut': shortcut,
+                          'content': content,
+                          'category': category,
+                        };
+                      }
+                    });
+                    _syncWithChatProvider(auth);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Canned response updated successfully')),
+                    );
+                  }
+                } else {
+                  final res = await _api.createCannedResponse(
+                    baseUrl: auth.baseUrl!,
+                    token: auth.token!,
+                    title: title,
+                    shortcut: shortcut,
+                    content: content,
+                    category: category.isNotEmpty ? category : 'General',
+                  );
+                  if (res.success && mounted) {
+                    final newId = res.data?['id'] ?? DateTime.now().millisecondsSinceEpoch;
+                    setState(() {
+                      _items.insert(0, {
+                        'id': newId,
+                        'title': title,
+                        'shortcut': shortcut,
+                        'content': content,
+                        'category': category,
+                      });
+                    });
+                    _syncWithChatProvider(auth);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Canned response created successfully')),
+                    );
+                  }
+                }
+              }
+            },
+            child: Text(isEditing ? 'Save' : 'Create'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmDelete(Map<String, dynamic> item) {
+    final auth = Provider.of<AuthProvider>(context, listen: false);
+    final id = int.tryParse(item['id']?.toString() ?? '') ?? 0;
+    final title = item['title']?.toString() ?? 'this response';
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Canned Response', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        content: Text('Are you sure you want to delete "$title"?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFEF4444), foregroundColor: Colors.white),
+            onPressed: () async {
+              Navigator.pop(ctx);
+              if (auth.baseUrl != null && auth.token != null && id > 0) {
+                final res = await _api.deleteCannedResponse(
+                  baseUrl: auth.baseUrl!,
+                  token: auth.token!,
+                  id: id,
+                );
+                if (res.success && mounted) {
+                  setState(() {
+                    _items.removeWhere((e) => (e['id']?.toString() ?? '') == id.toString());
+                  });
+                  _syncWithChatProvider(auth);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Canned response deleted')),
+                  );
+                }
+              }
+            },
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _syncWithChatProvider(AuthProvider auth) {
+    try {
+      final chat = Provider.of<ChatProvider>(context, listen: false);
+      chat.loadCannedResponses(baseUrl: auth.baseUrl!, token: auth.token!);
+    } catch (_) {}
+    widget.onUpdated?.call();
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isAmoled = theme.scaffoldBackgroundColor == Colors.black;
 
-    final sourceList = (widget.responses != null && widget.responses!.isNotEmpty)
-        ? widget.responses!
-        : CannedResponsesSheet.defaultResponses;
-
-    final filtered = sourceList.where((r) {
+    final filtered = _items.where((r) {
       if (_filter.isEmpty) return true;
       final q = _filter.toLowerCase();
       final title = (r['title'] ?? '').toString().toLowerCase();
       final shortcut = (r['shortcut'] ?? '').toString().toLowerCase();
-      final text = (r['text'] ?? '').toString().toLowerCase();
+      final text = (r['content'] ?? r['text'] ?? '').toString().toLowerCase();
       return title.contains(q) || shortcut.contains(q) || text.contains(q);
     }).toList();
 
     return Container(
-      height: MediaQuery.of(context).size.height * 0.6,
+      height: MediaQuery.of(context).size.height * 0.7,
       padding: const EdgeInsets.only(top: 12),
       decoration: BoxDecoration(
         color: isAmoled ? const Color(0xFF090D17) : theme.cardColor,
@@ -89,7 +303,7 @@ class _CannedResponsesSheetState extends State<CannedResponsesSheet> {
           ),
           const SizedBox(height: 12),
 
-          // Header
+          // Header with Create Button
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
@@ -108,9 +322,18 @@ class _CannedResponsesSheetState extends State<CannedResponsesSheet> {
                     ),
                   ],
                 ),
-                IconButton(
-                  icon: const Icon(Icons.close, size: 20),
-                  onPressed: () => Navigator.pop(context),
+                Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.add_circle_outline, size: 22, color: Color(0xFF10B981)),
+                      tooltip: 'New Canned Response',
+                      onPressed: () => _showCreateEditDialog(),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close, size: 20),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -144,19 +367,29 @@ class _CannedResponsesSheetState extends State<CannedResponsesSheet> {
                     itemCount: filtered.length,
                     separatorBuilder: (_, __) => const Divider(height: 1),
                     itemBuilder: (ctx, i) {
-                      final item = filtered[i];
+                      final item = filtered[i] is Map<String, dynamic>
+                          ? filtered[i] as Map<String, dynamic>
+                          : Map<String, dynamic>.from(filtered[i]);
+
+                      final title = item['title']?.toString() ?? '';
+                      final shortcut = item['shortcut']?.toString() ?? '';
+                      final text = (item['content'] ?? item['text'])?.toString() ?? '';
+
                       return ListTile(
-                        contentPadding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                        contentPadding: const EdgeInsets.symmetric(vertical: 2, horizontal: 8),
                         title: Row(
                           children: [
-                            Text(
-                              item['title'] ?? '',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w600,
-                                fontSize: 14,
+                            Expanded(
+                              child: Text(
+                                title,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 14,
+                                ),
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                            if (item['shortcut'] != null) ...[
+                            if (shortcut.isNotEmpty) ...[
                               const SizedBox(width: 8),
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -165,7 +398,7 @@ class _CannedResponsesSheetState extends State<CannedResponsesSheet> {
                                   borderRadius: BorderRadius.circular(4),
                                 ),
                                 child: Text(
-                                  item['shortcut'],
+                                  shortcut,
                                   style: TextStyle(
                                     fontSize: 11,
                                     fontFamily: 'monospace',
@@ -180,7 +413,7 @@ class _CannedResponsesSheetState extends State<CannedResponsesSheet> {
                         subtitle: Padding(
                           padding: const EdgeInsets.only(top: 4),
                           child: Text(
-                            item['text'] ?? '',
+                            text,
                             style: const TextStyle(
                               fontSize: 12.5,
                               color: Colors.grey,
@@ -189,9 +422,24 @@ class _CannedResponsesSheetState extends State<CannedResponsesSheet> {
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.edit_outlined, size: 18),
+                              tooltip: 'Edit',
+                              onPressed: () => _showCreateEditDialog(existing: item),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline, size: 18, color: Color(0xFFEF4444)),
+                              tooltip: 'Delete',
+                              onPressed: () => _confirmDelete(item),
+                            ),
+                          ],
+                        ),
                         onTap: () {
                           Navigator.pop(context);
-                          widget.onSelect(item['text'] ?? '');
+                          widget.onSelect(text);
                         },
                       );
                     },

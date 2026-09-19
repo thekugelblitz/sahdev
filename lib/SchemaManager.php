@@ -31,6 +31,7 @@ class SchemaManager
         self::ensureAdminPresenceTable();
         self::ensureMobileTokensTable();
         self::ensureMobileFcmTokensTable();
+        self::ensureCannedResponsesTable();
     }
 
     /**
@@ -327,6 +328,7 @@ class SchemaManager
                 'takeover_timeout_mins'  => function ($table) { $table->integer('takeover_timeout_mins')->default(0); },
                 'last_staff_message_at'  => function ($table) { $table->timestamp('last_staff_message_at')->nullable(); },
                 'new_visitor_alerted'    => function ($table) { $table->boolean('new_visitor_alerted')->default(0)->index(); },
+                'active_admin_ids'       => function ($table) { $table->text('active_admin_ids')->nullable(); },
             ];
             foreach ($sessionCols as $col => $fn) {
                 if (!Capsule::schema()->hasColumn('tblsahdev_chat_sessions', $col)) {
@@ -362,30 +364,90 @@ class SchemaManager
                     $table->integer('tokens_used')->default(0);
                     $table->tinyInteger('rating')->nullable()->index(); // 1 = up, -1 = down
                     $table->text('rating_feedback')->nullable();
+                    $table->tinyInteger('is_edited')->default(0)->index();
+                    $table->timestamp('edited_at')->nullable();
+                    $table->tinyInteger('is_deleted')->default(0)->index();
+                    $table->timestamp('deleted_at')->nullable();
+                    $table->tinyInteger('is_silent')->default(0);
                     $table->timestamp('created_at')->useCurrent()->index();
+                    $table->timestamp('updated_at')->nullable();
                 });
             } else {
                 // Migrate existing tables
-                if (!Capsule::schema()->hasColumn('tblsahdev_chat_messages', 'rating')) {
-                    Capsule::schema()->table('tblsahdev_chat_messages', function ($table) {
-                        $table->tinyInteger('rating')->nullable()->index();
-                    });
-                }
-                if (!Capsule::schema()->hasColumn('tblsahdev_chat_messages', 'rating_feedback')) {
-                    Capsule::schema()->table('tblsahdev_chat_messages', function ($table) {
-                        $table->text('rating_feedback')->nullable();
-                    });
-                }
-                if (!Capsule::schema()->hasColumn('tblsahdev_chat_messages', 'updated_at')) {
-                    Capsule::schema()->table('tblsahdev_chat_messages', function ($table) {
-                        $table->timestamp('updated_at')->nullable();
-                    });
+                $msgCols = [
+                    'rating'          => function ($table) { $table->tinyInteger('rating')->nullable()->index(); },
+                    'rating_feedback' => function ($table) { $table->text('rating_feedback')->nullable(); },
+                    'is_edited'       => function ($table) { $table->tinyInteger('is_edited')->default(0)->index(); },
+                    'edited_at'       => function ($table) { $table->timestamp('edited_at')->nullable(); },
+                    'is_deleted'      => function ($table) { $table->tinyInteger('is_deleted')->default(0)->index(); },
+                    'deleted_at'      => function ($table) { $table->timestamp('deleted_at')->nullable(); },
+                    'is_silent'       => function ($table) { $table->tinyInteger('is_silent')->default(0); },
+                    'updated_at'      => function ($table) { $table->timestamp('updated_at')->nullable(); },
+                ];
+                foreach ($msgCols as $col => $fn) {
+                    if (!Capsule::schema()->hasColumn('tblsahdev_chat_messages', $col)) {
+                        Capsule::schema()->table('tblsahdev_chat_messages', $fn);
+                    }
                 }
             }
 
             // Ensure utf8mb4 collation for full emoji and multilingual support
             try {
                 Capsule::statement("ALTER TABLE tblsahdev_chat_messages CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+            } catch (\Throwable $e) {}
+        } catch (\Throwable $e) {
+            // Benign table creation
+        }
+    }
+
+    /**
+     * Canned Responses & Shortcuts: quick macros and snippets for staff.
+     */
+    public static function ensureCannedResponsesTable(): void
+    {
+        try {
+            if (!Capsule::schema()->hasTable('tblsahdev_canned_responses')) {
+                Capsule::schema()->create('tblsahdev_canned_responses', function ($table) {
+                    $table->increments('id');
+                    $table->integer('admin_id')->unsigned()->default(1);
+                    $table->string('title');
+                    $table->string('shortcut', 64)->nullable()->index();
+                    $table->text('template_text');
+                    $table->string('tags')->nullable();
+                    $table->string('category')->nullable();
+                    $table->boolean('is_ai_generated')->default(0);
+                    $table->timestamps();
+                });
+            } else {
+                if (!Capsule::schema()->hasColumn('tblsahdev_canned_responses', 'shortcut')) {
+                    Capsule::schema()->table('tblsahdev_canned_responses', function ($table) {
+                        $table->string('shortcut', 64)->nullable()->index();
+                    });
+                }
+            }
+
+            // Seed default shortcuts if missing
+            $defaults = [
+                ['title' => 'Standard Greeting', 'shortcut' => '/hi', 'category' => 'General', 'template_text' => 'Hello! Thank you for reaching out to support. How may I assist you today?'],
+                ['title' => 'Investigating Account', 'shortcut' => '/wait', 'category' => 'General', 'template_text' => 'I am reviewing your account and service configuration right now. Please allow me just 1-2 minutes.'],
+                ['title' => 'DNS Propagation', 'shortcut' => '/dns', 'category' => 'Technical', 'template_text' => 'DNS changes typically take 1 to 24 hours to propagate globally. You can monitor the status at whatsmydns.net.'],
+                ['title' => 'Ticket Escalation', 'shortcut' => '/escalate', 'category' => 'Support', 'template_text' => 'I have opened a priority ticket with our engineering team for this. You will receive an email update shortly.'],
+                ['title' => 'Closing & Follow-up', 'shortcut' => '/bye', 'category' => 'General', 'template_text' => 'Is there anything else I can help you with today? Thank you for choosing us!'],
+            ];
+            foreach ($defaults as $def) {
+                $exists = Capsule::table('tblsahdev_canned_responses')->where('shortcut', $def['shortcut'])->exists();
+                if (!$exists) {
+                    Capsule::table('tblsahdev_canned_responses')->insert(array_merge($def, [
+                        'admin_id'        => 1,
+                        'is_ai_generated' => 0,
+                        'created_at'      => \Carbon\Carbon::now(),
+                        'updated_at'      => \Carbon\Carbon::now(),
+                    ]));
+                }
+            }
+
+            try {
+                Capsule::statement("ALTER TABLE tblsahdev_canned_responses CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
             } catch (\Throwable $e) {}
         } catch (\Throwable $e) {
             // Benign table creation

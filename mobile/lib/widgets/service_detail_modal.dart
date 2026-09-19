@@ -51,11 +51,67 @@ class _ServiceDetailModalState extends State<ServiceDetailModal> {
   final ApiService _api = ApiService();
   late Map<String, dynamic> _currentService;
   bool _isUpdatingStatus = false;
+  bool _isLaunchingSso = false;
 
   @override
   void initState() {
     super.initState();
     _currentService = Map<String, dynamic>.from(widget.service);
+  }
+
+  Future<void> _launchCpanelSso() async {
+    final serviceId = (_currentService['id'] as num?)?.toInt();
+    if (serviceId == null) return;
+
+    final auth = context.read<AuthProvider>();
+    final bUrl = widget.baseUrl ?? auth.baseUrl;
+    final tok = widget.token ?? auth.token;
+    if (bUrl == null || tok == null) return;
+
+    setState(() => _isLaunchingSso = true);
+
+    try {
+      final res = await _api.getServiceSsoUrl(
+        baseUrl: bUrl,
+        token: tok,
+        serviceId: serviceId,
+      );
+
+      if (res.success && res.data != null && res.data!['sso_url'] != null) {
+        final ssoUrl = res.data!['sso_url'].toString();
+        final uri = Uri.parse(ssoUrl);
+        if (await canLaunchUrl(uri)) {
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+        } else if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Could not open SSO URL: $ssoUrl')),
+          );
+        }
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(res.message ?? 'Failed to generate cPanel SSO link'),
+            backgroundColor: const Color(0xFFEF4444),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error launching SSO: $e'), backgroundColor: const Color(0xFFEF4444)),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLaunchingSso = false);
+    }
+  }
+
+  String _formatMb(int mb) {
+    if (mb <= 0) return 'Unlimited';
+    if (mb >= 1024) {
+      return '${(mb / 1024).toStringAsFixed(1)} GB';
+    }
+    return '$mb MB';
   }
 
   Future<void> _launchDomain(BuildContext context, String domain) async {
@@ -273,6 +329,16 @@ class _ServiceDetailModalState extends State<ServiceDetailModal> {
     final dedicatedIp = _currentService['dedicated_ip']?.toString() ?? (_currentService['dedicatedip']?.toString() ?? '');
     final username = _currentService['username']?.toString() ?? '';
     final serverName = _currentService['server_name']?.toString() ?? '';
+    final serverIp = _currentService['server_ip']?.toString() ?? '';
+    final serverHostname = _currentService['server_hostname']?.toString() ?? '';
+    final ns1 = _currentService['nameserver1']?.toString() ?? '';
+    final ns2 = _currentService['nameserver2']?.toString() ?? '';
+    final serverType = _currentService['server_type']?.toString() ?? '';
+    final hasSso = _currentService['has_sso'] == true || _currentService['has_sso'] == 1 || _currentService['has_sso'] == '1';
+    final diskUsage = (_currentService['disk_usage'] as num?)?.toInt() ?? (_currentService['diskusage'] as num?)?.toInt() ?? 0;
+    final diskLimit = (_currentService['disk_limit'] as num?)?.toInt() ?? (_currentService['disklimit'] as num?)?.toInt() ?? 0;
+    final bwUsage = (_currentService['bw_usage'] as num?)?.toInt() ?? (_currentService['bwusage'] as num?)?.toInt() ?? 0;
+    final bwLimit = (_currentService['bw_limit'] as num?)?.toInt() ?? (_currentService['bwlimit'] as num?)?.toInt() ?? 0;
 
     Color statusColor;
     switch (status.toLowerCase()) {
@@ -495,6 +561,33 @@ class _ServiceDetailModalState extends State<ServiceDetailModal> {
                       ],
                     ),
 
+                    if (hasSso || username.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          icon: _isLaunchingSso
+                              ? const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                )
+                              : const Icon(Icons.lock_open, size: 16),
+                          label: const Text(
+                            'Log in to cPanel (1-Click SSO)',
+                            style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFEA580C),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                          onPressed: _isLaunchingSso ? null : _launchCpanelSso,
+                        ),
+                      ),
+                    ],
+
                     const SizedBox(height: 18),
 
                     // Section: Billing & Plan
@@ -540,7 +633,7 @@ class _ServiceDetailModalState extends State<ServiceDetailModal> {
                               dedicatedIp,
                               action: IconButton(
                                 icon: const Icon(Icons.copy, size: 14),
-                                onPressed: () => _copyToClipboard(context, dedicatedIp, 'IP'),
+                                onPressed: () => _copyToClipboard(context, dedicatedIp, 'Dedicated IP'),
                                 constraints: const BoxConstraints(),
                                 padding: EdgeInsets.zero,
                               ),
@@ -561,7 +654,63 @@ class _ServiceDetailModalState extends State<ServiceDetailModal> {
                             _buildDivider(),
                           ],
                           if (serverName.isNotEmpty) ...[
-                            _buildDetailRow('Server', serverName),
+                            _buildDetailRow('Server Name', serverName),
+                            _buildDivider(),
+                          ],
+                          if (serverIp.isNotEmpty) ...[
+                            _buildDetailRow(
+                              'Server IP',
+                              serverIp,
+                              action: IconButton(
+                                icon: const Icon(Icons.copy, size: 14),
+                                onPressed: () => _copyToClipboard(context, serverIp, 'Server IP'),
+                                constraints: const BoxConstraints(),
+                                padding: EdgeInsets.zero,
+                              ),
+                            ),
+                            _buildDivider(),
+                          ],
+                          if (serverHostname.isNotEmpty) ...[
+                            _buildDetailRow(
+                              'Server Hostname',
+                              serverHostname,
+                              action: IconButton(
+                                icon: const Icon(Icons.copy, size: 14),
+                                onPressed: () => _copyToClipboard(context, serverHostname, 'Hostname'),
+                                constraints: const BoxConstraints(),
+                                padding: EdgeInsets.zero,
+                              ),
+                            ),
+                            _buildDivider(),
+                          ],
+                          if (serverType.isNotEmpty) ...[
+                            _buildDetailRow('Control Panel', serverType.toUpperCase()),
+                            _buildDivider(),
+                          ],
+                          if (ns1.isNotEmpty) ...[
+                            _buildDetailRow('Primary Nameserver', ns1),
+                            _buildDivider(),
+                          ],
+                          if (ns2.isNotEmpty) ...[
+                            _buildDetailRow('Secondary Nameserver', ns2),
+                            _buildDivider(),
+                          ],
+                          if (diskLimit > 0 || diskUsage > 0) ...[
+                            _buildDetailRow(
+                              'Disk Usage',
+                              diskLimit > 0
+                                  ? '$_formatMb(diskUsage) / $_formatMb(diskLimit) (${((diskUsage / diskLimit) * 100).toStringAsFixed(1)}%)'
+                                  : '$_formatMb(diskUsage) / Unlimited',
+                            ),
+                            _buildDivider(),
+                          ],
+                          if (bwLimit > 0 || bwUsage > 0) ...[
+                            _buildDetailRow(
+                              'Bandwidth',
+                              bwLimit > 0
+                                  ? '$_formatMb(bwUsage) / $_formatMb(bwLimit) (${((bwUsage / bwLimit) * 100).toStringAsFixed(1)}%)'
+                                  : '$_formatMb(bwUsage) / Unlimited',
+                            ),
                             _buildDivider(),
                           ],
                           _buildDetailRow('Product Type', productName),

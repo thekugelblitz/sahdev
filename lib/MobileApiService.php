@@ -444,16 +444,28 @@ class MobileApiService
                 }
             }
 
+            if (!empty($m->is_deleted) && !empty($m->is_silent)) {
+                // Silently deleted message - omit from mobile view
+                continue;
+            }
+
+            $msgText = !empty($m->is_deleted)
+                ? '[Message deleted by support staff]'
+                : ChatService::safeDisplayText($m->message_text);
+
             $messages[] = [
                 'id'          => (int) $m->id,
                 'session_id'  => (int) $m->session_id,
                 'sender_type' => $m->sender_type,
                 'sender_name' => $senderName,
-                'text'        => ChatService::safeDisplayText($m->message_text),
+                'text'        => $msgText,
                 'is_staff'    => $isStaff,
                 'is_ai'       => $isAi,
                 'is_client'   => $isClient,
                 'is_system'   => $isSystem,
+                'is_edited'   => !empty($m->is_edited),
+                'is_deleted'  => !empty($m->is_deleted),
+                'edited_at'   => !empty($m->edited_at) ? Carbon::parse($m->edited_at)->diffForHumans() : null,
                 'created_at'  => $m->created_at,
                 'time_format' => Carbon::parse($m->created_at)->format('g:i A'),
             ];
@@ -490,10 +502,13 @@ class MobileApiService
     {
         ChatService::ensureUtf8mb4Connection();
 
-        $text = trim($text);
+        $text = ChatService::cleanInputText($text);
         if (empty($text)) {
             return ['status' => 'error', 'message' => 'Message text cannot be empty.'];
         }
+
+        // Auto-expand shortcut if staff typed /hi, /wait, etc.
+        $text = ChatService::expandCannedShortcut($text);
 
         $session = Capsule::table('tblsahdev_chat_sessions')->where('id', $sessionId)->first();
         if (!$session) {
@@ -514,13 +529,20 @@ class MobileApiService
             'created_at'   => Carbon::now(),
         ]);
 
-        // Automatically set session to taken_over and assign to this admin if not already
+        // Multi-agent active admins array
+        $activeAdmins = !empty($session->active_admin_ids) ? json_decode($session->active_admin_ids, true) : [];
+        if (!is_array($activeAdmins)) $activeAdmins = [];
+        if (!in_array($adminId, $activeAdmins)) {
+            $activeAdmins[] = $adminId;
+        }
+
         Capsule::table('tblsahdev_chat_sessions')
             ->where('id', $sessionId)
             ->update([
                 'status'                => 'taken_over',
                 'summon_status'         => 'claimed',
                 'assigned_admin_id'     => $adminId,
+                'active_admin_ids'      => json_encode(array_values($activeAdmins)),
                 'typing_preview'        => null,
                 'last_staff_message_at' => Carbon::now(),
                 'last_message_at'       => Carbon::now(),
@@ -536,10 +558,28 @@ class MobileApiService
                 'sender_name' => $adminName,
                 'text'        => $text,
                 'is_staff'    => true,
+                'is_edited'   => false,
+                'is_deleted'  => false,
                 'created_at'  => Carbon::now()->toIso8601String(),
                 'time_format' => Carbon::now()->format('g:i A'),
             ],
         ];
+    }
+
+    /**
+     * Edit a chat message from mobile app.
+     */
+    public static function editMessage(int $messageId, int $adminId, string $newText, bool $notifyClient = false): array
+    {
+        return ChatService::editStaffMessage($messageId, $adminId, $newText, $notifyClient);
+    }
+
+    /**
+     * Delete a chat message from mobile app.
+     */
+    public static function deleteMessage(int $messageId, int $adminId, bool $notifyClient = false): array
+    {
+        return ChatService::deleteStaffMessage($messageId, $adminId, $notifyClient);
     }
 
     /**
@@ -783,42 +823,28 @@ class MobileApiService
     }
 
     /**
-     * Pre-saved quick canned responses for common support scenarios, merged with WHMCS predefined replies.
+     * Pre-saved quick canned responses for common support scenarios, merged from database and WHMCS predefined replies.
      */
     public static function getCannedResponses(): array
     {
-        $defaultResponses = [
-            [
-                'id'       => 1,
-                'title'    => 'Standard Greeting',
-                'shortcut' => '/hi',
-                'text'     => 'Hello! Thank you for reaching out to support. How may I assist you today?',
-            ],
-            [
-                'id'       => 2,
-                'title'    => 'Investigating Account',
-                'shortcut' => '/wait',
-                'text'     => 'I am reviewing your account and service configuration right now. Please allow me just 1-2 minutes.',
-            ],
-            [
-                'id'       => 3,
-                'title'    => 'DNS & Propagation',
-                'shortcut' => '/dns',
-                'text'     => 'DNS changes typically take 1 to 24 hours to propagate globally. You can monitor the status at whatsmydns.net.',
-            ],
-            [
-                'id'       => 4,
-                'title'    => 'Ticket Escalation',
-                'shortcut' => '/escalate',
-                'text'     => 'I have opened a priority ticket with our engineering team for this. You will receive an email update shortly.',
-            ],
-            [
-                'id'       => 5,
-                'title'    => 'Closing & Follow-up',
-                'shortcut' => '/bye',
-                'text'     => 'Is there anything else I can help you with today? Thank you for choosing us!',
-            ],
-        ];
+        SchemaManager::ensureCannedResponsesTable();
+
+        $dbResponses = [];
+        try {
+            $rows = Capsule::table('tblsahdev_canned_responses')
+                ->orderBy('id', 'asc')
+                ->get();
+            foreach ($rows as $r) {
+                $dbResponses[] = [
+                    'id'        => (int) $r->id,
+                    'title'     => (string) $r->title,
+                    'shortcut'  => (string) ($r->shortcut ?: ('/macro' . $r->id)),
+                    'text'      => ChatService::cleanInputText((string) $r->template_text),
+                    'category'  => (string) ($r->category ?: 'General'),
+                    'is_custom' => true,
+                ];
+            }
+        } catch (\Throwable $e) {}
 
         $whmcsReplies = [];
         try {
@@ -831,10 +857,12 @@ class MobileApiService
                 foreach ($rows as $r) {
                     $slug = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', (string)$r->name));
                     $whmcsReplies[] = [
-                        'id'       => 1000 + (int)$r->id,
-                        'title'    => (string)$r->name,
-                        'shortcut' => '/' . (!empty($slug) ? $slug : ('reply' . $r->id)),
-                        'text'     => (string)$r->reply,
+                        'id'        => 1000 + (int)$r->id,
+                        'title'     => (string)$r->name,
+                        'shortcut'  => '/' . (!empty($slug) ? $slug : ('reply' . $r->id)),
+                        'text'      => ChatService::cleanInputText((string)$r->reply),
+                        'category'  => 'Predefined Reply',
+                        'is_custom' => false,
                     ];
                 }
             }
@@ -842,8 +870,116 @@ class MobileApiService
 
         return [
             'status'    => 'success',
-            'responses' => array_merge($defaultResponses, $whmcsReplies),
+            'responses' => array_merge($dbResponses, $whmcsReplies),
         ];
+    }
+
+    /**
+     * Create a new canned response from mobile app or WHMCS console.
+     */
+    public static function createCannedResponse(int $adminId, string $title, string $shortcut, string $text, string $category = 'General'): array
+    {
+        SchemaManager::ensureCannedResponsesTable();
+
+        $title = ChatService::cleanInputText($title);
+        $shortcut = trim($shortcut);
+        if (!empty($shortcut) && strpos($shortcut, '/') !== 0) {
+            $shortcut = '/' . $shortcut;
+        }
+        $text = ChatService::cleanInputText($text);
+        $category = ChatService::cleanInputText($category) ?: 'General';
+
+        if (empty($title) || empty($text)) {
+            return ['status' => 'error', 'message' => 'Title and response text are required.'];
+        }
+
+        try {
+            $id = Capsule::table('tblsahdev_canned_responses')->insertGetId([
+                'admin_id'        => $adminId,
+                'title'           => $title,
+                'shortcut'        => $shortcut ?: null,
+                'template_text'   => $text,
+                'category'        => $category,
+                'is_ai_generated' => 0,
+                'created_at'      => Carbon::now(),
+                'updated_at'      => Carbon::now(),
+            ]);
+
+            return [
+                'status'   => 'success',
+                'message'  => 'Canned response created successfully.',
+                'response' => [
+                    'id'        => $id,
+                    'title'     => $title,
+                    'shortcut'  => $shortcut,
+                    'text'      => $text,
+                    'category'  => $category,
+                    'is_custom' => true,
+                ],
+            ];
+        } catch (\Throwable $e) {
+            return ['status' => 'error', 'message' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * Update an existing canned response.
+     */
+    public static function updateCannedResponse(int $id, string $title, string $shortcut, string $text, string $category = 'General'): array
+    {
+        SchemaManager::ensureCannedResponsesTable();
+
+        $title = ChatService::cleanInputText($title);
+        $shortcut = trim($shortcut);
+        if (!empty($shortcut) && strpos($shortcut, '/') !== 0) {
+            $shortcut = '/' . $shortcut;
+        }
+        $text = ChatService::cleanInputText($text);
+        $category = ChatService::cleanInputText($category) ?: 'General';
+
+        if (empty($title) || empty($text)) {
+            return ['status' => 'error', 'message' => 'Title and response text are required.'];
+        }
+
+        try {
+            Capsule::table('tblsahdev_canned_responses')->where('id', $id)->update([
+                'title'         => $title,
+                'shortcut'      => $shortcut ?: null,
+                'template_text' => $text,
+                'category'      => $category,
+                'updated_at'    => Carbon::now(),
+            ]);
+
+            return [
+                'status'   => 'success',
+                'message'  => 'Canned response updated successfully.',
+                'response' => [
+                    'id'        => $id,
+                    'title'     => $title,
+                    'shortcut'  => $shortcut,
+                    'text'      => $text,
+                    'category'  => $category,
+                    'is_custom' => true,
+                ],
+            ];
+        } catch (\Throwable $e) {
+            return ['status' => 'error', 'message' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * Delete a canned response.
+     */
+    public static function deleteCannedResponse(int $id): array
+    {
+        SchemaManager::ensureCannedResponsesTable();
+
+        try {
+            Capsule::table('tblsahdev_canned_responses')->where('id', $id)->delete();
+            return ['status' => 'success', 'message' => 'Canned response deleted successfully.'];
+        } catch (\Throwable $e) {
+            return ['status' => 'error', 'message' => $e->getMessage()];
+        }
     }
 
     /**
@@ -1110,6 +1246,23 @@ class MobileApiService
             }
         }
 
+        // Filter by Admin's assigned support departments if configured
+        $allowedDeptIds = [];
+        if ($adminId > 0) {
+            try {
+                $adminRow = Capsule::table('tbladmins')->where('id', $adminId)->first(['supportdepts']);
+                if ($adminRow && !empty($adminRow->supportdepts)) {
+                    $rawDepts = explode(',', (string)$adminRow->supportdepts);
+                    foreach ($rawDepts as $d) {
+                        $d = trim($d);
+                        if ($d !== '' && is_numeric($d)) {
+                            $allowedDeptIds[] = (int)$d;
+                        }
+                    }
+                }
+            } catch (\Throwable $e) {}
+        }
+
         $q = Capsule::table('tbltickets as t')
             ->leftJoin('tblticketdepartments as d', 't.did', '=', 'd.id')
             ->select([
@@ -1127,6 +1280,10 @@ class MobileApiService
                 't.lastreply',
                 'd.name as dept_name',
             ]);
+
+        if (!empty($allowedDeptIds)) {
+            $q->whereIn('t.did', $allowedDeptIds);
+        }
 
         $search = trim($search);
         if (!empty($search)) {
@@ -1165,19 +1322,24 @@ class MobileApiService
             ->limit($limit)
             ->get();
 
-        // Calculate dynamic counts based on native WHMCS statuses
+        // Calculate dynamic counts based on native WHMCS statuses (department-aware)
+        $baseCountQ = Capsule::table('tbltickets');
+        if (!empty($allowedDeptIds)) {
+            $baseCountQ->whereIn('did', $allowedDeptIds);
+        }
+
         $counts = [
-            'awaiting_reply' => Capsule::table('tbltickets')->whereIn('status', $awaitingStatusTitles)->count(),
-            'total'          => Capsule::table('tbltickets')->count(),
+            'awaiting_reply' => (clone $baseCountQ)->whereIn('status', $awaitingStatusTitles)->count(),
+            'total'          => (clone $baseCountQ)->count(),
         ];
         foreach ($whmcsStatuses as $st) {
             $key = strtolower(str_replace([' ', '-'], '_', $st['title']));
-            $counts[$key] = Capsule::table('tbltickets')->where('status', $st['title'])->count();
+            $counts[$key] = (clone $baseCountQ)->where('status', $st['title'])->count();
         }
 
         $tickets = [];
         foreach ($rows as $r) {
-            $clientName = trim($r->name);
+            $clientName = trim((string)$r->name);
             if (empty($clientName) && $r->userid > 0) {
                 $cl = Capsule::table('tblclients')->where('id', $r->userid)->first(['firstname', 'lastname']);
                 if ($cl) $clientName = trim($cl->firstname . ' ' . $cl->lastname);
@@ -1186,15 +1348,19 @@ class MobileApiService
             $isAwaiting = in_array($r->status, $awaitingStatusTitles, true);
             $color = $statusColorMap[$r->status] ?? ($isAwaiting ? '#ef4444' : '#64748b');
 
+            $cleanTitle = html_entity_decode((string)$r->title, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+            $cleanClientName = html_entity_decode((string)($clientName ?: ($r->email ?: 'Client')), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+            $cleanDept = html_entity_decode((string)($r->dept_name ?: 'Support'), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+
             $tickets[] = [
                 'id'                => (int) $r->id,
                 'tid'               => $r->tid,
                 'client_id'         => (int) $r->userid,
-                'client_name'       => $clientName ?: ($r->email ?: 'Client'),
+                'client_name'       => $cleanClientName,
                 'client_email'      => $r->email,
-                'department'        => $r->dept_name ?: 'Support',
+                'department'        => $cleanDept,
                 'dept_id'           => (int) $r->did,
-                'title'             => $r->title,
+                'title'             => $cleanTitle,
                 'status'            => $r->status,
                 'status_color'      => $color,
                 'is_awaiting_reply' => $isAwaiting,
@@ -1234,7 +1400,7 @@ class MobileApiService
             return ['status' => 'error', 'message' => 'Ticket not found.'];
         }
 
-        $clientName = trim($ticket->name);
+        $clientName = trim((string)$ticket->name);
         $clientEmail = $ticket->email;
         $clientCompany = '';
         if ($ticket->userid > 0) {
@@ -1251,10 +1417,10 @@ class MobileApiService
         $thread[] = [
             'id'          => 0,
             'type'        => 'client',
-            'sender_name' => $clientName ?: 'Client',
+            'sender_name' => html_entity_decode((string)($clientName ?: 'Client'), ENT_QUOTES | ENT_HTML5, 'UTF-8'),
             'date'        => $ticket->date ? Carbon::parse($ticket->date)->format('M d, Y g:i A') : '',
             'time_ago'    => $ticket->date ? Carbon::parse($ticket->date)->diffForHumans() : '',
-            'message'     => strip_tags((string)$ticket->message, '<br><p><a><b><strong><i><em><ul><ol><li><code><pre>'),
+            'message'     => html_entity_decode(strip_tags((string)$ticket->message, '<br><p><a><b><strong><i><em><ul><ol><li><code><pre>'), ENT_QUOTES | ENT_HTML5, 'UTF-8'),
             'is_staff'    => false,
             'is_note'     => false,
             'raw_date'    => $ticket->date,
@@ -1268,13 +1434,14 @@ class MobileApiService
 
         foreach ($replies as $rep) {
             $isStaff = !empty($rep->admin);
+            $sName = $isStaff ? $rep->admin : ($rep->name ?: $clientName);
             $thread[] = [
                 'id'          => (int) $rep->id,
                 'type'        => $isStaff ? 'staff' : 'client',
-                'sender_name' => $isStaff ? $rep->admin : ($rep->name ?: $clientName),
+                'sender_name' => html_entity_decode((string)$sName, ENT_QUOTES | ENT_HTML5, 'UTF-8'),
                 'date'        => $rep->date ? Carbon::parse($rep->date)->format('M d, Y g:i A') : '',
                 'time_ago'    => $rep->date ? Carbon::parse($rep->date)->diffForHumans() : '',
-                'message'     => strip_tags((string)$rep->message, '<br><p><a><b><strong><i><em><ul><ol><li><code><pre>'),
+                'message'     => html_entity_decode(strip_tags((string)$rep->message, '<br><p><a><b><strong><i><em><ul><ol><li><code><pre>'), ENT_QUOTES | ENT_HTML5, 'UTF-8'),
                 'is_staff'    => $isStaff,
                 'is_note'     => false,
                 'raw_date'    => $rep->date,
@@ -1288,13 +1455,14 @@ class MobileApiService
             ->get();
 
         foreach ($notes as $note) {
+            $sName = $note->admin ? "Staff Note ({$note->admin})" : "Internal Staff Note";
             $thread[] = [
                 'id'          => (int) $note->id,
                 'type'        => 'note',
-                'sender_name' => $note->admin ? "Staff Note ({$note->admin})" : "Internal Staff Note",
+                'sender_name' => html_entity_decode((string)$sName, ENT_QUOTES | ENT_HTML5, 'UTF-8'),
                 'date'        => $note->date ? Carbon::parse($note->date)->format('M d, Y g:i A') : '',
                 'time_ago'    => $note->date ? Carbon::parse($note->date)->diffForHumans() : '',
-                'message'     => strip_tags((string)$note->message, '<br><p><a><b><strong><i><em><ul><ol><li><code><pre>'),
+                'message'     => html_entity_decode(strip_tags((string)$note->message, '<br><p><a><b><strong><i><em><ul><ol><li><code><pre>'), ENT_QUOTES | ENT_HTML5, 'UTF-8'),
                 'is_staff'    => true,
                 'is_note'     => true,
                 'raw_date'    => $note->date,
@@ -1377,19 +1545,19 @@ class MobileApiService
             'ticket'      => [
                 'id'                => (int) $ticket->id,
                 'tid'               => $ticket->tid,
-                'subject'           => $ticket->title,
+                'subject'           => html_entity_decode((string)$ticket->title, ENT_QUOTES | ENT_HTML5, 'UTF-8'),
                 'status'            => $ticket->status,
                 'status_color'      => $color,
                 'is_awaiting_reply' => $isAwaiting,
                 'priority'          => $ticket->urgency ?: 'Medium',
-                'department'        => $ticket->dept_name ?: 'Support',
+                'department'        => html_entity_decode((string)($ticket->dept_name ?: 'Support'), ENT_QUOTES | ENT_HTML5, 'UTF-8'),
                 'dept_id'           => (int) $ticket->did,
                 'flag'              => (int) ($ticket->flag ?? 0),
-                'assigned_staff'    => $assignedStaff,
+                'assigned_staff'    => html_entity_decode((string)$assignedStaff, ENT_QUOTES | ENT_HTML5, 'UTF-8'),
                 'client_id'         => (int) $ticket->userid,
-                'client_name'       => $clientName,
+                'client_name'       => html_entity_decode((string)$clientName, ENT_QUOTES | ENT_HTML5, 'UTF-8'),
                 'client_email'      => $clientEmail,
-                'company'           => $clientCompany,
+                'company'           => html_entity_decode((string)$clientCompany, ENT_QUOTES | ENT_HTML5, 'UTF-8'),
                 'created_at'        => $ticket->date ? Carbon::parse($ticket->date)->format('M d, Y g:i A') : '',
                 'last_reply'        => $ticket->lastreply ? Carbon::parse($ticket->lastreply)->diffForHumans() : '',
             ],
@@ -1406,7 +1574,7 @@ class MobileApiService
      */
     public static function replyTicket(int $adminId, int $ticketId, string $message, bool $isNote = false, ?string $newStatus = null): array
     {
-        $message = trim($message);
+        $message = ChatService::cleanInputText(trim($message));
         if (empty($message)) {
             return ['status' => 'error', 'message' => 'Reply message cannot be empty.'];
         }
@@ -1489,6 +1657,73 @@ class MobileApiService
             'admin'      => $adminName,
             'new_status' => $status,
             'date'       => Carbon::now()->format('M d, Y g:i A'),
+        ];
+    }
+
+    /**
+     * Create a new ticket on behalf of a client from the mobile app.
+     */
+    public static function createTicket(int $adminId, int $clientId, int $deptId, string $subject, string $message, string $priority = 'Medium'): array
+    {
+        $subject = ChatService::cleanInputText(trim($subject));
+        $message = ChatService::cleanInputText(trim($message));
+        if (empty($subject) || empty($message)) {
+            return ['status' => 'error', 'message' => 'Subject and message are required.'];
+        }
+
+        $client = Capsule::table('tblclients')->where('id', $clientId)->first();
+        if (!$client) {
+            return ['status' => 'error', 'message' => 'Client not found.'];
+        }
+
+        $admin = Capsule::table('tbladmins')->where('id', $adminId)->first(['firstname', 'lastname', 'username']);
+        $adminUsername = $admin ? $admin->username : null;
+        $adminName = $admin ? trim($admin->firstname . ' ' . $admin->lastname) : 'Support Specialist';
+
+        $apiParams = [
+            'clientid' => $clientId,
+            'deptid'   => $deptId > 0 ? $deptId : 1,
+            'subject'  => $subject,
+            'message'  => $message,
+            'priority' => $priority,
+            'admin'    => true,
+        ];
+
+        if (function_exists('localAPI')) {
+            try {
+                $res = localAPI('OpenTicket', $apiParams, $adminUsername);
+                if (!empty($res['result']) && $res['result'] === 'success') {
+                    return [
+                        'status'    => 'success',
+                        'ticket_id' => (int)($res['id'] ?? $res['ticketid'] ?? 0),
+                        'tid'       => $res['tid'] ?? '',
+                    ];
+                }
+            } catch (\Throwable $e) {}
+        }
+
+        // Direct DB insert fallback
+        $tid = strtoupper(substr(md5(uniqid(mt_rand(), true)), 0, 8));
+        $now = Carbon::now();
+        $ticketId = Capsule::table('tbltickets')->insertGetId([
+            'tid'       => $tid,
+            'did'       => $deptId > 0 ? $deptId : 1,
+            'userid'    => $clientId,
+            'name'      => trim($client->firstname . ' ' . $client->lastname),
+            'email'     => $client->email,
+            'date'      => $now,
+            'title'     => $subject,
+            'message'   => $message,
+            'status'    => 'Open',
+            'urgency'   => $priority,
+            'lastreply' => $now,
+            'admin'     => $adminUsername ?: $adminName,
+        ]);
+
+        return [
+            'status'    => 'success',
+            'ticket_id' => (int)$ticketId,
+            'tid'       => $tid,
         ];
     }
 
@@ -1848,6 +2083,7 @@ class MobileApiService
         $q = Capsule::table('tblhosting as h')
             ->join('tblproducts as p', 'h.packageid', '=', 'p.id')
             ->leftJoin('tblclients as c', 'h.userid', '=', 'c.id')
+            ->leftJoin('tblservers as s', 'h.server', '=', 's.id')
             ->select([
                 'h.id',
                 'h.userid',
@@ -1860,11 +2096,23 @@ class MobileApiService
                 'h.paymentmethod',
                 'h.dedicatedip',
                 'h.username',
+                'h.server as server_id',
+                'h.diskusage',
+                'h.disklimit',
+                'h.bwusage',
+                'h.bwlimit',
                 'p.name as product_name',
+                'p.servertype as product_servertype',
                 'c.firstname',
                 'c.lastname',
                 'c.companyname',
                 'c.email as client_email',
+                's.name as server_name',
+                's.ipaddress as server_ip',
+                's.hostname as server_hostname',
+                's.nameserver1',
+                's.nameserver2',
+                's.type as server_type',
             ]);
 
         $search = trim($search);
@@ -1886,12 +2134,15 @@ class MobileApiService
 
         $services = [];
         foreach ($rows as $r) {
+            $srvType = strtolower((string)($r->server_type ?: ($r->product_servertype ?: 'cpanel')));
+            $hasSso = in_array($srvType, ['cpanel', 'whm', 'plesk', 'directadmin']) || !empty($r->server_id);
+
             $services[] = [
                 'id'            => (int) $r->id,
                 'client_id'     => (int) $r->userid,
-                'client_name'   => trim(($r->firstname ?? '') . ' ' . ($r->lastname ?? '')),
+                'client_name'   => html_entity_decode(trim(($r->firstname ?? '') . ' ' . ($r->lastname ?? '')), ENT_QUOTES | ENT_HTML5, 'UTF-8'),
                 'client_email'  => $r->client_email ?? '',
-                'product_name'  => $r->product_name,
+                'product_name'  => html_entity_decode((string)$r->product_name, ENT_QUOTES | ENT_HTML5, 'UTF-8'),
                 'domain'        => $r->domain ?: '—',
                 'status'        => $r->domainstatus,
                 'price'         => number_format((float)$r->amount, 2),
@@ -1899,6 +2150,18 @@ class MobileApiService
                 'payment_method'=> $r->paymentmethod ?: '—',
                 'dedicated_ip'  => $r->dedicatedip ?: '',
                 'username'      => $r->username ?: '',
+                'server_id'     => (int)($r->server_id ?? 0),
+                'server_name'   => $r->server_name ?: '',
+                'server_ip'     => $r->server_ip ?: '',
+                'server_hostname'=> $r->server_hostname ?: '',
+                'nameserver1'   => $r->nameserver1 ?: '',
+                'nameserver2'   => $r->nameserver2 ?: '',
+                'disk_usage'    => (int)($r->diskusage ?? 0),
+                'disk_limit'    => (int)($r->disklimit ?? 0),
+                'bw_usage'      => (int)($r->bwusage ?? 0),
+                'bw_limit'      => (int)($r->bwlimit ?? 0),
+                'server_type'   => $srvType,
+                'has_sso'       => $hasSso,
                 'reg_date'      => $r->regdate ? Carbon::parse($r->regdate)->format('M d, Y') : '—',
                 'next_due_date' => $r->nextduedate ? Carbon::parse($r->nextduedate)->format('M d, Y') : '—',
             ];
@@ -1911,6 +2174,125 @@ class MobileApiService
             'limit'    => $limit,
             'total'    => $total,
         ];
+    }
+
+    /**
+     * Generate 1-click Single Sign-On (SSO) URL for a client's hosting service / cPanel account.
+     */
+    public static function getServiceSsoUrl(int $adminId, int $serviceId): array
+    {
+        try {
+            $service = Capsule::table('tblhosting as h')
+                ->leftJoin('tblservers as s', 'h.server', '=', 's.id')
+                ->leftJoin('tblproducts as p', 'h.packageid', '=', 'p.id')
+                ->where('h.id', $serviceId)
+                ->select([
+                    'h.id',
+                    'h.userid',
+                    'h.domain',
+                    'h.username',
+                    'h.server as server_id',
+                    'h.domainstatus',
+                    's.type as server_type',
+                    's.ipaddress as server_ip',
+                    's.hostname as server_hostname',
+                    's.username as server_username',
+                    's.password as server_password',
+                    's.accesshash as server_accesshash',
+                    's.secure as server_secure',
+                    's.port as server_port',
+                    'p.servertype as product_servertype',
+                ])
+                ->first();
+
+            if (!$service) {
+                return ['status' => 'error', 'message' => 'Hosting service not found.'];
+            }
+
+            $cpanelUser = trim((string)($service->username ?? ''));
+            $serverType = strtolower((string)($service->server_type ?: ($service->product_servertype ?: 'cpanel')));
+            $host = trim((string)($service->server_hostname ?: $service->server_ip));
+            if (empty($host) && !empty($service->domain)) {
+                $host = $service->domain;
+            }
+
+            // 1. If cPanel / WHM server with server credentials, use WHM API create_user_session
+            if (!empty($cpanelUser) && (strpos($serverType, 'cpanel') !== false || empty($serverType)) && !empty($service->server_id)) {
+                require_once __DIR__ . '/ServerTelemetryService.php';
+                $secure = !isset($service->server_secure) || $service->server_secure === 'on' || $service->server_secure === '1' || $service->server_secure === 1 || $service->server_secure === true;
+                $port = !empty($service->server_port) ? (int)$service->server_port : ($secure ? 2087 : 2086);
+                $serverUser = trim((string)($service->server_username ?? 'root'));
+                $serverPass = ServerTelemetryService::safeDecrypt($service->server_password ?? '');
+                $token = trim((string)($service->server_accesshash ?? ''));
+                $scheme = $secure ? 'https://' : 'http://';
+                $baseUrl = "{$scheme}{$host}:{$port}/json-api/";
+
+                $sessionRes = ServerTelemetryService::callWhmApi(
+                    $baseUrl,
+                    'create_user_session?api.version=1&user=' . urlencode($cpanelUser) . '&service=cpaneld&app=cpanel',
+                    $serverUser,
+                    $token,
+                    $serverPass
+                );
+
+                if (!empty($sessionRes['ok']) && !empty($sessionRes['data'])) {
+                    $json = json_decode($sessionRes['data'], true);
+                    if (!empty($json['data']['url'])) {
+                        return [
+                            'status'   => 'success',
+                            'sso_url'  => (string)$json['data']['url'],
+                            'service'  => $service->domain ?: "Service #{$serviceId}",
+                            'type'     => 'cpanel_session',
+                        ];
+                    }
+                }
+            }
+
+            // 2. WHMCS native module ClientAreaSingleSignOn / Login link if available
+            $moduleName = $service->product_servertype ?: ($service->server_type ?: 'cpanel');
+            $moduleFile = dirname(__DIR__, 3) . "/modules/servers/{$moduleName}/{$moduleName}.php";
+            if (file_exists($moduleFile)) {
+                require_once $moduleFile;
+                $ssoFn = $moduleName . '_ClientAreaSingleSignOn';
+                if (function_exists($ssoFn) && function_exists('ModuleBuildParams')) {
+                    try {
+                        $params = \ModuleBuildParams($serviceId);
+                        $ssoResult = $ssoFn($params);
+                        if (is_array($ssoResult) && !empty($ssoResult['redirectTo'])) {
+                            return [
+                                'status'  => 'success',
+                                'sso_url' => $ssoResult['redirectTo'],
+                                'service' => $service->domain ?: "Service #{$serviceId}",
+                                'type'    => 'module_sso',
+                            ];
+                        }
+                    } catch (\Throwable $e) {}
+                }
+            }
+
+            // 3. Fallback: Direct cPanel / Plesk / DirectAdmin link
+            $port = 2083;
+            if (strpos($serverType, 'plesk') !== false) $port = 8443;
+            elseif (strpos($serverType, 'directadmin') !== false) $port = 2222;
+
+            $scheme = 'https://';
+            $directUrl = "{$scheme}{$host}:{$port}";
+            if (!empty($cpanelUser)) {
+                $directUrl .= "/?user=" . urlencode($cpanelUser);
+            }
+
+            return [
+                'status'  => 'success',
+                'sso_url' => $directUrl,
+                'service' => $service->domain ?: "Service #{$serviceId}",
+                'type'    => 'direct_url',
+            ];
+        } catch (\Throwable $e) {
+            return [
+                'status'  => 'error',
+                'message' => 'Failed to generate SSO URL: ' . $e->getMessage(),
+            ];
+        }
     }
 
     /**

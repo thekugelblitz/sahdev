@@ -53,6 +53,39 @@ class ChatService
     }
 
     /**
+     * Clean input text by decoding entities and stripping slashes.
+     * Prevents &quot;, &#039;, &amp; pollution from WHMCS global input filters.
+     */
+    public static function cleanInputText(string $text): string
+    {
+        if (empty($text)) {
+            return '';
+        }
+        $text = stripslashes($text);
+        $text = html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        return trim($text);
+    }
+
+    /**
+     * Automatically expand /shortcut commands to canned responses.
+     */
+    public static function expandCannedShortcut(string $text): string
+    {
+        $trimmed = trim($text);
+        if (strpos($trimmed, '/') === 0 && strlen($trimmed) <= 64 && strpos($trimmed, ' ') === false) {
+            try {
+                $canned = Capsule::table('tblsahdev_canned_responses')
+                    ->where('shortcut', $trimmed)
+                    ->first();
+                if ($canned && !empty($canned->template_text)) {
+                    return self::cleanInputText($canned->template_text);
+                }
+            } catch (\Throwable $e) {}
+        }
+        return $text;
+    }
+
+    /**
      * Get or create active Admin Copilot session.
      */
     public static function getOrCreateAdminSession(int $adminId, ?string $sessionUuid = null): array
@@ -2432,6 +2465,11 @@ class ChatService
 
         $formatted = [];
         foreach ($messages as $m) {
+            if (!empty($m->is_deleted) && !empty($m->is_silent)) {
+                // Silently deleted message - omit from client poll
+                continue;
+            }
+
             $senderName = $m->sender_name;
             if ($m->sender_type === 'user' || $m->sender_type === 'client') {
                 if (empty($senderName) || in_array(strtolower($senderName), ['visitor', 'client', 'you'])) {
@@ -2446,18 +2484,43 @@ class ChatService
                     $senderName = 'System';
                 }
             }
+
+            $msgText = !empty($m->is_deleted)
+                ? '[Message deleted by support staff]'
+                : html_entity_decode((string)$m->message_text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+
             $formatted[] = [
                 'id'           => (int) $m->id,
                 'sender_type'  => $m->sender_type,
                 'sender_name'  => $senderName,
-                'message_text' => html_entity_decode((string)$m->message_text, ENT_QUOTES | ENT_HTML5, 'UTF-8'),
+                'message_text' => $msgText,
                 'action_card'  => !empty($m->action_card_json) ? json_decode($m->action_card_json, true) : null,
                 'rating'       => isset($m->rating) ? (int) $m->rating : null,
+                'is_edited'    => !empty($m->is_edited),
+                'is_deleted'   => !empty($m->is_deleted),
+                'edited_at'    => !empty($m->edited_at) ? Carbon::parse($m->edited_at)->diffForHumans() : null,
                 'created_at'   => Carbon::parse($m->created_at)->diffForHumans(),
             ];
         }
 
         $quotaStatus = self::checkClientChatLimits($visitorToken, $clientId, (int)$session->id);
+
+        // Multi-agent active staff list
+        $activeAgents = [];
+        $activeAdminIds = !empty($session->active_admin_ids) ? json_decode($session->active_admin_ids, true) : [];
+        if (!is_array($activeAdminIds)) $activeAdminIds = [];
+        if (!empty($session->assigned_admin_id) && !in_array((int)$session->assigned_admin_id, $activeAdminIds)) {
+            $activeAdminIds[] = (int)$session->assigned_admin_id;
+        }
+        if (!empty($activeAdminIds)) {
+            $adminRows = Capsule::table('tbladmins')->whereIn('id', $activeAdminIds)->get(['id', 'firstname', 'lastname']);
+            foreach ($adminRows as $ar) {
+                $activeAgents[] = [
+                    'id'   => (int)$ar->id,
+                    'name' => trim($ar->firstname . ' ' . $ar->lastname),
+                ];
+            }
+        }
 
         return [
             'success'             => true,
@@ -2465,6 +2528,7 @@ class ChatService
             'status'              => $session->status,
             'assigned_admin_id'   => (int)($session->assigned_admin_id ?? 0),
             'assigned_admin_name' => $assignedAdminName,
+            'active_agents'       => $activeAgents,
             'chat_title'          => $botTitle,
             'summon_status'       => $session->summon_status ?? 'none',
             'limit_status'        => $quotaStatus,
@@ -3024,7 +3088,7 @@ class ChatService
     }
 
     /**
-     * Claim staff takeover of an active chat session.
+     * Claim staff takeover of an active chat session. Supports multi-agent co-takeover.
      */
     public static function claimTakeover(string $sessionUuid, int $adminId, int $timeoutMins = 0): array
     {
@@ -3037,9 +3101,19 @@ class ChatService
             $admin = Capsule::table('tbladmins')->where('id', $adminId)->first(['firstname', 'lastname']);
             $adminName = $admin ? trim($admin->firstname . ' ' . $admin->lastname) : "Staff Member";
 
+            // Multi-agent active admins array
+            $activeAdmins = !empty($session->active_admin_ids) ? json_decode($session->active_admin_ids, true) : [];
+            if (!is_array($activeAdmins)) $activeAdmins = [];
+            if (!in_array($adminId, $activeAdmins)) {
+                $activeAdmins[] = $adminId;
+            }
+
+            $alreadyTaken = ($session->status === 'taken_over');
+
             Capsule::table('tblsahdev_chat_sessions')->where('id', $session->id)->update([
                 'status'                => 'taken_over',
                 'assigned_admin_id'     => $adminId,
+                'active_admin_ids'      => json_encode(array_values($activeAdmins)),
                 'summon_status'         => 'claimed',
                 'takeover_timeout_mins' => max(0, $timeoutMins),
                 'last_staff_message_at' => Carbon::now(),
@@ -3048,16 +3122,20 @@ class ChatService
             ]);
 
             $timeoutNote = ($timeoutMins > 0) ? " (inactivity timer: {$timeoutMins}m)" : "";
+            $joinMsg = $alreadyTaken
+                ? "Staff member {$adminName} joined the conversation as co-agent."
+                : "Staff member {$adminName} joined the chat{$timeoutNote}. Autonomous AI replies are paused.";
+
             Capsule::table('tblsahdev_chat_messages')->insert([
                 'session_id'   => $session->id,
                 'sender_type'  => 'system',
                 'sender_id'    => $adminId,
                 'sender_name'  => 'System',
-                'message_text' => "Staff member {$adminName} joined the chat{$timeoutNote}. Autonomous AI replies are paused.",
+                'message_text' => $joinMsg,
                 'created_at'   => Carbon::now(),
             ]);
 
-            return ['success' => true, 'message' => "You have taken over session #{$session->id}."];
+            return ['success' => true, 'message' => "You have joined session #{$session->id}."];
         } catch (\Throwable $e) {
             return ['success' => false, 'error' => $e->getMessage()];
         }
@@ -3074,24 +3152,52 @@ class ChatService
                 return ['success' => false, 'error' => 'Session not found.'];
             }
 
-            Capsule::table('tblsahdev_chat_sessions')->where('id', $session->id)->update([
-                'status'                => 'active',
-                'assigned_admin_id'     => 0,
-                'summon_status'         => 'none',
-                'takeover_timeout_mins' => 0,
-                'updated_at'            => Carbon::now(),
-            ]);
+            $admin = Capsule::table('tbladmins')->where('id', $adminId)->first(['firstname', 'lastname']);
+            $adminName = $admin ? trim($admin->firstname . ' ' . $admin->lastname) : "Staff Member";
 
-            Capsule::table('tblsahdev_chat_messages')->insert([
-                'session_id'   => $session->id,
-                'sender_type'  => 'system',
-                'sender_id'    => 0,
-                'sender_name'  => 'System',
-                'message_text' => "Staff member released the chat. Autonomous AI Assistant is active.",
-                'created_at'   => Carbon::now(),
-            ]);
+            $activeAdmins = !empty($session->active_admin_ids) ? json_decode($session->active_admin_ids, true) : [];
+            if (!is_array($activeAdmins)) $activeAdmins = [];
+            $activeAdmins = array_values(array_diff($activeAdmins, [$adminId]));
 
-            return ['success' => true, 'message' => "Chat released back to AI Assistant."];
+            if (!empty($activeAdmins)) {
+                $nextAdminId = reset($activeAdmins);
+                Capsule::table('tblsahdev_chat_sessions')->where('id', $session->id)->update([
+                    'assigned_admin_id' => $nextAdminId,
+                    'active_admin_ids'  => json_encode($activeAdmins),
+                    'updated_at'        => Carbon::now(),
+                ]);
+
+                Capsule::table('tblsahdev_chat_messages')->insert([
+                    'session_id'   => $session->id,
+                    'sender_type'  => 'system',
+                    'sender_id'    => $adminId,
+                    'sender_name'  => 'System',
+                    'message_text' => "Staff member {$adminName} left the chat. Other staff remain active.",
+                    'created_at'   => Carbon::now(),
+                ]);
+
+                return ['success' => true, 'message' => "You have left the chat. Other agents remain active."];
+            } else {
+                Capsule::table('tblsahdev_chat_sessions')->where('id', $session->id)->update([
+                    'status'                => 'active',
+                    'assigned_admin_id'     => 0,
+                    'active_admin_ids'      => null,
+                    'summon_status'         => 'none',
+                    'takeover_timeout_mins' => 0,
+                    'updated_at'            => Carbon::now(),
+                ]);
+
+                Capsule::table('tblsahdev_chat_messages')->insert([
+                    'session_id'   => $session->id,
+                    'sender_type'  => 'system',
+                    'sender_id'    => 0,
+                    'sender_name'  => 'System',
+                    'message_text' => "Staff member released the chat. Autonomous AI Assistant is active.",
+                    'created_at'   => Carbon::now(),
+                ]);
+
+                return ['success' => true, 'message' => "Chat released back to AI Assistant."];
+            }
         } catch (\Throwable $e) {
             return ['success' => false, 'error' => $e->getMessage()];
         }
@@ -3120,6 +3226,7 @@ class ChatService
                     Capsule::table('tblsahdev_chat_sessions')->where('id', $s->id)->update([
                         'status'                => 'active',
                         'assigned_admin_id'     => 0,
+                        'active_admin_ids'      => null,
                         'summon_status'         => 'none',
                         'takeover_timeout_mins' => 0,
                         'updated_at'            => Carbon::now(),
@@ -3186,7 +3293,7 @@ class ChatService
     }
 
     /**
-     * Send a live staff message from an admin operator.
+     * Send a live staff message from an admin operator with shortcut auto-expansion and multi-agent support.
      */
     public static function recordStaffMessage(string $sessionUuid, int $adminId, string $messageText): array
     {
@@ -3199,10 +3306,13 @@ class ChatService
             $admin = Capsule::table('tbladmins')->where('id', $adminId)->first(['firstname', 'lastname']);
             $adminName = $admin ? trim($admin->firstname . ' ' . $admin->lastname) : "Support Specialist";
 
-            $cleanText = trim($messageText);
+            $cleanText = self::cleanInputText($messageText);
             if (empty($cleanText)) {
                 return ['success' => false, 'error' => 'Message text cannot be empty.'];
             }
+
+            // Auto-expand shortcut e.g. /hi
+            $cleanText = self::expandCannedShortcut($cleanText);
 
             $storageText = self::safeStorageText($cleanText);
             $recentStaffDuplicate = Capsule::table('tblsahdev_chat_messages')
@@ -3226,9 +3336,17 @@ class ChatService
                 ]);
             }
 
+            // Multi-agent active admins array
+            $activeAdmins = !empty($session->active_admin_ids) ? json_decode($session->active_admin_ids, true) : [];
+            if (!is_array($activeAdmins)) $activeAdmins = [];
+            if (!in_array($adminId, $activeAdmins)) {
+                $activeAdmins[] = $adminId;
+            }
+
             $updatePayload = [
                 'status'                => 'taken_over',
                 'assigned_admin_id'     => $adminId,
+                'active_admin_ids'      => json_encode(array_values($activeAdmins)),
                 'typing_preview'        => null,
                 'typing_at'             => null,
                 'last_staff_message_at' => Carbon::now(),
@@ -3247,6 +3365,79 @@ class ChatService
                 'text'       => $cleanText,
                 'created_at' => Carbon::now()->format('g:i A'),
             ];
+        } catch (\Throwable $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * Edit a staff message.
+     */
+    public static function editStaffMessage(int $messageId, int $adminId, string $newText, bool $notifyClient = false): array
+    {
+        try {
+            $msg = Capsule::table('tblsahdev_chat_messages')->where('id', $messageId)->first();
+            if (!$msg) {
+                return ['success' => false, 'error' => 'Message not found.'];
+            }
+
+            $clean = self::cleanInputText($newText);
+            if (empty($clean)) {
+                return ['success' => false, 'error' => 'Message text cannot be empty.'];
+            }
+            $clean = self::expandCannedShortcut($clean);
+
+            $update = [
+                'message_text' => self::safeStorageText($clean),
+                'is_edited'    => 1,
+                'edited_at'    => Carbon::now(),
+                'updated_at'   => Carbon::now(),
+            ];
+            Capsule::table('tblsahdev_chat_messages')->where('id', $messageId)->update($update);
+
+            return [
+                'success'    => true,
+                'message_id' => $messageId,
+                'text'       => $clean,
+                'is_edited'  => true,
+                'edited_at'  => Carbon::now()->diffForHumans(),
+            ];
+        } catch (\Throwable $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * Delete a staff message silently or with notification to client.
+     */
+    public static function deleteStaffMessage(int $messageId, int $adminId, bool $notifyClient = false): array
+    {
+        try {
+            $msg = Capsule::table('tblsahdev_chat_messages')->where('id', $messageId)->first();
+            if (!$msg) {
+                return ['success' => false, 'error' => 'Message not found.'];
+            }
+
+            if ($notifyClient) {
+                // Client sees "[Message deleted by support staff]"
+                Capsule::table('tblsahdev_chat_messages')->where('id', $messageId)->update([
+                    'message_text' => '[Message deleted by support staff]',
+                    'is_deleted'   => 1,
+                    'is_silent'    => 0,
+                    'deleted_at'   => Carbon::now(),
+                    'updated_at'   => Carbon::now(),
+                ]);
+            } else {
+                // Silent deletion: marked as deleted and silent so it vanishes from future polls
+                Capsule::table('tblsahdev_chat_messages')->where('id', $messageId)->update([
+                    'is_deleted'   => 1,
+                    'is_silent'    => 1,
+                    'deleted_at'   => Carbon::now(),
+                    'updated_at'   => Carbon::now(),
+                ]);
+            }
+
+            return ['success' => true, 'message_id' => $messageId, 'deleted' => true, 'notify_client' => $notifyClient];
         } catch (\Throwable $e) {
             return ['success' => false, 'error' => $e->getMessage()];
         }

@@ -376,6 +376,36 @@ class TicketProvider extends ChangeNotifier {
     return updateTicket(baseUrl: baseUrl, token: token, ticketId: ticketId, flag: adminId);
   }
 
+  Future<Map<String, dynamic>?> createTicket({
+    required String baseUrl,
+    required String token,
+    required int clientId,
+    int? deptId,
+    required String subject,
+    required String message,
+    String priority = 'Medium',
+  }) async {
+    try {
+      final res = await _api.createTicket(
+        baseUrl: baseUrl,
+        token: token,
+        clientId: clientId,
+        deptId: deptId,
+        subject: subject,
+        message: message,
+        priority: priority,
+      );
+
+      if (res.success && res.data != null) {
+        await fetchTickets(baseUrl: baseUrl, token: token, refresh: true);
+        return res.data;
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   void clearActiveTicket() {
     _activeTicket = null;
     _activeThread = [];

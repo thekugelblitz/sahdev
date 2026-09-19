@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/queue_provider.dart';
 import '../providers/ticket_provider.dart';
 import '../services/notification_router.dart';
 import 'queue_screen.dart';
 import 'tickets_screen.dart';
-import 'clients_screen.dart';
+import 'invoices_screen.dart';
 import 'services_screen.dart';
+import 'clients_screen.dart';
 import 'settings_screen.dart';
 
 class HomeShell extends StatefulWidget {
@@ -24,8 +26,9 @@ class _HomeShellState extends State<HomeShell> {
   final List<Widget> _pages = const [
     QueueScreen(),
     TicketsScreen(),
-    ClientsScreen(),
+    InvoicesScreen(),
     ServicesScreen(),
+    ClientsScreen(),
     SettingsScreen(),
   ];
 
@@ -62,14 +65,17 @@ class _HomeShellState extends State<HomeShell> {
         ),
         child: BottomNavigationBar(
           currentIndex: _currentIndex,
-          onTap: (index) => setState(() => _currentIndex = index),
+          onTap: (index) {
+            HapticFeedback.selectionClick();
+            setState(() => _currentIndex = index);
+          },
           backgroundColor: isAmoled ? Colors.black : theme.cardColor,
           selectedItemColor: theme.colorScheme.primary,
           unselectedItemColor: const Color(0xFF64748B),
           type: BottomNavigationBarType.fixed,
           elevation: 0,
-          selectedFontSize: 11,
-          unselectedFontSize: 11,
+          selectedFontSize: 10,
+          unselectedFontSize: 10,
           selectedLabelStyle: const TextStyle(fontWeight: FontWeight.w700),
           items: [
             BottomNavigationBarItem(
@@ -85,7 +91,7 @@ class _HomeShellState extends State<HomeShell> {
                 backgroundColor: const Color(0xFFEF4444),
                 child: const Icon(Icons.chat_bubble),
               ),
-              label: 'Live Chat',
+              label: 'Chat',
             ),
             BottomNavigationBarItem(
               icon: Badge(
@@ -103,14 +109,19 @@ class _HomeShellState extends State<HomeShell> {
               label: 'Tickets',
             ),
             const BottomNavigationBarItem(
-              icon: Icon(Icons.people_alt_outlined),
-              activeIcon: Icon(Icons.people_alt),
-              label: 'Clients',
+              icon: Icon(Icons.receipt_long_outlined),
+              activeIcon: Icon(Icons.receipt_long),
+              label: 'Invoices',
             ),
             const BottomNavigationBarItem(
               icon: Icon(Icons.cloud_outlined),
               activeIcon: Icon(Icons.cloud),
               label: 'Services',
+            ),
+            const BottomNavigationBarItem(
+              icon: Icon(Icons.people_alt_outlined),
+              activeIcon: Icon(Icons.people_alt),
+              label: 'Clients',
             ),
             const BottomNavigationBarItem(
               icon: Icon(Icons.settings_outlined),

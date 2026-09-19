@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../screens/clients_screen.dart';
 import '../services/api_service.dart';
 
 class InvoiceDetailModal extends StatefulWidget {
@@ -158,6 +160,7 @@ class _InvoiceDetailModalState extends State<InvoiceDetailModal> {
   }
 
   void _copyToClipboard(String text, String label) {
+    HapticFeedback.selectionClick();
     Clipboard.setData(ClipboardData(text: text));
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -166,6 +169,15 @@ class _InvoiceDetailModalState extends State<InvoiceDetailModal> {
         behavior: SnackBarBehavior.floating,
       ),
     );
+  }
+
+  Future<void> _launchUrlAction(String urlStr) async {
+    try {
+      final uri = Uri.parse(urlStr);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
+    } catch (_) {}
   }
 
   Color _getStatusColor(String status) {
@@ -197,6 +209,9 @@ class _InvoiceDetailModalState extends State<InvoiceDetailModal> {
     final isPaid = status.toLowerCase() == 'paid';
     final invoiceNum = invoice?['invoicenum']?.toString() ?? '${widget.invoiceId}';
     final clientName = invoice?['client_name']?.toString() ?? 'Client';
+    final clientId = (invoice?['client_id'] as num?)?.toInt() ?? (invoice?['userid'] as num?)?.toInt();
+    final clientEmail = invoice?['client_email']?.toString() ?? '';
+    final notes = invoice?['notes']?.toString() ?? '';
     final total = invoice?['total']?.toString() ?? '0.00';
     final subtotal = invoice?['subtotal']?.toString() ?? '0.00';
     final tax = invoice?['tax']?.toString() ?? '0.00';
@@ -402,6 +417,59 @@ class _InvoiceDetailModalState extends State<InvoiceDetailModal> {
                                 ),
                               ),
 
+                              const SizedBox(height: 14),
+
+                              // Client & Share Action Bar
+                              Row(
+                                children: [
+                                  if (clientEmail.isNotEmpty)
+                                    Expanded(
+                                      child: OutlinedButton.icon(
+                                        icon: const Icon(Icons.email_outlined, size: 14),
+                                        label: const Text('Email Client', style: TextStyle(fontSize: 12)),
+                                        style: OutlinedButton.styleFrom(
+                                          padding: const EdgeInsets.symmetric(vertical: 8),
+                                        ),
+                                        onPressed: () => _launchUrlAction('mailto:$clientEmail?subject=Invoice%20%23$invoiceNum'),
+                                      ),
+                                    ),
+                                  if (clientEmail.isNotEmpty) const SizedBox(width: 8),
+                                  Expanded(
+                                    child: OutlinedButton.icon(
+                                      icon: const Icon(Icons.link, size: 14),
+                                      label: const Text('Copy Link', style: TextStyle(fontSize: 12)),
+                                      style: OutlinedButton.styleFrom(
+                                        padding: const EdgeInsets.symmetric(vertical: 8),
+                                      ),
+                                      onPressed: () {
+                                        final cleanBase = widget.baseUrl.replaceAll(RegExp(r'/modules/.*$'), '').replaceAll(RegExp(r'/api/.*$'), '');
+                                        final invUrl = '$cleanBase/viewinvoice.php?id=${widget.invoiceId}';
+                                        _copyToClipboard(invUrl, 'Invoice Link');
+                                      },
+                                    ),
+                                  ),
+                                  if (clientId != null && clientId > 0) ...[
+                                    const SizedBox(width: 8),
+                                    IconButton(
+                                      icon: const Icon(Icons.person_outline, size: 18),
+                                      tooltip: 'View Client Profile',
+                                      style: IconButton.styleFrom(
+                                        backgroundColor: theme.colorScheme.primary.withOpacity(0.12),
+                                      ),
+                                      onPressed: () {
+                                        ClientProfileModal.show(
+                                          context,
+                                          clientId: clientId,
+                                          baseUrl: widget.baseUrl,
+                                          token: widget.token,
+                                          initialSummary: {'id': clientId, 'name': clientName},
+                                        );
+                                      },
+                                    ),
+                                  ],
+                                ],
+                              ),
+
                               const SizedBox(height: 18),
 
                               // Line items header
@@ -489,6 +557,32 @@ class _InvoiceDetailModalState extends State<InvoiceDetailModal> {
                                   ],
                                 ),
                               ),
+
+                              if (notes.isNotEmpty) ...[
+                                const SizedBox(height: 14),
+                                Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: isAmoled ? const Color(0xFF161305) : const Color(0xFFFEF3C7).withOpacity(0.4),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: const Color(0xFFF59E0B).withOpacity(0.3)),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Row(
+                                        children: [
+                                          Icon(Icons.notes_outlined, size: 14, color: Color(0xFFF59E0B)),
+                                          SizedBox(width: 6),
+                                          Text('Invoice Notes', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFFF59E0B))),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 6),
+                                      SelectableText(notes, style: const TextStyle(fontSize: 12.5, height: 1.35)),
+                                    ],
+                                  ),
+                                ),
+                              ],
 
                               const SizedBox(height: 24),
                             ],

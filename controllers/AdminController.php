@@ -12645,20 +12645,27 @@ class AdminController
                     </div>
 
                     <!-- Staff Reply Composer -->
-                    <div id="chatComposerContainer" style="border-top:1px solid #e2e8f0;background:#ffffff;padding:12px 16px;display:none;flex-direction:column;gap:8px;">
+                    <div id="chatComposerContainer" style="border-top:1px solid #e2e8f0;background:#ffffff;padding:12px 16px;display:none;flex-direction:column;gap:8px;position:relative;">
                         <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;">
                             <div style="font-size:11.5px;color:#64748b;font-weight:600;">
                                 <i class="fas fa-user-shield text-success"></i> Replying as Staff: <strong><?php echo htmlspecialchars($adminName); ?></strong>
                             </div>
-                            <button type="button" id="btnAiSuggestReply" class="btn btn-xs" style="background:#f1f5f9;color:#4f46e5;font-weight:600;border:1px solid #c7d2fe;border-radius:4px;" title="AI Co-Pilot generates contextual draft suggestion">
-                                <i class="fas fa-magic"></i> <span class="sdv-ai-suggest-text">AI Co-Pilot Suggest Reply</span>
-                            </button>
+                            <div style="display:flex;align-items:center;gap:6px;">
+                                <button type="button" id="btnOpenCannedModal" class="btn btn-xs" style="background:#f8fafc;color:#0284c7;font-weight:600;border:1px solid #bae6fd;border-radius:4px;" title="Browse and manage canned responses (/ shortcuts)">
+                                    <i class="fas fa-bolt"></i> Canned Responses
+                                </button>
+                                <button type="button" id="btnAiSuggestReply" class="btn btn-xs" style="background:#f1f5f9;color:#4f46e5;font-weight:600;border:1px solid #c7d2fe;border-radius:4px;" title="AI Co-Pilot generates contextual draft suggestion">
+                                    <i class="fas fa-magic"></i> <span class="sdv-ai-suggest-text">AI Co-Pilot Suggest Reply</span>
+                                </button>
+                            </div>
                         </div>
-                        <div style="display:flex;gap:10px;align-items:flex-end;">
-                            <textarea id="staffReplyInput" rows="2" placeholder="Type message as human staff agent... (Shift+Enter for newline, Enter to send)" style="flex:1;padding:10px 12px;font-size:14px;border:1px solid #cbd5e1;border-radius:6px;resize:none;outline:none;line-height:1.4;box-sizing:border-box;"></textarea>
+                        <div style="position:relative;display:flex;gap:10px;align-items:flex-end;">
+                            <textarea id="staffReplyInput" rows="2" placeholder="Type message as human staff agent... (Type / for shortcuts, Enter to send)" style="flex:1;padding:10px 12px;font-size:14px;border:1px solid #cbd5e1;border-radius:6px;resize:none;outline:none;line-height:1.4;box-sizing:border-box;"></textarea>
                             <button type="button" id="btnSendStaffReply" class="btn btn-primary" style="height:44px;padding:0 20px;font-weight:700;border-radius:6px;display:flex;align-items:center;gap:6px;">
                                 <i class="fas fa-paper-plane"></i> <span class="sdv-send-btn-text">Send</span>
                             </button>
+                            <!-- Autocomplete popup for / shortcut -->
+                            <div id="cannedAutocompletePopup" style="display:none;position:absolute;bottom:52px;left:0;width:340px;max-height:220px;background:#ffffff;border:1px solid #cbd5e1;border-radius:8px;box-shadow:0 10px 25px rgba(0,0,0,0.18);overflow-y:auto;z-index:100;"></div>
                         </div>
                     </div>
                 </div>
@@ -12805,6 +12812,135 @@ class AdminController
                     </div>
                     <div class="modal-footer" style="background:#f8fafc;border-top:1px solid #e2e8f0;padding:12px 20px;">
                         <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal: Canned Responses & Shortcuts -->
+        <div class="modal fade" id="cannedResponsesModal" tabindex="-1" role="dialog" aria-labelledby="cannedResponsesModalTitle">
+            <div class="modal-dialog modal-lg" role="document">
+                <div class="modal-content" style="border-radius:12px;overflow:hidden;border:none;box-shadow:0 20px 40px rgba(0,0,0,0.25);">
+                    <div class="modal-header" style="background:#0f172a;color:#fff;padding:16px 20px;display:flex;align-items:center;justify-content:space-between;">
+                        <h4 class="modal-title" id="cannedResponsesModalTitle" style="font-weight:700;font-size:16px;display:flex;align-items:center;gap:8px;margin:0;">
+                            <i class="fas fa-bolt text-warning"></i> Canned Responses &amp; / Shortcuts
+                        </h4>
+                        <button type="button" class="close" data-dismiss="modal" aria-label="Close" style="color:#fff;opacity:0.8;"><span aria-hidden="true">&times;</span></button>
+                    </div>
+                    <div class="modal-body" style="padding:20px;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;gap:10px;flex-wrap:wrap;">
+                            <div style="position:relative;flex:1;min-width:240px;">
+                                <i class="fas fa-search" style="position:absolute;left:10px;top:10px;color:#94a3b8;font-size:12px;"></i>
+                                <input type="text" id="cannedSearchInput" placeholder="Filter by title, shortcut, or content..." style="width:100%;padding:7px 10px 7px 30px;font-size:13px;border:1px solid #cbd5e1;border-radius:6px;box-sizing:border-box;">
+                            </div>
+                            <button type="button" id="btnShowAddCannedForm" class="btn btn-sm btn-success" style="font-weight:600;">
+                                <i class="fas fa-plus"></i> Add New Response
+                            </button>
+                        </div>
+
+                        <!-- Inline Add/Edit Form -->
+                        <div id="cannedEditFormBox" style="display:none;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:16px;margin-bottom:16px;">
+                            <h5 id="cannedFormTitle" style="font-weight:700;margin-top:0;margin-bottom:12px;color:#0f172a;">Add Canned Response</h5>
+                            <input type="hidden" id="cannedFormId" value="0">
+                            <div class="row">
+                                <div class="col-md-5">
+                                    <div class="form-group">
+                                        <label style="font-size:12px;font-weight:700;">Title</label>
+                                        <input type="text" id="cannedFormTitleInput" class="form-control input-sm" placeholder="e.g. Greeting">
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="form-group">
+                                        <label style="font-size:12px;font-weight:700;">Shortcut (with /)</label>
+                                        <input type="text" id="cannedFormShortcutInput" class="form-control input-sm" placeholder="e.g. /hi">
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="form-group">
+                                        <label style="font-size:12px;font-weight:700;">Category</label>
+                                        <input type="text" id="cannedFormCategoryInput" class="form-control input-sm" value="General">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label style="font-size:12px;font-weight:700;">Response Message Text</label>
+                                <textarea id="cannedFormContentInput" class="form-control" rows="3" placeholder="Enter canned response text..."></textarea>
+                            </div>
+                            <div style="display:flex;justify-content:flex-end;gap:8px;">
+                                <button type="button" id="btnCancelCannedForm" class="btn btn-default btn-sm">Cancel</button>
+                                <button type="button" id="btnSaveCannedForm" class="btn btn-primary btn-sm" style="font-weight:700;">Save Response</button>
+                            </div>
+                        </div>
+
+                        <!-- Canned Responses Table/List -->
+                        <div id="cannedResponsesList" style="max-height:380px;overflow-y:auto;border:1px solid #e2e8f0;border-radius:8px;">
+                            <div style="text-align:center;padding:30px;color:#94a3b8;">
+                                <i class="fas fa-spinner fa-spin"></i> Loading canned responses...
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer" style="background:#f8fafc;border-top:1px solid #e2e8f0;padding:12px 20px;">
+                        <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal: Edit Staff Message -->
+        <div class="modal fade" id="editMessageModal" tabindex="-1" role="dialog">
+            <div class="modal-dialog" role="document">
+                <div class="modal-content" style="border-radius:10px;overflow:hidden;">
+                    <div class="modal-header" style="background:#0f172a;color:#fff;padding:14px 18px;">
+                        <button type="button" class="close" data-dismiss="modal" style="color:#fff;opacity:0.8;">&times;</button>
+                        <h4 class="modal-title" style="font-weight:700;font-size:15px;"><i class="fas fa-pencil-alt text-warning"></i> Edit Staff Message</h4>
+                    </div>
+                    <div class="modal-body" style="padding:18px;">
+                        <input type="hidden" id="editModalMsgId" value="0">
+                        <div class="form-group">
+                            <label style="font-weight:700;font-size:12.5px;">Message Content</label>
+                            <textarea id="editModalMsgText" class="form-control" rows="4"></textarea>
+                        </div>
+                        <div class="checkbox" style="margin-bottom:0;">
+                            <label style="font-size:12.5px;color:#475569;">
+                                <input type="checkbox" id="editModalNotifyClient"> Notify client that this message was edited (adds <em>(edited)</em> badge)
+                            </label>
+                        </div>
+                    </div>
+                    <div class="modal-footer" style="background:#f8fafc;padding:10px 18px;">
+                        <button type="button" class="btn btn-default" data-dismiss="modal">Cancel</button>
+                        <button type="button" id="btnSubmitEditMsg" class="btn btn-primary" style="font-weight:700;">Save Changes</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal: Delete Staff Message -->
+        <div class="modal fade" id="deleteMessageModal" tabindex="-1" role="dialog">
+            <div class="modal-dialog" role="document" style="max-width:440px;">
+                <div class="modal-content" style="border-radius:10px;overflow:hidden;">
+                    <div class="modal-header" style="background:#dc2626;color:#fff;padding:14px 18px;">
+                        <button type="button" class="close" data-dismiss="modal" style="color:#fff;opacity:0.8;">&times;</button>
+                        <h4 class="modal-title" style="font-weight:700;font-size:15px;"><i class="fas fa-trash-alt"></i> Delete Message</h4>
+                    </div>
+                    <div class="modal-body" style="padding:18px;">
+                        <input type="hidden" id="deleteModalMsgId" value="0">
+                        <p style="font-size:13px;color:#334155;margin-bottom:14px;">Are you sure you want to delete this staff message?</p>
+                        <div class="radio" style="margin-bottom:8px;">
+                            <label style="font-weight:600;font-size:13px;color:#0f172a;">
+                                <input type="radio" name="deleteModalMode" value="silent" checked> Silent deletion (Default)
+                                <div style="font-weight:400;font-size:11.5px;color:#64748b;margin-left:20px;">Removes the message bubble from the client's screen seamlessly without any notice.</div>
+                            </label>
+                        </div>
+                        <div class="radio" style="margin-bottom:0;">
+                            <label style="font-weight:600;font-size:13px;color:#0f172a;">
+                                <input type="radio" name="deleteModalMode" value="notify"> Notify client
+                                <div style="font-weight:400;font-size:11.5px;color:#64748b;margin-left:20px;">Replaces the message on the client widget with <em>"This message was deleted by staff."</em></div>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="modal-footer" style="background:#f8fafc;padding:10px 18px;">
+                        <button type="button" class="btn btn-default" data-dismiss="modal">Cancel</button>
+                        <button type="button" id="btnSubmitDeleteMsg" class="btn btn-danger" style="font-weight:700;">Delete Message</button>
                     </div>
                 </div>
             </div>
@@ -13635,7 +13771,8 @@ class AdminController
                     } else if (isAssignedToMe) {
                         actHtml += '<button type="button" id="btnReleaseTakeover" class="btn btn-sm btn-warning" style="font-weight:700;"><i class="fas fa-robot"></i> Release to AI</button>';
                     } else {
-                        actHtml += '<span class="badge" style="background:#0284c7;">Taken by Admin #' + session.assigned_admin_id + '</span>';
+                        actHtml += '<span class="badge" style="background:#0284c7;margin-right:6px;padding:6px 10px;">Taken by Admin #' + session.assigned_admin_id + '</span>';
+                        actHtml += '<button type="button" id="btnJoinCoAgent" class="btn btn-sm btn-info" style="font-weight:700;"><i class="fas fa-user-plus"></i> Join as Co-Agent</button>';
                     }
 
                     actHtml += '<button type="button" id="btnOpenConvertModal" class="btn btn-sm btn-primary" style="font-weight:700;"><i class="fas fa-ticket-alt"></i> Convert to Ticket</button>';
@@ -13660,6 +13797,18 @@ class AdminController
                             var fd = new FormData();
                             fd.append('session_uuid', activeSessionUuid);
                             fd.append('timeout_mins', timeout);
+                            fetch(AJAX_URL + '&action=admin_live_console_takeover', { method:'POST', body:fd, credentials:'same-origin' })
+                                .then(function(r) { return r.json(); })
+                                .then(function(d) { doPoll(true); });
+                        });
+                    }
+
+                    var btnJoinCo = document.getElementById('btnJoinCoAgent');
+                    if (btnJoinCo) {
+                        btnJoinCo.addEventListener('click', function() {
+                            var fd = new FormData();
+                            fd.append('session_uuid', activeSessionUuid);
+                            fd.append('timeout_mins', 0);
                             fetch(AJAX_URL + '&action=admin_live_console_takeover', { method:'POST', body:fd, credentials:'same-origin' })
                                 .then(function(r) { return r.json(); })
                                 .then(function(d) { doPoll(true); });
@@ -13714,7 +13863,7 @@ class AdminController
                 }
             }
 
-            // Append messages into thread with multi-layer deduplication
+            // Append messages into thread with multi-layer deduplication & action buttons
             function appendMessages(msgs) {
                 var container = document.getElementById('chatMessagesScroll');
                 if (!container) return;
@@ -13731,9 +13880,52 @@ class AdminController
                 msgs.forEach(function(m) {
                     if (!m) return;
 
+                    // Handle deleted messages
+                    if (m.is_deleted) {
+                        var ex = document.getElementById('admin-msg-' + m.id);
+                        if (m.is_silent) {
+                            if (ex && ex.parentNode) ex.parentNode.removeChild(ex);
+                            return;
+                        } else {
+                            if (ex) {
+                                ex.innerHTML = '<div style="font-style:italic;color:#94a3b8;font-size:12px;"><i class="fas fa-ban" style="margin-right:4px;"></i> [Message deleted by staff]</div>';
+                            } else {
+                                var divDel = document.createElement('div');
+                                divDel.className = 'msg-bubble msg-staff';
+                                divDel.id = 'admin-msg-' + m.id;
+                                divDel.innerHTML = '<div style="font-style:italic;color:#94a3b8;font-size:12px;"><i class="fas fa-ban" style="margin-right:4px;"></i> [Message deleted by staff]</div>';
+                                container.appendChild(divDel);
+                                shouldScroll = true;
+                            }
+                            return;
+                        }
+                    }
+
                     // 1. Strict ID deduplication: skip if already in DOM or recorded in ID map
                     if (m.id) {
-                        if (renderedMsgIds[m.id] || document.getElementById('admin-msg-' + m.id)) {
+                        var existingBubble = document.getElementById('admin-msg-' + m.id);
+                        if (existingBubble) {
+                            if (m.is_edited) {
+                                var roleBadge = '';
+                                if (m.sender_type === 'assistant') {
+                                    roleBadge = '<div style="font-size:10px;font-weight:700;color:#7e22ce;margin-bottom:3px;"><i class="fas fa-sparkles"></i> Sahdev AI</div>';
+                                } else if (m.sender_type === 'staff') {
+                                    roleBadge = '<div style="font-size:10px;font-weight:700;color:#bae6fd;margin-bottom:3px;"><i class="fas fa-user-shield"></i> ' + escapeHtml(m.sender_name) + '</div>';
+                                } else if (m.sender_type !== 'system') {
+                                    roleBadge = '<div style="font-size:10px;font-weight:700;color:#0369a1;margin-bottom:3px;"><i class="fas fa-user"></i> ' + escapeHtml(m.sender_name) + '</div>';
+                                }
+                                var actionBtns = (m.sender_type === 'staff')
+                                    ? '<span style="margin-left:8px;opacity:0.8;">'
+                                    + '<button type="button" class="btn-edit-staff-msg" data-msg-id="' + m.id + '" style="background:transparent;border:none;color:#93c5fd;cursor:pointer;padding:0 3px;font-size:11px;" title="Edit message"><i class="fas fa-pencil-alt"></i></button>'
+                                    + '<button type="button" class="btn-delete-staff-msg" data-msg-id="' + m.id + '" style="background:transparent;border:none;color:#fca5a5;cursor:pointer;padding:0 3px;font-size:11px;" title="Delete message"><i class="fas fa-trash-alt"></i></button>'
+                                    + '</span>' : '';
+                                existingBubble.setAttribute('data-msg-text', (m.text || '').trim());
+                                existingBubble.innerHTML = roleBadge + '<div>' + escapeHtml(m.text).replace(/\n/g, '<br>') + '<span class="label label-default" style="font-size:9px;opacity:0.8;margin-left:4px;">(edited)</span></div>'
+                                    + '<div style="display:flex;justify-content:space-between;align-items:center;font-size:10px;opacity:0.65;margin-top:4px;">'
+                                    + '<div>' + actionBtns + '</div>'
+                                    + '<div>' + escapeHtml(m.created_at) + '</div>'
+                                    + '</div>';
+                            }
                             if (m.id > lastMsgId) lastMsgId = m.id;
                             return;
                         }
@@ -13780,13 +13972,26 @@ class AdminController
                         roleBadge = '<div style="font-size:10px;font-weight:700;color:#0369a1;margin-bottom:3px;"><i class="fas fa-user"></i> ' + escapeHtml(m.sender_name) + '</div>';
                     }
 
+                    var actionBtns = '';
+                    if (m.sender_type === 'staff') {
+                        actionBtns = '<span style="margin-left:8px;opacity:0.8;">'
+                            + '<button type="button" class="btn-edit-staff-msg" data-msg-id="' + m.id + '" style="background:transparent;border:none;color:#93c5fd;cursor:pointer;padding:0 3px;font-size:11px;" title="Edit message"><i class="fas fa-pencil-alt"></i></button>'
+                            + '<button type="button" class="btn-delete-staff-msg" data-msg-id="' + m.id + '" style="background:transparent;border:none;color:#fca5a5;cursor:pointer;padding:0 3px;font-size:11px;" title="Delete message"><i class="fas fa-trash-alt"></i></button>'
+                            + '</span>';
+                    }
+
+                    var editedBadge = m.is_edited ? '<span class="label label-default" style="font-size:9px;opacity:0.8;margin-left:4px;">(edited)</span>' : '';
+
                     var div = document.createElement('div');
                     div.className = 'msg-bubble ' + bubbleClass;
                     if (m.id) div.id = 'admin-msg-' + m.id;
                     div.setAttribute('data-msg-text', rawText);
                     div.setAttribute('data-sender-type', m.sender_type || '');
-                    div.innerHTML = roleBadge + '<div>' + escapeHtml(m.text).replace(/\n/g, '<br>') + '</div>'
-                        + '<div style="text-align:right;font-size:10px;opacity:0.65;margin-top:4px;">' + escapeHtml(m.created_at) + '</div>';
+                    div.innerHTML = roleBadge + '<div>' + escapeHtml(m.text).replace(/\n/g, '<br>') + editedBadge + '</div>'
+                        + '<div style="display:flex;justify-content:space-between;align-items:center;font-size:10px;opacity:0.65;margin-top:4px;">'
+                        + '<div>' + actionBtns + '</div>'
+                        + '<div>' + escapeHtml(m.created_at) + '</div>'
+                        + '</div>';
                     container.appendChild(div);
                     shouldScroll = true;
                 });
@@ -13798,14 +14003,344 @@ class AdminController
                 // Notification Sound handling for incoming visitor messages in active chat
                 if (hasNewVisitorMsg && !isFirstLoad) {
                     if (!isTabActive) {
-                        // Inactive tab: ring for X seconds then auto-silence
                         startAlertRing('chime', ALERT_DURATION);
                         document.title = '💬 New Visitor Message - Sahdev Console';
                     } else {
-                        // Focused and active tab: single gentle pip
                         playAlertSound('ping');
                     }
                 }
+            }
+
+            // Message action clicks delegation
+            var chatScrollEl = document.getElementById('chatMessagesScroll');
+            if (chatScrollEl) {
+                chatScrollEl.addEventListener('click', function(e) {
+                    var editBtn = e.target.closest('.btn-edit-staff-msg');
+                    if (editBtn) {
+                        var msgId = editBtn.getAttribute('data-msg-id');
+                        var bubble = document.getElementById('admin-msg-' + msgId);
+                        var currentText = bubble ? (bubble.getAttribute('data-msg-text') || '') : '';
+                        document.getElementById('editModalMsgId').value = msgId;
+                        document.getElementById('editModalMsgText').value = currentText;
+                        document.getElementById('editModalNotifyClient').checked = false;
+                        $('#editMessageModal').modal('show');
+                        return;
+                    }
+                    var delBtn = e.target.closest('.btn-delete-staff-msg');
+                    if (delBtn) {
+                        var msgId = delBtn.getAttribute('data-msg-id');
+                        document.getElementById('deleteModalMsgId').value = msgId;
+                        $('#deleteMessageModal').modal('show');
+                        return;
+                    }
+                });
+            }
+
+            // Submit Edit Message
+            var btnSubEdit = document.getElementById('btnSubmitEditMsg');
+            if (btnSubEdit) {
+                btnSubEdit.addEventListener('click', function() {
+                    var msgId = document.getElementById('editModalMsgId').value;
+                    var newText = document.getElementById('editModalMsgText').value.trim();
+                    var notify = document.getElementById('editModalNotifyClient').checked;
+                    if (!newText) return;
+                    btnSubEdit.disabled = true;
+                    var fd = new FormData();
+                    fd.append('message_id', msgId);
+                    fd.append('message', newText);
+                    if (notify) fd.append('notify_client', '1');
+                    fetch(AJAX_URL + '&action=admin_live_console_edit_msg', { method:'POST', body:fd, credentials:'same-origin' })
+                        .then(function(r) { return r.json(); })
+                        .then(function(res) {
+                            btnSubEdit.disabled = false;
+                            $('#editMessageModal').modal('hide');
+                            if (res.status === 'success') {
+                                doPoll(true);
+                            } else {
+                                alert(res.error || 'Failed to edit message.');
+                            }
+                        })
+                        .catch(function() {
+                            btnSubEdit.disabled = false;
+                            alert('Network error editing message.');
+                        });
+                });
+            }
+
+            // Submit Delete Message
+            var btnSubDel = document.getElementById('btnSubmitDeleteMsg');
+            if (btnSubDel) {
+                btnSubDel.addEventListener('click', function() {
+                    var msgId = document.getElementById('deleteModalMsgId').value;
+                    var mode = document.querySelector('input[name="deleteModalMode"]:checked').value;
+                    btnSubDel.disabled = true;
+                    var fd = new FormData();
+                    fd.append('message_id', msgId);
+                    if (mode === 'notify') fd.append('notify_client', '1');
+                    fetch(AJAX_URL + '&action=admin_live_console_delete_msg', { method:'POST', body:fd, credentials:'same-origin' })
+                        .then(function(r) { return r.json(); })
+                        .then(function(res) {
+                            btnSubDel.disabled = false;
+                            $('#deleteMessageModal').modal('hide');
+                            if (res.status === 'success') {
+                                doPoll(true);
+                            } else {
+                                alert(res.error || 'Failed to delete message.');
+                            }
+                        })
+                        .catch(function() {
+                            btnSubDel.disabled = false;
+                            alert('Network error deleting message.');
+                        });
+                });
+            }
+
+            // ── CANNED RESPONSES & SHORTCUT SYSTEM ─────────────────────────
+            var cachedCannedResponses = [];
+
+            function loadCannedResponses(cb) {
+                fetch(AJAX_URL + '&action=admin_live_console_canned_responses', { credentials:'same-origin' })
+                    .then(function(r) { return r.json(); })
+                    .then(function(res) {
+                        if (res && res.responses) {
+                            cachedCannedResponses = res.responses;
+                            renderCannedList(cachedCannedResponses);
+                            if (cb) cb(cachedCannedResponses);
+                        }
+                    });
+            }
+
+            function renderCannedList(list) {
+                var el = document.getElementById('cannedResponsesList');
+                if (!el) return;
+                if (!list || list.length === 0) {
+                    el.innerHTML = '<div style="text-align:center;padding:30px;color:#94a3b8;">No canned responses found.</div>';
+                    return;
+                }
+                var html = '<table class="table table-hover" style="margin-bottom:0;font-size:12.5px;"><thead><tr style="background:#f8fafc;"><th>Shortcut</th><th>Title</th><th>Content</th><th style="width:130px;text-align:right;">Actions</th></tr></thead><tbody>';
+                list.forEach(function(item) {
+                    html += '<tr>'
+                        + '<td><span class="label label-primary" style="font-family:monospace;font-size:11px;">' + escapeHtml(item.shortcut || '—') + '</span></td>'
+                        + '<td><strong>' + escapeHtml(item.title) + '</strong></td>'
+                        + '<td style="color:#475569;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(item.content) + '</td>'
+                        + '<td style="text-align:right;">'
+                        + '<button type="button" class="btn btn-xs btn-default btn-insert-canned" data-content="' + escapeHtml(item.content) + '" title="Insert into reply"><i class="fas fa-arrow-left"></i> Insert</button> '
+                        + '<button type="button" class="btn btn-xs btn-default btn-edit-canned" data-id="' + item.id + '" data-title="' + escapeHtml(item.title) + '" data-shortcut="' + escapeHtml(item.shortcut || '') + '" data-category="' + escapeHtml(item.category || '') + '" data-content="' + escapeHtml(item.content) + '" title="Edit"><i class="fas fa-edit"></i></button> '
+                        + '<button type="button" class="btn btn-xs btn-danger btn-delete-canned" data-id="' + item.id + '" title="Delete"><i class="fas fa-trash"></i></button>'
+                        + '</td>'
+                        + '</tr>';
+                });
+                html += '</tbody></table>';
+                el.innerHTML = html;
+            }
+
+            var btnOpenCanned = document.getElementById('btnOpenCannedModal');
+            if (btnOpenCanned) {
+                btnOpenCanned.addEventListener('click', function() {
+                    $('#cannedResponsesModal').modal('show');
+                    loadCannedResponses();
+                });
+            }
+
+            var cannedSearch = document.getElementById('cannedSearchInput');
+            if (cannedSearch) {
+                cannedSearch.addEventListener('input', function() {
+                    var q = cannedSearch.value.trim().toLowerCase();
+                    if (!q) {
+                        renderCannedList(cachedCannedResponses);
+                        return;
+                    }
+                    var filtered = cachedCannedResponses.filter(function(c) {
+                        return (c.title && c.title.toLowerCase().indexOf(q) > -1)
+                            || (c.shortcut && c.shortcut.toLowerCase().indexOf(q) > -1)
+                            || (c.content && c.content.toLowerCase().indexOf(q) > -1);
+                    });
+                    renderCannedList(filtered);
+                });
+            }
+
+            var btnShowAddCanned = document.getElementById('btnShowAddCannedForm');
+            var cannedEditBox = document.getElementById('cannedEditFormBox');
+            if (btnShowAddCanned && cannedEditBox) {
+                btnShowAddCanned.addEventListener('click', function() {
+                    document.getElementById('cannedFormId').value = 0;
+                    document.getElementById('cannedFormTitle').innerText = 'Add Canned Response';
+                    document.getElementById('cannedFormTitleInput').value = '';
+                    document.getElementById('cannedFormShortcutInput').value = '';
+                    document.getElementById('cannedFormCategoryInput').value = 'General';
+                    document.getElementById('cannedFormContentInput').value = '';
+                    cannedEditBox.style.display = 'block';
+                });
+            }
+
+            var btnCancelCanned = document.getElementById('btnCancelCannedForm');
+            if (btnCancelCanned && cannedEditBox) {
+                btnCancelCanned.addEventListener('click', function() {
+                    cannedEditBox.style.display = 'none';
+                });
+            }
+
+            var btnSaveCanned = document.getElementById('btnSaveCannedForm');
+            if (btnSaveCanned) {
+                btnSaveCanned.addEventListener('click', function() {
+                    var id = parseInt(document.getElementById('cannedFormId').value, 10) || 0;
+                    var title = document.getElementById('cannedFormTitleInput').value.trim();
+                    var shortcut = document.getElementById('cannedFormShortcutInput').value.trim();
+                    var category = document.getElementById('cannedFormCategoryInput').value.trim();
+                    var content = document.getElementById('cannedFormContentInput').value.trim();
+                    if (!title || !content) {
+                        alert('Title and Content are required.');
+                        return;
+                    }
+                    var fd = new FormData();
+                    fd.append('id', id);
+                    fd.append('title', title);
+                    fd.append('shortcut', shortcut);
+                    fd.append('category', category);
+                    fd.append('content', content);
+                    var action = id > 0 ? 'admin_live_console_canned_update' : 'admin_live_console_canned_create';
+                    fetch(AJAX_URL + '&action=' + action, { method:'POST', body:fd, credentials:'same-origin' })
+                        .then(function(r) { return r.json(); })
+                        .then(function(res) {
+                            if (res.status === 'success') {
+                                cannedEditBox.style.display = 'none';
+                                loadCannedResponses();
+                            } else {
+                                alert(res.message || 'Failed to save canned response.');
+                            }
+                        });
+                });
+            }
+
+            var cannedListEl = document.getElementById('cannedResponsesList');
+            if (cannedListEl) {
+                cannedListEl.addEventListener('click', function(e) {
+                    var insertBtn = e.target.closest('.btn-insert-canned');
+                    if (insertBtn) {
+                        var text = insertBtn.getAttribute('data-content');
+                        if (staffInput) {
+                            staffInput.value = text;
+                            staffInput.focus();
+                        }
+                        $('#cannedResponsesModal').modal('hide');
+                        return;
+                    }
+                    var editBtn = e.target.closest('.btn-edit-canned');
+                    if (editBtn) {
+                        document.getElementById('cannedFormId').value = editBtn.getAttribute('data-id');
+                        document.getElementById('cannedFormTitle').innerText = 'Edit Canned Response';
+                        document.getElementById('cannedFormTitleInput').value = editBtn.getAttribute('data-title');
+                        document.getElementById('cannedFormShortcutInput').value = editBtn.getAttribute('data-shortcut');
+                        document.getElementById('cannedFormCategoryInput').value = editBtn.getAttribute('data-category');
+                        document.getElementById('cannedFormContentInput').value = editBtn.getAttribute('data-content');
+                        if (cannedEditBox) cannedEditBox.style.display = 'block';
+                        return;
+                    }
+                    var delBtn = e.target.closest('.btn-delete-canned');
+                    if (delBtn) {
+                        if (!confirm('Are you sure you want to delete this canned response?')) return;
+                        var id = delBtn.getAttribute('data-id');
+                        var fd = new FormData();
+                        fd.append('id', id);
+                        fetch(AJAX_URL + '&action=admin_live_console_canned_delete', { method:'POST', body:fd, credentials:'same-origin' })
+                            .then(function(r) { return r.json(); })
+                            .then(function(res) {
+                                if (res.status === 'success') {
+                                    loadCannedResponses();
+                                } else {
+                                    alert(res.message || 'Failed to delete canned response.');
+                                }
+                            });
+                    }
+                });
+            }
+
+            // Initial load of canned responses
+            loadCannedResponses();
+
+            // Autocomplete on #staffReplyInput when typing /
+            var popupEl = document.getElementById('cannedAutocompletePopup');
+            var selectedAutocompleteIdx = -1;
+
+            if (staffInput && popupEl) {
+                staffInput.addEventListener('input', function() {
+                    var val = staffInput.value;
+                    var slashIdx = val.lastIndexOf('/');
+                    if (slashIdx !== -1 && (slashIdx === 0 || /\s/.test(val.charAt(slashIdx - 1)))) {
+                        var query = val.substring(slashIdx + 1).toLowerCase();
+                        var matches = cachedCannedResponses.filter(function(c) {
+                            var sc = (c.shortcut || '').toLowerCase().replace(/^\//, '');
+                            var title = (c.title || '').toLowerCase();
+                            return sc.indexOf(query) > -1 || title.indexOf(query) > -1;
+                        });
+                        if (matches.length > 0) {
+                            renderAutocompleteDropdown(matches, slashIdx);
+                            popupEl.style.display = 'block';
+                            selectedAutocompleteIdx = 0;
+                            highlightAutocompleteItem();
+                            return;
+                        }
+                    }
+                    popupEl.style.display = 'none';
+                    selectedAutocompleteIdx = -1;
+                });
+
+                staffInput.addEventListener('keydown', function(e) {
+                    if (popupEl.style.display === 'block') {
+                        var items = popupEl.querySelectorAll('.sdv-auto-item');
+                        if (e.key === 'ArrowDown') {
+                            e.preventDefault();
+                            selectedAutocompleteIdx = (selectedAutocompleteIdx + 1) % items.length;
+                            highlightAutocompleteItem();
+                            return;
+                        } else if (e.key === 'ArrowUp') {
+                            e.preventDefault();
+                            selectedAutocompleteIdx = (selectedAutocompleteIdx - 1 + items.length) % items.length;
+                            highlightAutocompleteItem();
+                            return;
+                        } else if (e.key === 'Enter' || e.key === 'Tab') {
+                            if (selectedAutocompleteIdx >= 0 && selectedAutocompleteIdx < items.length) {
+                                e.preventDefault();
+                                items[selectedAutocompleteIdx].click();
+                                return;
+                            }
+                        } else if (e.key === 'Escape') {
+                            popupEl.style.display = 'none';
+                            return;
+                        }
+                    }
+                });
+            }
+
+            function renderAutocompleteDropdown(matches, slashIdx) {
+                if (!popupEl) return;
+                var html = '';
+                matches.forEach(function(m) {
+                    html += '<div class="sdv-auto-item" data-content="' + escapeHtml(m.content) + '" data-slash-idx="' + slashIdx + '" style="padding:8px 12px;border-bottom:1px solid #f1f5f9;cursor:pointer;display:flex;align-items:center;justify-content:space-between;font-size:12px;">'
+                        + '<div><strong style="color:#0f172a;">' + escapeHtml(m.title) + '</strong> <span style="color:#64748b;font-size:11px;margin-left:6px;">' + escapeHtml(m.content).substring(0, 40) + '...</span></div>'
+                        + '<span class="label label-primary" style="font-family:monospace;font-size:10px;">' + escapeHtml(m.shortcut || '') + '</span>'
+                        + '</div>';
+                });
+                popupEl.innerHTML = html;
+
+                popupEl.querySelectorAll('.sdv-auto-item').forEach(function(item) {
+                    item.addEventListener('click', function() {
+                        var text = item.getAttribute('data-content');
+                        var sIdx = parseInt(item.getAttribute('data-slash-idx'), 10);
+                        var before = staffInput.value.substring(0, sIdx);
+                        staffInput.value = before + text + ' ';
+                        popupEl.style.display = 'none';
+                        staffInput.focus();
+                    });
+                });
+            }
+
+            function highlightAutocompleteItem() {
+                if (!popupEl) return;
+                var items = popupEl.querySelectorAll('.sdv-auto-item');
+                items.forEach(function(it, i) {
+                    it.style.background = (i === selectedAutocompleteIdx) ? '#e0f2fe' : '#ffffff';
+                });
             }
 
             // Send Staff Message
@@ -13816,6 +14351,18 @@ class AdminController
                 if (!staffInput || !activeSessionUuid) return;
                 var text = staffInput.value.trim();
                 if (!text) return;
+
+                // Auto-expand shortcut if message is a single shortcut e.g. /hi
+                if (text.charAt(0) === '/') {
+                    var lower = text.toLowerCase();
+                    for (var i = 0; i < cachedCannedResponses.length; i++) {
+                        var cr = cachedCannedResponses[i];
+                        if (cr.shortcut && cr.shortcut.toLowerCase() === lower) {
+                            text = cr.content;
+                            break;
+                        }
+                    }
+                }
 
                 btnSend.disabled = true;
                 stopAlertRing();
@@ -13852,6 +14399,10 @@ class AdminController
             if (staffInput) {
                 staffInput.addEventListener('keydown', function(e) {
                     if (e.key === 'Enter' && !e.shiftKey) {
+                        if (popupEl && popupEl.style.display === 'block') {
+                            // Autocomplete handled above
+                            return;
+                        }
                         e.preventDefault();
                         sendStaffMsg();
                     }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../config/theme_config.dart';
+import '../models/chat_message.dart';
 import '../providers/auth_provider.dart';
 import '../providers/chat_provider.dart';
 import '../services/background_service.dart';
@@ -33,12 +34,14 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   final _textController = TextEditingController();
   final _scrollController = ScrollController();
+  String _cannedSearchQuery = '';
 
   @override
   void initState() {
     super.initState();
     BackgroundService().silenceCurrentAlert(widget.sessionId);
     AudioService().stopAlertRing();
+    _textController.addListener(_onTextChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final auth = Provider.of<AuthProvider>(context, listen: false);
       if (auth.baseUrl != null && auth.token != null) {
@@ -53,8 +56,25 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
+  void _onTextChanged() {
+    final text = _textController.text;
+    if (text.startsWith('/')) {
+      final q = text.toLowerCase();
+      if (_cannedSearchQuery != q) {
+        setState(() {
+          _cannedSearchQuery = q;
+        });
+      }
+    } else if (_cannedSearchQuery.isNotEmpty) {
+      setState(() {
+        _cannedSearchQuery = '';
+      });
+    }
+  }
+
   @override
   void dispose() {
+    _textController.removeListener(_onTextChanged);
     _textController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -77,6 +97,7 @@ class _ChatScreenState extends State<ChatScreen> {
     final auth = Provider.of<AuthProvider>(context, listen: false);
     final chat = Provider.of<ChatProvider>(context, listen: false);
 
+    setState(() => _cannedSearchQuery = '');
     _textController.clear();
     _scrollToBottom();
 
@@ -91,7 +112,6 @@ class _ChatScreenState extends State<ChatScreen> {
     if (success) {
       _scrollToBottom();
     } else if (mounted) {
-      // Restore input text so staff member never loses their work
       _textController.text = text;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -119,6 +139,7 @@ class _ChatScreenState extends State<ChatScreen> {
         responses: chat.cannedResponses,
         onSelect: (text) {
           _textController.text = text;
+          _textController.selection = TextSelection.collapsed(offset: text.length);
         },
       ),
     );
@@ -145,7 +166,210 @@ class _ChatScreenState extends State<ChatScreen> {
 
     if (suggestion != null && mounted) {
       _textController.text = suggestion;
+      _textController.selection = TextSelection.collapsed(offset: suggestion.length);
     }
+  }
+
+  void _showEditDialog(ChatMessage msg) {
+    final auth = Provider.of<AuthProvider>(context, listen: false);
+    final chat = Provider.of<ChatProvider>(context, listen: false);
+    final editController = TextEditingController(text: msg.text);
+    bool notifyClient = false;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('Edit Staff Message', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextField(
+                controller: editController,
+                maxLines: 4,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  hintText: 'Edit message content...',
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Checkbox(
+                    value: notifyClient,
+                    onChanged: (v) => setDialogState(() => notifyClient = v ?? false),
+                  ),
+                  const Expanded(
+                    child: Text(
+                      'Notify client (display "(edited)" in widget)',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+            ElevatedButton(
+              onPressed: () async {
+                final newText = editController.text.trim();
+                if (newText.isEmpty) return;
+                Navigator.pop(ctx);
+                final ok = await chat.editMessage(
+                  baseUrl: auth.baseUrl!,
+                  token: auth.token!,
+                  messageId: msg.id,
+                  newText: newText,
+                  notifyClient: notifyClient,
+                );
+                if (!ok && mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(chat.errorMessage ?? 'Failed to edit message')),
+                  );
+                }
+              },
+              child: const Text('Save Edit'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showDeleteDialog(ChatMessage msg) {
+    final auth = Provider.of<AuthProvider>(context, listen: false);
+    final chat = Provider.of<ChatProvider>(context, listen: false);
+    bool notifyClient = false;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('Delete Message', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Are you sure you want to delete this message?'),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Checkbox(
+                    value: notifyClient,
+                    onChanged: (v) => setDialogState(() => notifyClient = v ?? false),
+                  ),
+                  const Expanded(
+                    child: Text(
+                      'Notify client (show "message deleted" in widget)',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFEF4444), foregroundColor: Colors.white),
+              onPressed: () async {
+                Navigator.pop(ctx);
+                final ok = await chat.deleteMessage(
+                  baseUrl: auth.baseUrl!,
+                  token: auth.token!,
+                  messageId: msg.id,
+                  notifyClient: notifyClient,
+                );
+                if (!ok && mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(chat.errorMessage ?? 'Failed to delete message')),
+                  );
+                }
+              },
+              child: const Text('Delete'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAutocompleteOverlay(ChatProvider chat) {
+    if (_cannedSearchQuery.isEmpty) return const SizedBox.shrink();
+
+    final matches = chat.cannedResponses.where((r) {
+      final sc = (r['shortcut'] ?? '').toString().toLowerCase();
+      final title = (r['title'] ?? '').toString().toLowerCase();
+      return sc.startsWith(_cannedSearchQuery) || title.contains(_cannedSearchQuery.substring(1));
+    }).toList();
+
+    if (matches.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      constraints: const BoxConstraints(maxHeight: 180),
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.12),
+            blurRadius: 10,
+            offset: const Offset(0, -2),
+          ),
+        ],
+        border: Border.all(color: const Color(0xFFCBD5E1)),
+      ),
+      child: ListView.separated(
+        shrinkWrap: true,
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        itemCount: matches.length,
+        separatorBuilder: (_, __) => const Divider(height: 1),
+        itemBuilder: (ctx, i) {
+          final item = matches[i];
+          final shortcut = (item['shortcut'] ?? '').toString();
+          final title = (item['title'] ?? '').toString();
+          final text = (item['content'] ?? item['text'] ?? '').toString();
+
+          return ListTile(
+            dense: true,
+            visualDensity: VisualDensity.compact,
+            leading: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: ThemeConfig.primary.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                shortcut,
+                style: const TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: ThemeConfig.primary,
+                ),
+              ),
+            ),
+            title: Text(title, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+            subtitle: Text(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 11, color: Colors.grey),
+            ),
+            onTap: () {
+              setState(() {
+                _textController.text = text;
+                _textController.selection = TextSelection.collapsed(offset: text.length);
+                _cannedSearchQuery = '';
+              });
+            },
+          );
+        },
+      ),
+    );
   }
 
   @override
@@ -224,7 +448,12 @@ class _ChatScreenState extends State<ChatScreen> {
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     itemCount: chat.messages.length,
                     itemBuilder: (ctx, i) {
-                      return MessageBubble(message: chat.messages[i]);
+                      final msg = chat.messages[i];
+                      return MessageBubble(
+                        message: msg,
+                        onEdit: () => _showEditDialog(msg),
+                        onDelete: () => _showDeleteDialog(msg),
+                      );
                     },
                   ),
           ),
@@ -234,6 +463,9 @@ class _ChatScreenState extends State<ChatScreen> {
             isTyping: chat.isClientTyping,
             text: chat.typingPreview,
           ),
+
+          // Canned Response Shortcut Autocomplete Popup
+          _buildAutocompleteOverlay(chat),
 
           // Quick Action Bar (AI Suggest, Canned Macros)
           Container(
@@ -342,7 +574,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     minLines: 1,
                     maxLines: 4,
                     decoration: InputDecoration(
-                      hintText: "Reply as human staff...",
+                      hintText: "Reply as human staff... (Type / for shortcuts)",
                       hintStyle: const TextStyle(fontSize: 14, color: Color(0xFF94A3B8)),
                       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                       border: OutlineInputBorder(

@@ -3,7 +3,10 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/ticket_provider.dart';
+import '../utils/html_utils.dart';
 import '../widgets/canned_responses_sheet.dart';
+import '../widgets/markdown_editor_toolbar.dart';
+import '../widgets/markdown_renderer.dart';
 import '../widgets/sahdev_ai_ticket_panel.dart';
 import 'clients_screen.dart';
 
@@ -481,7 +484,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
     final status = ticket['status']?.toString() ?? 'Open';
     final statusColor = _parseHexColor(ticket['status_color']);
     final priority = ticket['priority']?.toString() ?? 'Medium';
-    final subject = ticket['subject']?.toString() ?? 'Support Ticket';
+    final subject = HtmlUtils.unescape(ticket['subject']?.toString() ?? 'Support Ticket');
     final isAwaiting = ticket['is_awaiting_reply'] == true;
     final assignedStaff = ticket['assigned_staff']?.toString();
     final clientEmail = ticket['client_email']?.toString() ?? '';
@@ -764,8 +767,9 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
             ],
           ),
           const SizedBox(height: 8),
-          SelectableText(
-            text,
+          MarkdownRenderer(
+            text: text,
+            selectable: true,
             style: const TextStyle(fontSize: 14, height: 1.4),
           ),
         ],
@@ -848,6 +852,9 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                 ),
               ],
             ),
+            const SizedBox(height: 6),
+            // Markdown formatting toolbar
+            MarkdownEditorToolbar(controller: _replyController),
             const SizedBox(height: 6),
             // Message input & send button
             Row(

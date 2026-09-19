@@ -378,7 +378,7 @@ class ServerTelemetryService
         }
     }
 
-    private static function safeDecrypt(?string $encrypted): string
+    public static function safeDecrypt(?string $encrypted): string
     {
         if (empty($encrypted)) return '';
         if (function_exists('decrypt')) {
@@ -880,7 +880,7 @@ class ServerTelemetryService
     /**
      * Execute WHM API call with automatic authorization failover.
      */
-    private static function callWhmApi(string $baseUrl, string $endpoint, string $user, string $token, string $pass): array
+    public static function callWhmApi(string $baseUrl, string $endpoint, string $user, string $token, string $pass): array
     {
         $url = $baseUrl . $endpoint;
 

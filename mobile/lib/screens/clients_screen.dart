@@ -4,8 +4,10 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../providers/auth_provider.dart';
 import '../services/api_service.dart';
+import '../widgets/create_ticket_modal.dart';
 import '../widgets/invoice_detail_modal.dart';
 import '../widgets/service_detail_modal.dart';
+import 'invoices_screen.dart';
 import 'ticket_detail_screen.dart';
 
 class ClientsScreen extends StatefulWidget {
@@ -205,6 +207,7 @@ class _ClientsScreenState extends State<ClientsScreen> {
                   : RefreshIndicator(
                       onRefresh: _loadClients,
                       child: ListView.builder(
+                        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
                         padding: const EdgeInsets.all(12),
                         itemCount: _clients.length,
                         itemBuilder: (context, index) {
@@ -305,7 +308,20 @@ class _ClientsScreenState extends State<ClientsScreen> {
                   const SizedBox(width: 8),
                   _buildMetricBadge('Tickets', '$ticketsCount Open', const Color(0xFFF59E0B)),
                   const SizedBox(width: 8),
-                  _buildMetricBadge('Invoices', '$unpaidInvoices Unpaid', unpaidInvoices > 0 ? const Color(0xFFEF4444) : const Color(0xFF10B981)),
+                  _buildMetricBadge(
+                    'Invoices',
+                    '$unpaidInvoices Unpaid',
+                    unpaidInvoices > 0 ? const Color(0xFFEF4444) : const Color(0xFF10B981),
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => InvoicesScreen(initialSearch: name),
+                        ),
+                      );
+                    },
+                  ),
                 ],
               ),
             ],
@@ -315,28 +331,36 @@ class _ClientsScreenState extends State<ClientsScreen> {
     );
   }
 
-  Widget _buildMetricBadge(String label, String value, Color color) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: color.withOpacity(0.25)),
-        ),
-        child: Column(
-          children: [
-            Text(label, style: const TextStyle(fontSize: 10, color: Colors.grey)),
-            const SizedBox(height: 2),
-            Text(
-              value,
-              style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: color),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
-        ),
+  Widget _buildMetricBadge(String label, String value, Color color, {VoidCallback? onTap}) {
+    final badge = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withOpacity(0.25)),
       ),
+      child: Column(
+        children: [
+          Text(label, style: const TextStyle(fontSize: 10, color: Colors.grey)),
+          const SizedBox(height: 2),
+          Text(
+            value,
+            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: color),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
+    );
+
+    return Expanded(
+      child: onTap != null
+          ? InkWell(
+              onTap: onTap,
+              borderRadius: BorderRadius.circular(8),
+              child: badge,
+            )
+          : badge,
     );
   }
 }
@@ -815,12 +839,29 @@ class _ClientProfileModalState extends State<ClientProfileModal> {
 
                     // Tickets Section
                     Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Icon(Icons.confirmation_number_outlined, size: 18, color: Color(0xFFF59E0B)),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Support Tickets (${tickets.length})',
-                          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                        Row(
+                          children: [
+                            const Icon(Icons.confirmation_number_outlined, size: 18, color: Color(0xFFF59E0B)),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Support Tickets (${tickets.length})',
+                              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                            ),
+                          ],
+                        ),
+                        TextButton.icon(
+                          icon: const Icon(Icons.add, size: 16),
+                          label: const Text('New Ticket', style: TextStyle(fontSize: 12)),
+                          onPressed: () {
+                            CreateTicketModal.show(
+                              context,
+                              initialClientId: widget.clientId,
+                              initialClientName: name,
+                              onTicketCreated: _loadProfile,
+                            );
+                          },
                         ),
                       ],
                     ),
@@ -905,12 +946,28 @@ class _ClientProfileModalState extends State<ClientProfileModal> {
 
                     // Invoices Section
                     Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Icon(Icons.receipt_long_outlined, size: 18, color: Color(0xFF10B981)),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Invoices (${invoices.length})',
-                          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                        Row(
+                          children: [
+                            const Icon(Icons.receipt_long_outlined, size: 18, color: Color(0xFF10B981)),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Invoices (${invoices.length})',
+                              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                            ),
+                          ],
+                        ),
+                        TextButton.icon(
+                          icon: const Icon(Icons.open_in_new, size: 14),
+                          label: const Text('View All', style: TextStyle(fontSize: 12)),
+                          onPressed: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => InvoicesScreen(initialSearch: name),
+                              ),
+                            );
+                          },
                         ),
                       ],
                     ),

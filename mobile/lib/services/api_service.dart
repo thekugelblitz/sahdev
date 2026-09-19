@@ -403,6 +403,74 @@ class ApiService {
     }
   }
 
+  /// Edit a staff message in live chat
+  Future<ApiResponse<Map<String, dynamic>>> editChatMessage({
+    required String baseUrl,
+    required String token,
+    required int sessionId,
+    required int messageId,
+    required String newText,
+    bool notifyClient = false,
+  }) async {
+    try {
+      final response = await _postWithFallback(
+        baseUrl: baseUrl,
+        action: 'mobile_chat_edit_msg',
+        token: token,
+        body: {
+          'session_id': sessionId.toString(),
+          'message_id': messageId.toString(),
+          'new_text': newText,
+          'notify_client': notifyClient ? '1' : '0',
+        },
+      );
+
+      final decoded = _parseJsonSafely(response.body);
+      if (decoded is Map<String, dynamic> && response.statusCode == 200 && decoded['status'] == 'success') {
+        return ApiResponse(success: true, data: decoded);
+      }
+      return ApiResponse(
+        success: false,
+        message: _extractErrorMessage(response, 'Failed to edit message'),
+      );
+    } catch (e) {
+      return ApiResponse(success: false, message: e.toString());
+    }
+  }
+
+  /// Delete a staff message in live chat
+  Future<ApiResponse<Map<String, dynamic>>> deleteChatMessage({
+    required String baseUrl,
+    required String token,
+    required int sessionId,
+    required int messageId,
+    bool notifyClient = false,
+  }) async {
+    try {
+      final response = await _postWithFallback(
+        baseUrl: baseUrl,
+        action: 'mobile_chat_delete_msg',
+        token: token,
+        body: {
+          'session_id': sessionId.toString(),
+          'message_id': messageId.toString(),
+          'notify_client': notifyClient ? '1' : '0',
+        },
+      );
+
+      final decoded = _parseJsonSafely(response.body);
+      if (decoded is Map<String, dynamic> && response.statusCode == 200 && decoded['status'] == 'success') {
+        return ApiResponse(success: true, data: decoded);
+      }
+      return ApiResponse(
+        success: false,
+        message: _extractErrorMessage(response, 'Failed to delete message'),
+      );
+    } catch (e) {
+      return ApiResponse(success: false, message: e.toString());
+    }
+  }
+
   /// AI Co-Pilot Reply Assist
   Future<ApiResponse<String>> suggestAiReply({
     required String baseUrl,
@@ -428,7 +496,7 @@ class ApiService {
     }
   }
 
-  /// Get WHMCS client info, hosting services, unpaid invoices
+  /// Fetch contextual client card details
   Future<ApiResponse<Map<String, dynamic>>> getClientDetails({
     required String baseUrl,
     required String token,
@@ -436,7 +504,7 @@ class ApiService {
     int? sessionId,
   }) async {
     try {
-      String query = "";
+      var query = '';
       if (clientId != null && clientId > 0) query += "&client_id=$clientId";
       if (sessionId != null && sessionId > 0) query += "&session_id=$sessionId";
 
@@ -474,6 +542,122 @@ class ApiService {
         return ApiResponse(success: true, data: decoded['responses'] ?? []);
       }
       return ApiResponse(success: false, message: _extractErrorMessage(response, 'Could not load canned macros'));
+    } catch (e) {
+      return ApiResponse(success: false, message: e.toString());
+    }
+  }
+
+  /// Create new canned response
+  Future<ApiResponse<Map<String, dynamic>>> createCannedResponse({
+    required String baseUrl,
+    required String token,
+    required String title,
+    required String shortcut,
+    required String content,
+    String category = 'General',
+  }) async {
+    try {
+      final response = await _postWithFallback(
+        baseUrl: baseUrl,
+        action: 'mobile_canned_responses_create',
+        token: token,
+        body: {
+          'title': title,
+          'shortcut': shortcut,
+          'content': content,
+          'category': category,
+        },
+      );
+
+      final decoded = _parseJsonSafely(response.body);
+      if (decoded is Map<String, dynamic> && response.statusCode == 200 && decoded['status'] == 'success') {
+        return ApiResponse(success: true, data: decoded);
+      }
+      return ApiResponse(success: false, message: _extractErrorMessage(response, 'Failed to create canned response'));
+    } catch (e) {
+      return ApiResponse(success: false, message: e.toString());
+    }
+  }
+
+  /// Update an existing canned response
+  Future<ApiResponse<Map<String, dynamic>>> updateCannedResponse({
+    required String baseUrl,
+    required String token,
+    required int id,
+    required String title,
+    required String shortcut,
+    required String content,
+    String category = 'General',
+  }) async {
+    try {
+      final response = await _postWithFallback(
+        baseUrl: baseUrl,
+        action: 'mobile_canned_responses_update',
+        token: token,
+        body: {
+          'id': id.toString(),
+          'title': title,
+          'shortcut': shortcut,
+          'content': content,
+          'category': category,
+        },
+      );
+
+      final decoded = _parseJsonSafely(response.body);
+      if (decoded is Map<String, dynamic> && response.statusCode == 200 && decoded['status'] == 'success') {
+        return ApiResponse(success: true, data: decoded);
+      }
+      return ApiResponse(success: false, message: _extractErrorMessage(response, 'Failed to update canned response'));
+    } catch (e) {
+      return ApiResponse(success: false, message: e.toString());
+    }
+  }
+
+  /// Delete a canned response
+  Future<ApiResponse<Map<String, dynamic>>> deleteCannedResponse({
+    required String baseUrl,
+    required String token,
+    required int id,
+  }) async {
+    try {
+      final response = await _postWithFallback(
+        baseUrl: baseUrl,
+        action: 'mobile_canned_responses_delete',
+        token: token,
+        body: {
+          'id': id.toString(),
+        },
+      );
+
+      final decoded = _parseJsonSafely(response.body);
+      if (decoded is Map<String, dynamic> && response.statusCode == 200 && decoded['status'] == 'success') {
+        return ApiResponse(success: true, data: decoded);
+      }
+      return ApiResponse(success: false, message: _extractErrorMessage(response, 'Failed to delete canned response'));
+    } catch (e) {
+      return ApiResponse(success: false, message: e.toString());
+    }
+  }
+
+  /// Get 1-click Single Sign-On (SSO) URL for service / cPanel
+  Future<ApiResponse<Map<String, dynamic>>> getServiceSsoUrl({
+    required String baseUrl,
+    required String token,
+    required int serviceId,
+  }) async {
+    try {
+      final response = await _getWithFallback(
+        baseUrl: baseUrl,
+        action: 'mobile_service_sso',
+        token: token,
+        extraQuery: 'service_id=$serviceId',
+      );
+
+      final decoded = _parseJsonSafely(response.body);
+      if (decoded is Map<String, dynamic> && response.statusCode == 200 && decoded['status'] == 'success') {
+        return ApiResponse(success: true, data: decoded);
+      }
+      return ApiResponse(success: false, message: _extractErrorMessage(response, 'Failed to generate cPanel SSO link'));
     } catch (e) {
       return ApiResponse(success: false, message: e.toString());
     }
@@ -560,6 +744,41 @@ class ApiService {
         return ApiResponse(success: true, data: decoded);
       }
       return ApiResponse(success: false, message: _extractErrorMessage(response, 'Failed to submit ticket reply'));
+    } catch (e) {
+      return ApiResponse(success: false, message: e.toString());
+    }
+  }
+
+  /// Create a new ticket on behalf of a client from mobile
+  Future<ApiResponse<Map<String, dynamic>>> createTicket({
+    required String baseUrl,
+    required String token,
+    required int clientId,
+    required int deptId,
+    required String subject,
+    required String message,
+    String priority = 'Medium',
+  }) async {
+    try {
+      final body = <String, String>{
+        'client_id': clientId.toString(),
+        'dept_id': deptId.toString(),
+        'subject': subject,
+        'message': message,
+        'priority': priority,
+      };
+      final response = await _postWithFallback(
+        baseUrl: baseUrl,
+        action: 'mobile_ticket_create',
+        token: token,
+        body: body,
+      );
+
+      final decoded = _parseJsonSafely(response.body);
+      if (decoded is Map<String, dynamic> && response.statusCode == 200 && decoded['status'] == 'success') {
+        return ApiResponse(success: true, data: decoded);
+      }
+      return ApiResponse(success: false, message: _extractErrorMessage(response, 'Failed to create ticket'));
     } catch (e) {
       return ApiResponse(success: false, message: e.toString());
     }

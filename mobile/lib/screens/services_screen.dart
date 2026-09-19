@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../providers/auth_provider.dart';
 import '../services/api_service.dart';
 import '../widgets/service_detail_modal.dart';
 import 'clients_screen.dart';
+import 'invoices_screen.dart';
 
 class ServicesScreen extends StatefulWidget {
   const ServicesScreen({super.key});
@@ -86,6 +89,62 @@ class _ServicesScreenState extends State<ServicesScreen> {
           ? () => _showClientProfile(clientId, s['client_name']?.toString() ?? 'Client', s['client_email']?.toString() ?? '')
           : null,
     );
+  }
+
+  Future<void> _launchServiceSso(Map<String, dynamic> s) async {
+    final serviceId = (s['id'] as num?)?.toInt();
+    if (serviceId == null) return;
+
+    final auth = context.read<AuthProvider>();
+    if (auth.baseUrl == null || auth.token == null) return;
+
+    HapticFeedback.lightImpact();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)),
+            const SizedBox(width: 12),
+            Expanded(child: Text('Generating cPanel SSO for ${s['domain'] ?? 'service'}...')),
+          ],
+        ),
+        duration: const Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+
+    try {
+      final res = await _api.getServiceSsoUrl(
+        baseUrl: auth.baseUrl!,
+        token: auth.token!,
+        serviceId: serviceId,
+      );
+
+      if (res.success && res.data != null && res.data!['sso_url'] != null) {
+        final ssoUrl = res.data!['sso_url'].toString();
+        final uri = Uri.parse(ssoUrl);
+        if (await canLaunchUrl(uri)) {
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+        } else if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Could not open SSO URL: $ssoUrl')),
+          );
+        }
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(res.message ?? 'Failed to generate cPanel SSO link'),
+            backgroundColor: const Color(0xFFEF4444),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error launching SSO: $e'), backgroundColor: const Color(0xFFEF4444)),
+        );
+      }
+    }
   }
 
   void _showClientProfile(int clientId, String clientName, String clientEmail) {
@@ -206,6 +265,7 @@ class _ServicesScreenState extends State<ServicesScreen> {
                   : RefreshIndicator(
                       onRefresh: _loadServices,
                       child: ListView.builder(
+                        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
                         padding: const EdgeInsets.all(12),
                         itemCount: _services.length,
                         itemBuilder: (context, index) {
@@ -326,6 +386,38 @@ class _ServicesScreenState extends State<ServicesScreen> {
               Row(
                 children: [
                   Text('Next Due: $nextDue', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.vpn_key_outlined, size: 14),
+                    label: const Text('cPanel SSO', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    onPressed: () => _launchServiceSso(s),
+                  ),
+                  const SizedBox(width: 8),
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.receipt_long_outlined, size: 14),
+                    label: const Text('Invoices', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    onPressed: () {
+                      HapticFeedback.selectionClick();
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => InvoicesScreen(initialSearch: clientName),
+                        ),
+                      );
+                    },
+                  ),
                 ],
               ),
             ],

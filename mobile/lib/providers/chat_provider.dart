@@ -115,6 +115,23 @@ class ChatProvider extends ChangeNotifier {
     }
   }
 
+  /// Expands canned shortcut like /hi, /wait, /dns
+  String expandShortcut(String input) {
+    final trimmed = input.trim();
+    if (trimmed.startsWith('/')) {
+      final shortcut = trimmed.toLowerCase();
+      for (final r in _cannedResponses) {
+        if (r is Map && (r['shortcut'] ?? '').toString().toLowerCase() == shortcut) {
+          final content = (r['content'] ?? r['text'])?.toString();
+          if (content != null && content.isNotEmpty) {
+            return content;
+          }
+        }
+      }
+    }
+    return input;
+  }
+
   /// Sends a message with instant optimistic UI insertion
   Future<bool> sendMessage({
     required String baseUrl,
@@ -122,7 +139,8 @@ class ChatProvider extends ChangeNotifier {
     required String text,
     String staffName = 'You',
   }) async {
-    if (_activeSessionId == null || text.trim().isEmpty) return false;
+    final expandedText = expandShortcut(text).trim();
+    if (_activeSessionId == null || expandedText.isEmpty) return false;
 
     _isSending = true;
     _errorMessage = null;
@@ -133,7 +151,7 @@ class ChatProvider extends ChangeNotifier {
       sessionId: _activeSessionId!,
       senderType: 'admin',
       senderName: staffName,
-      text: text.trim(),
+      text: expandedText,
       isStaff: true,
       isAi: false,
       isClient: false,
@@ -149,7 +167,7 @@ class ChatProvider extends ChangeNotifier {
       baseUrl: baseUrl,
       token: token,
       sessionId: _activeSessionId!,
-      message: text.trim(),
+      message: expandedText,
     );
 
     _isSending = false;
@@ -179,6 +197,77 @@ class ChatProvider extends ChangeNotifier {
     } else {
       _messages.removeWhere((m) => m.id == tempId);
       _errorMessage = res.message ?? 'Message delivery failed. Please verify server connection.';
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Edit an existing staff message
+  Future<bool> editMessage({
+    required String baseUrl,
+    required String token,
+    required int messageId,
+    required String newText,
+    bool notifyClient = false,
+  }) async {
+    if (_activeSessionId == null || newText.trim().isEmpty) return false;
+
+    final res = await _api.editChatMessage(
+      baseUrl: baseUrl,
+      token: token,
+      sessionId: _activeSessionId!,
+      messageId: messageId,
+      newText: newText.trim(),
+      notifyClient: notifyClient,
+    );
+
+    if (res.success) {
+      final idx = _messages.indexWhere((m) => m.id == messageId);
+      if (idx != -1) {
+        _messages[idx] = _messages[idx].copyWith(
+          text: newText.trim(),
+          isEdited: true,
+          editedAt: DateTime.now().toIso8601String(),
+        );
+        notifyListeners();
+      }
+      return true;
+    } else {
+      _errorMessage = res.message ?? 'Failed to edit message';
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Delete an existing staff message
+  Future<bool> deleteMessage({
+    required String baseUrl,
+    required String token,
+    required int messageId,
+    bool notifyClient = false,
+  }) async {
+    if (_activeSessionId == null) return false;
+
+    final res = await _api.deleteChatMessage(
+      baseUrl: baseUrl,
+      token: token,
+      sessionId: _activeSessionId!,
+      messageId: messageId,
+      notifyClient: notifyClient,
+    );
+
+    if (res.success) {
+      final idx = _messages.indexWhere((m) => m.id == messageId);
+      if (idx != -1) {
+        _messages[idx] = _messages[idx].copyWith(
+          isDeleted: true,
+          isSilent: !notifyClient,
+        );
+        notifyListeners();
+      }
+      return true;
+    } else {
+      _errorMessage = res.message ?? 'Failed to delete message';
       notifyListeners();
       return false;
     }

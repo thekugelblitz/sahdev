@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/ticket_provider.dart';
+import '../widgets/create_ticket_modal.dart';
 import 'ticket_detail_screen.dart';
 
 class TicketsScreen extends StatefulWidget {
@@ -159,6 +161,17 @@ class _TicketsScreenState extends State<TicketsScreen> {
           ),
         ),
       ),
+      floatingActionButton: FloatingActionButton.extended(
+        icon: const Icon(Icons.add_comment_outlined, size: 20),
+        label: const Text('New Ticket', style: TextStyle(fontWeight: FontWeight.bold)),
+        onPressed: () {
+          HapticFeedback.lightImpact();
+          CreateTicketModal.show(
+            context,
+            onTicketCreated: () => _loadTickets(refresh: true),
+          );
+        },
+      ),
       body: ticketProv.isLoading && ticketProv.tickets.isEmpty
           ? const Center(child: CircularProgressIndicator())
           : ticketProv.errorMessage != null && ticketProv.tickets.isEmpty
@@ -168,7 +181,8 @@ class _TicketsScreenState extends State<TicketsScreen> {
                   : RefreshIndicator(
                       onRefresh: () async => _loadTickets(refresh: true),
                       child: ListView.builder(
-                        padding: const EdgeInsets.all(12),
+                        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                        padding: const EdgeInsets.only(left: 12, right: 12, top: 12, bottom: 80),
                         itemCount: ticketProv.tickets.length,
                         itemBuilder: (context, index) {
                           final ticket = ticketProv.tickets[index];

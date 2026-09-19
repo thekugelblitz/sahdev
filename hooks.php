@@ -9075,7 +9075,6 @@ DISC;
 #sdv-client-chat-window.sdv-theme-apple_siri .sdv-msg-actions {
     position: absolute !important;
     bottom: -14px !important;
-    right: 14px !important;
     background: #111827 !important;
     border-radius: 10px !important;
     padding: 3px 8px !important;
@@ -9088,6 +9087,17 @@ DISC;
     transition: opacity 0.15s ease, transform 0.15s ease;
     transform: translateY(2px);
     z-index: 10;
+    max-width: calc(100% - 24px) !important;
+    box-sizing: border-box !important;
+}
+#sdv-client-chat-window.sdv-theme-apple_siri .sdv-cl-msg-bot .sdv-msg-actions,
+#sdv-client-chat-window.sdv-theme-apple_siri .sdv-cl-msg-staff .sdv-msg-actions {
+    left: 12px !important;
+    right: auto !important;
+}
+#sdv-client-chat-window.sdv-theme-apple_siri .sdv-cl-msg-user .sdv-msg-actions {
+    right: 12px !important;
+    left: auto !important;
 }
 #sdv-client-chat-window.sdv-theme-apple_siri .sdv-cl-msg:hover .sdv-msg-actions,
 #sdv-client-chat-window.sdv-theme-apple_siri .sdv-cl-msg.sdv-msg-active .sdv-msg-actions,
@@ -13025,6 +13035,14 @@ DISC;
             }
         }
 
+        // 2.5 Check if message is deleted
+        if (m.is_deleted) {
+            if (m.is_silent) return;
+            var delHtml = '<span style="font-style:italic;opacity:0.6;"><i class="fas fa-ban" style="margin-right:4px;"></i>This message was deleted by staff.</span>';
+            appendClMsg('staff', delHtml, true, m.id, null, m.created_at);
+            return;
+        }
+
         // 3. Correlate Pending Bot / Typing Wave Message
         if (m.sender_type === 'assistant' || m.sender_type === 'bot') {
             var typingEl = document.querySelector('#sdv-cl-msgs [data-pending-bot="1"], #sdv-cl-msgs .sdv-typing-wave');
@@ -13044,21 +13062,29 @@ DISC;
             }
         }
 
-        // 4. Content Deduplication across recent messages (last 8 bubbles)
+        // 4. Content Deduplication for optimistically rendered messages (same sender_type only)
         var msgsEl = document.getElementById('sdv-cl-msgs');
-        if (msgsEl) {
+        if (msgsEl && normIncoming) {
             var allBubbles = msgsEl.children;
             var startIdx = Math.max(0, allBubbles.length - 8);
+            var expectedClass = (m.sender_type === 'staff' || m.sender_type === 'admin') ? 'sdv-cl-msg-staff' : ((m.sender_type === 'user' || m.sender_type === 'client') ? 'sdv-cl-msg-user' : 'sdv-cl-msg-bot');
             for (var b = allBubbles.length - 1; b >= startIdx; b--) {
                 var bubbleEl = allBubbles[b];
+                // Only deduplicate within the exact same sender type
+                if (!bubbleEl.classList.contains(expectedClass)) continue;
+
                 var bRaw = (bubbleEl.getAttribute('data-msg-text') || bubbleEl.innerText || bubbleEl.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
-                if (bRaw && normIncoming && (bRaw === normIncoming || bRaw.indexOf(normIncoming) > -1 || normIncoming.indexOf(bRaw) > -1)) {
-                    // Match found! If this incoming message has an ID and existing bubble doesn't, stamp it
+                // Match exact normalized content only (prevent substring false-positives like 'hi' inside 'hi, how can we help?')
+                if (bRaw && bRaw === normIncoming) {
                     if (m.id) {
-                        if (!bubbleEl.id) bubbleEl.id = 'sdv-msg-' + m.id;
-                        if (m.id > highestMsgId) highestMsgId = m.id;
+                        if (!bubbleEl.id || bubbleEl.id === 'sdv-msg-' + m.id) {
+                            bubbleEl.id = 'sdv-msg-' + m.id;
+                            if (m.id > highestMsgId) highestMsgId = m.id;
+                            return;
+                        }
+                    } else {
+                        return;
                     }
-                    return;
                 }
             }
         }
@@ -13104,9 +13130,14 @@ DISC;
             currentChatStatus = 'taken_over';
             var staffName = m.staff_name || m.sender_name || currentAssignedStaffName || 'Support Agent';
             currentAssignedStaffName = staffName;
+            window._sdvLastStaffMsgTime = Date.now();
+            window._sdvActiveAgentName = staffName;
             sdvClearLimitState(true, staffName);
             window.sdvUpdateHeaderState && window.sdvUpdateHeaderState(true, staffName);
             var staffHtml = sdvFormatMsgWithBadge('staff', m.message_text, staffName, false);
+            if (m.is_edited) {
+                staffHtml += '<span class="sdv-edited-badge" style="font-size:9.5px;opacity:0.6;margin-left:5px;font-style:italic;">(edited)</span>';
+            }
             var staffEl = appendClMsg('staff', staffHtml, true, m.id, null, m.created_at, staffName);
             if (staffEl) {
                 staffEl.setAttribute('data-msg-text', (m.message_text || '').trim());
@@ -13139,6 +13170,9 @@ DISC;
             senderDisplayName = m.sender_name || '{$chatTitle}';
         }
         var formattedHtml = sdvFormatMsgWithBadge(role, m.message_text, senderDisplayName, false);
+        if (m.is_edited) {
+            formattedHtml += '<span class="sdv-edited-badge" style="font-size:9.5px;opacity:0.6;margin-left:5px;font-style:italic;">(edited)</span>';
+        }
         appendClMsg(role, formattedHtml, true, m.id, m.rating, m.created_at, senderDisplayName);
     }
 
@@ -13529,12 +13563,32 @@ DISC;
                 res.messages.forEach(function(m) {
                     if (m.id > highestMsgId) highestMsgId = m.id;
                     var exists = document.getElementById('sdv-msg-' + m.id);
-                    if (!exists && msgsEl) {
-                        renderSingleMessage(m);
-                        shouldScroll = true;
-                        if (m.sender_type !== 'user') {
-                            shouldPlayChime = true;
+                    if (exists) {
+                        if (m.is_deleted) {
+                            if (m.is_silent) {
+                                if (exists.parentNode) exists.parentNode.removeChild(exists);
+                            } else {
+                                exists.innerHTML = '<span style="font-style:italic;opacity:0.6;"><i class="fas fa-ban" style="margin-right:4px;"></i>This message was deleted by staff.</span>';
+                                exists.classList.add('sdv-msg-deleted');
+                            }
+                        } else if (m.is_edited) {
+                            var role = (m.sender_type === 'user' || m.sender_type === 'client') ? 'user' : (m.sender_type === 'staff' || m.sender_type === 'admin' ? 'staff' : 'bot');
+                            var sName = m.staff_name || m.sender_name || 'Support Agent';
+                            exists.innerHTML = sdvFormatMsgWithBadge(role, m.message_text, sName, false) + '<span class="sdv-edited-badge" style="font-size:9.5px;opacity:0.6;margin-left:5px;font-style:italic;">(edited)</span>';
+                            attachMsgActions(exists, m.id, m.rating, role, m.created_at);
                         }
+                    } else if (msgsEl) {
+                        if (!m.is_deleted) {
+                            renderSingleMessage(m);
+                            shouldScroll = true;
+                            if (m.sender_type !== 'user') {
+                                shouldPlayChime = true;
+                            }
+                        }
+                    }
+                    if (m.sender_type === 'staff' || m.sender_type === 'admin') {
+                        window._sdvLastStaffMsgTime = Date.now();
+                        window._sdvActiveAgentName = m.staff_name || m.sender_name || currentAssignedStaffName || 'Support Agent';
                     }
                 });
                 if (shouldPlayChime) {
@@ -14031,6 +14085,19 @@ DISC;
     window.sdvSummonHuman = function() {
         var btnSummon = document.getElementById('sdv-btn-summon-agent');
         var origSummonHtml = btnSummon ? btnSummon.innerHTML : '';
+
+        // Acknowledge when staff is already active within the last 15 minutes
+        if (isHumanSessionActive && window._sdvLastStaffMsgTime && (Date.now() - window._sdvLastStaffMsgTime < 15 * 60 * 1000)) {
+            var agentName = window._sdvActiveAgentName || currentAssignedStaffName || 'our support specialist';
+            if (typeof sdvShowToast === 'function') {
+                sdvShowToast('You are already connected with ' + agentName + '!', 'info');
+            } else {
+                var sysNotice = '💬 You are already connected with ' + agentName + '! They are actively handling your chat.';
+                appendClMsg('system', sysNotice, false, null, null, Date.now());
+            }
+            return;
+        }
+
         if (btnSummon) {
             btnSummon.disabled = true;
             btnSummon.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
