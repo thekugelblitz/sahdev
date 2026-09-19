@@ -754,7 +754,7 @@ class ApiService {
     required String baseUrl,
     required String token,
     required int clientId,
-    required int deptId,
+    int? deptId,
     required String subject,
     required String message,
     String priority = 'Medium',
@@ -762,7 +762,7 @@ class ApiService {
     try {
       final body = <String, String>{
         'client_id': clientId.toString(),
-        'dept_id': deptId.toString(),
+        if (deptId != null && deptId > 0) 'dept_id': deptId.toString(),
         'subject': subject,
         'message': message,
         'priority': priority,
