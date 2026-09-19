@@ -548,7 +548,9 @@ class _ClientProfileModalState extends State<ClientProfileModal> {
               ),
 
               Expanded(
-                child: ListView(
+                child: _isLoading && _profile == null
+                    ? const Center(child: CircularProgressIndicator())
+                    : ListView(
                   controller: scrollController,
                   padding: const EdgeInsets.all(18),
                   children: [

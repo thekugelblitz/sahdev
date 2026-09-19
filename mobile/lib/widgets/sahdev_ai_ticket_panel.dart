@@ -146,7 +146,7 @@ class _SahdevAiTicketPanelState extends State<SahdevAiTicketPanel> with SingleTi
     );
     setState(() => _isRewriting = false);
 
-    if (rewritten != null && rewritten.isNotEmpty) {
+    if (rewritten != null && rewritten.isNotEmpty && mounted) {
       widget.replyController.text = rewritten;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -469,13 +469,13 @@ class _SahdevAiTicketPanelState extends State<SahdevAiTicketPanel> with SingleTi
           TextField(
             controller: _customInstructionController,
             style: const TextStyle(fontSize: 12),
-            decoration: InputDecoration(
+            decoration: const InputDecoration(
               labelText: "Custom Instruction (Optional)",
-              labelStyle: const TextStyle(fontSize: 11),
+              labelStyle: TextStyle(fontSize: 11),
               hintText: "e.g. 'Ask for server credentials' or 'Explain why load is high'",
-              hintStyle: const TextStyle(fontSize: 11),
+              hintStyle: TextStyle(fontSize: 11),
               isDense: true,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+              contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
             ),
           ),
           const SizedBox(height: 10),

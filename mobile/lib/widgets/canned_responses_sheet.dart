@@ -120,10 +120,10 @@ class _CannedResponsesSheetState extends State<CannedResponsesSheet> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: TextField(
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 hintText: "Search macros (/hi, /dns, /ticket)...",
-                prefixIcon: const Icon(Icons.search, size: 18),
-                contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                prefixIcon: Icon(Icons.search, size: 18),
+                contentPadding: EdgeInsets.symmetric(vertical: 10),
                 isDense: true,
               ),
               onChanged: (val) => setState(() => _filter = val),

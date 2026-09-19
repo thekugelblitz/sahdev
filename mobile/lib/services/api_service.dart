@@ -797,14 +797,16 @@ class ApiService {
     required int serviceId,
     required String status,
     String? reason,
+    String? suspendReason,
   }) async {
     try {
+      final actualReason = reason ?? suspendReason;
       final body = <String, String>{
         'service_id': serviceId.toString(),
         'status': status,
       };
-      if (reason != null && reason.isNotEmpty) {
-        body['reason'] = reason;
+      if (actualReason != null && actualReason.isNotEmpty) {
+        body['reason'] = actualReason;
       }
 
       final response = await _postWithFallback(

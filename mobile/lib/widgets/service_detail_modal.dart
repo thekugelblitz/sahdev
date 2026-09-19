@@ -165,7 +165,7 @@ class _ServiceDetailModalState extends State<ServiceDetailModal> {
         token: tok,
         serviceId: serviceId,
         status: targetStatus,
-        suspendReason: suspendReason,
+        reason: suspendReason,
       );
 
       if (res.success && mounted) {

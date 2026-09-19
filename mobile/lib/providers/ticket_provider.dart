@@ -319,7 +319,10 @@ class TicketProvider extends ChangeNotifier {
       }
       if (priority != null) _activeTicket!['priority'] = priority;
       if (deptId != null && _departments.isNotEmpty) {
-        final d = _departments.firstWhere((e) => (e['id'] as num?)?.toInt() == deptId, orElse: () => null);
+        final d = _departments.cast<dynamic>().firstWhere(
+              (e) => (e['id'] as num?)?.toInt() == deptId,
+              orElse: () => null,
+            );
         if (d != null) {
           _activeTicket!['department'] = d['name'];
           _activeTicket!['dept_id'] = deptId;
@@ -330,9 +333,15 @@ class TicketProvider extends ChangeNotifier {
         if (flag == 0) {
           _activeTicket!['assigned_staff'] = 'Unassigned';
         } else {
-          final s = _staffList.firstWhere((e) => (e['id'] as num?)?.toInt() == flag, orElse: () => null);
+          final s = _staffList.cast<Map<String, dynamic>?>().firstWhere(
+                (e) => (e?['id'] as num?)?.toInt() == flag,
+                orElse: () => null,
+              );
           if (s != null) {
-            _activeTicket!['assigned_staff'] = s['name'];
+            final firstName = s['firstname']?.toString() ?? '';
+            final lastName = s['lastname']?.toString() ?? '';
+            final fullName = '$firstName $lastName'.trim();
+            _activeTicket!['assigned_staff'] = fullName.isNotEmpty ? fullName : (s['name'] ?? 'Admin #$flag');
           }
         }
       }

@@ -12,6 +12,13 @@ ajax_debug.log
 .DS_Store
 Thumbs.db
 
-# Mobile binaries
+# Mobile binaries & build cache
 *.apk
 mobile_apk/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+local.properties
+GeneratedPluginRegistrant.java
+build/
+pubspec.lock

@@ -259,7 +259,6 @@ class _TicketsScreenState extends State<TicketsScreen> {
     final dept = ticket['department']?.toString() ?? 'Support';
     final lastReply = ticket['last_reply']?.toString() ?? '';
     final isAwaiting = ticket['is_awaiting_reply'] == true;
-    final flag = (ticket['flag'] as num?)?.toInt() ?? 0;
 
     final statusColor = _parseHexColor(
       ticket['status_color']?.toString(),

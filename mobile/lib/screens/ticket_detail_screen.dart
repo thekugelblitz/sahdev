@@ -332,7 +332,9 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                                   flag: selectedFlag,
                                 );
                                 if (ok && mounted) {
-                                  Navigator.of(modalCtx).pop();
+                                  if (modalCtx.mounted) {
+                                    Navigator.of(modalCtx).pop();
+                                  }
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(
                                       content: Text('Ticket properties updated successfully!'),
