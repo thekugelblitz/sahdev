@@ -1079,11 +1079,23 @@ class AdminController
             }
         </style>';
 
+        $brandLogoSvg = '<span style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:7px;background:linear-gradient(135deg,#6366f1,#8b5cf6);box-shadow:0 2px 8px rgba(99,102,241,0.35);flex-shrink:0;">'
+            . '<svg width="16" height="16" viewBox="0 0 100 100" fill="none">'
+            . '<path d="M50 8 L86.4 29 v42 L50 92 L13.6 71 V29 Z" stroke="#ffffff" stroke-width="8" fill="none" stroke-linejoin="round"/>'
+            . '<circle cx="50" cy="50" r="14" fill="#38bdf8"/>'
+            . '<line x1="50" y1="20" x2="50" y2="36" stroke="#ffffff" stroke-width="6" stroke-linecap="round"/>'
+            . '<line x1="50" y1="64" x2="50" y2="80" stroke="#ffffff" stroke-width="6" stroke-linecap="round"/>'
+            . '<line x1="24" y1="35" x2="38" y2="43" stroke="#ffffff" stroke-width="6" stroke-linecap="round"/>'
+            . '<line x1="76" y1="65" x2="62" y2="57" stroke="#ffffff" stroke-width="6" stroke-linecap="round"/>'
+            . '<line x1="24" y1="65" x2="38" y2="57" stroke="#ffffff" stroke-width="6" stroke-linecap="round"/>'
+            . '<line x1="76" y1="35" x2="62" y2="43" stroke="#ffffff" stroke-width="6" stroke-linecap="round"/>'
+            . '</svg></span>';
+
         $html .= '<div class="sahdev-nav-system">';
         // Tier 1: Categories Bar
         $html .= '<div class="sahdev-nav-tier1">';
         $html .= '<div class="sahdev-nav-brand-wrap">';
-        $html .= '<a href="' . $base . '" class="sahdev-nav-brand"><i class="fas fa-brain"></i> SAHDEV <span class="sahdev-ai-badge">AI Core</span></a>';
+        $html .= '<a href="' . $base . '" class="sahdev-nav-brand">' . $brandLogoSvg . ' SAHDEV <span class="sahdev-ai-badge">AI Core</span></a>';
         $html .= '</div>';
 
         $html .= '<nav class="sahdev-nav-categories">';

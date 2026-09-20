@@ -4,6 +4,7 @@ import '../config/theme_config.dart';
 import '../providers/auth_provider.dart';
 import '../providers/queue_provider.dart';
 import '../services/background_service.dart';
+import '../widgets/sahdev_logo.dart';
 import '../widgets/session_card.dart';
 import 'chat_screen.dart';
 import 'settings_screen.dart';
@@ -65,26 +66,28 @@ class _QueueScreenState extends State<QueueScreen> {
       appBar: AppBar(
         title: Row(
           children: [
+            const SahdevLogo(size: 24, showGlow: true),
+            const SizedBox(width: 10),
             Container(
-              width: 10,
-              height: 10,
+              width: 8,
+              height: 8,
               decoration: BoxDecoration(
                 color: auth.isOnline ? ThemeConfig.statusOnline : Colors.grey,
                 shape: BoxShape.circle,
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 6),
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   auth.adminUser?.name ?? "Staff Operator",
-                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
                 ),
                 Text(
                   auth.isOnline ? "Online & Listening" : "Offline / Muted",
                   style: TextStyle(
-                    fontSize: 11,
+                    fontSize: 10,
                     color: auth.isOnline ? const Color(0xFF86EFAC) : const Color(0xFF94A3B8),
                   ),
                 ),
