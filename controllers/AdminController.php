@@ -16075,6 +16075,11 @@ class AdminController
         $navMarkup = $this->getNavigationMarkup('help');
         $moduleLink = htmlspecialchars($this->moduleVars['modulelink']);
 
+        $allowedTabs = ['about', 'changelog', 'kb', 'faq', 'glossary', 'all'];
+        $requestedTab = isset($_REQUEST['tab']) ? strtolower(trim($_REQUEST['tab'])) : (isset($_REQUEST['section']) ? strtolower(trim($_REQUEST['section'])) : 'about');
+        $activeSubTab = in_array($requestedTab, $allowedTabs, true) ? $requestedTab : 'about';
+        $showAll = ($activeSubTab === 'all');
+
         // System Diagnostics
         $dbStatus = 'Connected';
         $providerCount = 0;
@@ -16085,11 +16090,106 @@ class AdminController
         } catch (\Throwable $e) {}
 
         $phpVersion = phpversion();
-        $whmcsVersion = defined('WHMCS_VERSION') ? constant('WHMCS_VERSION') : (defined('App::getVersion()') ? \App::getVersion() : '8.x');
+        $whmcsVersion = '8.x';
+        if (defined('WHMCS_VERSION')) {
+            $whmcsVersion = constant('WHMCS_VERSION');
+        } elseif (class_exists('WHMCS\Config\Application') && method_exists('WHMCS\Config\Application', 'getVersion')) {
+            $whmcsVersion = \WHMCS\Config\Application::getVersion();
+        } elseif (class_exists('App') && method_exists('App', 'getVersion')) {
+            $whmcsVersion = \App::getVersion();
+        }
 
         ob_start();
         ?>
         <?php echo $navMarkup; ?>
+
+        <script>
+        window.switchHelpTab = function(tabKey, btn) {
+            if (tabKey === 'all') {
+                document.querySelectorAll('.sahdev-tab-content').forEach(function(el) {
+                    el.style.display = 'block';
+                });
+                document.querySelectorAll('.sahdev-help-tab-btn').forEach(function(el) {
+                    el.classList.remove('active');
+                });
+                var allBtn = document.querySelector('.sahdev-help-tab-btn[data-tab="all"]');
+                if (allBtn) allBtn.classList.add('active');
+                if (window.history && window.history.replaceState) {
+                    window.history.replaceState(null, null, '#all');
+                }
+                return;
+            }
+
+            document.querySelectorAll('.sahdev-tab-content').forEach(function(el) {
+                el.style.display = 'none';
+            });
+            document.querySelectorAll('.sahdev-help-tab-btn').forEach(function(el) {
+                el.classList.remove('active');
+            });
+
+            var target = document.getElementById('tab-' + tabKey);
+            if (target) {
+                target.style.display = 'block';
+            }
+
+            var targetBtn = btn || document.querySelector('.sahdev-help-tab-btn[data-tab="' + tabKey + '"]');
+            if (targetBtn) {
+                targetBtn.classList.add('active');
+            }
+
+            if (window.history && window.history.replaceState) {
+                window.history.replaceState(null, null, '#' + tabKey);
+            }
+        };
+
+        window.toggleFaq = function(el) {
+            var ans = el.nextElementSibling;
+            var icon = el.querySelector('i');
+            if (!ans) return;
+            if (ans.style.display === 'none' || ans.style.display === '') {
+                ans.style.display = 'block';
+                if (icon) icon.className = 'fas fa-chevron-up';
+            } else {
+                ans.style.display = 'none';
+                if (icon) icon.className = 'fas fa-chevron-down';
+            }
+        };
+
+        window.expandAllFaqs = function(expand) {
+            document.querySelectorAll('.sahdev-faq-item').forEach(function(item) {
+                var ans = item.querySelector('.sahdev-faq-answer');
+                var icon = item.querySelector('.sahdev-faq-question i');
+                if (ans) {
+                    ans.style.display = expand ? 'block' : 'none';
+                }
+                if (icon) {
+                    icon.className = expand ? 'fas fa-chevron-up' : 'fas fa-chevron-down';
+                }
+            });
+        };
+
+        document.addEventListener('DOMContentLoaded', function() {
+            var hash = window.location.hash ? window.location.hash.substring(1).toLowerCase() : '';
+            if (hash && ['about', 'changelog', 'kb', 'faq', 'glossary', 'all'].indexOf(hash) !== -1) {
+                window.switchHelpTab(hash);
+            }
+        });
+
+        window.addEventListener('hashchange', function() {
+            var hash = window.location.hash ? window.location.hash.substring(1).toLowerCase() : '';
+            if (hash && ['about', 'changelog', 'kb', 'faq', 'glossary', 'all'].indexOf(hash) !== -1) {
+                window.switchHelpTab(hash);
+            }
+        });
+
+        if (typeof jQuery !== 'undefined') {
+            jQuery(document).on('click', '.sahdev-help-tab-btn', function(e) {
+                e.preventDefault();
+                var tab = jQuery(this).data('tab');
+                if (tab) window.switchHelpTab(tab, this);
+            });
+        }
+        </script>
 
         <style>
             .sahdev-help-container {
@@ -16101,7 +16201,7 @@ class AdminController
                 background: linear-gradient(135deg, #090d16 0%, #0f172a 100%);
                 border: 1px solid #1e293b;
                 border-radius: 16px;
-                padding: 36px 30px;
+                padding: 32px 28px;
                 color: #f8fafc;
                 margin-bottom: 24px;
                 display: flex;
@@ -16124,7 +16224,7 @@ class AdminController
                 pointer-events: none;
             }
             .sahdev-help-hero h1 {
-                font-size: 28px;
+                font-size: 26px;
                 font-weight: 800;
                 margin: 0 0 6px 0;
                 color: #ffffff;
@@ -16135,6 +16235,7 @@ class AdminController
                 color: #94a3b8;
                 margin: 0;
                 max-width: 650px;
+                line-height: 1.5;
             }
             .sahdev-badge-version {
                 display: inline-flex;
@@ -16157,6 +16258,7 @@ class AdminController
                 display: flex;
                 gap: 8px;
                 flex-wrap: wrap;
+                align-items: center;
             }
             .sahdev-help-tab-btn {
                 padding: 10px 18px;
@@ -16232,6 +16334,10 @@ class AdminController
                 display: flex;
                 justify-content: space-between;
                 align-items: center;
+                user-select: none;
+            }
+            .sahdev-faq-question:hover {
+                background: #f1f5f9;
             }
             .sahdev-faq-answer {
                 padding: 16px 18px;
@@ -16281,44 +16387,84 @@ class AdminController
                 color: #475569;
                 line-height: 1.5;
             }
+            .sahdev-section-anchor {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                padding: 12px 16px;
+                margin: 28px 0 16px 0;
+                background: #f1f5f9;
+                border-left: 4px solid #0d9488;
+                border-radius: 6px;
+                font-weight: 800;
+                font-size: 16px;
+                color: #0f172a;
+            }
         </style>
 
         <div class="sahdev-help-container">
-            <!-- Hero Header -->
+            <!-- Hero Header with Concept 8 Inline SVG -->
             <div class="sahdev-help-hero">
                 <div>
                     <div class="sahdev-badge-version">
-                        <i class="fas fa-certificate"></i> Version 4.0.0 (Core v2.0)
+                        <i class="fas fa-certificate"></i> Version 4.0.0 Enterprise
                     </div>
                     <h1>Sahdev — AI Ticket Intelligence &amp; Live Support</h1>
-                    <p>Documentation, System Specifications, Release History, FAQ, and AI Ticketing Glossary for Support Teams.</p>
+                    <p>Documentation, System Specifications, Release History, Knowledge Base, FAQ, and AI Ticketing Glossary for Web Hosting Teams.</p>
                 </div>
-                <div>
-                    <img src="../modules/addons/sahdev/ui/logos/logo_horizontal_transparent.svg" alt="Sahdev" style="height: 48px; max-width: 220px;" onerror="this.src='../modules/addons/sahdev/mobile/assets/images/logo_horizontal_transparent.svg'">
+                <div style="width: 220px; height: 50px; flex-shrink: 0;">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 90" width="100%" height="100%">
+                      <defs>
+                        <linearGradient id="hLatticeGradHelp" x1="0%" y1="0%" x2="100%" y2="100%">
+                          <stop offset="0%" stop-color="#2dd4bf"/>
+                          <stop offset="50%" stop-color="#06b6d4"/>
+                          <stop offset="100%" stop-color="#3b82f6"/>
+                        </linearGradient>
+                      </defs>
+                      <g transform="translate(10, 10) scale(0.14)">
+                        <path d="M 330 150 L 250 110 L 170 150 L 170 230 L 250 270 L 330 310 L 330 390 L 250 430 L 170 390" 
+                              fill="none" stroke="url(#hLatticeGradHelp)" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+                        <line x1="250" y1="110" x2="250" y2="270" stroke="#2dd4bf" stroke-width="6" stroke-dasharray="8 8" opacity="0.6"/>
+                        <line x1="250" y1="270" x2="250" y2="430" stroke="#3b82f6" stroke-width="6" stroke-dasharray="8 8" opacity="0.6"/>
+                        <circle cx="250" cy="270" r="22" fill="#ffffff"/>
+                        <circle cx="170" cy="150" r="16" fill="#2dd4bf"/>
+                        <circle cx="330" cy="150" r="16" fill="#2dd4bf"/>
+                        <circle cx="330" cy="390" r="16" fill="#38bdf8"/>
+                        <circle cx="170" cy="390" r="16" fill="#3b82f6"/>
+                      </g>
+                      <text x="96" y="48" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Inter', sans-serif" font-size="32" font-weight="800" fill="#ffffff" letter-spacing="1.5">SAHDEV</text>
+                      <text x="98" y="70" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Inter', sans-serif" font-size="11" font-weight="600" fill="#2dd4bf" letter-spacing="3.5">AI TICKET INTELLIGENCE</text>
+                    </svg>
                 </div>
             </div>
 
-            <!-- Tab Navigation -->
-            <div class="sahdev-help-tabs">
-                <a class="sahdev-help-tab-btn active" onclick="switchHelpTab('about', this)">
+            <!-- Tab Navigation Bar -->
+            <div class="sahdev-help-tabs" role="tablist">
+                <a href="javascript:void(0);" role="tab" class="sahdev-help-tab-btn <?php echo ($activeSubTab === 'about' && !$showAll) ? 'active' : ''; ?>" data-tab="about" onclick="switchHelpTab('about', this)">
                     <i class="fas fa-info-circle"></i> About &amp; System Specs
                 </a>
-                <a class="sahdev-help-tab-btn" onclick="switchHelpTab('changelog', this)">
+                <a href="javascript:void(0);" role="tab" class="sahdev-help-tab-btn <?php echo ($activeSubTab === 'changelog' && !$showAll) ? 'active' : ''; ?>" data-tab="changelog" onclick="switchHelpTab('changelog', this)">
                     <i class="fas fa-history"></i> Release Changelog
                 </a>
-                <a class="sahdev-help-tab-btn" onclick="switchHelpTab('kb', this)">
+                <a href="javascript:void(0);" role="tab" class="sahdev-help-tab-btn <?php echo ($activeSubTab === 'kb' && !$showAll) ? 'active' : ''; ?>" data-tab="kb" onclick="switchHelpTab('kb', this)">
                     <i class="fas fa-book-reader"></i> Knowledge Base &amp; Best Practices
                 </a>
-                <a class="sahdev-help-tab-btn" onclick="switchHelpTab('faq', this)">
+                <a href="javascript:void(0);" role="tab" class="sahdev-help-tab-btn <?php echo ($activeSubTab === 'faq' && !$showAll) ? 'active' : ''; ?>" data-tab="faq" onclick="switchHelpTab('faq', this)">
                     <i class="fas fa-question-circle"></i> FAQ
                 </a>
-                <a class="sahdev-help-tab-btn" onclick="switchHelpTab('glossary', this)">
+                <a href="javascript:void(0);" role="tab" class="sahdev-help-tab-btn <?php echo ($activeSubTab === 'glossary' && !$showAll) ? 'active' : ''; ?>" data-tab="glossary" onclick="switchHelpTab('glossary', this)">
                     <i class="fas fa-spell-check"></i> AI Glossary
+                </a>
+                <a href="javascript:void(0);" role="tab" class="sahdev-help-tab-btn <?php echo $showAll ? 'active' : ''; ?>" data-tab="all" onclick="switchHelpTab('all', this)" style="margin-left: auto; background: #e0f2fe; color: #0369a1; border-color: #bae6fd;">
+                    <i class="fas fa-eye"></i> Show All Sections
                 </a>
             </div>
 
             <!-- ── TAB 1: ABOUT & SYSTEM SPECS ────────────────────────── -->
-            <div id="tab-about" class="sahdev-tab-content">
+            <div id="tab-about" class="sahdev-tab-content" style="<?php echo ($activeSubTab === 'about' || $showAll) ? 'display:block;' : 'display:none;'; ?>">
+                <?php if ($showAll): ?>
+                    <div class="sahdev-section-anchor"><i class="fas fa-info-circle text-primary"></i> 1. About &amp; System Specifications</div>
+                <?php endif; ?>
                 <div class="sahdev-help-card">
                     <h3><i class="fas fa-microchip text-primary"></i> System Diagnostics &amp; Environment</h3>
                     <table class="table sahdev-spec-table" style="margin-bottom: 0;">
@@ -16385,7 +16531,10 @@ class AdminController
             </div>
 
             <!-- ── TAB 2: RELEASE CHANGELOG ──────────────────────────── -->
-            <div id="tab-changelog" class="sahdev-tab-content" style="display: none;">
+            <div id="tab-changelog" class="sahdev-tab-content" style="<?php echo ($activeSubTab === 'changelog' || $showAll) ? 'display:block;' : 'display:none;'; ?>">
+                <?php if ($showAll): ?>
+                    <div class="sahdev-section-anchor"><i class="fas fa-history text-info"></i> 2. Release Changelog &amp; Version History</div>
+                <?php endif; ?>
                 <div class="sahdev-help-card">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
                         <h3 style="margin: 0;"><i class="fas fa-code-branch text-primary"></i> Version 4.0.0</h3>
@@ -16438,9 +16587,15 @@ class AdminController
             </div>
 
             <!-- ── TAB 3: KNOWLEDGE BASE & BEST PRACTICES ─────────────── -->
-            <div id="tab-kb" class="sahdev-tab-content" style="display: none;">
+            <div id="tab-kb" class="sahdev-tab-content" style="<?php echo ($activeSubTab === 'kb' || $showAll) ? 'display:block;' : 'display:none;'; ?>">
+                <?php if ($showAll): ?>
+                    <div class="sahdev-section-anchor"><i class="fas fa-book-reader text-success"></i> 3. Knowledge Base &amp; Best Practices</div>
+                <?php endif; ?>
                 <div class="sahdev-help-card">
-                    <h3><i class="fas fa-bullseye text-danger"></i> Reply Intents &amp; Directives</h3>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                        <h3 style="margin: 0;"><i class="fas fa-bullseye text-danger"></i> Reply Intents &amp; Directives</h3>
+                        <a href="<?php echo $moduleLink; ?>&amp;action=intents" class="btn btn-xs btn-default"><i class="fas fa-sliders-h"></i> Manage Intents</a>
+                    </div>
                     <p style="font-size: 13px; color: #475569;">
                         Clicking an <strong>Intent Button</strong> injects a targeted behavioral directive into the AI prompt, drastically improving reply accuracy:
                     </p>
@@ -16478,12 +16633,17 @@ class AdminController
                                 <td>Phishing, malware, DMCA, spam</td>
                                 <td>Calm, human, policy-aware response setting next review steps and requesting missing evidence.</td>
                             </tr>
+                            <tr>
+                                <td><span class="label label-default">Billing Query</span></td>
+                                <td>Invoices, renewals, refunds</td>
+                                <td>Extracts invoice IDs, payment status, and explains billing policies clearly.</td>
+                            </tr>
                         </tbody>
                     </table>
                 </div>
 
                 <div class="sahdev-help-card">
-                    <h3><i class="fas fa-tachometer-alt text-primary"></i> Dive Intensity Guide</h3>
+                    <h3><i class="fas fa-tachometer-alt text-primary"></i> Dive Intensity Guide (1 to 5)</h3>
                     <p style="font-size: 13px; color: #475569;">
                         Dive Intensity controls the depth of log parsing, context loading, and analytical rigor:
                     </p>
@@ -16493,12 +16653,61 @@ class AdminController
                         <li><strong>Level 4-5 (Deep Forensic):</strong> Parses full message history, scans attached text/log files, loads server node metrics, and runs diagnostic tool evaluation.</li>
                     </ul>
                 </div>
+
+                <div class="sahdev-help-card">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                        <h3 style="margin: 0;"><i class="fas fa-tools text-warning"></i> Diagnostic Tools &amp; Server Commands</h3>
+                        <a href="<?php echo $moduleLink; ?>&amp;action=tools" class="btn btn-xs btn-default"><i class="fas fa-terminal"></i> Open Tools Center</a>
+                    </div>
+                    <p style="font-size: 13px; color: #475569;">
+                        Sahdev integrates directly with server network inspection utilities to diagnose issues automatically:
+                    </p>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px;">
+                        <div style="padding: 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">
+                            <strong><i class="fas fa-network-wired text-primary"></i> Ping &amp; Latency</strong>
+                            <p style="font-size: 12px; color: #64748b; margin: 4px 0 0 0;">Tests reachability and packet loss to customer domain/IP.</p>
+                        </div>
+                        <div style="padding: 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">
+                            <strong><i class="fas fa-route text-info"></i> Traceroute</strong>
+                            <p style="font-size: 12px; color: #64748b; margin: 4px 0 0 0;">Identifies network routing hops and transit bottlenecks.</p>
+                        </div>
+                        <div style="padding: 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">
+                            <strong><i class="fas fa-globe text-success"></i> DNS Lookup</strong>
+                            <p style="font-size: 12px; color: #64748b; margin: 4px 0 0 0;">Verifies A, MX, NS, and CNAME propagation status.</p>
+                        </div>
+                        <div style="padding: 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">
+                            <strong><i class="fas fa-lock text-warning"></i> SSL &amp; HTTPS Handshake</strong>
+                            <p style="font-size: 12px; color: #64748b; margin: 4px 0 0 0;">Inspects certificate validity, expiry date, and cipher suites.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="sahdev-help-card">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                        <h3 style="margin: 0;"><i class="fas fa-mobile-alt text-primary"></i> Mobile Staff App Pairing &amp; Push</h3>
+                        <a href="<?php echo $moduleLink; ?>&amp;action=mobile_app" class="btn btn-xs btn-primary"><i class="fas fa-qrcode"></i> Pair Mobile Device</a>
+                    </div>
+                    <p style="font-size: 13px; color: #475569; line-height: 1.6;">
+                        Staff operators can receive real-time ticket alerts, live chat summons, and visitor alerts directly on Android and iOS devices.
+                        Pairing takes 10 seconds: navigate to <strong>Live Support &gt; Mobile Staff App</strong>, scan the pairing QR code with the Sahdev mobile app, and notifications are instantly active.
+                    </p>
+                </div>
             </div>
 
             <!-- ── TAB 4: FAQ ────────────────────────────────────────── -->
-            <div id="tab-faq" class="sahdev-tab-content" style="display: none;">
+            <div id="tab-faq" class="sahdev-tab-content" style="<?php echo ($activeSubTab === 'faq' || $showAll) ? 'display:block;' : 'display:none;'; ?>">
+                <?php if ($showAll): ?>
+                    <div class="sahdev-section-anchor"><i class="fas fa-question-circle text-primary"></i> 4. Frequently Asked Questions</div>
+                <?php endif; ?>
                 <div class="sahdev-help-card">
-                    <h3><i class="fas fa-question-circle text-primary"></i> Frequently Asked Questions</h3>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+                        <h3 style="margin: 0;"><i class="fas fa-question-circle text-primary"></i> Frequently Asked Questions</h3>
+                        <div style="display: flex; gap: 6px;">
+                            <button type="button" class="btn btn-xs btn-default" onclick="expandAllFaqs(true)"><i class="fas fa-expand-alt"></i> Expand All</button>
+                            <button type="button" class="btn btn-xs btn-default" onclick="expandAllFaqs(false)"><i class="fas fa-compress-alt"></i> Collapse All</button>
+                        </div>
+                    </div>
+
                     <div class="sahdev-faq-item">
                         <div class="sahdev-faq-question" onclick="toggleFaq(this)">
                             <span>How does Sahdev resolve real client names in mobile notifications?</span>
@@ -16538,11 +16747,24 @@ class AdminController
                             Yes. By default, Sahdev operates with a Human-in-the-Loop design. The generated reply is inserted directly into the WHMCS TinyMCE ticket reply editor or mobile compose bar, allowing the engineer to review, modify, or enhance the message before sending.
                         </div>
                     </div>
+
+                    <div class="sahdev-faq-item">
+                        <div class="sahdev-faq-question" onclick="toggleFaq(this)">
+                            <span>How does the mobile app wake staff phones when a visitor summons support?</span>
+                            <i class="fas fa-chevron-down"></i>
+                        </div>
+                        <div class="sahdev-faq-answer">
+                            Sahdev uses Firebase Cloud Messaging (FCM) HTTP v1 with high-priority data payloads and wake-lock flags. The app plays a loud ringing alarm (12 selectable sounds) that continues ringing like a phone call until the staff member opens or silences the notification.
+                        </div>
+                    </div>
                 </div>
             </div>
 
             <!-- ── TAB 5: GLOSSARY ───────────────────────────────────── -->
-            <div id="tab-glossary" class="sahdev-tab-content" style="display: none;">
+            <div id="tab-glossary" class="sahdev-tab-content" style="<?php echo ($activeSubTab === 'glossary' || $showAll) ? 'display:block;' : 'display:none;'; ?>">
+                <?php if ($showAll): ?>
+                    <div class="sahdev-section-anchor"><i class="fas fa-spell-check text-success"></i> 5. Sahdev AI Ticketing Glossary</div>
+                <?php endif; ?>
                 <div class="sahdev-help-card">
                     <h3><i class="fas fa-spell-check text-success"></i> Sahdev AI Ticketing Glossary</h3>
                     <div class="sahdev-glossary-grid">
@@ -16629,36 +16851,6 @@ class AdminController
                 </div>
             </div>
         </div>
-
-        <script>
-        function switchHelpTab(tabKey, btn) {
-            document.querySelectorAll('.sahdev-tab-content').forEach(function(el) {
-                el.style.display = 'none';
-            });
-            document.querySelectorAll('.sahdev-help-tab-btn').forEach(function(el) {
-                el.classList.remove('active');
-            });
-            var target = document.getElementById('tab-' + tabKey);
-            if (target) {
-                target.style.display = 'block';
-            }
-            if (btn) {
-                btn.classList.add('active');
-            }
-        }
-
-        function toggleFaq(el) {
-            var ans = el.nextElementSibling;
-            var icon = el.querySelector('i');
-            if (ans.style.display === 'none' || ans.style.display === '') {
-                ans.style.display = 'block';
-                if (icon) icon.className = 'fas fa-chevron-up';
-            } else {
-                ans.style.display = 'none';
-                if (icon) icon.className = 'fas fa-chevron-down';
-            }
-        }
-        </script>
         <?php
         return ob_get_clean();
     }
