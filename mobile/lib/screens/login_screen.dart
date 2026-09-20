@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../config/theme_config.dart';
 import '../providers/auth_provider.dart';
+import '../widgets/sahdev_logo.dart';
 import 'home_shell.dart';
 import 'qr_scan_screen.dart';
 
@@ -73,27 +74,9 @@ class _LoginScreenState extends State<LoginScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 // Header Branding
-                Container(
-                  width: 64,
-                  height: 64,
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [ThemeConfig.primary, Color(0xFF6366F1)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: ThemeConfig.primary.withOpacity(0.3),
-                        blurRadius: 16,
-                        offset: const Offset(0, 6),
-                      ),
-                    ],
-                  ),
-                  child: const Center(
-                    child: Icon(Icons.support_agent_rounded, size: 36, color: Colors.white),
-                  ),
+                const SahdevLogo(
+                  size: 72,
+                  showGlow: true,
                 ),
                 const SizedBox(height: 16),
                 const Text(

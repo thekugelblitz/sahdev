@@ -237,6 +237,7 @@ class NotificationService {
     required int ticketId,
     required String subject,
     required String actionType,
+    String? clientName,
   }) async {
     const androidDetails = AndroidNotificationDetails(
       'sahdev_tickets_channel',
@@ -249,14 +250,16 @@ class NotificationService {
 
     const notificationDetails = NotificationDetails(android: androidDetails);
 
+    final hasRealName = clientName != null && clientName.trim().isNotEmpty && clientName != 'Client';
     final title = (actionType == 'reply')
-        ? '📩 Ticket Reply: #$ticketId'
-        : '🎫 New Ticket: #$ticketId';
+        ? (hasRealName ? '📩 Reply: $clientName (#$ticketId)' : '📩 Ticket Reply: #$ticketId')
+        : (hasRealName ? '🎫 New Ticket: $clientName (#$ticketId)' : '🎫 New Ticket: #$ticketId');
 
     final payload = jsonEncode({
       'event_type': 'ticket',
       'ticket_id': ticketId,
       'action_type': actionType,
+      'client_name': clientName,
       'subject': subject,
     });
 

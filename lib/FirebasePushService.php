@@ -565,15 +565,17 @@ class FirebasePushService
             return 0;
         }
 
+        $hasRealName = !empty($clientName) && $clientName !== 'Client';
         $title = ($actionType === 'reply')
-            ? "📩 Ticket Reply: #{$ticketId}"
-            : "🎫 New Ticket: #{$ticketId}";
+            ? ($hasRealName ? "📩 Reply: {$clientName} (#{$ticketId})" : "📩 Ticket Reply: #{$ticketId}")
+            : ($hasRealName ? "🎫 New Ticket: {$clientName} (#{$ticketId})" : "🎫 New Ticket: #{$ticketId}");
 
-        $body = !empty($clientName) ? "{$clientName}: {$subject}" : $subject;
+        $body = $subject;
 
         $data = [
             'event_type'    => 'ticket',
             'ticket_id'     => (string)$ticketId,
+            'client_name'   => $clientName,
             'action_type'   => $actionType,
             'subject'       => $subject,
         ];

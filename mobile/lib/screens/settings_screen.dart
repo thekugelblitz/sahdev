@@ -6,6 +6,7 @@ import '../providers/theme_provider.dart';
 import '../services/audio_service.dart';
 import '../services/background_service.dart';
 import '../services/fcm_service.dart';
+import 'help_and_about_screen.dart';
 import 'login_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -107,6 +108,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _buildSectionHeader("RELIABILITY & BACKGROUND EXECUTION"),
           _buildBatteryOptimizationCard(theme, isAmoled),
 
+          const SizedBox(height: 18),
+
+          // Help, FAQ & About
+          _buildSectionHeader("HELP, ABOUT & KNOWLEDGE"),
+          _buildHelpAndAboutCard(context, theme, isAmoled),
+
           const SizedBox(height: 24),
 
           // Logout Button
@@ -114,6 +121,54 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           const SizedBox(height: 30),
         ],
+      ),
+    );
+  }
+
+  Widget _buildHelpAndAboutCard(BuildContext context, ThemeData theme, bool isAmoled) {
+    return Card(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const HelpAndAboutScreen()),
+          );
+        },
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF2DD4BF).withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFF2DD4BF).withOpacity(0.3)),
+                ),
+                child: const Icon(Icons.menu_book_rounded, color: Color(0xFF2DD4BF), size: 24),
+              ),
+              const SizedBox(width: 14),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "Help, FAQ & Knowledge Hub",
+                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      "Version v4.0.0 • Changelog • AI Glossary",
+                      style: TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right, color: Color(0xFF94A3B8)),
+            ],
+          ),
+        ),
       ),
     );
   }

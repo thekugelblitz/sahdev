@@ -254,12 +254,14 @@ class FcmService {
       final int ticketId = int.tryParse(data['ticket_id']?.toString() ?? '0') ?? 0;
       final subject = data['subject'] ?? (message.notification?.body ?? 'Support ticket update');
       final actionType = data['action_type'] ?? 'opened';
+      final clientName = data['client_name'] ?? data['sender_name'];
 
       if (!systemAlreadyRendered) {
         await notifService.showTicketNotification(
           ticketId: ticketId,
           subject: subject,
           actionType: actionType,
+          clientName: clientName,
         );
       }
 

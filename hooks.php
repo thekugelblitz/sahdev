@@ -310,14 +310,33 @@ INC_HTML;
         ? 'display:none;visibility:hidden;'
         : 'display: none; background: #f8f9fa;';
 
+    $logoIconSvg = '<span style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:6px;background:linear-gradient(135deg,#6366f1,#8b5cf6);box-shadow:0 2px 8px rgba(99,102,241,0.35);margin-right:2px;flex-shrink:0;">'
+        . '<svg width="14" height="14" viewBox="0 0 100 100" fill="none">'
+        . '<path d="M50 8 L86.4 29 v42 L50 92 L13.6 71 V29 Z" stroke="#ffffff" stroke-width="8" fill="none" stroke-linejoin="round"/>'
+        . '<circle cx="50" cy="50" r="14" fill="#38bdf8"/>'
+        . '<line x1="50" y1="20" x2="50" y2="36" stroke="#ffffff" stroke-width="6" stroke-linecap="round"/>'
+        . '<line x1="50" y1="64" x2="50" y2="80" stroke="#ffffff" stroke-width="6" stroke-linecap="round"/>'
+        . '<line x1="24" y1="35" x2="38" y2="43" stroke="#ffffff" stroke-width="6" stroke-linecap="round"/>'
+        . '<line x1="76" y1="65" x2="62" y2="57" stroke="#ffffff" stroke-width="6" stroke-linecap="round"/>'
+        . '<line x1="24" y1="65" x2="38" y2="57" stroke="#ffffff" stroke-width="6" stroke-linecap="round"/>'
+        . '<line x1="76" y1="35" x2="62" y2="43" stroke="#ffffff" stroke-width="6" stroke-linecap="round"/>'
+        . '</svg></span>';
+
     $htmlPanel = <<<HTML
 {$incidentAlertBanner}
 <div class="{$panelClass}" id="sahdev-ai-panel" style="{$panelStyle}">
     <div class="panel-heading" style="{$headingStyle}" onclick="$('#sahdev-ai-body').slideToggle();">
-        <h3 class="panel-title" style="{$titleStyle}"><i class="fas fa-robot" style="{$robotColor}"></i> Sahdev AI Ticket Intelligence {$serverHealthBadge}
-            <a href="addonmodules.php?module=sahdev&amp;action=my_preferences" style="{$linkStyle}" onclick="event.stopPropagation();">My preferences</a>
+        <h3 class="panel-title" style="{$titleStyle}">
+            {$logoIconSvg}
+            <span>Sahdev AI <span style="font-weight:400;font-size:12px;opacity:0.85;">Ticket Intelligence</span></span>
+            {$serverHealthBadge}
+            <span style="display:inline-flex;gap:8px;margin-left:auto;align-items:center;">
+                <a href="addonmodules.php?module=sahdev&amp;action=my_preferences" style="{$linkStyle}" onclick="event.stopPropagation();" title="Configure AI &amp; Theme"><i class="fas fa-sliders-h"></i> Preferences</a>
+                <span style="color:#64748b;font-size:10px;">|</span>
+                <a href="addonmodules.php?module=sahdev&amp;action=help" style="{$linkStyle}" onclick="event.stopPropagation();" title="Documentation, FAQ &amp; Glossary"><i class="fas fa-question-circle"></i> Help &amp; KB</a>
+            </span>
         </h3>
-        <i class="fas fa-chevron-down"></i>
+        <i class="fas fa-chevron-down" style="margin-left:8px;"></i>
     </div>
     <div class="panel-body" id="sahdev-ai-body" style="{$bodyStyle}">
         
@@ -15177,8 +15196,42 @@ add_hook('TicketOpen', 1, function ($vars) {
             return;
         }
         $subject = (string)($vars['subject'] ?? 'New Support Ticket');
-        $clientName = (string)($vars['name'] ?? ($vars['clientname'] ?? 'Client'));
         $deptId = !empty($vars['deptid']) ? (int)$vars['deptid'] : null;
+
+        // Proactively resolve actual client name
+        $clientName = trim((string)($vars['name'] ?? ($vars['clientname'] ?? '')));
+        $userId = (int)($vars['userid'] ?? 0);
+        if ($userId > 0) {
+            try {
+                $clientRow = \WHMCS\Database\Capsule::table('tblclients')
+                    ->where('id', $userId)
+                    ->select(['firstname', 'lastname', 'companyname'])
+                    ->first();
+                if ($clientRow) {
+                    $fullName = trim(($clientRow->firstname ?? '') . ' ' . ($clientRow->lastname ?? ''));
+                    $company = trim((string)($clientRow->companyname ?? ''));
+                    if (!empty($fullName)) {
+                        $clientName = !empty($company) ? "{$fullName} ({$company})" : $fullName;
+                    } elseif (!empty($company)) {
+                        $clientName = $company;
+                    }
+                }
+            } catch (\Throwable $e) {}
+        }
+        if (empty($clientName) && $ticketId > 0) {
+            try {
+                $tRow = \WHMCS\Database\Capsule::table('tbltickets')
+                    ->where('id', $ticketId)
+                    ->select(['name', 'userid'])
+                    ->first();
+                if ($tRow && !empty($tRow->name)) {
+                    $clientName = trim($tRow->name);
+                }
+            } catch (\Throwable $e) {}
+        }
+        if (empty($clientName)) {
+            $clientName = 'Client';
+        }
 
         \Sahdev\Lib\FirebasePushService::sendTicketAlert(
             $ticketId,
@@ -15200,8 +15253,42 @@ add_hook('TicketUserReply', 1, function ($vars) {
             return;
         }
         $subject = (string)($vars['subject'] ?? 'Ticket Reply');
-        $clientName = (string)($vars['name'] ?? ($vars['clientname'] ?? 'Client'));
         $deptId = !empty($vars['deptid']) ? (int)$vars['deptid'] : null;
+
+        // Proactively resolve actual client name
+        $clientName = trim((string)($vars['name'] ?? ($vars['clientname'] ?? '')));
+        $userId = (int)($vars['userid'] ?? 0);
+        if ($userId > 0) {
+            try {
+                $clientRow = \WHMCS\Database\Capsule::table('tblclients')
+                    ->where('id', $userId)
+                    ->select(['firstname', 'lastname', 'companyname'])
+                    ->first();
+                if ($clientRow) {
+                    $fullName = trim(($clientRow->firstname ?? '') . ' ' . ($clientRow->lastname ?? ''));
+                    $company = trim((string)($clientRow->companyname ?? ''));
+                    if (!empty($fullName)) {
+                        $clientName = !empty($company) ? "{$fullName} ({$company})" : $fullName;
+                    } elseif (!empty($company)) {
+                        $clientName = $company;
+                    }
+                }
+            } catch (\Throwable $e) {}
+        }
+        if (empty($clientName) && $ticketId > 0) {
+            try {
+                $tRow = \WHMCS\Database\Capsule::table('tbltickets')
+                    ->where('id', $ticketId)
+                    ->select(['name', 'userid'])
+                    ->first();
+                if ($tRow && !empty($tRow->name)) {
+                    $clientName = trim($tRow->name);
+                }
+            } catch (\Throwable $e) {}
+        }
+        if (empty($clientName)) {
+            $clientName = 'Client';
+        }
 
         \Sahdev\Lib\FirebasePushService::sendTicketAlert(
             $ticketId,

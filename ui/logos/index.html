@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sahdev AI — Official Brand Identity &amp; Logo System</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-main: #080d16;
+      --bg-card: #0f172a;
+      --border-color: #1e293b;
+      --text-primary: #f8fafc;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --primary: #2dd4bf;
+      --accent-cyan: #06b6d4;
+      --accent-blue: #3b82f6;
+      --glow: rgba(45, 212, 191, 0.25);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      background-color: var(--bg-main);
+      color: var(--text-primary);
+      line-height: 1.6;
+      padding-bottom: 80px;
+    }
+
+    header {
+      padding: 56px 24px 36px;
+      text-align: center;
+      border-bottom: 1px solid var(--border-color);
+      background: radial-gradient(circle at 50% 0%, rgba(45, 212, 191, 0.12), transparent 70%);
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      border-radius: 999px;
+      background: rgba(45, 212, 191, 0.1);
+      border: 1px solid rgba(45, 212, 191, 0.3);
+      color: var(--primary);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      margin-bottom: 16px;
+    }
+
+    h1 {
+      font-size: 42px;
+      font-weight: 800;
+      letter-spacing: -1px;
+      margin-bottom: 12px;
+      background: linear-gradient(135deg, #ffffff 30%, #2dd4bf 70%, #3b82f6 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .subtitle {
+      max-width: 680px;
+      margin: 0 auto;
+      color: var(--text-secondary);
+      font-size: 16px;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 40px auto 0;
+      padding: 0 24px;
+    }
+
+    .section-title {
+      font-size: 20px;
+      font-weight: 800;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .section-title::before {
+      content: '';
+      display: inline-block;
+      width: 4px;
+      height: 20px;
+      background: var(--primary);
+      border-radius: 2px;
+    }
+
+    /* Grid Layout */
+    .assets-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 24px;
+      margin-bottom: 48px;
+    }
+
+    .asset-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 18px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      transition: all 0.3s ease;
+    }
+
+    .asset-card:hover {
+      border-color: var(--primary);
+      box-shadow: 0 16px 32px var(--glow);
+    }
+
+    .preview-box {
+      background: #080d16;
+      padding: 36px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 200px;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .preview-box.transparent-checkered {
+      background-color: #0c121e;
+      background-image: linear-gradient(45deg, #090e18 25%, transparent 25%), 
+                        linear-gradient(-45deg, #090e18 25%, transparent 25%), 
+                        linear-gradient(45deg, transparent 75%, #090e18 75%), 
+                        linear-gradient(-45deg, transparent 75%, #090e18 75%);
+      background-size: 16px 16px;
+      background-position: 0 0, 0 8px, 8px -8px, -8px 0px;
+    }
+
+    .preview-img {
+      max-width: 140px;
+      max-height: 140px;
+      width: 100%;
+      height: auto;
+      filter: drop-shadow(0 8px 16px rgba(0,0,0,0.4));
+    }
+
+    .preview-img.horizontal {
+      max-width: 280px;
+      max-height: 65px;
+    }
+
+    .preview-img.favicon {
+      max-width: 48px;
+      max-height: 48px;
+    }
+
+    .card-body {
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      flex-grow: 1;
+    }
+
+    .card-title {
+      font-size: 16px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+
+    .card-desc {
+      font-size: 13px;
+      color: var(--text-secondary);
+      margin-bottom: 16px;
+      flex-grow: 1;
+    }
+
+    .btn-group {
+      display: flex;
+      gap: 10px;
+    }
+
+    .download-btn {
+      flex: 1;
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 700;
+      text-align: center;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: all 0.2s ease;
+    }
+
+    .btn-primary {
+      background: rgba(45, 212, 191, 0.15);
+      border: 1px solid var(--primary);
+      color: var(--primary);
+    }
+
+    .btn-primary:hover {
+      background: var(--primary);
+      color: #0f172a;
+    }
+
+    .btn-secondary {
+      background: #1e293b;
+      border: 1px solid #334155;
+      color: #cbd5e1;
+    }
+
+    .btn-secondary:hover {
+      background: #334155;
+      color: #ffffff;
+    }
+
+    /* Live Header Simulation */
+    .mock-navbar {
+      background: #0f172a;
+      border: 1px solid #1e293b;
+      border-radius: 14px;
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 48px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+    }
+
+    .mock-nav-links {
+      display: flex;
+      gap: 20px;
+      font-size: 13px;
+      color: #94a3b8;
+    }
+
+    .mock-nav-links span.active {
+      color: var(--primary);
+      font-weight: 600;
+    }
+
+    .mock-nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .mock-pill {
+      background: #1e293b;
+      padding: 4px 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      color: #e2e8f0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #10b981;
+    }
+
+    /* Color Swatches */
+    .palette-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      margin-bottom: 48px;
+    }
+
+    .color-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 14px;
+      overflow: hidden;
+      padding: 14px;
+    }
+
+    .color-chip {
+      height: 60px;
+      border-radius: 8px;
+      margin-bottom: 12px;
+    }
+
+    .color-name { font-size: 13px; font-weight: 700; margin-bottom: 2px; }
+    .color-hex { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--text-muted); }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="badge">Official Brand Asset Suite</div>
+    <h1>Sahdev — Identity System</h1>
+    <p class="subtitle">The Cognitive Cortex Matrix: High-precision neural lattice symbolizing multi-layered ticket comprehension, memory recall, and autonomous resolution.</p>
+  </header>
+
+  <div class="container">
+    <!-- Live Navbar Test -->
+    <div class="section-title">Live WHMCS Dashboard &amp; App Bar Preview</div>
+    <div class="mock-navbar">
+      <div style="height: 38px; display: flex; align-items: center;">
+        <img src="logo_horizontal.svg" alt="Sahdev Logo" style="height: 34px; width: auto;">
+      </div>
+      <div class="mock-nav-links">
+        <span class="active">Tickets (24)</span>
+        <span>AI Analytics</span>
+        <span>Knowledgebase</span>
+        <span>Audit Logs</span>
+        <span>Settings</span>
+      </div>
+      <div class="mock-nav-actions">
+        <div class="mock-pill">
+          <span class="status-dot"></span>
+          <span>Gemini Pro Active</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Master Assets -->
+    <div class="section-title">Standard Logo Formats &amp; Specifications</div>
+    <div class="assets-grid">
+      <!-- Card 1: Square App Icon -->
+      <div class="asset-card">
+        <div class="preview-box">
+          <img src="logo.svg" class="preview-img" alt="Square App Icon">
+        </div>
+        <div class="card-body">
+          <div class="card-title">Square App Icon (Squircle)</div>
+          <div class="card-desc">512×512 master app icon for iOS, Android launcher, Google Play, and PWA manifest.</div>
+          <div class="btn-group">
+            <a href="logo.svg" target="_blank" class="download-btn btn-primary">SVG Vector</a>
+            <a href="logo.png" download class="download-btn btn-secondary">PNG 512px</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card 2: Transparent Mark -->
+      <div class="asset-card">
+        <div class="preview-box transparent-checkered">
+          <img src="logo_transparent.svg" class="preview-img" alt="Transparent Logo Mark">
+        </div>
+        <div class="card-body">
+          <div class="card-title">Transparent Brandmark</div>
+          <div class="card-desc">Pure standalone neural lattice mark with zero background for custom overlays and splash screens.</div>
+          <div class="btn-group">
+            <a href="logo_transparent.svg" target="_blank" class="download-btn btn-primary">SVG Vector</a>
+            <a href="logo_512.png" download class="download-btn btn-secondary">PNG 512px</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card 3: Horizontal Lockup -->
+      <div class="asset-card">
+        <div class="preview-box">
+          <img src="logo_horizontal.svg" class="preview-img horizontal" alt="Horizontal Lockup">
+        </div>
+        <div class="card-body">
+          <div class="card-title">Horizontal Lockup (With Container)</div>
+          <div class="card-desc">420×90 header lockup for WHMCS admin navbar, email templates, and invoice headers.</div>
+          <div class="btn-group">
+            <a href="logo_horizontal.svg" target="_blank" class="download-btn btn-primary">SVG Vector</a>
+            <a href="logo_horizontal.png" download class="download-btn btn-secondary">Retina PNG</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card 4: Horizontal Transparent -->
+      <div class="asset-card">
+        <div class="preview-box transparent-checkered">
+          <img src="logo_horizontal_transparent.svg" class="preview-img horizontal" alt="Horizontal Transparent">
+        </div>
+        <div class="card-body">
+          <div class="card-title">Horizontal Lockup (Transparent)</div>
+          <div class="card-desc">Transparent background version for dark navigation bars, mobile top bars, and modals.</div>
+          <div class="btn-group">
+            <a href="logo_horizontal_transparent.svg" target="_blank" class="download-btn btn-primary">SVG Vector</a>
+            <a href="logo_horizontal.png" download class="download-btn btn-secondary">Retina PNG</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card 5: Favicon & Micro-Icon -->
+      <div class="asset-card">
+        <div class="preview-box">
+          <img src="favicon.svg" class="preview-img favicon" alt="Favicon">
+        </div>
+        <div class="card-body">
+          <div class="card-title">Browser Favicon &amp; Micro-Icon</div>
+          <div class="card-desc">32×32 and 16×16 optimized high-contrast favicon for browser tabs and desktop bookmarks.</div>
+          <div class="btn-group">
+            <a href="favicon.svg" target="_blank" class="download-btn btn-primary">SVG Favicon</a>
+            <a href="favicon.png" download class="download-btn btn-secondary">PNG 32px</a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Official Brand Colors -->
+    <div class="section-title">Official Brand Palette</div>
+    <div class="palette-grid">
+      <div class="color-card">
+        <div class="color-chip" style="background: #2dd4bf;"></div>
+        <div class="color-name">Cortex Teal</div>
+        <div class="color-hex">#2DD4BF</div>
+      </div>
+      <div class="color-card">
+        <div class="color-chip" style="background: #06b6d4;"></div>
+        <div class="color-name">Neural Cyan</div>
+        <div class="color-hex">#06B6D4</div>
+      </div>
+      <div class="color-card">
+        <div class="color-chip" style="background: #3b82f6;"></div>
+        <div class="color-name">Electric Blue</div>
+        <div class="color-hex">#3B82F6</div>
+      </div>
+      <div class="color-card">
+        <div class="color-chip" style="background: #0f172a;"></div>
+        <div class="color-name">Obsidian Navy</div>
+        <div class="color-hex">#0F172A</div>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

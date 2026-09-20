@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../config/theme_config.dart';
 import '../providers/auth_provider.dart';
+import '../widgets/sahdev_logo.dart';
 import 'home_shell.dart';
 import 'login_screen.dart';
 
@@ -44,31 +45,9 @@ class _SplashScreenState extends State<SplashScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Container(
-              width: 72,
-              height: 72,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [ThemeConfig.primary, Color(0xFF6366F1)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(18),
-                boxShadow: [
-                  BoxShadow(
-                    color: ThemeConfig.primary.withOpacity(0.35),
-                    blurRadius: 20,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
-              ),
-              child: const Center(
-                child: Icon(
-                  Icons.support_agent_rounded,
-                  size: 40,
-                  color: Colors.white,
-                ),
-              ),
+            const SahdevLogo(
+              size: 84,
+              showGlow: true,
             ),
             const SizedBox(height: 20),
             const Text(

@@ -48,14 +48,116 @@
 /* --- Model select compact --- */
 .sahdev-remastered #sahdev_override_provider { max-width: 100% !important; font-size: 12px !important; height: 30px !important; }
 
-/* --- Results Grid --- */
-.sahdev-remastered #sahdev-results .row { margin: 0; }
-.sahdev-remastered #sahdev-results .well { padding: 8px 10px !important; margin-bottom: 8px !important; font-size: 12px !important; border-radius: 6px !important; }
-.sahdev-remastered #sahdev-results .well strong { font-size: 12px !important; }
-.sahdev-remastered #sahdev-results .well p { font-size: 12px !important; margin-top: 3px !important; }
-.sahdev-remastered #sahdev-results .panel { margin-bottom: 8px !important; border-radius: 6px !important; }
-.sahdev-remastered #sahdev-results .panel-heading { padding: 6px 10px !important; font-size: 12px !important; }
-.sahdev-remastered #sahdev-results .panel-body { padding: 8px 10px !important; max-height: 200px !important; font-size: 12px !important; }
+/* --- Results Grid & Task-Oriented AI Output --- */
+.sahdev-remastered #sahdev-results .row { margin: 0 -4px; }
+.sahdev-remastered #sahdev-results [class*="col-"] { padding: 0 4px; }
+.sahdev-remastered #sahdev-results .well {
+    padding: 10px 14px !important;
+    margin-bottom: 10px !important;
+    font-size: 12px !important;
+    border-radius: 8px !important;
+    background: #ffffff !important;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.04) !important;
+    transition: all 0.2s ease;
+}
+.sahdev-remastered #sahdev-results .well:hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08) !important;
+}
+.sahdev-remastered #sahdev-results .well strong {
+    font-size: 11px !important;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-bottom: 4px;
+}
+.sahdev-remastered #sahdev-results .well p {
+    font-size: 13px !important;
+    line-height: 1.5 !important;
+    margin-top: 4px !important;
+    color: #1e293b;
+}
+
+/* Root Cause */
+.sahdev-remastered #sahdev-results .well[style*="border-left: 4px solid #d9534f"] {
+    border: 1px solid #fee2e2 !important;
+    border-left: 4px solid #ef4444 !important;
+    background: #fffafa !important;
+}
+.sahdev-remastered #sahdev-results .well[style*="border-left: 4px solid #d9534f"] strong {
+    color: #b91c1c;
+}
+
+/* Responsibility */
+.sahdev-remastered #sahdev-results .well[style*="border-left: 4px solid #f0ad4e"] {
+    border: 1px solid #fef3c7 !important;
+    border-left: 4px solid #f59e0b !important;
+    background: #fffdf5 !important;
+}
+.sahdev-remastered #sahdev-results .well[style*="border-left: 4px solid #f0ad4e"] strong {
+    color: #b45309;
+}
+
+/* Risk Level */
+.sahdev-remastered #sahdev-results .well[style*="border-left: 4px solid #5bc0de"] {
+    border: 1px solid #e0e7ff !important;
+    border-left: 4px solid #6366f1 !important;
+    background: #f8faff !important;
+}
+.sahdev-remastered #sahdev-results .well[style*="border-left: 4px solid #5bc0de"] strong {
+    color: #4338ca;
+}
+
+/* Action Plan */
+.sahdev-remastered #sahdev-results .well[style*="border-left: 4px solid #5cb85c"] {
+    border: 1px solid #dcfce7 !important;
+    border-left: 4px solid #10b981 !important;
+    background: #f0fdf4 !important;
+}
+.sahdev-remastered #sahdev-results .well[style*="border-left: 4px solid #5cb85c"] strong {
+    color: #047857;
+}
+.sahdev-remastered #sahdev-results #sahdev-out-plan {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 12px !important;
+    background: #ffffff;
+    padding: 8px 10px;
+    border-radius: 6px;
+    border: 1px solid #bbf7d0;
+    color: #065f46 !important;
+}
+
+/* Proposed Client Reply Card */
+.sahdev-remastered #sahdev-results .panel {
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 8px !important;
+    overflow: hidden;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.04) !important;
+    margin-bottom: 10px !important;
+}
+.sahdev-remastered #sahdev-results .panel-heading {
+    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%) !important;
+    border-bottom: 1px solid #e2e8f0 !important;
+    padding: 8px 14px !important;
+    font-size: 13px !important;
+    font-weight: 700;
+    color: #0f172a;
+}
+.sahdev-remastered #sahdev-results .panel-body {
+    padding: 12px 14px !important;
+    font-size: 13px !important;
+    line-height: 1.6 !important;
+    color: #1e293b;
+    max-height: 250px !important;
+    background: #ffffff !important;
+}
+.sahdev-remastered #sahdev-results .panel-heading .btn-xs {
+    font-size: 11px !important;
+    padding: 3px 10px !important;
+    border-radius: 6px !important;
+    font-weight: 600;
+}
 
 /* --- Checkboxes inline --- */
 .sahdev-remastered .sahdev-rm-checks { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; font-size: 12px; margin-bottom: 8px; }

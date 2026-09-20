@@ -517,6 +517,11 @@ class AdminController
                 'icon'  => 'fas fa-cog',
                 'tools' => []
             ],
+            'help_about' => [
+                'title' => 'Help & About',
+                'icon'  => 'fas fa-question-circle',
+                'tools' => []
+            ],
         ];
 
         // 1. Live Support (Console, Widget Customizer, Mobile Staff App)
@@ -693,6 +698,13 @@ class AdminController
             'icon'  => 'fas fa-user-cog',
             'url'   => $base . '&action=my_preferences',
             'desc'  => 'Personal tone, default model & notification options'
+        ];
+
+        $categories['help_about']['tools']['help'] = [
+            'label' => 'Help, FAQ & About',
+            'icon'  => 'fas fa-question-circle',
+            'url'   => $base . '&action=help',
+            'desc'  => 'Version details, developer credits, changelogs, FAQ & AI glossary'
         ];
 
         // Filter out any categories that have no accessible tools for current admin
@@ -16036,6 +16048,604 @@ class AdminController
                 }
             });
         });
+        </script>
+        <?php
+        return ob_get_clean();
+    }
+
+    /**
+     * Help, FAQ, Changelog, Knowledge Base & Glossary Hub
+     *
+     * @return string
+     */
+    public function help(): string
+    {
+        $navMarkup = $this->getNavigationMarkup('help');
+        $moduleLink = htmlspecialchars($this->moduleVars['modulelink']);
+
+        // System Diagnostics
+        $dbStatus = 'Connected';
+        $providerCount = 0;
+        $fcmDeviceCount = 0;
+        try {
+            $providerCount = Capsule::table('tblsahdev_providers')->where('is_active', 1)->count();
+            $fcmDeviceCount = Capsule::table('tblsahdev_mobile_fcm_tokens')->count();
+        } catch (\Throwable $e) {}
+
+        $phpVersion = phpversion();
+        $whmcsVersion = defined('WHMCS_VERSION') ? constant('WHMCS_VERSION') : (defined('App::getVersion()') ? \App::getVersion() : '8.x');
+
+        ob_start();
+        ?>
+        <?php echo $navMarkup; ?>
+
+        <style>
+            .sahdev-help-container {
+                max-width: 1200px;
+                margin: 0 auto 50px auto;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", sans-serif;
+            }
+            .sahdev-help-hero {
+                background: linear-gradient(135deg, #090d16 0%, #0f172a 100%);
+                border: 1px solid #1e293b;
+                border-radius: 16px;
+                padding: 36px 30px;
+                color: #f8fafc;
+                margin-bottom: 24px;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                flex-wrap: wrap;
+                gap: 20px;
+                box-shadow: 0 10px 30px -5px rgba(15, 23, 42, 0.4);
+                position: relative;
+                overflow: hidden;
+            }
+            .sahdev-help-hero::after {
+                content: '';
+                position: absolute;
+                top: -50%;
+                right: -10%;
+                width: 300px;
+                height: 300px;
+                background: radial-gradient(circle, rgba(45, 212, 191, 0.15) 0%, transparent 70%);
+                pointer-events: none;
+            }
+            .sahdev-help-hero h1 {
+                font-size: 28px;
+                font-weight: 800;
+                margin: 0 0 6px 0;
+                color: #ffffff;
+                letter-spacing: -0.5px;
+            }
+            .sahdev-help-hero p {
+                font-size: 14px;
+                color: #94a3b8;
+                margin: 0;
+                max-width: 650px;
+            }
+            .sahdev-badge-version {
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+                background: rgba(45, 212, 191, 0.15);
+                border: 1px solid rgba(45, 212, 191, 0.35);
+                color: #2dd4bf;
+                padding: 4px 12px;
+                border-radius: 999px;
+                font-size: 12px;
+                font-weight: 700;
+                margin-bottom: 12px;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+            }
+            .sahdev-help-tabs {
+                border-bottom: 2px solid #e2e8f0;
+                margin-bottom: 24px;
+                display: flex;
+                gap: 8px;
+                flex-wrap: wrap;
+            }
+            .sahdev-help-tab-btn {
+                padding: 10px 18px;
+                font-size: 13px;
+                font-weight: 700;
+                color: #64748b;
+                text-decoration: none !important;
+                border-bottom: 3px solid transparent;
+                margin-bottom: -2px;
+                display: inline-flex;
+                align-items: center;
+                gap: 8px;
+                transition: all 0.2s ease;
+                border-radius: 6px 6px 0 0;
+                cursor: pointer;
+            }
+            .sahdev-help-tab-btn:hover {
+                color: #0f172a;
+                background: #f8fafc;
+            }
+            .sahdev-help-tab-btn.active {
+                color: #0d9488;
+                border-bottom-color: #0d9488;
+                background: #f0fdfa;
+            }
+            .sahdev-help-card {
+                background: #ffffff;
+                border: 1px solid #e2e8f0;
+                border-radius: 12px;
+                padding: 24px;
+                margin-bottom: 20px;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            }
+            .sahdev-help-card h3 {
+                font-size: 17px;
+                font-weight: 800;
+                color: #0f172a;
+                margin: 0 0 14px 0;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }
+            .sahdev-spec-table th {
+                background: #f8fafc;
+                font-size: 12px;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+                color: #475569;
+                font-weight: 700;
+                padding: 10px 14px;
+                border-bottom: 2px solid #e2e8f0;
+            }
+            .sahdev-spec-table td {
+                padding: 10px 14px;
+                font-size: 13px;
+                color: #1e293b;
+                border-bottom: 1px solid #f1f5f9;
+                vertical-align: middle;
+            }
+            .sahdev-faq-item {
+                border: 1px solid #e2e8f0;
+                border-radius: 8px;
+                margin-bottom: 12px;
+                overflow: hidden;
+            }
+            .sahdev-faq-question {
+                padding: 14px 18px;
+                background: #f8fafc;
+                font-weight: 700;
+                font-size: 14px;
+                color: #0f172a;
+                cursor: pointer;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }
+            .sahdev-faq-answer {
+                padding: 16px 18px;
+                background: #ffffff;
+                font-size: 13px;
+                line-height: 1.6;
+                color: #475569;
+                border-top: 1px solid #e2e8f0;
+            }
+            .sahdev-glossary-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+                gap: 16px;
+            }
+            .sahdev-glossary-card {
+                border: 1px solid #e2e8f0;
+                border-radius: 8px;
+                padding: 16px;
+                background: #ffffff;
+                transition: transform 0.15s ease, border-color 0.15s ease;
+            }
+            .sahdev-glossary-card:hover {
+                transform: translateY(-2px);
+                border-color: #2dd4bf;
+                box-shadow: 0 4px 12px rgba(45, 212, 191, 0.15);
+            }
+            .sahdev-glossary-title {
+                font-weight: 800;
+                font-size: 15px;
+                color: #0f766e;
+                margin-bottom: 4px;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }
+            .sahdev-glossary-tag {
+                font-size: 10px;
+                font-weight: 700;
+                padding: 2px 6px;
+                border-radius: 4px;
+                background: #f0fdfa;
+                color: #0f766e;
+                border: 1px solid #ccfbf1;
+            }
+            .sahdev-glossary-desc {
+                font-size: 12.5px;
+                color: #475569;
+                line-height: 1.5;
+            }
+        </style>
+
+        <div class="sahdev-help-container">
+            <!-- Hero Header -->
+            <div class="sahdev-help-hero">
+                <div>
+                    <div class="sahdev-badge-version">
+                        <i class="fas fa-certificate"></i> Version 4.0.0 (Core v2.0)
+                    </div>
+                    <h1>Sahdev — AI Ticket Intelligence &amp; Live Support</h1>
+                    <p>Documentation, System Specifications, Release History, FAQ, and AI Ticketing Glossary for Support Teams.</p>
+                </div>
+                <div>
+                    <img src="../modules/addons/sahdev/ui/logos/logo_horizontal_transparent.svg" alt="Sahdev" style="height: 48px; max-width: 220px;" onerror="this.src='../modules/addons/sahdev/mobile/assets/images/logo_horizontal_transparent.svg'">
+                </div>
+            </div>
+
+            <!-- Tab Navigation -->
+            <div class="sahdev-help-tabs">
+                <a class="sahdev-help-tab-btn active" onclick="switchHelpTab('about', this)">
+                    <i class="fas fa-info-circle"></i> About &amp; System Specs
+                </a>
+                <a class="sahdev-help-tab-btn" onclick="switchHelpTab('changelog', this)">
+                    <i class="fas fa-history"></i> Release Changelog
+                </a>
+                <a class="sahdev-help-tab-btn" onclick="switchHelpTab('kb', this)">
+                    <i class="fas fa-book-reader"></i> Knowledge Base &amp; Best Practices
+                </a>
+                <a class="sahdev-help-tab-btn" onclick="switchHelpTab('faq', this)">
+                    <i class="fas fa-question-circle"></i> FAQ
+                </a>
+                <a class="sahdev-help-tab-btn" onclick="switchHelpTab('glossary', this)">
+                    <i class="fas fa-spell-check"></i> AI Glossary
+                </a>
+            </div>
+
+            <!-- ── TAB 1: ABOUT & SYSTEM SPECS ────────────────────────── -->
+            <div id="tab-about" class="sahdev-tab-content">
+                <div class="sahdev-help-card">
+                    <h3><i class="fas fa-microchip text-primary"></i> System Diagnostics &amp; Environment</h3>
+                    <table class="table sahdev-spec-table" style="margin-bottom: 0;">
+                        <thead>
+                            <tr>
+                                <th>Component</th>
+                                <th>Specification / Value</th>
+                                <th>Operational Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>Module Version</strong></td>
+                                <td>v4.0.0 (AI Core Engine 2.0)</td>
+                                <td><span class="label label-success"><i class="fas fa-check"></i> Production Ready</span></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Developer &amp; Publisher</strong></td>
+                                <td>HostingSpell LLP.</td>
+                                <td><span class="label label-info">Official Addon</span></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Environment Compatibility</strong></td>
+                                <td>PHP <?php echo htmlspecialchars($phpVersion); ?> • WHMCS <?php echo htmlspecialchars($whmcsVersion); ?></td>
+                                <td><span class="label label-success"><i class="fas fa-check"></i> Compatible</span></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Database &amp; ORM</strong></td>
+                                <td>MySQL / MariaDB via Capsule ORM (Strict Read-Only Isolation)</td>
+                                <td><span class="label label-success"><i class="fas fa-shield-alt"></i> Secure</span></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Active AI Providers</strong></td>
+                                <td><?php echo $providerCount; ?> Active Gateway(s) configured</td>
+                                <td><span class="label label-primary"><i class="fas fa-plug"></i> Connected</span></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Mobile FCM Devices</strong></td>
+                                <td><?php echo $fcmDeviceCount; ?> Registered Device(s)</td>
+                                <td><span class="label label-success"><i class="fas fa-mobile-alt"></i> Push Active</span></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Brand Identity</strong></td>
+                                <td>Concept #8: The Cognitive Cortex Matrix (Neural Lattice)</td>
+                                <td><span class="label label-default">Vector SVG &amp; PNG</span></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="sahdev-help-card">
+                    <h3><i class="fas fa-shield-alt text-success"></i> Data Privacy &amp; PII Scrubbing Guarantee</h3>
+                    <p style="font-size: 13.5px; color: #475569; line-height: 1.6;">
+                        Sahdev is engineered strictly for web hosting and enterprise infrastructure providers.
+                        All customer communications, support logs, and server outputs pass through the <strong>Sahdev PII Scrubber</strong> before transmission to any LLM endpoint:
+                    </p>
+                    <ul style="font-size: 13px; color: #475569; line-height: 1.8; margin-left: 20px;">
+                        <li><strong>Credit Card Numbers:</strong> Redacted via Luhn-verified pattern matching.</li>
+                        <li><strong>Passwords &amp; Auth Tokens:</strong> Password fields, API secrets, and cPanel tokens are stripped.</li>
+                        <li><strong>IP Addresses &amp; Phone Numbers:</strong> Anonymized or obfuscated when compliance mode is active.</li>
+                        <li><strong>Zero Model Training:</strong> Zero client data is used by Google Gemini, OpenRouter, or external providers for model training.</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- ── TAB 2: RELEASE CHANGELOG ──────────────────────────── -->
+            <div id="tab-changelog" class="sahdev-tab-content" style="display: none;">
+                <div class="sahdev-help-card">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                        <h3 style="margin: 0;"><i class="fas fa-code-branch text-primary"></i> Version 4.0.0</h3>
+                        <span class="label label-success">LATEST RELEASE</span>
+                    </div>
+                    <ul style="font-size: 13px; line-height: 1.8; color: #334155;">
+                        <li><strong>The Cognitive Cortex Matrix:</strong> Complete brand identity overhaul with pixel-perfect vector SVGs, horizontal lockups, and favicon.</li>
+                        <li><strong>Client Name in Push Notifications:</strong> Automatically queries <code>tblclients</code> / <code>tbltickets</code> to pass real client and company names in mobile alerts, eliminating generic "Client:" prefixes.</li>
+                        <li><strong>Integrated Help &amp; Knowledge Hub:</strong> Comprehensive in-app documentation, searchable FAQ, and AI glossary across both WHMCS and Flutter Mobile.</li>
+                        <li><strong>Task-Oriented UI/UX:</strong> Refined ticket panel styling with glowing severity indicators and streamlined 1-click action triggers.</li>
+                    </ul>
+                </div>
+
+                <div class="sahdev-help-card">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                        <h3 style="margin: 0;"><i class="fas fa-code-branch text-info"></i> Version 3.5.0</h3>
+                        <span class="label label-info">MAJOR UPDATE</span>
+                    </div>
+                    <ul style="font-size: 13px; line-height: 1.8; color: #334155;">
+                        <li><strong>Mobile Live Support Console:</strong> Full-featured Flutter mobile application for staff with real-time visitor chat (Tawk.to style).</li>
+                        <li><strong>FCM HTTP v1 Phone Wake:</strong> High-priority push dispatch waking staff phones from deep sleep with loud ringing alarms.</li>
+                        <li><strong>Visitor Sneak-Peek:</strong> Live keystroke visibility allowing agents to read customer inquiries as they are typed.</li>
+                        <li><strong>Sound Library:</strong> 12 custom alert chimes and alarm audio assets with native player integration.</li>
+                    </ul>
+                </div>
+
+                <div class="sahdev-help-card">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                        <h3 style="margin: 0;"><i class="fas fa-code-branch text-warning"></i> Version 3.0.0</h3>
+                        <span class="label label-warning">AUTOMATION</span>
+                    </div>
+                    <ul style="font-size: 13px; line-height: 1.8; color: #334155;">
+                        <li><strong>Tools API Integration:</strong> Diagnostic commands (ping, traceroute, DNS resolve, curl) via <code>toolsapi.2hs.in</code>.</li>
+                        <li><strong>Server Incident Watch:</strong> Outage detection, server node telemetry, and automated client alerts.</li>
+                        <li><strong>Automated Cron Insights:</strong> Background queue triage with WHMCS Tag Cloud auto-tagging.</li>
+                    </ul>
+                </div>
+
+                <div class="sahdev-help-card">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                        <h3 style="margin: 0;"><i class="fas fa-code-branch text-muted"></i> Version 2.0.0</h3>
+                        <span class="label label-default">CORE ENGINE</span>
+                    </div>
+                    <ul style="font-size: 13px; line-height: 1.8; color: #334155;">
+                        <li><strong>Account Context Enrichment:</strong> Automatically extracts client active services, billing status, domains, and past tickets.</li>
+                        <li><strong>PII Scrubber:</strong> Automatic redaction of sensitive credentials.</li>
+                        <li><strong>Sentiment &amp; Urgency Scoring:</strong> 1-10 customer emotion index and priority matrix.</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- ── TAB 3: KNOWLEDGE BASE & BEST PRACTICES ─────────────── -->
+            <div id="tab-kb" class="sahdev-tab-content" style="display: none;">
+                <div class="sahdev-help-card">
+                    <h3><i class="fas fa-bullseye text-danger"></i> Reply Intents &amp; Directives</h3>
+                    <p style="font-size: 13px; color: #475569;">
+                        Clicking an <strong>Intent Button</strong> injects a targeted behavioral directive into the AI prompt, drastically improving reply accuracy:
+                    </p>
+                    <table class="table sahdev-spec-table">
+                        <thead>
+                            <tr>
+                                <th>Intent Button</th>
+                                <th>Best Used For</th>
+                                <th>AI Directive Behavior</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><span class="label label-success">Resolved Query</span></td>
+                                <td>Issue has been fixed by the engineer</td>
+                                <td>Confident closing message, thanks the client, invites them to reopen if recurring, asks no extra questions.</td>
+                            </tr>
+                            <tr>
+                                <td><span class="label label-info">Checking Query</span></td>
+                                <td>Issue requires deeper investigation</td>
+                                <td>Reassuring update, confirms investigation is in progress, sets realistic expectations without firm commitments.</td>
+                            </tr>
+                            <tr>
+                                <td><span class="label label-warning">Need More Info</span></td>
+                                <td>Logs, credentials, or steps missing</td>
+                                <td>Polite, bulleted request specifying exactly what screenshots, domains, or logs are required.</td>
+                            </tr>
+                            <tr>
+                                <td><span class="label label-primary">Guide to Solution</span></td>
+                                <td>Client self-service issues</td>
+                                <td>Clear, numbered step-by-step tutorial guiding the client to fix the issue on their own.</td>
+                            </tr>
+                            <tr>
+                                <td><span class="label label-danger">Abuse Report</span></td>
+                                <td>Phishing, malware, DMCA, spam</td>
+                                <td>Calm, human, policy-aware response setting next review steps and requesting missing evidence.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="sahdev-help-card">
+                    <h3><i class="fas fa-tachometer-alt text-primary"></i> Dive Intensity Guide</h3>
+                    <p style="font-size: 13px; color: #475569;">
+                        Dive Intensity controls the depth of log parsing, context loading, and analytical rigor:
+                    </p>
+                    <ul style="font-size: 13px; line-height: 1.8; color: #334155;">
+                        <li><strong>Level 1-2 (Quick Triage):</strong> Reads only the latest message and service name. Fast (1-2s response), ideal for simple questions.</li>
+                        <li><strong>Level 3 (Standard):</strong> Reads the last 5 messages, active packages, and invoice status. Balanced performance.</li>
+                        <li><strong>Level 4-5 (Deep Forensic):</strong> Parses full message history, scans attached text/log files, loads server node metrics, and runs diagnostic tool evaluation.</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- ── TAB 4: FAQ ────────────────────────────────────────── -->
+            <div id="tab-faq" class="sahdev-tab-content" style="display: none;">
+                <div class="sahdev-help-card">
+                    <h3><i class="fas fa-question-circle text-primary"></i> Frequently Asked Questions</h3>
+                    <div class="sahdev-faq-item">
+                        <div class="sahdev-faq-question" onclick="toggleFaq(this)">
+                            <span>How does Sahdev resolve real client names in mobile notifications?</span>
+                            <i class="fas fa-chevron-down"></i>
+                        </div>
+                        <div class="sahdev-faq-answer">
+                            In WHMCS, ticket hooks often pass only the <code>userid</code>. Sahdev automatically executes a fast, cached lookup against <code>tblclients</code> to resolve the customer's full name and company name (e.g. "Alex Smith (Acme Corp)"). For guest tickets, it retrieves the guest name from <code>tbltickets</code>, ensuring notifications never fall back to generic "Client:" labels.
+                        </div>
+                    </div>
+
+                    <div class="sahdev-faq-item">
+                        <div class="sahdev-faq-question" onclick="toggleFaq(this)">
+                            <span>Does Sahdev send client passwords or credit card numbers to the AI?</span>
+                            <i class="fas fa-chevron-down"></i>
+                        </div>
+                        <div class="sahdev-faq-answer">
+                            No. Sahdev includes a built-in PII Scrubber that removes credit card numbers, passwords, and sensitive credentials before any prompt is dispatched to an AI model.
+                        </div>
+                    </div>
+
+                    <div class="sahdev-faq-item">
+                        <div class="sahdev-faq-question" onclick="toggleFaq(this)">
+                            <span>How does automatic provider fallback work?</span>
+                            <i class="fas fa-chevron-down"></i>
+                        </div>
+                        <div class="sahdev-faq-answer">
+                            Under <strong>Addons &gt; Sahdev &gt; AI Providers</strong>, you can configure both a Primary Provider (e.g. Google Gemini 1.5 Pro) and a Fallback Provider (e.g. OpenRouter or local LM Studio). If the primary provider times out or returns a rate limit (HTTP 429), Sahdev immediately re-routes the prompt to the fallback provider without interrupting the support agent.
+                        </div>
+                    </div>
+
+                    <div class="sahdev-faq-item">
+                        <div class="sahdev-faq-question" onclick="toggleFaq(this)">
+                            <span>Can staff review and edit AI replies before they are sent?</span>
+                            <i class="fas fa-chevron-down"></i>
+                        </div>
+                        <div class="sahdev-faq-answer">
+                            Yes. By default, Sahdev operates with a Human-in-the-Loop design. The generated reply is inserted directly into the WHMCS TinyMCE ticket reply editor or mobile compose bar, allowing the engineer to review, modify, or enhance the message before sending.
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── TAB 5: GLOSSARY ───────────────────────────────────── -->
+            <div id="tab-glossary" class="sahdev-tab-content" style="display: none;">
+                <div class="sahdev-help-card">
+                    <h3><i class="fas fa-spell-check text-success"></i> Sahdev AI Ticketing Glossary</h3>
+                    <div class="sahdev-glossary-grid">
+                        <div class="sahdev-glossary-card">
+                            <div class="sahdev-glossary-title">
+                                <span>Root Cause</span>
+                                <span class="sahdev-glossary-tag">Analysis</span>
+                            </div>
+                            <div class="sahdev-glossary-desc">
+                                The underlying technical fault identified by AI from log messages, error codes, or customer descriptions.
+                            </div>
+                        </div>
+
+                        <div class="sahdev-glossary-card">
+                            <div class="sahdev-glossary-title">
+                                <span>Responsibility</span>
+                                <span class="sahdev-glossary-tag">Triage</span>
+                            </div>
+                            <div class="sahdev-glossary-desc">
+                                Categorization designating whether the issue is Client error, Hosting/Server fault, or 3rd Party (e.g. Cloudflare, domain registrar).
+                            </div>
+                        </div>
+
+                        <div class="sahdev-glossary-card">
+                            <div class="sahdev-glossary-title">
+                                <span>Risk Level</span>
+                                <span class="sahdev-glossary-tag">Severity</span>
+                            </div>
+                            <div class="sahdev-glossary-desc">
+                                Severity rating (Low, Medium, High, Critical) based on potential revenue loss, data risk, or client churn probability.
+                            </div>
+                        </div>
+
+                        <div class="sahdev-glossary-card">
+                            <div class="sahdev-glossary-title">
+                                <span>Internal Action Plan</span>
+                                <span class="sahdev-glossary-tag">Workflow</span>
+                            </div>
+                            <div class="sahdev-glossary-desc">
+                                An internal engineering checklist outlining steps for staff to diagnose and resolve the issue before writing back to the client.
+                            </div>
+                        </div>
+
+                        <div class="sahdev-glossary-card">
+                            <div class="sahdev-glossary-title">
+                                <span>PII Scrubbing</span>
+                                <span class="sahdev-glossary-tag">Security</span>
+                            </div>
+                            <div class="sahdev-glossary-desc">
+                                Automatic regex sanitation removing credit cards, passwords, phone numbers, and secrets prior to LLM submission.
+                            </div>
+                        </div>
+
+                        <div class="sahdev-glossary-card">
+                            <div class="sahdev-glossary-title">
+                                <span>Context Enrichment</span>
+                                <span class="sahdev-glossary-tag">Data Engine</span>
+                            </div>
+                            <div class="sahdev-glossary-desc">
+                                Automated retrieval of active hosting packages, billing status, domain records, and recent server logs to inform AI reasoning.
+                            </div>
+                        </div>
+
+                        <div class="sahdev-glossary-card">
+                            <div class="sahdev-glossary-title">
+                                <span>FCM HTTP v1</span>
+                                <span class="sahdev-glossary-tag">Mobile Push</span>
+                            </div>
+                            <div class="sahdev-glossary-desc">
+                                Direct OAuth 2.0 push protocol that delivers high-priority alerts to wake Android and iOS devices from sleep.
+                            </div>
+                        </div>
+
+                        <div class="sahdev-glossary-card">
+                            <div class="sahdev-glossary-title">
+                                <span>Capsule ORM Isolation</span>
+                                <span class="sahdev-glossary-tag">Architecture</span>
+                            </div>
+                            <div class="sahdev-glossary-desc">
+                                Strictly read-only database queries ensuring AI features never alter core WHMCS billing or ticket tables directly.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <script>
+        function switchHelpTab(tabKey, btn) {
+            document.querySelectorAll('.sahdev-tab-content').forEach(function(el) {
+                el.style.display = 'none';
+            });
+            document.querySelectorAll('.sahdev-help-tab-btn').forEach(function(el) {
+                el.classList.remove('active');
+            });
+            var target = document.getElementById('tab-' + tabKey);
+            if (target) {
+                target.style.display = 'block';
+            }
+            if (btn) {
+                btn.classList.add('active');
+            }
+        }
+
+        function toggleFaq(el) {
+            var ans = el.nextElementSibling;
+            var icon = el.querySelector('i');
+            if (ans.style.display === 'none' || ans.style.display === '') {
+                ans.style.display = 'block';
+                if (icon) icon.className = 'fas fa-chevron-up';
+            } else {
+                ans.style.display = 'none';
+                if (icon) icon.className = 'fas fa-chevron-down';
+            }
+        }
         </script>
         <?php
         return ob_get_clean();
