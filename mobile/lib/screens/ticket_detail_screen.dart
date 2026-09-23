@@ -33,12 +33,21 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
     });
   }
 
-  void _loadTicketDetails() {
+  Future<void> _loadTicketDetails() async {
     final auth = context.read<AuthProvider>();
-    if (auth.baseUrl != null && auth.token != null) {
+    String? baseUrl = auth.baseUrl;
+    String? token = auth.token;
+
+    if (baseUrl == null || token == null) {
+      await auth.init();
+      baseUrl = auth.baseUrl;
+      token = auth.token;
+    }
+
+    if (baseUrl != null && token != null && mounted) {
       context.read<TicketProvider>().fetchTicketDetails(
-            baseUrl: auth.baseUrl!,
-            token: auth.token!,
+            baseUrl: baseUrl,
+            token: token,
             ticketId: widget.ticketId,
           );
     }
@@ -432,9 +441,26 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
           ? const Center(child: CircularProgressIndicator())
           : ticket == null
               ? Center(
-                  child: Text(
-                    ticketProv.errorMessage ?? 'Ticket not found.',
-                    style: const TextStyle(color: Colors.redAccent),
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.confirmation_number_outlined, size: 48, color: Colors.grey),
+                        const SizedBox(height: 12),
+                        Text(
+                          ticketProv.errorMessage ?? 'Ticket not found or could not be loaded.',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(color: Colors.redAccent, fontSize: 14),
+                        ),
+                        const SizedBox(height: 16),
+                        ElevatedButton.icon(
+                          onPressed: _loadTicketDetails,
+                          icon: const Icon(Icons.refresh),
+                          label: const Text('Retry Loading Ticket'),
+                        ),
+                      ],
+                    ),
                   ),
                 )
               : Column(

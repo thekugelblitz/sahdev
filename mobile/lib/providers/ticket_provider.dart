@@ -124,6 +124,10 @@ class TicketProvider extends ChangeNotifier {
     required String token,
     required int ticketId,
   }) async {
+    if (_activeTicket != null && (_activeTicket!['id'] as num?)?.toInt() != ticketId) {
+      _activeTicket = null;
+      _activeThread = [];
+    }
     _isLoadingDetails = true;
     _aiAnalysis = null;
     notifyListeners();

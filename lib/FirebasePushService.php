@@ -274,6 +274,7 @@ class FirebasePushService
                         'default_sound'           => true,
                         'default_vibrate_timings' => true,
                         'click_action'            => 'FLUTTER_NOTIFICATION_CLICK',
+                        'tag'                     => !empty($stringData['ticket_id']) ? "ticket_{$stringData['ticket_id']}" : (!empty($stringData['session_id']) ? "session_{$stringData['session_id']}" : 'sahdev_alert'),
                     ],
                 ],
                 'apns' => [
@@ -575,9 +576,13 @@ class FirebasePushService
         $data = [
             'event_type'    => 'ticket',
             'ticket_id'     => (string)$ticketId,
+            'ticketId'      => (string)$ticketId,
+            'ticketid'      => (string)$ticketId,
+            'id'            => (string)$ticketId,
             'client_name'   => $clientName,
             'action_type'   => $actionType,
             'subject'       => $subject,
+            'click_action'  => 'FLUTTER_NOTIFICATION_CLICK',
         ];
 
         return self::sendToAllStaff($title, $body, $data, 'sahdev_tickets_channel', $departmentId);

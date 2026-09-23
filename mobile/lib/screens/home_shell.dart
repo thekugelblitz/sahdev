@@ -36,9 +36,25 @@ class _HomeShellState extends State<HomeShell> {
   void initState() {
     super.initState();
     _currentIndex = widget.initialTab;
+
+    // Register tab switcher for notification intent routing
+    NotificationRouter.onSwitchTab = (tabIndex) {
+      if (mounted && tabIndex >= 0 && tabIndex < _pages.length) {
+        setState(() => _currentIndex = tabIndex);
+      }
+    };
+    NotificationRouter.isShellReady = true;
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       NotificationRouter.checkAndRoutePending(context);
     });
+  }
+
+  @override
+  void dispose() {
+    NotificationRouter.onSwitchTab = null;
+    NotificationRouter.isShellReady = false;
+    super.dispose();
   }
 
   @override

@@ -102,16 +102,14 @@ class FcmService {
       // 5. Message opened while app was in background
       FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
         debugPrint('[FCM] Notification opened from background: ${message.data}');
-        _handleNotificationClick(message.data);
+        _handleRemoteMessageClick(message);
       });
 
       // 6. Terminated app click
       final initialMessage = await messaging.getInitialMessage();
       if (initialMessage != null) {
         debugPrint('[FCM] App launched from terminated state via notification: ${initialMessage.data}');
-        Future.delayed(const Duration(milliseconds: 600), () {
-          _handleNotificationClick(initialMessage.data);
-        });
+        _handleRemoteMessageClick(initialMessage);
       }
 
       _initialized = true;
@@ -249,9 +247,17 @@ class FcmService {
         );
       }
 
-      await audioService.playChime();
-    } else if (eventType == 'ticket' && notifyTickets) {
-      final int ticketId = int.tryParse(data['ticket_id']?.toString() ?? '0') ?? 0;
+    } else if ((eventType == 'ticket' || eventType.contains('ticket')) && notifyTickets) {
+      final directId = data['ticket_id'] ?? data['ticketId'] ?? data['ticketid'] ?? data['tid'] ?? data['id'];
+      int ticketId = int.tryParse(directId?.toString() ?? '0') ?? 0;
+      if (ticketId <= 0) {
+        final textToScan = '${data['title'] ?? ''} ${data['subject'] ?? ''} ${message.notification?.title ?? ''} ${message.notification?.body ?? ''}';
+        final match = RegExp(r'#(\d+)').firstMatch(textToScan);
+        if (match != null) {
+          ticketId = int.tryParse(match.group(1) ?? '0') ?? 0;
+        }
+      }
+
       final subject = data['subject'] ?? (message.notification?.body ?? 'Support ticket update');
       final actionType = data['action_type'] ?? 'opened';
       final clientName = data['client_name'] ?? data['sender_name'];
@@ -279,11 +285,25 @@ class FcmService {
     }
   }
 
+  /// Handle RemoteMessage clicks by merging notification fields into data map
+  static void _handleRemoteMessageClick(RemoteMessage message) {
+    final Map<String, dynamic> data = Map<String, dynamic>.from(message.data);
+    if (message.notification != null) {
+      if (message.notification!.title != null) {
+        data.putIfAbsent('title', () => message.notification!.title);
+      }
+      if (message.notification!.body != null) {
+        data.putIfAbsent('body', () => message.notification!.body);
+      }
+    }
+    _handleNotificationClick(data);
+  }
+
   /// Handle notification payload routing on click
   static void _handleNotificationClick(Map<String, dynamic> data) {
     final eventType = data['event_type'] ?? 'general';
     if (onNotificationNavigate != null) {
-      onNotificationNavigate!(eventType, data);
+      onNotificationNavigate!(eventType.toString(), data);
     }
   }
 }

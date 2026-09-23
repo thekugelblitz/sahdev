@@ -239,16 +239,17 @@ class NotificationService {
     required String actionType,
     String? clientName,
   }) async {
-    const androidDetails = AndroidNotificationDetails(
+    final androidDetails = AndroidNotificationDetails(
       'sahdev_tickets_channel',
       'Support Tickets',
       channelDescription: 'Notifications for WHMCS support tickets',
       importance: Importance.high,
       priority: Priority.high,
       playSound: true,
+      tag: 'ticket_$ticketId',
     );
 
-    const notificationDetails = NotificationDetails(android: androidDetails);
+    final notificationDetails = NotificationDetails(android: androidDetails);
 
     final hasRealName = clientName != null && clientName.trim().isNotEmpty && clientName != 'Client';
     final title = (actionType == 'reply')
@@ -258,9 +259,13 @@ class NotificationService {
     final payload = jsonEncode({
       'event_type': 'ticket',
       'ticket_id': ticketId,
+      'ticketId': ticketId,
+      'ticketid': ticketId,
+      'id': ticketId,
       'action_type': actionType,
       'client_name': clientName,
       'subject': subject,
+      'title': title,
     });
 
     await _plugin.show(
