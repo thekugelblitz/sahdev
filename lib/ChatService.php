@@ -1247,14 +1247,26 @@ class ChatService
 
         // Designated Staff Identity for Live Chat Escalations
         $designatedAdminId = (int) self::getChatSetting('client_chat_admin_id', 0);
+        $designatedAdminUsername = trim((string) self::getChatSetting('client_chat_admin_username', ''));
+
         $escalateAdmin = null;
-        $adminUsername = '';
-        $adminDisplayName = '';
         if ($designatedAdminId > 0) {
             $escalateAdmin = Capsule::table('tbladmins')->where('id', $designatedAdminId)->first();
-            if ($escalateAdmin) {
-                $adminUsername = $escalateAdmin->username;
-                $adminDisplayName = trim(($escalateAdmin->firstname ?? '') . ' ' . ($escalateAdmin->lastname ?? '')) ?: $adminUsername;
+        }
+        if (!$escalateAdmin && !empty($designatedAdminUsername)) {
+            $escalateAdmin = Capsule::table('tbladmins')->where('username', $designatedAdminUsername)->first();
+        }
+        if (!$escalateAdmin) {
+            $escalateAdmin = Capsule::table('tbladmins')->where('disabled', 0)->first();
+        }
+
+        $adminUsername = '';
+        $adminDisplayName = '';
+        if ($escalateAdmin) {
+            $adminUsername = $escalateAdmin->username;
+            $adminDisplayName = trim(($escalateAdmin->firstname ?? '') . ' ' . ($escalateAdmin->lastname ?? ''));
+            if (empty($adminDisplayName)) {
+                $adminDisplayName = $adminUsername;
             }
         }
 
@@ -1281,11 +1293,14 @@ class ChatService
                 $ticketId = (int) ($res['id'] ?? 0);
                 $tid = (string) ($res['tid'] ?? '');
 
-                // Ensure ticket is assigned / attributed to designated admin account
-                if ($ticketId > 0 && $escalateAdmin) {
+                // Ensure ticket and replies are attributed to designated admin Full Name (never raw username to client)
+                if ($ticketId > 0 && !empty($adminDisplayName)) {
                     try {
                         Capsule::table('tbltickets')->where('id', $ticketId)->update([
-                            'flag'  => $escalateAdmin->id,
+                            'admin' => $adminDisplayName,
+                            'flag'  => $escalateAdmin ? (int)$escalateAdmin->id : 0,
+                        ]);
+                        Capsule::table('tblticketreplies')->where('tid', $ticketId)->update([
                             'admin' => $adminDisplayName,
                         ]);
                     } catch (\Throwable $e) {}
@@ -3639,15 +3654,57 @@ class ChatService
                 $apiValues['email'] = $clientEmail;
             }
 
+            // Resolve creator administrator identity & Full Name
+            $convAdmin = null;
+            if ($adminId > 0) {
+                $convAdmin = Capsule::table('tbladmins')->where('id', $adminId)->first();
+            }
+            if (!$convAdmin) {
+                $designatedAdminId = (int) self::getChatSetting('client_chat_admin_id', 0);
+                $designatedAdminUsername = trim((string) self::getChatSetting('client_chat_admin_username', ''));
+                if ($designatedAdminId > 0) {
+                    $convAdmin = Capsule::table('tbladmins')->where('id', $designatedAdminId)->first();
+                }
+                if (!$convAdmin && !empty($designatedAdminUsername)) {
+                    $convAdmin = Capsule::table('tbladmins')->where('username', $designatedAdminUsername)->first();
+                }
+            }
+
+            $convUsername = $convAdmin ? $convAdmin->username : null;
+            $convFullName = '';
+            if ($convAdmin) {
+                $convFullName = trim(($convAdmin->firstname ?? '') . ' ' . ($convAdmin->lastname ?? ''));
+                if (empty($convFullName)) {
+                    $convFullName = $convAdmin->username;
+                }
+            }
+
+            if (!empty($convUsername)) {
+                $apiValues['adminusername'] = $convUsername;
+            }
+
             if (!function_exists('localAPI')) {
                 require_once dirname(__DIR__) . '/../../../init.php';
             }
 
-            $apiResult = localAPI('OpenTicket', $apiValues);
+            $apiResult = localAPI('OpenTicket', $apiValues, !empty($convUsername) ? $convUsername : null);
 
             if (isset($apiResult['result']) && $apiResult['result'] === 'success') {
                 $newTicketId = (int)($apiResult['id'] ?? ($apiResult['ticketid'] ?? 0));
                 $newTid = $apiResult['tid'] ?? (string)$newTicketId;
+
+                // Ensure admin Full Name is shown to clients instead of raw username
+                if ($newTicketId > 0 && !empty($convFullName)) {
+                    try {
+                        Capsule::table('tbltickets')->where('id', $newTicketId)->update([
+                            'admin' => $convFullName,
+                            'flag'  => $convAdmin ? (int)$convAdmin->id : 0,
+                        ]);
+                        Capsule::table('tblticketreplies')->where('tid', $newTicketId)->update([
+                            'admin' => $convFullName,
+                        ]);
+                    } catch (\Throwable $e) {}
+                }
 
                 Capsule::table('tblsahdev_chat_sessions')->where('id', $session->id)->update([
                     'status'        => 'escalated_ticket',

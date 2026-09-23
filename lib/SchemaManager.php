@@ -91,6 +91,7 @@ class SchemaManager
                 'client_chat_enabled'          => ['type' => 'boolean', 'default' => 1],
                 'client_chat_provider_id'      => ['type' => 'integer', 'default' => 0],
                 'client_chat_admin_id'         => ['type' => 'integer', 'default' => null, 'nullable' => true],
+                'client_chat_admin_username'   => ['type' => 'string', 'length' => 64, 'default' => null, 'nullable' => true],
                 'client_chat_department_id'    => ['type' => 'integer', 'default' => null, 'nullable' => true],
                 'client_chat_model_name'       => ['type' => 'string', 'length' => 128, 'default' => 'openai/gpt-4o-mini'],
                 'client_chat_title'            => ['type' => 'string', 'length' => 128, 'default' => 'Hosting Support Assistant'],

@@ -9113,10 +9113,17 @@ class AdminController
 
             // 1. Save Widget Customizer
             if (isset($_POST['save_client_chat_customizer']) || isset($_POST['save_client_chat'])) {
+                $chosenAdminId = (int) ($_POST['client_chat_admin_id'] ?? 0);
+                $chosenAdminUsername = null;
+                if ($chosenAdminId > 0) {
+                    $chosenAdminUsername = Capsule::table('tbladmins')->where('id', $chosenAdminId)->value('username');
+                }
+
                 Capsule::table('tblsahdev_settings')->where('id', $settingsId)->update([
                     'client_chat_enabled'           => !empty($_POST['client_chat_enabled']) ? 1 : 0,
                     'client_chat_provider_id'       => (int) ($_POST['client_chat_provider_id'] ?? 0),
-                    'client_chat_admin_id'          => (int) ($_POST['client_chat_admin_id'] ?? 0) ?: null,
+                    'client_chat_admin_id'          => $chosenAdminId ?: null,
+                    'client_chat_admin_username'    => $chosenAdminUsername ?: null,
                     'client_chat_department_id'     => (int) ($_POST['client_chat_department_id'] ?? 0) ?: null,
                     'client_chat_title'             => trim($_POST['client_chat_title'] ?? 'Hosting Support Assistant'),
                     'client_chat_logo'              => trim($_POST['client_chat_logo'] ?? '') ?: null,
@@ -11569,28 +11576,37 @@ class AdminController
                                         </div>
                                     </div>
 
-                                    <!-- Escalation Identity Card -->
-                                    <div class="panel panel-default" style="border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 18px;">
-                                        <div class="panel-heading" style="background: #f8fafc; font-weight: 600; padding: 10px 15px; font-size: 13px;">
-                                            <i class="fas fa-ticket-alt"></i> Ticket Escalation & Reply Identity
+                                    <!-- Escalation & Convert Ticket Identity Card -->
+                                    <div class="panel panel-default" style="border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
+                                        <div class="panel-heading" style="background: #f8fafc; font-weight: 700; padding: 12px 16px; font-size: 13.5px; border-bottom: 1px solid #e2e8f0;">
+                                            <i class="fas fa-ticket-alt text-primary"></i> Convert Ticket &amp; Escalation Staff Identity
                                         </div>
-                                        <div class="panel-body" style="padding: 15px;">
-                                            <div class="form-group" style="margin-bottom: 15px;">
-                                                <label>Reply as admin account <span class="text-danger">*</span></label>
-                                                <select name="client_chat_admin_id" class="form-control">
-                                                    <option value="0">— Select an admin account (or Auto System) —</option>
-                                                    <?php foreach ($allAdmins as $adm): ?>
-                                                        <option value="<?php echo (int)$adm->id; ?>" <?php echo ((int)($settings->client_chat_admin_id ?? 0) === (int)$adm->id) ? 'selected' : ''; ?>>
-                                                            <?php echo htmlspecialchars(trim($adm->firstname . ' ' . $adm->lastname) . ' (' . $adm->username . ')'); ?>
+                                        <div class="panel-body" style="padding: 18px;">
+                                            <div class="form-group" style="margin-bottom: 16px;">
+                                                <label style="font-weight: 700; color: #1e293b;">Designated Admin Account (Convert Ticket in Widget) <span class="text-danger">*</span></label>
+                                                <select name="client_chat_admin_id" id="client_chat_admin_id" class="form-control" style="font-weight: 600;">
+                                                    <option value="0">— Select an Admin Account (Auto System) —</option>
+                                                    <?php foreach ($allAdmins as $adm): 
+                                                        $fullName = trim(($adm->firstname ?? '') . ' ' . ($adm->lastname ?? ''));
+                                                        if (empty($fullName)) {
+                                                            $fullName = $adm->username;
+                                                        }
+                                                        $isSelected = ((int)($settings->client_chat_admin_id ?? 0) === (int)$adm->id)
+                                                            || (!empty($settings->client_chat_admin_username) && strtolower($settings->client_chat_admin_username) === strtolower($adm->username));
+                                                    ?>
+                                                        <option value="<?php echo (int)$adm->id; ?>" <?php echo $isSelected ? 'selected' : ''; ?>>
+                                                            <?php echo htmlspecialchars($fullName); ?>
                                                         </option>
                                                     <?php endforeach; ?>
                                                 </select>
-                                                <p class="help-block" style="font-size: 11.5px; margin-bottom: 0;">Designates which staff administrator account is credited as creator and assigned operator when live chat conversations are converted to support tickets (independent of Ticket Autopilot).</p>
+                                                <p class="help-block" style="font-size: 12px; margin-top: 6px; color: #64748b; line-height: 1.45;">
+                                                    <i class="fas fa-info-circle text-info"></i> Designates which staff administrator account is credited as creator and assigned operator when live chat conversations are converted to support tickets in the widget. In the admin area and WHMCS API, their admin username is securely linked in the background, but <strong>clients in the portal strictly only see this administrator's Full Name</strong>.
+                                                </p>
                                             </div>
 
                                             <div class="form-group" style="margin-bottom: 0;">
-                                                <label>Escalation Support Department</label>
-                                                <select name="client_chat_department_id" class="form-control">
+                                                <label style="font-weight: 700; color: #1e293b;">Default Escalation Department</label>
+                                                <select name="client_chat_department_id" class="form-control" style="font-weight: 600;">
                                                     <option value="0">— Auto-Detect General/Technical Support —</option>
                                                     <?php foreach ($allDepartments as $dept): ?>
                                                         <option value="<?php echo (int)$dept->id; ?>" <?php echo ((int)($settings->client_chat_department_id ?? 0) === (int)$dept->id) ? 'selected' : ''; ?>>
@@ -11598,7 +11614,9 @@ class AdminController
                                                         </option>
                                                     <?php endforeach; ?>
                                                 </select>
-                                                <p class="help-block" style="font-size: 11.5px; margin-bottom: 0;">Target WHMCS department where escalated live chat tickets are opened. If auto-detect is selected, customer inquiries automatically route to Technical/General Support instead of compliance or abuse.</p>
+                                                <p class="help-block" style="font-size: 12px; margin-top: 6px; color: #64748b; line-height: 1.45;">
+                                                    Target WHMCS department where escalated live chat tickets are opened. If auto-detect is selected, customer inquiries automatically route to Technical/General Support instead of compliance or abuse.
+                                                </p>
                                             </div>
                                         </div>
                                     </div>

@@ -15301,3 +15301,45 @@ add_hook('TicketUserReply', 1, function ($vars) {
         // Safe guard - never block WHMCS ticket replies
     }
 });
+
+// ---------------------------------------------------------------------------
+// Client Area ViewTicket: Ensure Admin Full Name is displayed instead of raw username
+// ---------------------------------------------------------------------------
+add_hook('ClientAreaPageViewTicket', 1, function ($vars) {
+    try {
+        if (!empty($vars['replies']) && is_array($vars['replies'])) {
+            static $adminNameMap = null;
+            if ($adminNameMap === null) {
+                $adminNameMap = [];
+                $admins = \WHMCS\Database\Capsule::table('tbladmins')
+                    ->select(['id', 'username', 'firstname', 'lastname'])
+                    ->get();
+                foreach ($admins as $a) {
+                    $fn = trim(($a->firstname ?? '') . ' ' . ($a->lastname ?? ''));
+                    if (!empty($fn)) {
+                        $adminNameMap[strtolower($a->username)] = $fn;
+                        $adminNameMap[(string)$a->id] = $fn;
+                    }
+                }
+            }
+
+            $modifiedReplies = $vars['replies'];
+            $hasChange = false;
+            foreach ($modifiedReplies as &$rep) {
+                if (!empty($rep['admin'])) {
+                    $adminKey = strtolower(trim($rep['admin']));
+                    if (isset($adminNameMap[$adminKey])) {
+                        $rep['admin'] = $adminNameMap[$adminKey];
+                        $hasChange = true;
+                    }
+                }
+            }
+            unset($rep);
+
+            if ($hasChange) {
+                return ['replies' => $modifiedReplies];
+            }
+        }
+    } catch (\Throwable $e) {}
+    return [];
+});
