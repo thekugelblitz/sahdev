@@ -42,7 +42,7 @@ class ThemeConfig {
         letterSpacing: -0.2,
       ),
     ),
-    cardTheme: CardTheme(
+    cardTheme: CardThemeData(
       color: Colors.white,
       elevation: 0,
       shape: RoundedRectangleBorder(
@@ -105,7 +105,7 @@ class ThemeConfig {
         letterSpacing: -0.2,
       ),
     ),
-    cardTheme: CardTheme(
+    cardTheme: CardThemeData(
       color: darkSurface,
       elevation: 0,
       shape: RoundedRectangleBorder(
@@ -180,7 +180,7 @@ class ThemeConfig {
         letterSpacing: -0.2,
       ),
     ),
-    cardTheme: CardTheme(
+    cardTheme: CardThemeData(
       color: amoledCard,
       elevation: 0,
       shape: RoundedRectangleBorder(

@@ -25,7 +25,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
   bool _notifyChats = true;
   bool _notifyTickets = true;
   bool _notifySystem = true;
-  String _alertMode = 'ringing';
+  String _alertMode = AudioService().alertMode;
   bool _notificationPermissionGranted = true;
 
   @override
@@ -47,7 +47,11 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
     if (state == AppLifecycleState.resumed) {
       _checkNotificationPermission();
       _audio.reloadPreferences().then((_) {
-        if (mounted) setState(() {});
+        if (mounted) {
+          setState(() {
+            _alertMode = _audio.alertMode;
+          });
+        }
       });
     }
   }
@@ -70,7 +74,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
         _notifyChats = prefs.getBool('pref_notify_chats') ?? true;
         _notifyTickets = prefs.getBool('pref_notify_tickets') ?? true;
         _notifySystem = prefs.getBool('pref_notify_system') ?? true;
-        _alertMode = prefs.getString('pref_alert_mode') ?? 'ringing';
+        _alertMode = prefs.getString('pref_alert_mode') ?? prefs.getString('alert_mode') ?? _audio.alertMode;
       });
     }
   }
@@ -127,9 +131,16 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
 
           const SizedBox(height: 18),
 
-          // Alert Duration & Vibration Card
-          _buildSectionHeader("PLAYBACK DURATION & VIBRATION"),
-          _buildDurationAndVibrationCard(theme, isAmoled),
+          // Playback Duration Card (Only shown when alert mode supports configurable duration)
+          if (_alertMode != 'chime') ...[
+            _buildSectionHeader("PLAYBACK DURATION"),
+            _buildPlaybackDurationCard(theme, isAmoled),
+            const SizedBox(height: 18),
+          ],
+
+          // Haptic Vibration Card
+          _buildSectionHeader("HAPTIC VIBRATION"),
+          _buildVibrationCard(theme, isAmoled),
 
           const SizedBox(height: 18),
 
@@ -424,14 +435,13 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
     );
   }
 
-  Widget _buildDurationAndVibrationCard(ThemeData theme, bool isAmoled) {
+  Widget _buildPlaybackDurationCard(ThemeData theme, bool isAmoled) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Sound Playback Duration
             const Row(
               children: [
                 Icon(Icons.timer_outlined, size: 18, color: Color(0xFF06B6D4)),
@@ -440,7 +450,10 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
               ],
             ),
             const SizedBox(height: 6),
-            const Text("Controls how long the audio repeats when summoned until dismissed", style: TextStyle(fontSize: 12, color: Colors.grey)),
+            const Text(
+              "Controls how long the audio repeats when summoned until dismissed",
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
             const SizedBox(height: 10),
             Wrap(
               spacing: 8,
@@ -454,12 +467,19 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                 _buildDurationChip(0, "Continuous Loop", theme),
               ],
             ),
+          ],
+        ),
+      ),
+    );
+  }
 
-            const SizedBox(height: 16),
-            const Divider(),
-            const SizedBox(height: 12),
-
-            // Vibration Pattern
+  Widget _buildVibrationCard(ThemeData theme, bool isAmoled) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
             const Row(
               children: [
                 Icon(Icons.vibration, size: 18, color: Color(0xFFF59E0B)),
@@ -468,7 +488,10 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
               ],
             ),
             const SizedBox(height: 6),
-            const Text("Haptic vibration cadence when an alert is fired", style: TextStyle(fontSize: 12, color: Colors.grey)),
+            const Text(
+              "Haptic vibration cadence when an alert is fired",
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
             const SizedBox(height: 10),
             Wrap(
               spacing: 8,
@@ -729,6 +752,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                 if (val != null) {
                   setState(() => _alertMode = val);
                   _setPreference('pref_alert_mode', val);
+                  _setPreference('alert_mode', val);
                   _audio.setAlertMode(val);
                   context.read<AuthProvider>().setAlertMode(val);
                 }
@@ -746,6 +770,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                 if (val != null) {
                   setState(() => _alertMode = val);
                   _setPreference('pref_alert_mode', val);
+                  _setPreference('alert_mode', val);
                   _audio.setAlertMode(val);
                   context.read<AuthProvider>().setAlertMode(val);
                 }

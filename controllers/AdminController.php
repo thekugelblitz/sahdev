@@ -13795,10 +13795,8 @@ class AdminController
                         document.title = '🚨 (1) LIVE SUMMON - Sahdev Console';
                     }
                 } else if (hasNewBackgroundMsg) {
-                    if (isConsoleFocused) {
-                        playSynthesizedSound('ping');
-                    } else {
-                        startAlertRing('chime', ALERT_DURATION);
+                    playSynthesizedSound('ping');
+                    if (!isConsoleFocused) {
                         document.title = '💬 New Message in Queue - Sahdev Console';
                     }
                 }
