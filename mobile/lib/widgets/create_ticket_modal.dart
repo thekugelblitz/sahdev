@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/ticket_provider.dart';
 import '../screens/ticket_detail_screen.dart';
+import '../services/api_service.dart';
 
 class CreateTicketModal extends StatefulWidget {
   final int? initialClientId;
@@ -41,7 +43,18 @@ class CreateTicketModal extends StatefulWidget {
 
 class _CreateTicketModalState extends State<CreateTicketModal> {
   final _formKey = GlobalKey<FormState>();
-  final _clientIdController = TextEditingController();
+  final ApiService _api = ApiService();
+
+  // Dynamic Client Search State
+  final _searchClientController = TextEditingController();
+  Timer? _debounceTimer;
+  bool _isSearchingClients = false;
+  String? _clientSearchError;
+  String _lastSearchQuery = '';
+  List<Map<String, dynamic>> _clientSearchResults = [];
+  Map<String, dynamic>? _selectedClient;
+  String? _clientValidationError;
+
   final _subjectController = TextEditingController();
   final _messageController = TextEditingController();
 
@@ -61,19 +74,108 @@ class _CreateTicketModalState extends State<CreateTicketModal> {
   void initState() {
     super.initState();
     if (widget.initialClientId != null && widget.initialClientId! > 0) {
-      _clientIdController.text = widget.initialClientId.toString();
+      _selectedClient = {
+        'id': widget.initialClientId,
+        'name': widget.initialClientName ?? 'Client #${widget.initialClientId}',
+      };
     }
   }
 
   @override
   void dispose() {
-    _clientIdController.dispose();
+    _debounceTimer?.cancel();
+    _searchClientController.dispose();
     _subjectController.dispose();
     _messageController.dispose();
     super.dispose();
   }
 
+  void _onClientSearchChanged(String query) {
+    _debounceTimer?.cancel();
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) {
+      setState(() {
+        _isSearchingClients = false;
+        _clientSearchError = null;
+        _clientSearchResults = [];
+        _lastSearchQuery = '';
+      });
+      return;
+    }
+
+    _debounceTimer = Timer(const Duration(milliseconds: 350), () {
+      _performClientSearch(trimmed);
+    });
+  }
+
+  Future<void> _performClientSearch(String query) async {
+    final auth = context.read<AuthProvider>();
+    if (auth.baseUrl == null || auth.token == null) return;
+
+    setState(() {
+      _isSearchingClients = true;
+      _clientSearchError = null;
+      _lastSearchQuery = query;
+    });
+
+    try {
+      final res = await _api.getClients(
+        baseUrl: auth.baseUrl!,
+        token: auth.token!,
+        search: query,
+        limit: 10,
+      );
+
+      if (!mounted) return;
+
+      if (res.success && res.data != null) {
+        final rawList = res.data!['clients'] as List<dynamic>? ?? [];
+        setState(() {
+          _clientSearchResults = rawList.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+          _isSearchingClients = false;
+        });
+      } else {
+        setState(() {
+          _clientSearchError = res.message ?? 'Failed to search clients';
+          _clientSearchResults = [];
+          _isSearchingClients = false;
+        });
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _clientSearchError = 'Network error: $e';
+        _clientSearchResults = [];
+        _isSearchingClients = false;
+      });
+    }
+  }
+
+  void _selectClient(Map<String, dynamic> client) {
+    setState(() {
+      _selectedClient = client;
+      _clientSearchResults = [];
+      _searchClientController.clear();
+      _clientSearchError = null;
+      _clientValidationError = null;
+    });
+  }
+
   Future<void> _submitTicket() async {
+    final selectedId = (_selectedClient?['id'] as num?)?.toInt();
+    if (selectedId == null || selectedId <= 0) {
+      setState(() => _clientValidationError = 'Please select a client');
+      HapticFeedback.vibrate();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please search and select a client first'),
+          backgroundColor: Color(0xFFEF4444),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
     if (!_formKey.currentState!.validate()) {
       HapticFeedback.vibrate();
       return;
@@ -87,14 +189,6 @@ class _CreateTicketModalState extends State<CreateTicketModal> {
       return;
     }
 
-    final clientId = int.tryParse(_clientIdController.text.trim());
-    if (clientId == null || clientId <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a valid Client ID')),
-      );
-      return;
-    }
-
     HapticFeedback.lightImpact();
     setState(() => _isSubmitting = true);
 
@@ -103,7 +197,7 @@ class _CreateTicketModalState extends State<CreateTicketModal> {
       final result = await ticketProv.createTicket(
         baseUrl: auth.baseUrl!,
         token: auth.token!,
-        clientId: clientId,
+        clientId: selectedId,
         deptId: _selectedDeptId,
         subject: _subjectController.text.trim(),
         message: _messageController.text.trim(),
@@ -171,6 +265,11 @@ class _CreateTicketModalState extends State<CreateTicketModal> {
     if (_selectedDeptId == null && depts.isNotEmpty) {
       _selectedDeptId = (depts.first['id'] as num?)?.toInt() ?? 1;
     }
+
+    final selectedId = (_selectedClient?['id'] as num?)?.toInt();
+    final clientName = _selectedClient?['name']?.toString() ?? (selectedId != null ? 'Client #$selectedId' : '');
+    final clientEmail = _selectedClient?['email']?.toString() ?? '';
+    final clientCompany = _selectedClient?['company']?.toString() ?? '';
 
     return Container(
       decoration: BoxDecoration(
@@ -247,24 +346,255 @@ class _CreateTicketModalState extends State<CreateTicketModal> {
               ),
               const SizedBox(height: 18),
 
-              // Client ID Input
-              TextFormField(
-                controller: _clientIdController,
-                keyboardType: TextInputType.number,
-                enabled: widget.initialClientId == null,
-                decoration: InputDecoration(
-                  labelText: 'Client ID *',
-                  hintText: 'e.g. 1042',
-                  prefixIcon: const Icon(Icons.person_outline, size: 20),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              // Dynamic Client Selector / Search Component
+              if (_selectedClient != null) ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primary.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: theme.colorScheme.primary.withOpacity(0.35)),
+                  ),
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 18,
+                        backgroundColor: theme.colorScheme.primary.withOpacity(0.2),
+                        child: Text(
+                          clientName.isNotEmpty ? clientName[0].toUpperCase() : 'C',
+                          style: TextStyle(fontWeight: FontWeight.bold, color: theme.colorScheme.primary),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    clientName,
+                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                                  decoration: BoxDecoration(
+                                    color: theme.colorScheme.primary.withOpacity(0.18),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Text(
+                                    '#$selectedId',
+                                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: theme.colorScheme.primary),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            if (clientEmail.isNotEmpty || clientCompany.isNotEmpty) ...[
+                              const SizedBox(height: 2),
+                              Text(
+                                [if (clientCompany.isNotEmpty && clientCompany != 'Individual') clientCompany, if (clientEmail.isNotEmpty) clientEmail].join(' • '),
+                                style: const TextStyle(fontSize: 12, color: Colors.grey),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      TextButton.icon(
+                        onPressed: () {
+                          setState(() {
+                            _selectedClient = null;
+                            _clientSearchResults = [];
+                            _searchClientController.clear();
+                          });
+                        },
+                        icon: const Icon(Icons.swap_horiz, size: 16),
+                        label: const Text('Change', style: TextStyle(fontSize: 12)),
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                validator: (val) {
-                  if (val == null || val.trim().isEmpty) return 'Client ID is required';
-                  if (int.tryParse(val.trim()) == null) return 'Must be a valid number';
-                  return null;
-                },
-              ),
+              ] else ...[
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    TextFormField(
+                      controller: _searchClientController,
+                      onChanged: _onClientSearchChanged,
+                      decoration: InputDecoration(
+                        labelText: 'Client *',
+                        hintText: 'Search by client name, email, company, or ID...',
+                        prefixIcon: const Icon(Icons.person_search_outlined, size: 20),
+                        suffixIcon: _isSearchingClients
+                            ? const Padding(
+                                padding: EdgeInsets.all(12),
+                                child: SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                ),
+                              )
+                            : (_searchClientController.text.isNotEmpty
+                                ? IconButton(
+                                    icon: const Icon(Icons.clear, size: 18),
+                                    onPressed: () {
+                                      _searchClientController.clear();
+                                      _onClientSearchChanged('');
+                                    },
+                                  )
+                                : null),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        errorText: _clientValidationError,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      ),
+                    ),
+                    if (_isSearchingClients) ...[
+                      const SizedBox(height: 8),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: Row(
+                          children: const [
+                            SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 1.8),
+                            ),
+                            SizedBox(width: 8),
+                            Text(
+                              'Searching clients...',
+                              style: TextStyle(fontSize: 12, color: Colors.grey),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    if (_clientSearchError != null) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.red.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.red.withOpacity(0.3)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.error_outline, color: Colors.red, size: 18),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                _clientSearchError!,
+                                style: const TextStyle(fontSize: 12, color: Colors.red),
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: () => _performClientSearch(_lastSearchQuery),
+                              child: const Text('Retry', style: TextStyle(fontSize: 12, color: Colors.red, fontWeight: FontWeight.bold)),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    if (!_isSearchingClients && _clientSearchError == null && _lastSearchQuery.isNotEmpty && _clientSearchResults.isEmpty) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: isAmoled ? const Color(0xFF141A29) : theme.cardColor,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: theme.dividerColor),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.info_outline, size: 16, color: Colors.grey),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'No clients found matching "$_lastSearchQuery"',
+                                style: const TextStyle(fontSize: 12, color: Colors.grey),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    if (_clientSearchResults.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        constraints: const BoxConstraints(maxHeight: 200),
+                        decoration: BoxDecoration(
+                          color: isAmoled ? const Color(0xFF141A29) : theme.cardColor,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: theme.colorScheme.primary.withOpacity(0.3)),
+                        ),
+                        child: ListView.separated(
+                          shrinkWrap: true,
+                          padding: EdgeInsets.zero,
+                          itemCount: _clientSearchResults.length,
+                          separatorBuilder: (_, __) => Divider(height: 1, color: theme.dividerColor.withOpacity(0.5)),
+                          itemBuilder: (context, idx) {
+                            final client = _clientSearchResults[idx];
+                            final name = client['name']?.toString() ?? 'Client #${client['id']}';
+                            final id = client['id']?.toString() ?? '';
+                            final email = client['email']?.toString() ?? '';
+                            final company = client['company']?.toString() ?? '';
+                            return ListTile(
+                              dense: true,
+                              leading: CircleAvatar(
+                                radius: 14,
+                                backgroundColor: theme.colorScheme.primary.withOpacity(0.15),
+                                child: Text(
+                                  name.isNotEmpty ? name[0].toUpperCase() : 'C',
+                                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: theme.colorScheme.primary),
+                                ),
+                              ),
+                              title: Row(
+                                children: [
+                                  Flexible(
+                                    child: Text(
+                                      name,
+                                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                    decoration: BoxDecoration(
+                                      color: theme.colorScheme.primary.withOpacity(0.15),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      '#$id',
+                                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: theme.colorScheme.primary),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              subtitle: Text(
+                                [if (company.isNotEmpty && company != 'Individual') company, if (email.isNotEmpty) email].join(' • '),
+                                style: const TextStyle(fontSize: 11, color: Colors.grey),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              onTap: () => _selectClient(client),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
               const SizedBox(height: 14),
 
               // Department Dropdown

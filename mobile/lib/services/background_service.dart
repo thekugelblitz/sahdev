@@ -117,16 +117,7 @@ class BackgroundService {
                   sessionId: sessionId,
                 );
 
-                final prefs = await SharedPreferences.getInstance();
-                final currentAlertMode = prefs.getString('pref_alert_mode') ?? _alertMode;
-
-                if (currentAlertMode == 'ringing') {
-                  if (!_audio.isRinging) {
-                    await _audio.playNotificationSound(isUrgent: true);
-                  }
-                } else {
-                  await _audio.playNotificationSound(isUrgent: false);
-                }
+                await _audio.playForNotificationEvent(NotificationEventType.chatSummon);
                 _lastAlertTimestamp = now;
               }
             }

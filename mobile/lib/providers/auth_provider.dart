@@ -33,7 +33,7 @@ class AuthProvider extends ChangeNotifier {
     _baseUrl = prefs.getString(ApiConfig.keyWhmcsUrl);
     _token = prefs.getString(ApiConfig.keyMobileToken);
     _isOnline = prefs.getBool(ApiConfig.keyIsOnline) ?? true;
-    _alertMode = prefs.getString(ApiConfig.keyAlertMode) ?? 'ringing';
+    _alertMode = prefs.getString('pref_alert_mode') ?? prefs.getString(ApiConfig.keyAlertMode) ?? 'ringing';
 
     final userJson = prefs.getString(ApiConfig.keyAdminUser);
     if (userJson != null) {
@@ -181,6 +181,7 @@ class AuthProvider extends ChangeNotifier {
     _alertMode = mode;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(ApiConfig.keyAlertMode, _alertMode);
+    await prefs.setString('pref_alert_mode', _alertMode);
     BackgroundService().setAlertMode(_alertMode);
     notifyListeners();
   }

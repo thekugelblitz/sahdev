@@ -11160,6 +11160,17 @@ class AdminController
                                                             <i class="fas fa-edit text-warning"></i> Edit
                                                         </button>
 
+                                                        <?php if ($ws->source_type === 'url' && $ws->sync_status === 'error'): ?>
+                                                            <button type="button" class="btn btn-default btn-xs btn-paste-json"
+                                                                data-id="<?php echo (int)$ws->id; ?>"
+                                                                data-name="<?php echo htmlspecialchars($ws->name); ?>"
+                                                                data-url="<?php echo htmlspecialchars($ws->source_url ?? ''); ?>"
+                                                                data-enabled="<?php echo (int)$ws->is_enabled; ?>"
+                                                                title="Cloudflare/WAF blocked server sync? Click to import via browser or paste JSON">
+                                                                <i class="fas fa-keyboard text-success"></i> Paste JSON
+                                                            </button>
+                                                        <?php endif; ?>
+
                                                         <form method="post" action="<?php echo $baseActionUrl; ?>&tab=datasources" style="display: inline-block; margin: 0;" onsubmit="return confirm('Are you sure you want to delete this website data source?');">
                                                             <?php echo $csrfToken; ?>
                                                             <input type="hidden" name="delete_website_datasource" value="1">
@@ -11216,10 +11227,18 @@ class AdminController
 
                                     <div id="addWsUrlGroup" class="form-group">
                                         <label style="font-weight: 600; color: #1e293b;">JSON Summary URL <span class="text-danger">*</span></label>
-                                        <input type="url" name="source_url" class="form-control" placeholder="https://hostingspell.com/ai-summary" style="border-radius: 6px;">
+                                        <div class="input-group">
+                                            <input type="url" name="source_url" id="add_ws_url" class="form-control" placeholder="https://hostingspell.com/ai-summary" style="border-radius: 6px 0 0 6px;">
+                                            <span class="input-group-btn">
+                                                <button type="button" class="btn btn-default" id="btnAddFetchBrowser" style="border-radius: 0 6px 6px 0; font-weight: 600;" title="Fetch directly in your browser to bypass server-side IP blocks and preview content">
+                                                    <i class="fas fa-cloud-download-alt text-primary"></i> Fetch via Browser
+                                                </button>
+                                            </span>
+                                        </div>
                                         <span class="help-block" style="font-size: 11.5px;">
-                                            Direct link to your website's AI summary JSON (e.g. <code>https://hostingspell.com/ai-summary</code>). Sahdev will fetch, validate, and cache it automatically.
+                                            Direct link to your website's AI summary JSON (e.g. <code>https://hostingspell.com/ai-summary</code>). Sahdev fetches, validates, and caches it automatically. If your host blocks server IPs, use <strong>Fetch via Browser</strong> to import it immediately.
                                         </span>
+                                        <div id="addWsFetchFeedback" style="display: none; margin-top: 8px;"></div>
                                     </div>
 
                                     <div id="addWsCustomGroup" class="form-group" style="display: none;">
@@ -11284,8 +11303,16 @@ class AdminController
 
                                     <div id="editWsUrlGroup" class="form-group">
                                         <label style="font-weight: 600; color: #1e293b;">JSON Summary URL</label>
-                                        <input type="url" name="source_url" id="edit_ws_url" class="form-control" style="border-radius: 6px;">
-                                        <span class="help-block" style="font-size: 11.5px;">Saving a changed URL will trigger a re-sync automatically.</span>
+                                        <div class="input-group">
+                                            <input type="url" name="source_url" id="edit_ws_url" class="form-control" style="border-radius: 6px 0 0 6px;">
+                                            <span class="input-group-btn">
+                                                <button type="button" class="btn btn-default" id="btnEditFetchBrowser" style="border-radius: 0 6px 6px 0; font-weight: 600;" title="Fetch directly in your browser to bypass server-side IP blocks and preview content">
+                                                    <i class="fas fa-cloud-download-alt text-primary"></i> Fetch via Browser
+                                                </button>
+                                            </span>
+                                        </div>
+                                        <span class="help-block" style="font-size: 11.5px;">Saving a changed URL triggers a re-sync automatically. Or click <strong>Fetch via Browser</strong> to import directly into Custom Input.</span>
+                                        <div id="editWsFetchFeedback" style="display: none; margin-top: 8px;"></div>
                                     </div>
 
                                     <div id="editWsCustomGroup" class="form-group" style="display: none;">
@@ -11386,6 +11413,73 @@ class AdminController
                         $('#previewWsTitle').text(name);
                         $('#previewWsContent').text(content || '(Empty content. Click "Sync" to fetch from URL.)');
                         $('#modalPreviewWebsiteSource').modal('show');
+                    });
+
+                    // Browser fetch helper
+                    function handleBrowserFetch(urlInputId, customTextareaId, radioCustomId, toggleFn, feedbackDivId, btnId) {
+                        var url = $(urlInputId).val().trim();
+                        if (!url) {
+                            alert('Please enter a valid URL first.');
+                            $(urlInputId).focus();
+                            return;
+                        }
+                        var $btn = $(btnId);
+                        var $feedback = $(feedbackDivId);
+                        var origHtml = $btn.html();
+                        $btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Fetching...');
+                        $feedback.show().html('<div class="alert alert-info" style="padding: 8px 12px; font-size: 12px; margin-bottom: 0;"><i class="fas fa-spinner fa-spin"></i> Requesting URL directly from your browser...</div>');
+
+                        fetch(url, {
+                            method: 'GET',
+                            headers: { 'Accept': 'application/json, text/plain, */*' }
+                        })
+                        .then(function(res) {
+                            if (!res.ok) {
+                                throw new Error('HTTP ' + res.status + ' ' + res.statusText);
+                            }
+                            return res.text();
+                        })
+                        .then(function(rawText) {
+                            try {
+                                var parsed = JSON.parse(rawText);
+                                rawText = JSON.stringify(parsed, null, 2);
+                            } catch(e) {}
+                            $(customTextareaId).val(rawText);
+                            $(radioCustomId).prop('checked', true);
+                            toggleFn('custom');
+                            $btn.prop('disabled', false).html(origHtml);
+                            $feedback.html('<div class="alert alert-success" style="padding: 8px 12px; font-size: 12px; margin-bottom: 0;"><i class="fas fa-check-circle"></i> Successfully imported ' + rawText.length + ' bytes! Switched to Custom Input. Click "Save Changes" to store.</div>');
+                        })
+                        .catch(function(err) {
+                            $btn.prop('disabled', false).html(origHtml);
+                            $feedback.html('<div class="alert alert-warning" style="padding: 8px 12px; font-size: 12px; margin-bottom: 0;"><i class="fas fa-exclamation-triangle"></i> Browser note: ' + err.message + '. If CORS prevents direct browser fetch, open <a href="' + url + '" target="_blank" style="font-weight:bold; text-decoration:underline;">' + url + '</a> in a new tab, copy the JSON, and paste it into Custom Input.</div>');
+                        });
+                    }
+
+                    $('#btnAddFetchBrowser').on('click', function() {
+                        handleBrowserFetch('#add_ws_url', 'textarea[name="custom_content"]', 'input[name="source_type"][value="custom"]', toggleAddWsType, '#addWsFetchFeedback', '#btnAddFetchBrowser');
+                    });
+
+                    $('#btnEditFetchBrowser').on('click', function() {
+                        handleBrowserFetch('#edit_ws_url', '#edit_ws_custom', '#edit_ws_type_custom', toggleEditWsType, '#editWsFetchFeedback', '#btnEditFetchBrowser');
+                    });
+
+                    // Quick Paste JSON button handler
+                    $('.btn-paste-json').on('click', function() {
+                        var id = $(this).data('id');
+                        var name = $(this).data('name');
+                        var url = $(this).data('url');
+                        var enabled = $(this).data('enabled');
+
+                        $('#edit_ws_id').val(id);
+                        $('#edit_ws_name').val(name);
+                        $('#edit_ws_url').val(url);
+                        $('#edit_ws_type_custom').prop('checked', true);
+                        toggleEditWsType('custom');
+                        $('#edit_ws_enabled').prop('checked', enabled == 1);
+                        $('#editWsFetchFeedback').show().html('<div class="alert alert-info" style="padding: 8px 12px; font-size: 12px; margin-bottom: 0;"><i class="fas fa-info-circle"></i> Paste your JSON below (or click "Fetch via Browser"), then click "Save Changes".</div>');
+                        $('#modalEditWebsiteSource').modal('show');
+                        setTimeout(function() { $('#edit_ws_custom').focus(); }, 300);
                     });
                 });
                 </script>

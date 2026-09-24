@@ -11,6 +11,8 @@ class TicketProvider extends ChangeNotifier {
     'awaiting_reply': 0,
     'open': 0,
     'customer_reply': 0,
+    'in_progress': 0,
+    'on_hold': 0,
     'answered': 0,
     'closed': 0,
     'total': 0,
@@ -91,9 +93,12 @@ class TicketProvider extends ChangeNotifier {
 
         final rawCounts = data['counts'] as Map<String, dynamic>?;
         if (rawCounts != null) {
-          final newCounts = <String, int>{};
+          final newCounts = Map<String, int>.from(_counts);
           rawCounts.forEach((k, v) {
-            newCounts[k] = (v as num?)?.toInt() ?? 0;
+            final val = (v as num?)?.toInt() ?? 0;
+            final normK = k.toLowerCase().replaceAll(RegExp(r'[ -]'), '_');
+            newCounts[normK] = val;
+            newCounts[k] = val;
           });
           _counts = newCounts;
         }

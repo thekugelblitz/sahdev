@@ -47,6 +47,12 @@ void main() {
       },
     );
 
+    // Mock flutter/assets message handler
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMessageHandler('flutter/assets', (ByteData? message) async {
+      return ByteData(0);
+    });
+
     // Mock flutter_local_notifications channel
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
@@ -69,6 +75,8 @@ void main() {
         .setMockMethodCallHandler(const MethodChannel('vibration'), null);
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(const MethodChannel('plugins.flutter.io/path_provider'), null);
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMessageHandler('flutter/assets', null);
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(const MethodChannel('dexterous.com/flutter/local_notifications'), null);
   });
@@ -122,6 +130,51 @@ void main() {
 
     test('stopAlertRing resets isRinging state and cancels ring timer', () async {
       final audioService = AudioService();
+      await audioService.stopAlertRing();
+      expect(audioService.isRinging, isFalse);
+    });
+
+    test('Single Notification Chime duration is strictly 1 second and cannot be overridden by alarm duration', () async {
+      final audioService = AudioService();
+      expect(AudioService.chimeDurationSeconds, equals(1));
+
+      // Configure alarm duration to 30 seconds and mode to 'chime'
+      await audioService.setAlertDuration(30);
+      await audioService.setAlertMode('chime');
+      expect(audioService.alertMode, equals('chime'));
+      expect(audioService.alertDurationSeconds, equals(30));
+
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('pref_alert_mode'), equals('chime'));
+
+      // Play for chat summon while in chime mode
+      await audioService.playForNotificationEvent(NotificationEventType.chatSummon);
+      // In chime mode, sound is played as a 1s release chime, not a continuous ringing loop
+      expect(audioService.isRinging, isFalse);
+    });
+
+    test('Notification event types are separated: ticket, normal chat, and standard use 1s default timing', () async {
+      final audioService = AudioService();
+      await audioService.setAlertMode('ring');
+      await audioService.setAlertDuration(15);
+
+      // Normal ticket message does NOT use continuous ringing
+      await audioService.playForNotificationEvent(NotificationEventType.ticketMessage);
+      expect(audioService.isRinging, isFalse);
+
+      // Normal chat message does NOT use continuous ringing
+      await audioService.playForNotificationEvent(NotificationEventType.normalChat);
+      expect(audioService.isRinging, isFalse);
+
+      // Standard notification does NOT use continuous ringing
+      await audioService.playForNotificationEvent(NotificationEventType.standard);
+      expect(audioService.isRinging, isFalse);
+
+      // Only Chat Summon (and explicit alarmContinuous) enters continuous ringing state
+      await audioService.playForNotificationEvent(NotificationEventType.chatSummon);
+      expect(audioService.isRinging, isTrue);
+
+      // Stop ringing
       await audioService.stopAlertRing();
       expect(audioService.isRinging, isFalse);
     });

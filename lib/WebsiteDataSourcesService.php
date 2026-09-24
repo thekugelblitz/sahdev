@@ -194,27 +194,9 @@ class WebsiteDataSourcesService
             return ['success' => false, 'error' => 'Invalid or empty URL provided.'];
         }
 
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $url);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-        curl_setopt($ch, CURLOPT_MAXREDIRS, 4);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 12);
-        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 6);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, [
-            'Accept: application/json, text/plain, */*',
-            'User-Agent: Sahdev-AI-Bot/2.0 (WHMCS Presales Assistant)'
-        ]);
-
-        $response = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $curlErr  = curl_error($ch);
-        curl_close($ch);
-
-        if (!empty($curlErr)) {
-            $err = "Connection failed: {$curlErr}";
+        $fetchRes = self::fetchRemoteContent($url);
+        if (empty($fetchRes['success'])) {
+            $err = $fetchRes['error'] ?? 'Failed to fetch content from URL.';
             Capsule::table('tblsahdev_website_datasources')->where('id', $sourceId)->update([
                 'sync_status' => 'error',
                 'sync_error'  => $err,
@@ -223,17 +205,7 @@ class WebsiteDataSourcesService
             return ['success' => false, 'error' => $err];
         }
 
-        if ($httpCode < 200 || $httpCode >= 300) {
-            $err = "HTTP request returned status code {$httpCode}.";
-            Capsule::table('tblsahdev_website_datasources')->where('id', $sourceId)->update([
-                'sync_status' => 'error',
-                'sync_error'  => $err,
-                'updated_at'  => $now,
-            ]);
-            return ['success' => false, 'error' => $err];
-        }
-
-        $trimmed = trim((string)$response);
+        $trimmed = trim((string)$fetchRes['body']);
         if (empty($trimmed)) {
             $err = "Remote URL returned an empty response.";
             Capsule::table('tblsahdev_website_datasources')->where('id', $sourceId)->update([
@@ -247,9 +219,13 @@ class WebsiteDataSourcesService
         // Validate JSON
         $decoded = json_decode($trimmed, true);
         if (json_last_error() !== JSON_ERROR_NONE) {
-            // Check if it's HTML error page
-            if (stripos($trimmed, '<html') !== false) {
-                $err = "Remote URL returned HTML instead of a JSON summary.";
+            // Check if it's HTML error or Cloudflare challenge page
+            if (stripos($trimmed, '<html') !== false || stripos($trimmed, '<!doctype') !== false) {
+                if (stripos($trimmed, 'cloudflare') !== false || stripos($trimmed, 'challenge') !== false || stripos($trimmed, 'turnstile') !== false) {
+                    $err = "Remote URL returned a Cloudflare security challenge (HTML). Please switch to 'Custom Input' and paste the JSON directly.";
+                } else {
+                    $err = "Remote URL returned HTML instead of a JSON summary.";
+                }
             } else {
                 $err = "Invalid JSON returned: " . json_last_error_msg();
             }
@@ -276,6 +252,146 @@ class WebsiteDataSourcesService
             'success' => true,
             'message' => "Successfully synchronized ({$kb} KB cached).",
             'bytes'   => $bytes,
+        ];
+    }
+
+    /**
+     * Fetch remote URL content using multi-tiered resilient strategies.
+     * Tier 1: cURL with modern Chrome/Windows user agent, HTTP/2 TLS, gzip/deflate decoding, standard browser headers.
+     * Tier 2: cURL with macOS/Safari user agent.
+     * Tier 3: Native PHP stream context (file_get_contents).
+     */
+    public static function fetchRemoteContent(string $url): array
+    {
+        $agents = [
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15',
+        ];
+
+        $headers = [
+            'Accept: application/json, text/plain, text/html;q=0.9, */*;q=0.8',
+            'Accept-Language: en-US,en;q=0.9',
+            'Cache-Control: no-cache',
+            'Pragma: no-cache',
+            'Sec-Ch-Ua: "Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+            'Sec-Ch-Ua-Mobile: ?0',
+            'Sec-Ch-Ua-Platform: "Windows"',
+            'Sec-Fetch-Dest: empty',
+            'Sec-Fetch-Mode: cors',
+            'Sec-Fetch-Site: cross-site',
+        ];
+
+        $lastHttpCode = null;
+        $lastError = null;
+
+        // Try cURL passes with realistic browser signatures
+        if (function_exists('curl_init')) {
+            foreach ($agents as $userAgent) {
+                $ch = curl_init();
+                curl_setopt($ch, CURLOPT_URL, $url);
+                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+                curl_setopt($ch, CURLOPT_MAXREDIRS, 5);
+                curl_setopt($ch, CURLOPT_TIMEOUT, 15);
+                curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 8);
+                curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+                curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+                curl_setopt($ch, CURLOPT_ENCODING, ''); // Auto-handle gzip, deflate, br
+                curl_setopt($ch, CURLOPT_USERAGENT, $userAgent);
+                if (defined('CURL_HTTP_VERSION_2TLS')) {
+                    curl_setopt($ch, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2TLS);
+                } elseif (defined('CURL_HTTP_VERSION_2_0')) {
+                    curl_setopt($ch, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2_0);
+                }
+                curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+
+                $response = curl_exec($ch);
+                $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                $curlErr  = curl_error($ch);
+                curl_close($ch);
+
+                if (!empty($curlErr)) {
+                    $lastError = "Connection failed: {$curlErr}";
+                    continue;
+                }
+
+                $lastHttpCode = $httpCode;
+                if ($httpCode >= 200 && $httpCode < 300) {
+                    $trimmed = trim((string)$response);
+                    if (!empty($trimmed)) {
+                        return [
+                            'success'   => true,
+                            'body'      => $trimmed,
+                            'http_code' => $httpCode,
+                            'method'    => 'curl',
+                        ];
+                    }
+                }
+
+                $lastError = "HTTP {$httpCode}";
+            }
+        }
+
+        // Tier 3: Native PHP stream context (file_get_contents) fallback
+        if (ini_get('allow_url_fopen')) {
+            $streamContext = stream_context_create([
+                'http' => [
+                    'method'          => 'GET',
+                    'header'          => "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36\r\n" .
+                                         "Accept: application/json, text/plain, */*\r\n" .
+                                         "Accept-Language: en-US,en;q=0.9\r\n" .
+                                         "Connection: close\r\n",
+                    'timeout'         => 15,
+                    'follow_location' => 1,
+                    'max_redirects'   => 5,
+                    'ignore_errors'   => true,
+                ],
+                'ssl' => [
+                    'verify_peer'      => false,
+                    'verify_peer_name' => false,
+                ],
+            ]);
+
+            $content = @file_get_contents($url, false, $streamContext);
+            if ($content !== false) {
+                $statusCode = 200;
+                if (isset($http_response_header) && is_array($http_response_header)) {
+                    foreach ($http_response_header as $hdr) {
+                        if (preg_match('#HTTP/\S+\s+(\d{3})#i', $hdr, $m)) {
+                            $statusCode = (int)$m[1];
+                        }
+                    }
+                }
+                $lastHttpCode = $statusCode;
+                if ($statusCode >= 200 && $statusCode < 300) {
+                    $trimmed = trim((string)$content);
+                    if (!empty($trimmed)) {
+                        return [
+                            'success'   => true,
+                            'body'      => $trimmed,
+                            'http_code' => $statusCode,
+                            'method'    => 'stream',
+                        ];
+                    }
+                }
+            }
+        }
+
+        // Construct friendly, actionable error message
+        if ($lastHttpCode === 403) {
+            $friendlyErr = "HTTP 403 Forbidden: Remote server or Cloudflare/WAF blocked server request. Tip: Switch Type to 'Custom Input' and paste JSON directly, or click 'Fetch via Browser'.";
+        } elseif ($lastHttpCode === 404) {
+            $friendlyErr = "HTTP 404 Not Found: The specified URL does not exist or has moved.";
+        } elseif ($lastHttpCode !== null && $lastHttpCode > 0) {
+            $friendlyErr = "HTTP request returned status code {$lastHttpCode}.";
+        } else {
+            $friendlyErr = $lastError ?? "Unable to reach remote URL.";
+        }
+
+        return [
+            'success'   => false,
+            'error'     => $friendlyErr,
+            'http_code' => $lastHttpCode,
         ];
     }
 

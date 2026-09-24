@@ -6,6 +6,25 @@ import '../providers/ticket_provider.dart';
 import '../widgets/create_ticket_modal.dart';
 import 'ticket_detail_screen.dart';
 
+class _TicketStatusConfig {
+  final String label;
+  final String key;
+  final Color defaultColor;
+
+  const _TicketStatusConfig(this.label, this.key, this.defaultColor);
+}
+
+final List<_TicketStatusConfig> _whmcsStandardStatuses = const [
+  _TicketStatusConfig('Awaiting Reply', 'awaiting_reply', Color(0xFFEF4444)),
+  _TicketStatusConfig('Open', 'open', Color(0xFF779500)),
+  _TicketStatusConfig('Customer-Reply', 'customer_reply', Color(0xFFEF4444)),
+  _TicketStatusConfig('In Progress', 'in_progress', Color(0xFF990000)),
+  _TicketStatusConfig('On Hold', 'on_hold', Color(0xFF224488)),
+  _TicketStatusConfig('Answered', 'answered', Color(0xFF64748B)),
+  _TicketStatusConfig('Closed', 'closed', Color(0xFF6B7280)),
+  _TicketStatusConfig('All', 'all', Color(0xFF38BDF8)),
+];
+
 class TicketsScreen extends StatefulWidget {
   const TicketsScreen({super.key});
 
@@ -133,51 +152,31 @@ class _TicketsScreenState extends State<TicketsScreen> {
               // Status Filter Chips
               SizedBox(
                 height: 48,
-                child: ListView(
+                child: ListView.separated(
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                  children: [
-                    _buildFilterChip(
-                      'Awaiting Reply',
-                      'awaiting_reply',
-                      ticketProv.counts['awaiting_reply'] ?? 0,
+                  itemCount: _whmcsStandardStatuses.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 8),
+                  itemBuilder: (context, index) {
+                    final cfg = _whmcsStandardStatuses[index];
+                    final count = cfg.key == 'all'
+                        ? (ticketProv.counts['total'] ?? ticketProv.totalTickets)
+                        : (ticketProv.counts[cfg.key] ?? 0);
+                    final badgeColor = _getStatusBadgeColor(
+                      cfg.key,
+                      cfg.defaultColor,
+                      ticketProv.statuses,
+                    );
+                    return _buildFilterChip(
+                      cfg.label,
+                      cfg.key,
+                      count,
                       ticketProv,
                       auth,
                       theme,
-                      badgeColor: const Color(0xFFEF4444),
-                    ),
-                    const SizedBox(width: 8),
-                    if (ticketProv.statuses.isNotEmpty) ...[
-                      ...ticketProv.statuses.map((st) {
-                        final title = st['title']?.toString() ?? '';
-                        final key = title.toLowerCase().replaceAll(RegExp(r'[ -]'), '_');
-                        final count = ticketProv.counts[key] ?? 0;
-                        final color = _parseHexColor(st['color']?.toString(), theme.colorScheme.primary);
-                        return Padding(
-                          padding: const EdgeInsets.only(right: 8),
-                          child: _buildFilterChip(
-                            title,
-                            title,
-                            count,
-                            ticketProv,
-                            auth,
-                            theme,
-                            badgeColor: color,
-                          ),
-                        );
-                      }),
-                    ] else ...[
-                      _buildFilterChip('Open', 'open', ticketProv.counts['open'] ?? 0, ticketProv, auth, theme),
-                      const SizedBox(width: 8),
-                      _buildFilterChip('Customer-Reply', 'customer_reply', ticketProv.counts['customer_reply'] ?? 0, ticketProv, auth, theme, badgeColor: const Color(0xFFEF4444)),
-                      const SizedBox(width: 8),
-                      _buildFilterChip('Answered', 'answered', ticketProv.counts['answered'] ?? 0, ticketProv, auth, theme),
-                      const SizedBox(width: 8),
-                      _buildFilterChip('Closed', 'closed', ticketProv.counts['closed'] ?? 0, ticketProv, auth, theme),
-                      const SizedBox(width: 8),
-                    ],
-                    _buildFilterChip('All', 'all', ticketProv.counts['total'] ?? 0, ticketProv, auth, theme),
-                  ],
+                      badgeColor: badgeColor,
+                    );
+                  },
                 ),
               ),
             ],
@@ -243,6 +242,18 @@ class _TicketsScreenState extends State<TicketsScreen> {
     }
   }
 
+  Color _getStatusBadgeColor(String key, Color fallbackColor, List<Map<String, dynamic>> statuses) {
+    if (key == 'all' || key == 'awaiting_reply') return fallbackColor;
+    for (final st in statuses) {
+      final title = st['title']?.toString() ?? '';
+      final norm = title.toLowerCase().replaceAll(RegExp(r'[ -]'), '_');
+      if (norm == key) {
+        return _parseHexColor(st['color']?.toString(), fallbackColor);
+      }
+    }
+    return fallbackColor;
+  }
+
   Widget _buildFilterChip(
     String label,
     String key,
@@ -252,7 +263,9 @@ class _TicketsScreenState extends State<TicketsScreen> {
     ThemeData theme, {
     Color? badgeColor,
   }) {
-    final isSelected = provider.statusFilter.toLowerCase() == key.toLowerCase();
+    final normFilter = provider.statusFilter.toLowerCase().replaceAll(RegExp(r'[ -]'), '_');
+    final normKey = key.toLowerCase().replaceAll(RegExp(r'[ -]'), '_');
+    final isSelected = normFilter == normKey;
     final primary = theme.colorScheme.primary;
 
     return FilterChip(

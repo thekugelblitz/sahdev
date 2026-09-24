@@ -1936,6 +1936,9 @@ class MobileApiService
                     ->orWhere('c.lastname', 'like', "%{$search}%")
                     ->orWhere('c.email', 'like', "%{$search}%")
                     ->orWhere('c.companyname', 'like', "%{$search}%");
+                if (is_numeric($search)) {
+                    $sub->orWhere('c.id', '=', (int)$search);
+                }
             });
         }
 

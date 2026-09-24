@@ -21,6 +21,15 @@ class SoundOption {
   });
 }
 
+/// Clearly separated notification event types
+enum NotificationEventType {
+  standard,       // Standard / system / general notifications
+  ticketMessage,  // Ticket opened / reply / update
+  normalChat,     // Visitor message / new visitor / chat reply
+  chatSummon,     // Human live chat summon (urgent)
+  alarmContinuous // Emergency continuous alarm
+}
+
 class AudioService {
   static final AudioService _instance = AudioService._internal();
   factory AudioService() => _instance;
@@ -116,6 +125,7 @@ class AudioService {
   ];
 
   static const int defaultAlertDurationSeconds = 5;
+  static const int chimeDurationSeconds = 1;
 
   final AudioPlayer _player = AudioPlayer();
   Timer? _ringTimer;
@@ -126,12 +136,14 @@ class AudioService {
   String _selectedSoundKey = 'radar';
   int _alertDurationSeconds = defaultAlertDurationSeconds; // 5, 10, 15, 30, 60, 0 = continuous
   String _vibrationPattern = 'heavy'; // 'none', 'gentle', 'double', 'heavy', 'sos'
+  String _alertMode = 'ringing'; // 'ringing' or 'chime'
 
   bool get isRinging => _isRinging;
   bool get soundEnabled => _soundEnabled;
   String get selectedSoundKey => _selectedSoundKey;
   int get alertDurationSeconds => _alertDurationSeconds;
   String get vibrationPattern => _vibrationPattern;
+  String get alertMode => _alertMode;
 
   Future<void> reloadPreferences() async {
     try {
@@ -141,6 +153,7 @@ class AudioService {
       _alertDurationSeconds = prefs.getInt('sdv_alert_duration') ?? defaultAlertDurationSeconds;
       _vibrationPattern = prefs.getString('sdv_vibration_pattern') ?? 'heavy';
       _soundEnabled = prefs.getBool('sdv_sound_enabled') ?? true;
+      _alertMode = prefs.getString('pref_alert_mode') ?? prefs.getString('alert_mode') ?? 'ringing';
     } catch (e) {
       debugPrint('[AudioService] Error reloading preferences: $e');
     }
@@ -166,6 +179,13 @@ class AudioService {
     _vibrationPattern = pattern;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('sdv_vibration_pattern', pattern);
+  }
+
+  Future<void> setAlertMode(String mode) async {
+    _alertMode = mode;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('pref_alert_mode', mode);
+    await prefs.setString('alert_mode', mode);
   }
 
   Future<void> setSoundEnabled(bool enabled) async {
@@ -207,20 +227,22 @@ class AudioService {
     }
   }
 
-  /// Single permission-aware notification sound flow.
-  /// 
+  /// Core notification playback router strictly respecting NotificationEventType and Single Notification Chime mode.
+  ///
   /// Guarantees:
-  /// 1. Notification permissions are dynamically verified before any audio playback starts.
-  /// 2. If permission is denied or revoked, playback is completely skipped and any active sound is stopped.
-  /// 3. Always reloads persisted settings (duration, sound key, enabled status) so runtime changes take effect immediately.
-  /// 4. Respects the configured duration (default: 5 seconds, not 30 seconds).
-  /// 5. Automatically stops the sound when the configured duration is reached.
-  /// 6. Periodically checks permission during active playback to stop immediately if revoked.
-  Future<void> playNotificationSound({
+  /// 1. Single Notification Chime ('chime'):
+  ///    - Plays notification sound for 1 second only.
+  ///    - Non-looping, single 200ms vibration.
+  ///    - Stops automatically after 1 second.
+  ///    - Alarm/continuous ringing duration cannot override this behavior.
+  /// 2. Continuous Ringing Alarm ('ringing'):
+  ///    - ONLY Chat Summon (chatSummon / alarmContinuous) uses dedicated Summon timing (_alertDurationSeconds, loop).
+  ///    - Normal ticket messages, normal chat messages, and standard notifications use default notification timing (1 second, non-looping).
+  /// 3. Dynamic permission verification before and during playback.
+  Future<void> playForNotificationEvent(
+    NotificationEventType eventType, {
     String? soundKey,
     int? customDurationSeconds,
-    bool loop = true,
-    bool isUrgent = false,
   }) async {
     // 1. Strict dynamic permission check immediately before triggering any sound
     final hasPermission = await checkPermissionAndStopIfRevoked();
@@ -229,7 +251,7 @@ class AudioService {
       return;
     }
 
-    // 2. Freshly reload persisted preferences so any runtime duration changes take effect immediately
+    // 2. Freshly reload persisted preferences so runtime changes take effect immediately
     await reloadPreferences();
 
     if (!_soundEnabled) {
@@ -238,7 +260,6 @@ class AudioService {
     }
 
     final key = soundKey ?? _selectedSoundKey;
-    final int duration = customDurationSeconds ?? _alertDurationSeconds;
     final opt = availableSounds.firstWhere(
       (s) => s.key == key,
       orElse: () => availableSounds[0],
@@ -254,44 +275,90 @@ class AudioService {
       await _player.stop();
     } catch (_) {}
 
-    _isRinging = true;
+    final bool isChimeMode = (_alertMode == 'chime');
+    final bool isDedicatedSummon = (eventType == NotificationEventType.chatSummon || eventType == NotificationEventType.alarmContinuous);
+
+    final int playbackDuration;
+    final bool shouldLoop;
+    final bool singleVibration;
+    final bool shouldSetRingingState;
+
+    if (isChimeMode) {
+      // Single Notification Chime: 1 second only, non-looping, single vibration
+      playbackDuration = chimeDurationSeconds;
+      shouldLoop = false;
+      singleVibration = true;
+      shouldSetRingingState = false;
+    } else if (isDedicatedSummon) {
+      // Chat Summon: Dedicated Summon timing
+      playbackDuration = customDurationSeconds ?? _alertDurationSeconds;
+      shouldLoop = (playbackDuration == 0 || playbackDuration > 1);
+      singleVibration = false;
+      shouldSetRingingState = true;
+    } else {
+      // Normal ticket messages, normal chat messages, standard notifications: Default timing (1 second, non-looping)
+      playbackDuration = chimeDurationSeconds;
+      shouldLoop = false;
+      singleVibration = true;
+      shouldSetRingingState = false;
+    }
+
+    _isRinging = shouldSetRingingState;
 
     try {
-      if (duration > 0 || loop) {
+      if (shouldLoop) {
         await _player.setReleaseMode(ReleaseMode.loop);
-        await _player.play(AssetSource(opt.assetPath), volume: 1.0);
-        _triggerVibration(single: false);
-
-        if (duration > 0) {
-          // Stop sound automatically when the configured duration is reached
-          _ringTimer = Timer(Duration(seconds: duration), () {
-            stopAlertRing();
-          });
-        }
       } else {
-        // Continuous loop (duration == 0)
-        await _player.setReleaseMode(ReleaseMode.loop);
-        await _player.play(AssetSource(opt.assetPath), volume: 1.0);
-        _triggerVibration(single: false);
+        await _player.setReleaseMode(ReleaseMode.release);
       }
 
-      // 3. Active revocation check while sound is ringing
-      _permissionCheckTimer = Timer.periodic(const Duration(milliseconds: 500), (timer) async {
-        if (!_isRinging) {
-          timer.cancel();
-          return;
-        }
-        final stillGranted = await NotificationService().areNotificationsEnabled();
-        if (!stillGranted) {
-          debugPrint('[AudioService] Active ring stopped: notification permission revoked mid-playback.');
-          timer.cancel();
-          await stopAlertRing();
-        }
-      });
+      await _player.play(AssetSource(opt.assetPath), volume: 1.0).timeout(
+        const Duration(seconds: 2),
+        onTimeout: () {
+          debugPrint('[AudioService] Audio playback timed out');
+        },
+      );
+      _triggerVibration(single: singleVibration);
+
+      if (playbackDuration > 0) {
+        _ringTimer = Timer(Duration(seconds: playbackDuration), () {
+          stopAlertRing();
+        });
+      }
+
+      // Active revocation check while sound is ringing
+      if (_isRinging) {
+        _permissionCheckTimer = Timer.periodic(const Duration(milliseconds: 500), (timer) async {
+          if (!_isRinging) {
+            timer.cancel();
+            return;
+          }
+          final stillGranted = await NotificationService().areNotificationsEnabled();
+          if (!stillGranted) {
+            debugPrint('[AudioService] Active ring stopped: notification permission revoked mid-playback.');
+            timer.cancel();
+            await stopAlertRing();
+          }
+        });
+      }
     } catch (e) {
       _isRinging = false;
       debugPrint('[AudioService] Notification sound playback error: $e');
     }
+  }
+
+  /// Backward-compatible notification sound method routing through playForNotificationEvent
+  Future<void> playNotificationSound({
+    String? soundKey,
+    int? customDurationSeconds,
+    bool loop = true,
+    bool isUrgent = false,
+  }) async {
+    await playForNotificationEvent(
+      isUrgent ? NotificationEventType.chatSummon : NotificationEventType.standard,
+      soundKey: soundKey,
+      customDurationSeconds: customDurationSeconds,
+    );
   }
 
   /// Preview chosen sound (used in sound selector picker)
@@ -310,25 +377,21 @@ class AudioService {
     }
   }
 
-  /// Plays notification chime.
-  /// Routes through single permission-aware flow so permission checks and duration cannot be bypassed.
+  /// Plays notification chime using standard event timing
   Future<void> playChime({String? soundKey, int? durationSeconds}) async {
-    await playNotificationSound(
+    await playForNotificationEvent(
+      NotificationEventType.standard,
       soundKey: soundKey,
       customDurationSeconds: durationSeconds,
-      loop: true,
-      isUrgent: false,
     );
   }
 
-  /// Starts repeating alert ring for urgent human summons with duration and vibration.
-  /// Routes through single permission-aware flow so permission checks and duration cannot be bypassed.
+  /// Starts repeating alert ring for urgent human summons
   Future<void> startAlarmRing({String? soundKey, int? maxDurationSeconds}) async {
-    await playNotificationSound(
+    await playForNotificationEvent(
+      NotificationEventType.chatSummon,
       soundKey: soundKey,
       customDurationSeconds: maxDurationSeconds,
-      loop: true,
-      isUrgent: true,
     );
   }
 

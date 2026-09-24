@@ -729,6 +729,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                 if (val != null) {
                   setState(() => _alertMode = val);
                   _setPreference('pref_alert_mode', val);
+                  _audio.setAlertMode(val);
                   context.read<AuthProvider>().setAlertMode(val);
                 }
               },
@@ -737,7 +738,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
               contentPadding: EdgeInsets.zero,
               dense: true,
               title: const Text("Single Notification Chime", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-              subtitle: const Text("Plays one sound alert without ongoing ringing", style: TextStyle(fontSize: 11)),
+              subtitle: const Text("Plays one sound alert without ongoing ringing (1 second)", style: TextStyle(fontSize: 11)),
               value: 'chime',
               groupValue: _alertMode,
               activeColor: const Color(0xFFF59E0B),
@@ -745,6 +746,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                 if (val != null) {
                   setState(() => _alertMode = val);
                   _setPreference('pref_alert_mode', val);
+                  _audio.setAlertMode(val);
                   context.read<AuthProvider>().setAlertMode(val);
                 }
               },

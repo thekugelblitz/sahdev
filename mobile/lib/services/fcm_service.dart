@@ -206,13 +206,7 @@ class FcmService {
         );
       }
 
-      if (alertMode == 'ringing') {
-        if (!audioService.isRinging) {
-          await audioService.playNotificationSound(isUrgent: true);
-        }
-      } else {
-        await audioService.playNotificationSound(isUrgent: false);
-      }
+      await audioService.playForNotificationEvent(NotificationEventType.chatSummon);
     } else if (eventType == 'new_visitor' && notifyVisitors) {
       final clientName = data['client_name'] ?? (message.notification?.title ?? 'Website Visitor');
       final domain = data['domain'] ?? 'Your Website';
@@ -228,7 +222,7 @@ class FcmService {
         );
       }
 
-      await audioService.playNotificationSound(isUrgent: false);
+      await audioService.playForNotificationEvent(NotificationEventType.normalChat);
     } else if (eventType == 'chat_message' && notifyChats) {
       final int sessionId = int.tryParse(data['session_id']?.toString() ?? '0') ?? 0;
       final senderName = data['sender_name'] ?? 'Visitor';
@@ -242,7 +236,7 @@ class FcmService {
         );
       }
 
-      await audioService.playNotificationSound(isUrgent: false);
+      await audioService.playForNotificationEvent(NotificationEventType.normalChat);
     } else if ((eventType == 'ticket' || eventType.contains('ticket')) && notifyTickets) {
       final directId = data['ticket_id'] ?? data['ticketId'] ?? data['ticketid'] ?? data['tid'] ?? data['id'];
       int ticketId = int.tryParse(directId?.toString() ?? '0') ?? 0;
@@ -267,7 +261,7 @@ class FcmService {
         );
       }
 
-      await audioService.playNotificationSound(isUrgent: false);
+      await audioService.playForNotificationEvent(NotificationEventType.ticketMessage);
     } else if (eventType == 'system_alert' && notifySystem) {
       final title = data['title'] ?? (message.notification?.title ?? 'System Alert');
       final body = data['body'] ?? (message.notification?.body ?? 'Alert from Sahdev Copilot');
@@ -279,7 +273,7 @@ class FcmService {
         );
       }
 
-      await audioService.playNotificationSound(isUrgent: false);
+      await audioService.playForNotificationEvent(NotificationEventType.standard);
     }
   }
 
