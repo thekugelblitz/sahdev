@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 
 class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
@@ -41,7 +42,7 @@ class NotificationService {
       },
     );
 
-    // Create high-priority notification channels on Android
+    // Check notification permission
     final androidPlugin = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
     if (androidPlugin != null) {
       // 1. Urgent Human Summon Channel
@@ -310,5 +311,35 @@ class NotificationService {
 
   Future<void> cancelNotification(int id) async {
     await _plugin.cancel(id);
+  }
+
+  /// Checks if notification permissions are currently enabled on the device.
+  /// Re-checks dynamically at runtime rather than relying on cached initial state.
+  Future<bool> areNotificationsEnabled() async {
+    try {
+      final androidPlugin = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+      if (androidPlugin != null) {
+        final bool? enabled = await androidPlugin.areNotificationsEnabled();
+        if (enabled != null && !enabled) {
+          debugPrint('[NotificationService] Android notifications revoked in device settings');
+          return false;
+        }
+      }
+
+      try {
+        final settings = await FirebaseMessaging.instance.getNotificationSettings();
+        if (settings.authorizationStatus == AuthorizationStatus.denied) {
+          debugPrint('[NotificationService] Notification permission is denied (FCM settings)');
+          return false;
+        }
+      } catch (e) {
+        debugPrint('[NotificationService] FCM settings check fallback: $e');
+      }
+
+      return true;
+    } catch (e) {
+      debugPrint('[NotificationService] areNotificationsEnabled check error: $e');
+      return true;
+    }
   }
 }

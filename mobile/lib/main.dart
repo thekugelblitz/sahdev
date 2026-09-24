@@ -7,6 +7,7 @@ import 'providers/chat_provider.dart';
 import 'providers/ticket_provider.dart';
 import 'providers/theme_provider.dart';
 import 'services/notification_service.dart';
+import 'services/audio_service.dart';
 import 'screens/splash_screen.dart';
 
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -52,8 +53,32 @@ void main() async {
   runApp(const SahdevMobileApp());
 }
 
-class SahdevMobileApp extends StatelessWidget {
+class SahdevMobileApp extends StatefulWidget {
   const SahdevMobileApp({super.key});
+
+  @override
+  State<SahdevMobileApp> createState() => _SahdevMobileAppState();
+}
+
+class _SahdevMobileAppState extends State<SahdevMobileApp> with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      AudioService().handleAppResumed();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {

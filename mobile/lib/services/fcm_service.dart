@@ -15,6 +15,7 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   WidgetsFlutterBinding.ensureInitialized();
   try {
     await NotificationService().init();
+    await AudioService().reloadPreferences();
     await FcmService.handleIncomingRemoteMessage(message, isBackground: true);
   } catch (e) {
     debugPrint('[FCM Background Handler Error] $e');
@@ -205,18 +206,12 @@ class FcmService {
         );
       }
 
-      if (!isBackground) {
-        // App is open and in focus: gentle soft ping chime only, do not ring loudly
-        await audioService.playChime();
-      } else {
-        // App is closed / in background: ring loudly if configured
-        if (alertMode == 'ringing') {
-          if (!audioService.isRinging) {
-            await audioService.startAlarmRing();
-          }
-        } else {
-          await audioService.playChime();
+      if (alertMode == 'ringing') {
+        if (!audioService.isRinging) {
+          await audioService.playNotificationSound(isUrgent: true);
         }
+      } else {
+        await audioService.playNotificationSound(isUrgent: false);
       }
     } else if (eventType == 'new_visitor' && notifyVisitors) {
       final clientName = data['client_name'] ?? (message.notification?.title ?? 'Website Visitor');
@@ -233,7 +228,7 @@ class FcmService {
         );
       }
 
-      await audioService.playChime();
+      await audioService.playNotificationSound(isUrgent: false);
     } else if (eventType == 'chat_message' && notifyChats) {
       final int sessionId = int.tryParse(data['session_id']?.toString() ?? '0') ?? 0;
       final senderName = data['sender_name'] ?? 'Visitor';
@@ -247,6 +242,7 @@ class FcmService {
         );
       }
 
+      await audioService.playNotificationSound(isUrgent: false);
     } else if ((eventType == 'ticket' || eventType.contains('ticket')) && notifyTickets) {
       final directId = data['ticket_id'] ?? data['ticketId'] ?? data['ticketid'] ?? data['tid'] ?? data['id'];
       int ticketId = int.tryParse(directId?.toString() ?? '0') ?? 0;
@@ -271,7 +267,7 @@ class FcmService {
         );
       }
 
-      await audioService.playChime();
+      await audioService.playNotificationSound(isUrgent: false);
     } else if (eventType == 'system_alert' && notifySystem) {
       final title = data['title'] ?? (message.notification?.title ?? 'System Alert');
       final body = data['body'] ?? (message.notification?.body ?? 'Alert from Sahdev Copilot');
@@ -282,6 +278,8 @@ class FcmService {
           body: body,
         );
       }
+
+      await audioService.playNotificationSound(isUrgent: false);
     }
   }
 

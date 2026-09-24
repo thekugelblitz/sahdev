@@ -16,6 +16,7 @@ class TicketProvider extends ChangeNotifier {
     'total': 0,
   };
   bool _isLoading = false;
+  bool _isLoadingMore = false;
   String? _errorMessage;
   String _statusFilter = 'awaiting_reply';
   String _searchQuery = '';
@@ -39,6 +40,8 @@ class TicketProvider extends ChangeNotifier {
   List<Map<String, dynamic>> get staffList => _staffList;
   Map<String, int> get counts => _counts;
   bool get isLoading => _isLoading;
+  bool get isLoadingMore => _isLoadingMore;
+  bool get hasMoreTickets => _tickets.length < _totalTickets;
   String? get errorMessage => _errorMessage;
   String get statusFilter => _statusFilter;
   String get searchQuery => _searchQuery;
@@ -102,6 +105,42 @@ class TicketProvider extends ChangeNotifier {
       _errorMessage = e.toString();
     } finally {
       _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> loadMoreTickets({
+    required String baseUrl,
+    required String token,
+  }) async {
+    if (_isLoading || _isLoadingMore || !hasMoreTickets) return;
+    _isLoadingMore = true;
+    notifyListeners();
+
+    try {
+      final nextPage = _currentPage + 1;
+      final res = await _api.getTickets(
+        baseUrl: baseUrl,
+        token: token,
+        status: _statusFilter,
+        search: _searchQuery,
+        page: nextPage,
+        limit: 25,
+      );
+
+      if (res.success && res.data != null) {
+        final data = res.data!;
+        final rawList = data['tickets'] as List<dynamic>? ?? [];
+        if (rawList.isNotEmpty) {
+          _currentPage = nextPage;
+          final newTickets = rawList.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+          _tickets.addAll(newTickets);
+          _totalTickets = (data['total'] as num?)?.toInt() ?? _tickets.length;
+        }
+      }
+    } catch (_) {
+    } finally {
+      _isLoadingMore = false;
       notifyListeners();
     }
   }

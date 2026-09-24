@@ -15,13 +15,28 @@ class TicketsScreen extends StatefulWidget {
 
 class _TicketsScreenState extends State<TicketsScreen> {
   final TextEditingController _searchController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_onScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadTickets(refresh: true);
     });
+  }
+
+  void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 250) {
+      final auth = context.read<AuthProvider>();
+      if (auth.baseUrl != null && auth.token != null) {
+        context.read<TicketProvider>().loadMoreTickets(
+              baseUrl: auth.baseUrl!,
+              token: auth.token!,
+            );
+      }
+    }
   }
 
   void _loadTickets({bool refresh = false}) {
@@ -37,6 +52,8 @@ class _TicketsScreenState extends State<TicketsScreen> {
 
   @override
   void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -91,6 +108,9 @@ class _TicketsScreenState extends State<TicketsScreen> {
                               icon: const Icon(Icons.clear, size: 18),
                               onPressed: () {
                                 _searchController.clear();
+                                if (_scrollController.hasClients) {
+                                  _scrollController.jumpTo(0);
+                                }
                                 if (auth.baseUrl != null && auth.token != null) {
                                   ticketProv.setSearchQuery('', baseUrl: auth.baseUrl!, token: auth.token!);
                                 }
@@ -100,6 +120,9 @@ class _TicketsScreenState extends State<TicketsScreen> {
                       contentPadding: const EdgeInsets.symmetric(horizontal: 12),
                     ),
                     onSubmitted: (val) {
+                      if (_scrollController.hasClients) {
+                        _scrollController.jumpTo(0);
+                      }
                       if (auth.baseUrl != null && auth.token != null) {
                         ticketProv.setSearchQuery(val, baseUrl: auth.baseUrl!, token: auth.token!);
                       }
@@ -181,10 +204,24 @@ class _TicketsScreenState extends State<TicketsScreen> {
                   : RefreshIndicator(
                       onRefresh: () async => _loadTickets(refresh: true),
                       child: ListView.builder(
+                        controller: _scrollController,
+                        physics: const AlwaysScrollableScrollPhysics(),
                         keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
                         padding: const EdgeInsets.only(left: 12, right: 12, top: 12, bottom: 80),
-                        itemCount: ticketProv.tickets.length,
+                        itemCount: ticketProv.tickets.length + (ticketProv.isLoadingMore ? 1 : 0),
                         itemBuilder: (context, index) {
+                          if (index >= ticketProv.tickets.length) {
+                            return const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 16),
+                              child: Center(
+                                child: SizedBox(
+                                  width: 24,
+                                  height: 24,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                ),
+                              ),
+                            );
+                          }
                           final ticket = ticketProv.tickets[index];
                           return _buildTicketCard(context, ticket, theme, isAmoled);
                         },
@@ -245,6 +282,9 @@ class _TicketsScreenState extends State<TicketsScreen> {
         ],
       ),
       onSelected: (_) {
+        if (_scrollController.hasClients) {
+          _scrollController.jumpTo(0);
+        }
         if (auth.baseUrl != null && auth.token != null) {
           provider.setStatusFilter(key, baseUrl: auth.baseUrl!, token: auth.token!);
         }
@@ -410,36 +450,58 @@ class _TicketsScreenState extends State<TicketsScreen> {
   }
 
   Widget _buildEmptyView(ThemeData theme) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.inbox_outlined, size: 56, color: Colors.grey.shade600),
-          const SizedBox(height: 12),
-          const Text('No tickets found', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-          const SizedBox(height: 6),
-          const Text('Tickets matching this filter will appear here', style: TextStyle(fontSize: 13, color: Colors.grey)),
-        ],
+    return RefreshIndicator(
+      onRefresh: () async => _loadTickets(refresh: true),
+      child: LayoutBuilder(
+        builder: (context, constraints) => SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.inbox_outlined, size: 56, color: Colors.grey.shade600),
+                  const SizedBox(height: 12),
+                  const Text('No tickets found', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 6),
+                  const Text('Tickets matching this filter will appear here', style: TextStyle(fontSize: 13, color: Colors.grey)),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
 
   Widget _buildErrorView(String msg, ThemeData theme) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.error_outline, size: 48, color: Colors.redAccent),
-            const SizedBox(height: 12),
-            Text(msg, textAlign: TextAlign.center, style: const TextStyle(fontSize: 14)),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: () => _loadTickets(refresh: true),
-              child: const Text('Retry'),
+    return RefreshIndicator(
+      onRefresh: () async => _loadTickets(refresh: true),
+      child: LayoutBuilder(
+        builder: (context, constraints) => SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.error_outline, size: 48, color: Colors.redAccent),
+                    const SizedBox(height: 12),
+                    Text(msg, textAlign: TextAlign.center, style: const TextStyle(fontSize: 14)),
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: () => _loadTickets(refresh: true),
+                      child: const Text('Retry'),
+                    ),
+                  ],
+                ),
+              ),
             ),
-          ],
+          ),
         ),
       ),
     );

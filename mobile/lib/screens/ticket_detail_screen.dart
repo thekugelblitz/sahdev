@@ -53,6 +53,31 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
     }
   }
 
+  bool _hasInitialScrolled = false;
+  int _prevThreadCount = 0;
+
+  void _scrollToBottom({bool animate = true}) {
+    void executeScroll() {
+      if (_scrollController.hasClients) {
+        final target = _scrollController.position.maxScrollExtent;
+        if (animate) {
+          _scrollController.animateTo(
+            target,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOut,
+          );
+        } else {
+          _scrollController.jumpTo(target);
+        }
+      }
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      executeScroll();
+      Future.delayed(const Duration(milliseconds: 150), executeScroll);
+    });
+  }
+
   @override
   void dispose() {
     _replyController.dispose();
@@ -408,6 +433,15 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
     final ticketProv = context.watch<TicketProvider>();
     final ticket = ticketProv.activeTicket;
 
+    // Auto-scroll to bottom of conversation thread when ticket details load on open or update
+    final threadCount = ticketProv.activeThread.length;
+    if (threadCount > 0 && (threadCount != _prevThreadCount || !_hasInitialScrolled)) {
+      _prevThreadCount = threadCount;
+      final shouldAnimate = _hasInitialScrolled;
+      _hasInitialScrolled = true;
+      _scrollToBottom(animate: shouldAnimate);
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: Column(
@@ -475,6 +509,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                     Expanded(
                       child: ListView(
                         controller: _scrollController,
+                        physics: const AlwaysScrollableScrollPhysics(),
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                         children: [
                           // Sahdev AI Ticket Intelligence Panel (Matches WHMCS Desktop)

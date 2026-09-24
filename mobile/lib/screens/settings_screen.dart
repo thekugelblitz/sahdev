@@ -6,6 +6,7 @@ import '../providers/theme_provider.dart';
 import '../services/audio_service.dart';
 import '../services/background_service.dart';
 import '../services/fcm_service.dart';
+import '../services/notification_service.dart';
 import 'help_and_about_screen.dart';
 import 'login_screen.dart';
 
@@ -16,7 +17,7 @@ class SettingsScreen extends StatefulWidget {
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState extends State<SettingsScreen> {
+class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObserver {
   final AudioService _audio = AudioService();
   String? _previewingSoundKey;
   bool _notifySummons = true;
@@ -25,11 +26,39 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _notifyTickets = true;
   bool _notifySystem = true;
   String _alertMode = 'ringing';
+  bool _notificationPermissionGranted = true;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadNotificationPreferences();
+    _checkNotificationPermission();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _checkNotificationPermission();
+      _audio.reloadPreferences().then((_) {
+        if (mounted) setState(() {});
+      });
+    }
+  }
+
+  Future<void> _checkNotificationPermission() async {
+    final granted = await NotificationService().areNotificationsEnabled();
+    if (mounted) {
+      setState(() {
+        _notificationPermissionGranted = granted;
+      });
+    }
   }
 
   Future<void> _loadNotificationPreferences() async {
@@ -417,10 +446,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
               spacing: 8,
               runSpacing: 8,
               children: [
-                _buildDurationChip(5, "5s", theme),
+                _buildDurationChip(5, "5s (Default)", theme),
                 _buildDurationChip(10, "10s", theme),
                 _buildDurationChip(15, "15s", theme),
-                _buildDurationChip(30, "30s (Default)", theme),
+                _buildDurationChip(30, "30s", theme),
                 _buildDurationChip(60, "60s", theme),
                 _buildDurationChip(0, "Continuous Loop", theme),
               ],
@@ -583,6 +612,45 @@ class _SettingsScreenState extends State<SettingsScreen> {
               style: TextStyle(fontSize: 12, color: Colors.grey, height: 1.4),
             ),
             const Divider(height: 20),
+            if (!_notificationPermissionGranted) ...[
+              Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEF4444).withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFFEF4444).withOpacity(0.4)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.notifications_off, color: Color(0xFFEF4444), size: 22),
+                    const SizedBox(width: 10),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            "Notification Permission Revoked",
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFFEF4444)),
+                          ),
+                          SizedBox(height: 2),
+                          Text(
+                            "Device notifications are disabled. All notification sounds and alerts are muted.",
+                            style: TextStyle(fontSize: 11, color: Colors.grey),
+                          ),
+                        ],
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () async {
+                        await _checkNotificationPermission();
+                      },
+                      child: const Text("Recheck", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               dense: true,

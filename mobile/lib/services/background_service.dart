@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'api_service.dart';
 import 'audio_service.dart';
@@ -116,12 +117,15 @@ class BackgroundService {
                   sessionId: sessionId,
                 );
 
-                if (_alertMode == 'ringing') {
+                final prefs = await SharedPreferences.getInstance();
+                final currentAlertMode = prefs.getString('pref_alert_mode') ?? _alertMode;
+
+                if (currentAlertMode == 'ringing') {
                   if (!_audio.isRinging) {
-                    await _audio.startAlarmRing();
+                    await _audio.playNotificationSound(isUrgent: true);
                   }
                 } else {
-                  await _audio.playChime();
+                  await _audio.playNotificationSound(isUrgent: false);
                 }
                 _lastAlertTimestamp = now;
               }

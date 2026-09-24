@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'package:audioplayers/audioplayers.dart';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:vibration/vibration.dart';
+import 'notification_service.dart';
 
 class SoundOption {
   final String key;
@@ -113,13 +115,16 @@ class AudioService {
     ),
   ];
 
+  static const int defaultAlertDurationSeconds = 5;
+
   final AudioPlayer _player = AudioPlayer();
   Timer? _ringTimer;
+  Timer? _permissionCheckTimer;
   bool _isRinging = false;
   bool _soundEnabled = true;
 
   String _selectedSoundKey = 'radar';
-  int _alertDurationSeconds = 30; // 5, 10, 15, 30, 60, 0 = continuous
+  int _alertDurationSeconds = defaultAlertDurationSeconds; // 5, 10, 15, 30, 60, 0 = continuous
   String _vibrationPattern = 'heavy'; // 'none', 'gentle', 'double', 'heavy', 'sos'
 
   bool get isRinging => _isRinging;
@@ -128,14 +133,21 @@ class AudioService {
   int get alertDurationSeconds => _alertDurationSeconds;
   String get vibrationPattern => _vibrationPattern;
 
-  Future<void> _loadPreferences() async {
+  Future<void> reloadPreferences() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      await prefs.reload();
       _selectedSoundKey = prefs.getString('sdv_sound_key') ?? 'radar';
-      _alertDurationSeconds = prefs.getInt('sdv_alert_duration') ?? 30;
+      _alertDurationSeconds = prefs.getInt('sdv_alert_duration') ?? defaultAlertDurationSeconds;
       _vibrationPattern = prefs.getString('sdv_vibration_pattern') ?? 'heavy';
       _soundEnabled = prefs.getBool('sdv_sound_enabled') ?? true;
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[AudioService] Error reloading preferences: $e');
+    }
+  }
+
+  Future<void> _loadPreferences() async {
+    await reloadPreferences();
   }
 
   Future<void> setSoundKey(String key) async {
@@ -172,6 +184,116 @@ class AudioService {
     );
   }
 
+  /// Checks whether notification permissions are currently granted.
+  /// If permissions are revoked or denied, stops any currently active sound and returns false.
+  Future<bool> checkPermissionAndStopIfRevoked() async {
+    final hasPermission = await NotificationService().areNotificationsEnabled();
+    if (!hasPermission) {
+      if (_isRinging) {
+        debugPrint('[AudioService] Notification permission revoked while ringing. Stopping audio.');
+        await stopAlertRing();
+      }
+      return false;
+    }
+    return true;
+  }
+
+  /// Called when app returns to foreground from background or system settings.
+  /// Immediately re-checks notification permissions and stops any playing sound if revoked.
+  Future<void> handleAppResumed() async {
+    final hasPermission = await checkPermissionAndStopIfRevoked();
+    if (hasPermission) {
+      await reloadPreferences();
+    }
+  }
+
+  /// Single permission-aware notification sound flow.
+  /// 
+  /// Guarantees:
+  /// 1. Notification permissions are dynamically verified before any audio playback starts.
+  /// 2. If permission is denied or revoked, playback is completely skipped and any active sound is stopped.
+  /// 3. Always reloads persisted settings (duration, sound key, enabled status) so runtime changes take effect immediately.
+  /// 4. Respects the configured duration (default: 5 seconds, not 30 seconds).
+  /// 5. Automatically stops the sound when the configured duration is reached.
+  /// 6. Periodically checks permission during active playback to stop immediately if revoked.
+  Future<void> playNotificationSound({
+    String? soundKey,
+    int? customDurationSeconds,
+    bool loop = true,
+    bool isUrgent = false,
+  }) async {
+    // 1. Strict dynamic permission check immediately before triggering any sound
+    final hasPermission = await checkPermissionAndStopIfRevoked();
+    if (!hasPermission) {
+      debugPrint('[AudioService] Skipped notification sound: Notification permission revoked/denied.');
+      return;
+    }
+
+    // 2. Freshly reload persisted preferences so any runtime duration changes take effect immediately
+    await reloadPreferences();
+
+    if (!_soundEnabled) {
+      debugPrint('[AudioService] Skipped notification sound: Audio alerts disabled by user.');
+      return;
+    }
+
+    final key = soundKey ?? _selectedSoundKey;
+    final int duration = customDurationSeconds ?? _alertDurationSeconds;
+    final opt = availableSounds.firstWhere(
+      (s) => s.key == key,
+      orElse: () => availableSounds[0],
+    );
+
+    // Cancel any previous ring timer and permission poller
+    _ringTimer?.cancel();
+    _ringTimer = null;
+    _permissionCheckTimer?.cancel();
+    _permissionCheckTimer = null;
+
+    try {
+      await _player.stop();
+    } catch (_) {}
+
+    _isRinging = true;
+
+    try {
+      if (duration > 0 || loop) {
+        await _player.setReleaseMode(ReleaseMode.loop);
+        await _player.play(AssetSource(opt.assetPath), volume: 1.0);
+        _triggerVibration(single: false);
+
+        if (duration > 0) {
+          // Stop sound automatically when the configured duration is reached
+          _ringTimer = Timer(Duration(seconds: duration), () {
+            stopAlertRing();
+          });
+        }
+      } else {
+        // Continuous loop (duration == 0)
+        await _player.setReleaseMode(ReleaseMode.loop);
+        await _player.play(AssetSource(opt.assetPath), volume: 1.0);
+        _triggerVibration(single: false);
+      }
+
+      // 3. Active revocation check while sound is ringing
+      _permissionCheckTimer = Timer.periodic(const Duration(milliseconds: 500), (timer) async {
+        if (!_isRinging) {
+          timer.cancel();
+          return;
+        }
+        final stillGranted = await NotificationService().areNotificationsEnabled();
+        if (!stillGranted) {
+          debugPrint('[AudioService] Active ring stopped: notification permission revoked mid-playback.');
+          timer.cancel();
+          await stopAlertRing();
+        }
+      });
+    } catch (e) {
+      _isRinging = false;
+      debugPrint('[AudioService] Notification sound playback error: $e');
+    }
+  }
+
   /// Preview chosen sound (used in sound selector picker)
   Future<void> previewSound(String soundKey) async {
     final opt = availableSounds.firstWhere(
@@ -179,60 +301,35 @@ class AudioService {
       orElse: () => availableSounds[0],
     );
     try {
-      await _player.stop();
+      await stopAlertRing();
       await _player.setReleaseMode(ReleaseMode.release);
       await _player.play(AssetSource(opt.assetPath), volume: 1.0);
       _triggerVibration(single: true);
     } catch (e) {
-      print('AudioService preview error: $e');
+      debugPrint('AudioService preview error: $e');
     }
   }
 
-  /// Plays a single notification chime
-  Future<void> playChime({String? soundKey}) async {
-    if (!_soundEnabled) return;
-    final key = soundKey ?? _selectedSoundKey;
-    final opt = availableSounds.firstWhere(
-      (s) => s.key == key,
-      orElse: () => availableSounds[0],
+  /// Plays notification chime.
+  /// Routes through single permission-aware flow so permission checks and duration cannot be bypassed.
+  Future<void> playChime({String? soundKey, int? durationSeconds}) async {
+    await playNotificationSound(
+      soundKey: soundKey,
+      customDurationSeconds: durationSeconds,
+      loop: true,
+      isUrgent: false,
     );
-
-    try {
-      await _player.stop();
-      await _player.setReleaseMode(ReleaseMode.release);
-      await _player.play(AssetSource(opt.assetPath), volume: 1.0);
-      _triggerVibration(single: true);
-    } catch (e) {
-      print('AudioService chime error: $e');
-    }
   }
 
-  /// Starts repeating alert ring for urgent human summons with duration and vibration
+  /// Starts repeating alert ring for urgent human summons with duration and vibration.
+  /// Routes through single permission-aware flow so permission checks and duration cannot be bypassed.
   Future<void> startAlarmRing({String? soundKey, int? maxDurationSeconds}) async {
-    if (!_soundEnabled || _isRinging) return;
-    _isRinging = true;
-
-    final key = soundKey ?? _selectedSoundKey;
-    final duration = maxDurationSeconds ?? _alertDurationSeconds;
-    final opt = availableSounds.firstWhere(
-      (s) => s.key == key,
-      orElse: () => availableSounds[0],
+    await playNotificationSound(
+      soundKey: soundKey,
+      customDurationSeconds: maxDurationSeconds,
+      loop: true,
+      isUrgent: true,
     );
-
-    try {
-      await _player.setReleaseMode(ReleaseMode.loop);
-      await _player.play(AssetSource(opt.assetPath), volume: 1.0);
-      _triggerVibration(single: false);
-
-      _ringTimer?.cancel();
-      if (duration > 0) {
-        _ringTimer = Timer(Duration(seconds: duration), () {
-          stopAlertRing();
-        });
-      }
-    } catch (e) {
-      print('AudioService alarm error: $e');
-    }
   }
 
   /// Stops persistent ringing and vibration immediately
@@ -240,6 +337,8 @@ class AudioService {
     _isRinging = false;
     _ringTimer?.cancel();
     _ringTimer = null;
+    _permissionCheckTimer?.cancel();
+    _permissionCheckTimer = null;
     try {
       await _player.stop();
       await _player.setReleaseMode(ReleaseMode.release);

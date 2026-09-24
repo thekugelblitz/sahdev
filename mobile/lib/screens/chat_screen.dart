@@ -80,14 +80,29 @@ class _ChatScreenState extends State<ChatScreen> {
     super.dispose();
   }
 
-  void _scrollToBottom() {
-    if (_scrollController.hasClients) {
-      _scrollController.animateTo(
-        _scrollController.position.maxScrollExtent + 80,
-        duration: const Duration(milliseconds: 250),
-        curve: Curves.easeOut,
-      );
+  bool _hasInitialScrolled = false;
+  int _lastMessageCount = 0;
+
+  void _scrollToBottom({bool animate = true}) {
+    void executeScroll() {
+      if (_scrollController.hasClients) {
+        final target = _scrollController.position.maxScrollExtent;
+        if (animate) {
+          _scrollController.animateTo(
+            target,
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeOut,
+          );
+        } else {
+          _scrollController.jumpTo(target);
+        }
+      }
     }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      executeScroll();
+      Future.delayed(const Duration(milliseconds: 100), executeScroll);
+    });
   }
 
   Future<void> _sendMessage() async {
@@ -377,6 +392,15 @@ class _ChatScreenState extends State<ChatScreen> {
     final auth = Provider.of<AuthProvider>(context);
     final chat = Provider.of<ChatProvider>(context);
 
+    // Auto-scroll to bottom when messages load on open or when new messages arrive
+    final msgCount = chat.messages.length;
+    if (msgCount > 0 && (msgCount != _lastMessageCount || !_hasInitialScrolled)) {
+      _lastMessageCount = msgCount;
+      final shouldAnimate = _hasInitialScrolled;
+      _hasInitialScrolled = true;
+      _scrollToBottom(animate: shouldAnimate);
+    }
+
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
@@ -445,6 +469,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 ? const Center(child: CircularProgressIndicator())
                 : ListView.builder(
                     controller: _scrollController,
+                    physics: const AlwaysScrollableScrollPhysics(),
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     itemCount: chat.messages.length,
                     itemBuilder: (ctx, i) {
