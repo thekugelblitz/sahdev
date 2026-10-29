@@ -32,6 +32,7 @@ class SchemaManager
         self::ensureMobileTokensTable();
         self::ensureMobileFcmTokensTable();
         self::ensureCannedResponsesTable();
+        self::ensureToolCacheTable();
     }
 
     /**
@@ -207,6 +208,11 @@ class SchemaManager
                 'client_chat_notify_human_summon'      => ['type' => 'boolean', 'default' => 1],
                 'client_chat_alert_focus_mode'         => ['type' => 'boolean', 'default' => 1],
                 'client_chat_alert_dedup_active_staff' => ['type' => 'boolean', 'default' => 1],
+
+                // Client Live Chat Tool Calling Automation
+                'client_chat_tools_enabled'            => ['type' => 'boolean', 'default' => 1],
+                'client_chat_tool_max_executions'      => ['type' => 'integer', 'default' => 2],
+                'client_chat_tool_cache_ttl'           => ['type' => 'integer', 'default' => 900],
             ];
 
             foreach ($columns as $name => $spec) {
@@ -754,5 +760,32 @@ class SchemaManager
             // Benign failure
         }
     }
-}
 
+    /**
+     * Ensure ToolsAPI result cache and concurrency deduplication table exists.
+     */
+    public static function ensureToolCacheTable(): void
+    {
+        try {
+            if (!Capsule::schema()->hasTable('tblsahdev_tool_cache')) {
+                Capsule::schema()->create('tblsahdev_tool_cache', function ($table) {
+                    $table->increments('id');
+                    $table->string('cache_key', 64)->unique();
+                    $table->string('tool_name', 64)->index();
+                    $table->string('target', 255)->nullable()->index();
+                    $table->text('normalized_args_json')->nullable();
+                    $table->mediumText('response_data')->nullable();
+                    $table->text('normalized_summary')->nullable();
+                    $table->string('status', 32)->default('success');
+                    $table->integer('http_status')->default(200);
+                    $table->boolean('is_locked')->default(0)->index();
+                    $table->timestamp('locked_until')->nullable();
+                    $table->timestamp('expires_at')->index();
+                    $table->timestamps();
+                });
+            }
+        } catch (\Throwable $e) {
+            // Benign failure
+        }
+    }
+}

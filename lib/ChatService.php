@@ -6,6 +6,7 @@ use WHMCS\Database\Capsule;
 use Carbon\Carbon;
 
 require_once __DIR__ . '/ModuleLogger.php';
+require_once __DIR__ . '/LiveChatToolService.php';
 
 /**
  * Class ChatService
@@ -1016,10 +1017,90 @@ class ChatService
                 } catch (\Throwable $logEx) {}
             }
 
+            // Evaluate intelligent tool pre-routing for ToolsAPI
+            $preRoute = LiveChatToolService::evaluatePreRoute($messageText, $sessionId, $clientId);
+            $exposedTools = $preRoute['needs_tools'] ? $preRoute['tools'] : [];
+
+            if (!empty($exposedTools) && isset($chatHistory[0]['content'])) {
+                $chatHistory[0]['content'] .= "\n\n=== DIAGNOSTIC TOOLS AVAILABLE ===\n"
+                    . "You have access to real-time external diagnostic tools (DNS, WHOIS, SSL, Ping, etc.). "
+                    . "When the user asks for technical verification or live status of a domain or host, call the appropriate tool to retrieve verified facts before answering.";
+            }
+
+            $toolCallsExecuted = [];
+
             if (method_exists($provider, 'generateChat')) {
-                // Strictly pass empty tools array [] — NO mutating tools or safe ops are exposed to client chat
-                $res = $provider->generateChat($chatHistory, [], $settings);
+                $res = $provider->generateChat($chatHistory, $exposedTools, $settings);
                 $reply = $res['content'] ?? '';
+                $toolCalls = $res['tool_calls'] ?? [];
+
+                // Server-side Tool Execution Loop
+                if (!empty($toolCalls) && !empty($exposedTools)) {
+                    $maxExecutions = LiveChatToolService::getMaxExecutionsPerTurn();
+                    $maxRounds = 2;
+                    $executionsCount = 0;
+                    $round = 0;
+                    $executedSignatures = [];
+
+                    while (!empty($toolCalls) && $round < $maxRounds && $executionsCount < $maxExecutions) {
+                        $chatHistory[] = [
+                            'role'       => 'assistant',
+                            'content'    => $res['content'] ?? null,
+                            'tool_calls' => $toolCalls,
+                        ];
+
+                        foreach ($toolCalls as $tc) {
+                            if ($executionsCount >= $maxExecutions) {
+                                break;
+                            }
+
+                            $fnName = (string) ($tc['function']['name'] ?? '');
+                            $rawArgs = $tc['function']['arguments'] ?? '{}';
+                            $fnArgs = is_array($rawArgs) ? $rawArgs : json_decode((string) $rawArgs, true);
+                            if (!is_array($fnArgs)) {
+                                $fnArgs = [];
+                            }
+
+                            // Deduplication in the same turn: prevent infinite looping on identical tool call
+                            $sig = $fnName . ':' . json_encode($fnArgs);
+                            if (isset($executedSignatures[$sig])) {
+                                $toolResult = [
+                                    'success' => true,
+                                    'summary' => $executedSignatures[$sig],
+                                    'cached'  => true,
+                                ];
+                            } else {
+                                $toolResult = LiveChatToolService::executeToolCall($fnName, $fnArgs, $sessionId, $clientId);
+                                $executedSignatures[$sig] = $toolResult['summary'] ?? '';
+                            }
+
+                            $toolCallsExecuted[] = [
+                                'id'       => $tc['id'] ?? ('call_' . ($executionsCount + 1)),
+                                'function' => $fnName,
+                                'args'     => $fnArgs,
+                                'result'   => $toolResult['summary'] ?? '',
+                                'cached'   => !empty($toolResult['cached']),
+                            ];
+
+                            $chatHistory[] = [
+                                'role'         => 'tool',
+                                'tool_call_id' => $tc['id'] ?? ('call_' . ($executionsCount + 1)),
+                                'name'         => $fnName,
+                                'content'      => (string) ($toolResult['summary'] ?? 'Completed'),
+                            ];
+
+                            $executionsCount++;
+                        }
+
+                        $round++;
+
+                        // In final round or when budget reached, pass empty tools [] to guarantee natural language synthesis
+                        $nextTools = ($executionsCount < $maxExecutions && $round < $maxRounds) ? $exposedTools : [];
+                        $followUpRes = $provider->generateChat($chatHistory, $nextTools, $settings);
+                        $reply = $followUpRes['content'] ?? '';
+                        $toolCalls = $followUpRes['tool_calls'] ?? [];
+                    }
+                }
             } else {
                 $res = $provider->generateResponse([
                     'subject'     => 'Client Live Chat',
@@ -1031,7 +1112,6 @@ class ChatService
                 $reply = $res['CLIENT_REPLY'] ?? '';
             }
 
-            // Client chat strictly ignores and discards any tool calls — full tenant isolation
             $reply = trim((string) $reply);
             if (empty($reply)) {
                 $reply = "Thank you for reaching out. How else may I assist you with your hosting services today?";
@@ -1039,8 +1119,8 @@ class ChatService
 
             // Smart link normalizer ensures all clientarea URLs are fully qualified
             $reply = self::normalizeMarkdownLinks($reply);
-            $msgId = self::recordAssistantMessage($sessionId, $reply);
-            ModuleLogger::info('client_chat', "Live chat response generated successfully for session {$sessionId} (length: " . strlen($reply) . " chars)");
+            $msgId = self::recordAssistantMessage($sessionId, $reply, [], $toolCallsExecuted);
+            ModuleLogger::info('client_chat', "Live chat response generated successfully for session {$sessionId} (length: " . strlen($reply) . " chars, tools: " . count($toolCallsExecuted) . ")");
 
             $out = [
                 'success'         => true,
@@ -1048,6 +1128,7 @@ class ChatService
                 'user_message_id' => $userMsgId ?? null,
                 'reply'           => $reply,
                 'can_escalate'    => true,
+                'tool_calls'      => $toolCallsExecuted,
             ];
             if ($debugMode && $debugPayload !== null) {
                 $out['debug_payload'] = $debugPayload;
