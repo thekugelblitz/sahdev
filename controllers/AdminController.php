@@ -2037,9 +2037,6 @@ class AdminController
             if (isset($_POST['copilot_fallback_provider_id'])) {
                 $updatePayload['copilot_fallback_provider_id'] = $copilotFallbackProviderId ?: null;
             }
-            if (isset($_POST['client_chat_provider_id'])) {
-                $updatePayload['client_chat_provider_id'] = $clientChatProviderId ?: null;
-            }
             if (isset($_POST['task_provider_map'])) {
                 $updatePayload['task_provider_map'] = $taskProviderMapJson;
             }
@@ -2154,6 +2151,7 @@ class AdminController
                 'ops_journal_retention_days' => 90,
                 'client_chat_enabled' => 1,
                 'client_chat_provider_id' => null,
+                'client_chat_fallback_provider_id' => null,
                 'client_chat_title' => 'Hosting Support Assistant',
                 'client_chat_brand_color' => '#0d6efd',
                 'client_chat_position' => 'bottom-right',
@@ -2202,7 +2200,7 @@ class AdminController
         $copilotFallbackName = ($copilotFallbackId > 0 && isset($providerMap[$copilotFallbackId])) ? $providerMap[$copilotFallbackId] : null;
 
         $clientChatPrimaryId = (int)($settings->client_chat_provider_id ?? 0);
-        $clientChatAssignedName = ($clientChatPrimaryId > 0 && isset($providerMap[$clientChatPrimaryId])) ? $providerMap[$clientChatPrimaryId] : ($ticketPrimaryName . ' (Inherited from Ticket AI)');
+        $clientChatAssignedName = ($clientChatPrimaryId > 0 && isset($providerMap[$clientChatPrimaryId])) ? $providerMap[$clientChatPrimaryId] : 'Not assigned in Client Live Chat settings';
 
         $csrfToken = generate_token("form");
         $actionUrl = htmlspecialchars($this->moduleVars['modulelink']);
@@ -3156,6 +3154,8 @@ class AdminController
                     ->orWhere('fallback_provider_id', $id)
                     ->orWhere('copilot_primary_provider_id', $id)
                     ->orWhere('copilot_fallback_provider_id', $id)
+                    ->orWhere('client_chat_provider_id', $id)
+                    ->orWhere('client_chat_fallback_provider_id', $id)
                     ->exists();
 
                 if ($inUse) {
@@ -3169,7 +3169,6 @@ class AdminController
                 $fallbackId = (int) ($_POST['fallback_provider_id'] ?? 0);
                 $copilotId = (int) ($_POST['copilot_primary_provider_id'] ?? 0);
                 $copilotFallbackId = (int) ($_POST['copilot_fallback_provider_id'] ?? 0);
-                $clientChatId = (int) ($_POST['client_chat_provider_id'] ?? 0);
 
                 $updateData = [];
                 if (isset($_POST['primary_provider_id'])) {
@@ -3183,9 +3182,6 @@ class AdminController
                 }
                 if (isset($_POST['copilot_fallback_provider_id'])) {
                     $updateData['copilot_fallback_provider_id'] = $copilotFallbackId;
-                }
-                if (isset($_POST['client_chat_provider_id'])) {
-                    $updateData['client_chat_provider_id'] = $clientChatId;
                 }
                 if (isset($_POST['copilot_temperature'])) {
                     $updateData['copilot_temperature'] = (float) $_POST['copilot_temperature'];
@@ -3278,7 +3274,7 @@ class AdminController
                     <input type="hidden" name="copilot_stream_submitted" value="1">
 
                     <div class="row" style="margin-bottom: 15px;">
-                        <div class="col-md-4">
+                        <div class="col-md-6">
                             <label style="font-weight: 600;"><i class="fas fa-ticket-alt text-primary"></i> Support Ticket AI Provider</label>
                             <select name="primary_provider_id" class="form-control" style="font-weight: 500;">
                                 <?php foreach ($providers as $prov): ?>
@@ -3289,7 +3285,7 @@ class AdminController
                             </select>
                             <span class="help-block" style="font-size: 11px;">Root-cause analysis, internal action plans, draft replies.</span>
                         </div>
-                        <div class="col-md-4">
+                        <div class="col-md-6">
                             <label style="font-weight: 600;"><i class="fas fa-terminal text-success"></i> Admin Ops Copilot Provider</label>
                             <select name="copilot_primary_provider_id" class="form-control" style="font-weight: 500;">
                                 <option value="0" <?php echo empty($settings->copilot_primary_provider_id) ? 'selected' : ''; ?>>-- Same as Ticket AI (Inherit) --</option>
@@ -3300,18 +3296,6 @@ class AdminController
                                 <?php endforeach; ?>
                             </select>
                             <span class="help-block" style="font-size: 11px;">Powers Admin Copilot drawer, Ops Hub & WHMCS Safe Ops.</span>
-                        </div>
-                        <div class="col-md-4">
-                            <label style="font-weight: 600;"><i class="fas fa-comments text-info"></i> Client Live Chat Provider</label>
-                            <select name="client_chat_provider_id" class="form-control" style="font-weight: 500;">
-                                <option value="0" <?php echo empty($settings->client_chat_provider_id) ? 'selected' : ''; ?>>-- Same as Ticket AI (Inherit) --</option>
-                                <?php foreach ($providers as $prov): ?>
-                                    <option value="<?php echo $prov->id; ?>" <?php echo ((int)($settings->client_chat_provider_id ?? 0) === (int)$prov->id) ? 'selected' : ''; ?>>
-                                        <?php echo htmlspecialchars($prov->name . ' (' . ($prov->model_name ?: $prov->provider_type) . ')'); ?>
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
-                            <span class="help-block" style="font-size: 11px;">Client area customer assistant with KB grounding.</span>
                         </div>
                     </div>
 
@@ -3545,6 +3529,7 @@ class AdminController
         $isCopilotPrimary = ($settings && (int)($settings->copilot_primary_provider_id ?? 0) === (int)$p->id);
         $isCopilotFallback = ($settings && (int)($settings->copilot_fallback_provider_id ?? 0) === (int)$p->id);
         $isClientChat = ($settings && (int)($settings->client_chat_provider_id ?? 0) === (int)$p->id);
+        $isClientChatFallback = ($settings && (int)($settings->client_chat_fallback_provider_id ?? 0) === (int)$p->id);
 
         ob_start();
         ?>
@@ -3567,10 +3552,13 @@ class AdminController
                     <?php if ($isClientChat): ?>
                         <span class="label label-info" style="font-size: 11px; padding: 4px 8px;"><i class="fas fa-comments"></i> Client Live Chat</span>
                     <?php endif; ?>
+                    <?php if ($isClientChatFallback): ?>
+                        <span class="label label-info" style="font-size: 11px; padding: 4px 8px;"><i class="fas fa-comments"></i> Live Chat Fallback</span>
+                    <?php endif; ?>
                     <?php if ($isTicketFallback || $isCopilotFallback): ?>
                         <span class="label label-warning" style="font-size: 11px; padding: 4px 8px;"><i class="fas fa-shield-alt"></i> Fallback</span>
                     <?php endif; ?>
-                    <?php if (!$isTicketPrimary && !$isCopilotPrimary && !$isClientChat && !$isTicketFallback && !$isCopilotFallback): ?>
+                    <?php if (!$isTicketPrimary && !$isCopilotPrimary && !$isClientChat && !$isClientChatFallback && !$isTicketFallback && !$isCopilotFallback): ?>
                         <span class="label label-default" style="font-size: 11px; padding: 4px 8px;">Unassigned</span>
                     <?php endif; ?>
                 </div>
@@ -9114,6 +9102,18 @@ class AdminController
             // 1. Save Widget Customizer
             if (isset($_POST['save_client_chat_customizer']) || isset($_POST['save_client_chat'])) {
                 $chosenAdminId = (int) ($_POST['client_chat_admin_id'] ?? 0);
+                $clientChatProviderId = array_key_exists('client_chat_provider_id', $_POST)
+                    ? (int) $_POST['client_chat_provider_id']
+                    : (int) ($settingsRecord->client_chat_provider_id ?? 0);
+                $clientChatFallbackProviderId = array_key_exists('client_chat_fallback_provider_id', $_POST)
+                    ? (int) $_POST['client_chat_fallback_provider_id']
+                    : (int) ($settingsRecord->client_chat_fallback_provider_id ?? 0);
+                if ($clientChatProviderId > 0 && !Capsule::table('tblsahdev_providers')->where('id', $clientChatProviderId)->where('is_active', 1)->exists()) {
+                    $clientChatProviderId = 0;
+                }
+                if ($clientChatFallbackProviderId === $clientChatProviderId || ($clientChatFallbackProviderId > 0 && !Capsule::table('tblsahdev_providers')->where('id', $clientChatFallbackProviderId)->where('is_active', 1)->exists())) {
+                    $clientChatFallbackProviderId = 0;
+                }
                 $chosenAdminUsername = null;
                 if ($chosenAdminId > 0) {
                     $chosenAdminUsername = Capsule::table('tbladmins')->where('id', $chosenAdminId)->value('username');
@@ -9121,7 +9121,8 @@ class AdminController
 
                 Capsule::table('tblsahdev_settings')->where('id', $settingsId)->update([
                     'client_chat_enabled'           => !empty($_POST['client_chat_enabled']) ? 1 : 0,
-                    'client_chat_provider_id'       => (int) ($_POST['client_chat_provider_id'] ?? 0),
+                    'client_chat_provider_id'       => $clientChatProviderId,
+                    'client_chat_fallback_provider_id' => $clientChatFallbackProviderId,
                     'client_chat_admin_id'          => $chosenAdminId ?: null,
                     'client_chat_admin_username'    => $chosenAdminUsername ?: null,
                     'client_chat_department_id'     => (int) ($_POST['client_chat_department_id'] ?? 0) ?: null,
@@ -11877,16 +11878,37 @@ class AdminController
                                         </span>
                                     </div>
 
-                                    <div class="form-group" style="margin-bottom: 20px;">
-                                        <label>Assigned AI Provider for Client Live Chat</label>
-                                        <select name="client_chat_provider_id" class="form-control">
-                                            <option value="0">-- Inherit Global Primary Provider --</option>
-                                            <?php foreach ($providers as $p): ?>
-                                                <option value="<?php echo (int)$p->id; ?>" <?php echo ((int)($settings->client_chat_provider_id ?? 0) === (int)$p->id) ? 'selected' : ''; ?>>
-                                                    <?php echo htmlspecialchars($p->name); ?> (<?php echo htmlspecialchars($p->provider_type); ?> &bull; <?php echo htmlspecialchars($p->model_name ?: 'default'); ?>)
-                                                </option>
-                                            <?php endforeach; ?>
-                                        </select>
+                                    <div class="panel panel-info" style="margin-bottom: 20px;">
+                                        <div class="panel-heading"><strong><i class="fas fa-microchip"></i> Independent Live Chat AI Provider</strong></div>
+                                        <div class="panel-body">
+                                            <p class="text-muted" style="margin-top: 0;">These providers apply only to Client Live Chat. Ticket AI and Copilot provider assignments are never inherited here.</p>
+                                            <div class="row">
+                                                <div class="col-md-6 form-group">
+                                                    <label>Primary Live Chat Provider</label>
+                                                    <select name="client_chat_provider_id" class="form-control">
+                                                        <option value="0" <?php echo empty($settings->client_chat_provider_id) ? 'selected' : ''; ?>>-- No Live Chat Provider Selected --</option>
+                                                        <?php foreach ($providers as $p): ?>
+                                                            <option value="<?php echo (int)$p->id; ?>" <?php echo ((int)($settings->client_chat_provider_id ?? 0) === (int)$p->id) ? 'selected' : ''; ?>>
+                                                                <?php echo htmlspecialchars($p->name); ?> (<?php echo htmlspecialchars($p->provider_type); ?> &bull; <?php echo htmlspecialchars($p->model_name ?: 'default'); ?>)
+                                                            </option>
+                                                        <?php endforeach; ?>
+                                                    </select>
+                                                    <span class="help-block">Choose the provider that runs customer live chat. This is independent of Support Ticket AI.</span>
+                                                </div>
+                                                <div class="col-md-6 form-group">
+                                                    <label>Live Chat Failover Provider (Optional)</label>
+                                                    <select name="client_chat_fallback_provider_id" class="form-control">
+                                                        <option value="0" <?php echo empty($settings->client_chat_fallback_provider_id) ? 'selected' : ''; ?>>-- No Live Chat Failover --</option>
+                                                        <?php foreach ($providers as $p): ?>
+                                                            <option value="<?php echo (int)$p->id; ?>" <?php echo ((int)($settings->client_chat_fallback_provider_id ?? 0) === (int)$p->id) ? 'selected' : ''; ?>>
+                                                                <?php echo htmlspecialchars($p->name); ?> (<?php echo htmlspecialchars($p->provider_type); ?> &bull; <?php echo htmlspecialchars($p->model_name ?: 'default'); ?>)
+                                                            </option>
+                                                        <?php endforeach; ?>
+                                                    </select>
+                                                    <span class="help-block">Used only if the Live Chat primary fails. Ticket fallback is never used here.</span>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
 
                                     <!-- Live Operator Console & Audio Alerts Panel -->

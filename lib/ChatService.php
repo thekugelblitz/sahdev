@@ -7,7 +7,6 @@ use Carbon\Carbon;
 
 require_once __DIR__ . '/ModuleLogger.php';
 require_once __DIR__ . '/LiveChatToolService.php';
-require_once __DIR__ . '/TaskProviderResolver.php';
 
 /**
  * Class ChatService
@@ -945,7 +944,7 @@ class ChatService
         $pRecord = null;
         $provider = self::resolveChatProvider('client_livechat', $pRecord);
         if (!$provider) {
-            ModuleLogger::warning('client_chat', 'No active AI Provider could be resolved for Client Live Chat. Please assign an AI Provider in Addons > Sahdev > AI Providers.');
+            ModuleLogger::warning('client_chat', 'No dedicated active AI Provider is selected in Client Live Chat > Customizer. Ticket AI and global provider assignments are not used for live chat.');
             $fallback = "Thank you for reaching out! Our team is currently reviewing your message. You can also open a support ticket for immediate assistance.";
             $fallback = self::normalizeMarkdownLinks($fallback);
             $msgId = self::recordAssistantMessage($sessionId, $fallback);
@@ -954,7 +953,7 @@ class ChatService
                 'message_id'      => $msgId,
                 'user_message_id' => $userMsgId ?? null,
                 'reply'           => $fallback,
-                'debug_hint'      => 'No active AI Provider configured for client live chat.',
+                'debug_hint'      => 'Select an active provider in Client Live Chat > Customizer.',
             ];
         }
 
@@ -1147,14 +1146,14 @@ class ChatService
             return $out;
         } catch (\Throwable $e) {
             $pName = $pRecord->name ?? 'AI Provider';
-            ModuleLogger::error('client_chat', "Live chat generation failed: " . $e->getMessage() . " [Provider: {$pName}, Model: {$modelName}]. Attempting failover to fallback provider...");
+            ModuleLogger::error('client_chat', "Live chat generation failed: " . $e->getMessage() . " [Provider: {$pName}, Model: {$modelName}]. Attempting Client Live Chat failover if configured...");
 
-            // Automatic failover to fallback provider if available
+            // Fail over only to a provider explicitly selected for Client Live Chat.
             $fallbackSuccess = false;
             $fallbackReply = '';
             try {
                 $settingsRow = Capsule::table('tblsahdev_settings')->first();
-                $fallbackId = (int) ($settingsRow->fallback_provider_id ?? 0);
+                $fallbackId = (int) ($settingsRow->client_chat_fallback_provider_id ?? 0);
                 if ($fallbackId > 0 && (!isset($pRecord->id) || (int) $pRecord->id !== $fallbackId)) {
                     $fbData = Capsule::table('tblsahdev_providers')->where('id', $fallbackId)->where('is_active', 1)->first();
                     if ($fbData) {
@@ -1184,7 +1183,13 @@ class ChatService
                                 $fallbackSuccess = true;
                             }
                         }
+                    } else {
+                        ModuleLogger::warning('client_chat', "Configured Client Live Chat fallback provider ID #{$fallbackId} is inactive or missing.");
                     }
+                } elseif ($fallbackId > 0) {
+                    ModuleLogger::warning('client_chat', 'Client Live Chat fallback provider is the same as its primary provider; skipping failover.');
+                } else {
+                    ModuleLogger::info('client_chat', 'No separate Client Live Chat fallback provider is configured; ticket fallback will not be used.');
                 }
             } catch (\Throwable $fbEx) {
                 ModuleLogger::error('client_chat', "Live chat fallback provider also failed: " . $fbEx->getMessage());
@@ -1738,20 +1743,27 @@ class ChatService
 
             if ($channel === 'client_livechat') {
                 $providerId = (int) ($settings->client_chat_provider_id ?? 0);
-                // When 0, inherit from Support Ticket AI Provider
                 if ($providerId <= 0) {
-                    if (class_exists('Sahdev\Lib\TaskProviderResolver')) {
-                        $providerId = TaskProviderResolver::resolveProviderId(TaskProviderResolver::TASK_TICKET_REPLY, null, (array) $settings);
-                    }
-                    if ($providerId <= 0) {
-                        $providerId = (int) ($settings->primary_provider_id ?? 0);
-                    }
+                    ModuleLogger::warning('client_chat', 'No dedicated Client Live Chat AI provider is selected. Ticket AI and global provider assignments are not used for live chat.');
+                    return null;
                 }
-            } else {
-                $providerId = (int) ($settings->copilot_primary_provider_id ?? 0);
-                if ($providerId <= 0) {
-                    $providerId = (int) ($settings->primary_provider_id ?? 0);
+
+                $pData = Capsule::table('tblsahdev_providers')
+                    ->where('id', $providerId)
+                    ->where('is_active', 1)
+                    ->first();
+                if (!$pData) {
+                    ModuleLogger::warning('client_chat', "Dedicated Client Live Chat provider ID #{$providerId} is inactive or missing; no ticket provider will be substituted.");
+                    return null;
                 }
+
+                $recordOut = $pData;
+                return self::instantiateProviderFromRecord($pData);
+            }
+
+            $providerId = (int) ($settings->copilot_primary_provider_id ?? 0);
+            if ($providerId <= 0) {
+                $providerId = (int) ($settings->primary_provider_id ?? 0);
             }
 
             if ($providerId > 0) {
@@ -1761,18 +1773,6 @@ class ChatService
                     return self::instantiateProviderFromRecord($pData);
                 } else {
                     ModuleLogger::warning('client_chat', "Configured provider ID #{$providerId} is inactive or not found for channel '{$channel}'. Attempting fallback.");
-                }
-            }
-
-            // Fallback for client live chat: try designated fallback_provider_id before generic search
-            if ($channel === 'client_livechat') {
-                $fallbackId = (int) ($settings->fallback_provider_id ?? 0);
-                if ($fallbackId > 0 && $fallbackId !== $providerId) {
-                    $fbData = Capsule::table('tblsahdev_providers')->where('id', $fallbackId)->where('is_active', 1)->first();
-                    if ($fbData) {
-                        $recordOut = $fbData;
-                        return self::instantiateProviderFromRecord($fbData);
-                    }
                 }
             }
 

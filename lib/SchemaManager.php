@@ -91,6 +91,7 @@ class SchemaManager
                 // Client Live Chat
                 'client_chat_enabled'          => ['type' => 'boolean', 'default' => 1],
                 'client_chat_provider_id'      => ['type' => 'integer', 'default' => 0],
+                'client_chat_fallback_provider_id' => ['type' => 'integer', 'default' => 0],
                 'client_chat_admin_id'         => ['type' => 'integer', 'default' => null, 'nullable' => true],
                 'client_chat_admin_username'   => ['type' => 'string', 'length' => 64, 'default' => null, 'nullable' => true],
                 'client_chat_department_id'    => ['type' => 'integer', 'default' => null, 'nullable' => true],

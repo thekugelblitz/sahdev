@@ -306,6 +306,7 @@ function sahdev_activate()
                     $table->integer('metrics_retention_days')->default(365);
                     $table->boolean('client_chat_enabled')->default(1);
                     $table->integer('client_chat_provider_id')->default(0);
+                    $table->integer('client_chat_fallback_provider_id')->default(0);
                     $table->string('client_chat_model_name', 128)->default('openai/gpt-4o-mini');
                     $table->string('client_chat_title', 128)->default('Hosting Support Assistant');
                     $table->string('client_chat_brand_color', 32)->default('#0d6efd');
