@@ -1026,7 +1026,8 @@ class ChatService
             if (!empty($exposedTools) && isset($chatHistory[0]['content'])) {
                 $chatHistory[0]['content'] .= "\n\n=== DIAGNOSTIC TOOLS AVAILABLE ===\n"
                     . "You have access to real-time external diagnostic tools (DNS, WHOIS, SSL, Ping, etc.). "
-                    . "When the user asks for technical verification or live status of a domain or host, call the appropriate tool to retrieve verified facts before answering.";
+                    . "When the user asks for technical verification or live status of a domain or host, call the appropriate tool to retrieve verified facts before answering. "
+                    . "If a tool reports an error or unavailable result, say you could not verify the result and do not guess diagnostic facts.";
             }
 
             $toolCallsExecuted = [];
@@ -1082,6 +1083,7 @@ class ChatService
                                 'args'     => $fnArgs,
                                 'result'   => $toolResult['summary'] ?? '',
                                 'cached'   => !empty($toolResult['cached']),
+                                'success'  => !empty($toolResult['success']),
                             ];
 
                             $chatHistory[] = [
@@ -1114,6 +1116,13 @@ class ChatService
                 $reply = $res['CLIENT_REPLY'] ?? '';
             }
 
+            $successfulToolCount = count(array_filter($toolCallsExecuted, static function (array $toolCall): bool {
+                return !empty($toolCall['success']);
+            }));
+            if (!empty($toolCallsExecuted) && $successfulToolCount === 0) {
+                $reply = "I couldn't complete the live diagnostic just now because the lookup service returned an error. Please try again shortly, or contact support if it continues.";
+            }
+
             $reply = trim((string) $reply);
             if (empty($reply)) {
                 $reply = "Thank you for reaching out. How else may I assist you with your hosting services today?";
@@ -1122,7 +1131,7 @@ class ChatService
             // Smart link normalizer ensures all clientarea URLs are fully qualified
             $reply = self::normalizeMarkdownLinks($reply);
             $msgId = self::recordAssistantMessage($sessionId, $reply, [], $toolCallsExecuted);
-            ModuleLogger::info('client_chat', "Live chat response generated successfully for session {$sessionId} (length: " . strlen($reply) . " chars, tools: " . count($toolCallsExecuted) . ")");
+            ModuleLogger::info('client_chat', "Live chat response generated for session {$sessionId} (length: " . strlen($reply) . " chars, tools attempted: " . count($toolCallsExecuted) . ", succeeded: {$successfulToolCount})");
 
             $out = [
                 'success'         => true,

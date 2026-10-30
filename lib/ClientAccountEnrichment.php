@@ -770,12 +770,24 @@ class ClientAccountEnrichment
             return '';
         }
 
-        $rows = Capsule::table($logTable)
-            ->where('tid', $ticketId)
-            ->orWhere('ticketid', $ticketId)
-            ->orderBy('id', 'desc')
-            ->limit(5)
-            ->get();
+        $hasTid = Capsule::schema()->hasColumn($logTable, 'tid');
+        $hasTicketId = Capsule::schema()->hasColumn($logTable, 'ticketid');
+        if (!$hasTid && !$hasTicketId) {
+            return '';
+        }
+
+        $query = Capsule::table($logTable);
+        if ($hasTid && $hasTicketId) {
+            $query->where(function ($q) use ($ticketId) {
+                $q->where('tid', $ticketId)->orWhere('ticketid', $ticketId);
+            });
+        } elseif ($hasTid) {
+            $query->where('tid', $ticketId);
+        } else {
+            $query->where('ticketid', $ticketId);
+        }
+
+        $rows = $query->orderBy('id', 'desc')->limit(5)->get();
 
         if ($rows->isEmpty()) {
             return '';

@@ -78,8 +78,8 @@ flowchart TD
 1. **Replace naive path substitution in `executeUpstreamHttp` with regex alias binding**:
    - Replace placeholders `{domain}`, `{target}`, `{host}`, `{url}`, `{ip}`, `{cidr}` by matching against exact parameter names and common aliases (`domain`, `target`, `host`, `hostname`, `url`, `ip`).
    - Track consumed path parameters so they are **not** appended to `$queryParams`.
-2. **Sanitize DNS query parameters**:
-   - If tool is `toolsapi_dns_lookup`, validate `$queryParams['type']` against allowed types (`['A', 'AAAA', 'MX', 'TXT', 'NS', 'CNAME', 'SOA', 'PTR', 'SRV']`). If set to `'ANY'`, `'ALL'`, or invalid, normalize to `'A'`.
+2. **Force IPv4 DNS queries**:
+   - For `toolsapi_dns_lookup`, always send `$queryParams['type'] = 'A'`, regardless of the type requested by the model. Expose only `A` in the tool schema.
 3. **Enhanced diagnostic logging**:
    - On upstream HTTP failures (4xx or 5xx), log the full URL, status code, and first 300 characters of the response body into `tblsahdev_module_logs`.
 
@@ -98,7 +98,7 @@ Verify provider resolution logic:
   - Tool `/dns/{domain}` with arguments `['target' => 'planckstudio.in']` produces URL `/dns/planckstudio.in` (NOT `/dns/{domain}?target=planckstudio.in`).
   - Tool `/ping/{host}` with arguments `['target' => '8.8.8.8']` produces URL `/ping/8.8.8.8`.
   - Tool `/ssl/{target}` with arguments `['domain' => 'google.com']` produces URL `/ssl/google.com`.
-  - Query parameter `type: 'ANY'` is normalized to `'A'`.
+  - Any requested query type, including `AAAA`, is forced to `'A'`.
 
 ### Manual Verification
 1. Open WHMCS Client Live Chat widget.

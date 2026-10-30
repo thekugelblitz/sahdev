@@ -138,6 +138,13 @@ runTest(
     "Loaded tools: {$totalRegistryCount}"
 );
 
+$dnsTypeSchema = $registry['toolsapi_dns_lookup']['function']['parameters']['properties']['type'] ?? [];
+runTest(
+    "DNS tool schema exposes only the IPv4 A record type",
+    ($dnsTypeSchema['enum'] ?? null) === ['A'],
+    json_encode($dnsTypeSchema)
+);
+
 runTest(
     "Category filter exposes strictly relevant tools (DNS: {$dnsToolCount} tools vs Total: {$totalRegistryCount})",
     $dnsToolCount > 0 && $dnsToolCount < 6,
@@ -316,8 +323,28 @@ runTest(
     $pageSpeedSummary
 );
 
-// TEST GROUP 7: Execution Budget Limits
-echo "\n--- TEST GROUP 7: Server-Side Execution Budget Controls ---\n";
+// TEST GROUP 7: IPv4-only DNS lookup enforcement
+echo "\n--- TEST GROUP 7: IPv4-only DNS Lookup Enforcement ---\n";
+
+// IPv4 A records only, regardless of a model-supplied DNS type.
+$dnsConsumedKeys = [];
+$dnsQueryParams = [];
+$dnsAUrl = LiveChatToolService::buildUpstreamUrl(
+    'https://toolsapi.2hs.in',
+    '/dns/{domain}',
+    ['domain' => 'blog.planckstudio.in', 'type' => 'AAAA'],
+    $dnsConsumedKeys,
+    $dnsQueryParams
+);
+runTest(
+    "Forces live-chat DNS lookup to IPv4 A records when model requests AAAA",
+    $dnsAUrl === 'https://toolsapi.2hs.in/dns/blog.planckstudio.in?type=A'
+        && ($dnsQueryParams['type'] ?? null) === 'A',
+    $dnsAUrl . ' | params: ' . json_encode($dnsQueryParams)
+);
+
+// TEST GROUP 8: Execution Budget Limits
+echo "\n--- TEST GROUP 8: Server-Side Execution Budget Controls ---\n";
 
 runTest(
     "Max tool executions per turn is capped between 1 and 5 (default: 2)",
@@ -331,8 +358,8 @@ runTest(
     "TTL value: " . LiveChatToolService::getDefaultCacheTtl()
 );
 
-// TEST GROUP 8: Tool Call Validation & Fallback Safety
-echo "\n--- TEST GROUP 8: Tool Call Argument Validation & SSRF Guard Execution ---\n";
+// TEST GROUP 9: Tool Call Validation & Fallback Safety
+echo "\n--- TEST GROUP 9: Tool Call Argument Validation & SSRF Guard Execution ---\n";
 
 // 1. Unregistered tool rejection
 $unreg = LiveChatToolService::executeToolCall('invalid_tool_name', [], 0, null);

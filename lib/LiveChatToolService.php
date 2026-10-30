@@ -24,6 +24,8 @@ class LiveChatToolService
 {
     public const DEFAULT_BASE_URL = 'https://toolsapi.2hs.in';
     public const OPENAPI_REF_FILE = 'toolsapi-2hs-in-openapi.json';
+    private const UPSTREAM_TOTAL_TIMEOUT_SEC = 15;
+    private const UPSTREAM_MAX_RETRIES = 3;
 
     public const CATEGORY_DNS      = 'dns';
     public const CATEGORY_WHOIS    = 'whois';
@@ -48,7 +50,7 @@ class LiveChatToolService
             'method'      => 'GET',
             'path'        => '/dns/{domain}',
             'ttl'         => 300,
-            'description' => 'Resolve public DNS records (A, AAAA, MX, TXT, NS, CNAME) for a domain.',
+            'description' => 'Resolve the IPv4 A record for a domain.',
         ],
         'toolsapi_dns_propagation' => [
             'category'    => self::CATEGORY_DNS,
@@ -347,6 +349,16 @@ class LiveChatToolService
                     ];
                     $required[] = $pName;
                 }
+            }
+
+            if ($toolName === 'toolsapi_dns_lookup') {
+                // This client chat tool is intentionally IPv4-only. Keep the model's
+                // schema aligned with the server-side enforcement below.
+                $properties['type'] = [
+                    'type'        => 'string',
+                    'description' => 'Always use A (IPv4) records. Other record types are not supported by this tool.',
+                    'enum'        => ['A'],
+                ];
             }
 
             $registry[$toolName] = [
@@ -787,13 +799,18 @@ class LiveChatToolService
                 $errDetail = !empty($httpResult['error']) ? $httpResult['error'] : "HTTP {$httpStatus}";
                 $execUrl = $httpResult['url'] ?? '';
                 $bodyExcerpt = substr(trim($rawBody), 0, 300);
-                ModuleLogger::warning('client_chat_tools', "ToolsAPI execution failed for {$toolName} [{$sanitizedTarget}]: {$errDetail} - URL: {$execUrl}" . ($bodyExcerpt !== '' ? " - Response: {$bodyExcerpt}" : ''));
+                $attempts = (int) ($httpResult['attempts'] ?? 1);
+                ModuleLogger::warning('client_chat_tools', "ToolsAPI execution failed for {$toolName} [{$sanitizedTarget}] after {$attempts} attempt(s): {$errDetail} - URL: {$execUrl}" . ($bodyExcerpt !== '' ? " - Response: {$bodyExcerpt}" : ''));
                 return [
                     'success' => false,
                     'summary' => "Diagnostic check for {$sanitizedTarget} returned an error ({$errDetail}).",
                     'cached'  => false,
                     'error'   => $errDetail,
                 ];
+            }
+
+            if ((int) ($httpResult['attempts'] ?? 1) > 1) {
+                ModuleLogger::info('client_chat_tools', "ToolsAPI recovered for {$toolName} [{$sanitizedTarget}] after " . (int) $httpResult['attempts'] . " attempts (HTTP {$httpStatus})");
             }
 
             // 6. Compact Output Normalization
@@ -1014,14 +1031,10 @@ class LiveChatToolService
             }
         }
 
-        // DNS type sanitization
-        if (strpos($finalPath, '/dns/') === 0 && isset($queryParams['type'])) {
-            $dnsType = strtoupper(trim((string) $queryParams['type']));
-            $allowedTypes = ['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'NS', 'SOA', 'PTR', 'SRV', 'CAA', 'DNSKEY', 'DS'];
-            if (!in_array($dnsType, $allowedTypes, true)) {
-                $dnsType = 'A'; // normalize from ANY / ALL / invalid
-            }
-            $queryParams['type'] = $dnsType;
+        // Live chat DNS lookup is IPv4-only, even if the model requests AAAA or
+        // another DNS record type. Explicitly send A so upstream behavior is stable.
+        if (preg_match('#^/dns/[^/?]+$#i', $finalPath)) {
+            $queryParams['type'] = 'A';
         }
 
         $url = rtrim($baseUrl, '/') . $finalPath;
@@ -1038,53 +1051,145 @@ class LiveChatToolService
      */
     private static function executeUpstreamHttp(string $method, string $pathPattern, array $args): array
     {
-        $settings = null;
         try {
             $settings = Capsule::table('tblsahdev_settings')->first();
-        } catch (\Throwable $e) {}
+        } catch (\Throwable $e) {
+            throw new \RuntimeException('Unable to load ToolsAPI settings from tblsahdev_settings.', 0, $e);
+        }
+        if (!$settings) {
+            throw new \RuntimeException('ToolsAPI settings are not configured.');
+        }
 
-        $baseUrl = rtrim((string) ($settings->tools_api_base_url ?? self::DEFAULT_BASE_URL), '/');
+        $baseUrl = rtrim((string) ($settings->tools_api_base_url ?: self::DEFAULT_BASE_URL), '/');
         $apiKeyEncrypted = (string) ($settings->tools_api_key_encrypted ?? '');
-        $apiKey = '';
-        if ($apiKeyEncrypted !== '') {
-            $apiKey = function_exists('decrypt') ? decrypt($apiKeyEncrypted) : $apiKeyEncrypted;
+        if ($apiKeyEncrypted === '') {
+            throw new \RuntimeException('ToolsAPI API key is missing. Configure it in the Tools Execution settings.');
+        }
+        if (!function_exists('decrypt')) {
+            throw new \RuntimeException('WHMCS decrypt() is unavailable; refusing to send the encrypted ToolsAPI key.');
+        }
+        try {
+            $apiKey = trim((string) decrypt($apiKeyEncrypted));
+        } catch (\Throwable $e) {
+            throw new \RuntimeException('Unable to decrypt the configured ToolsAPI API key.', 0, $e);
+        }
+        if ($apiKey === '') {
+            throw new \RuntimeException('The configured ToolsAPI API key decrypted to an empty value.');
         }
 
         $consumedKeys = [];
         $queryParams = [];
         $url = self::buildUpstreamUrl($baseUrl, $pathPattern, $args, $consumedKeys, $queryParams);
 
-        $timeout = 15; // fast 15-second timeout for live chat interactive SLA
-
-        $ch = curl_init($url);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, $timeout);
-        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
-
-        $headers = ['Content-Type: application/json'];
-        if ($apiKey !== '') {
-            $headers[] = 'X-API-Key: ' . $apiKey;
-        }
-        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-
-        if ($method === 'POST') {
-            curl_setopt($ch, CURLOPT_POST, true);
-            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($queryParams ?: new \stdClass()));
-        }
-
-        $resp = curl_exec($ch);
-        $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $error = curl_error($ch);
-        curl_close($ch);
-
-        return [
-            'status'      => $error !== '' ? 'error' : 'ok',
-            'http_status' => $httpCode,
-            'body'        => is_string($resp) ? $resp : '',
-            'error'       => $error,
+        // Keep retries inside the interactive SLA instead of allowing each retry a fresh 15 seconds.
+        $startedAt = microtime(true);
+        $deadline = $startedAt + self::UPSTREAM_TOTAL_TIMEOUT_SEC;
+        $configuredRetries = (int) ($settings->tools_request_retry_count ?? self::UPSTREAM_MAX_RETRIES);
+        $retryLimit = max(0, min(self::UPSTREAM_MAX_RETRIES, $configuredRetries));
+        $attemptLimit = $retryLimit + 1;
+        $result = [
+            'status'      => 'error',
+            'http_status' => 0,
+            'body'        => '',
+            'error'       => 'ToolsAPI request did not start.',
             'url'         => $url,
+            'attempts'    => 0,
         ];
+
+        for ($attempt = 1; $attempt <= $attemptLimit; $attempt++) {
+            $remainingMs = (int) floor(($deadline - microtime(true)) * 1000);
+            if ($remainingMs <= 0) {
+                if ((int) ($result['attempts'] ?? 0) === 0) {
+                    $result['error'] = 'ToolsAPI request exceeded the 15-second live chat deadline.';
+                }
+                break;
+            }
+
+            // Give this attempt the remaining SLA budget; quick transient failures can still retry within it.
+            $requestTimeoutMs = $remainingMs;
+            $ch = curl_init($url);
+            if ($ch === false) {
+                $result['error'] = 'Unable to initialize cURL for the ToolsAPI request.';
+                break;
+            }
+            $responseHeaders = [];
+
+            $optionsSet = curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER    => true,
+                CURLOPT_TIMEOUT_MS         => $requestTimeoutMs,
+                CURLOPT_CONNECTTIMEOUT_MS  => min(5000, $requestTimeoutMs),
+                CURLOPT_SSL_VERIFYPEER    => true,
+                CURLOPT_SSL_VERIFYHOST    => 2,
+                CURLOPT_HEADERFUNCTION    => static function ($handle, string $headerLine) use (&$responseHeaders): int {
+                    $headerLength = strlen($headerLine);
+                    $headerParts = explode(':', $headerLine, 2);
+                    if (count($headerParts) === 2) {
+                        $responseHeaders[strtolower(trim($headerParts[0]))] = trim($headerParts[1]);
+                    }
+                    return $headerLength;
+                },
+                CURLOPT_HTTPHEADER        => [
+                    'Content-Type: application/json',
+                    'X-API-Key: ' . $apiKey,
+                ],
+            ]);
+            if (!$optionsSet) {
+                $curlError = curl_error($ch);
+                curl_close($ch);
+                $result['error'] = $curlError !== '' ? $curlError : 'Unable to apply ToolsAPI cURL timeout and security options.';
+                $result['attempts'] = $attempt;
+                break;
+            }
+
+            if ($method === 'POST') {
+                curl_setopt($ch, CURLOPT_POST, true);
+                curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($queryParams ?: new \stdClass()));
+            }
+
+            $resp = curl_exec($ch);
+            $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $error = curl_error($ch);
+            curl_close($ch);
+
+            $result = [
+                'status'      => $error !== '' ? 'error' : 'ok',
+                'http_status' => $httpCode,
+                'body'        => is_string($resp) ? $resp : '',
+                'error'       => $error,
+                'url'         => $url,
+                'attempts'    => $attempt,
+            ];
+
+            $retryableHttpStatus = in_array($httpCode, [408, 425, 429, 500, 502, 503, 504], true);
+            // The registered Live Chat tools are read-only GET requests. Do not replay future POST tools automatically.
+            $shouldRetry = $method === 'GET' && ($error !== '' || $retryableHttpStatus);
+            $remainingMs = (int) floor(($deadline - microtime(true)) * 1000);
+            if (!$shouldRetry || $attempt >= $attemptLimit || $remainingMs <= 0) {
+                break;
+            }
+
+            $backoffMs = min(1000, 250 * (2 ** ($attempt - 1)));
+            if (isset($responseHeaders['retry-after'])) {
+                $retryAfter = trim((string) $responseHeaders['retry-after']);
+                if (ctype_digit($retryAfter)) {
+                    $retryAfterMs = (int) $retryAfter * 1000;
+                    $backoffMs = max($backoffMs, $retryAfterMs);
+                } else {
+                    $retryAt = strtotime($retryAfter);
+                    if ($retryAt !== false) {
+                        $retryAfterMs = max(0, $retryAt - time()) * 1000;
+                        $backoffMs = max($backoffMs, $retryAfterMs);
+                    }
+                }
+            } elseif ($httpCode === 429) {
+                $backoffMs = max($backoffMs, 1000);
+            }
+            $backoffMs = min($backoffMs, $remainingMs);
+            usleep($backoffMs * 1000);
+        }
+
+        $result['elapsed_ms'] = (int) round((microtime(true) - $startedAt) * 1000);
+        return $result;
     }
 
     /**
