@@ -113,6 +113,9 @@ class OpenRouterAIProvider implements AIProviderInterface
      */
     public function generateResponse(array $context, array $settings, string $tone, string $customInstruction): array
     {
+        if (!empty($settings['timeout'])) {
+            $this->timeout = (int) $settings['timeout'];
+        }
         $model = !empty($settings['model_name']) ? $settings['model_name'] : 'anthropic/claude-3.5-sonnet';
         $systemPrompt = $settings['system_prompt'] ?? "You are a helpful Senior Technical Support Engineer.";
         $userPrompt = $this->buildPrompt($context, $tone, $customInstruction, $settings['user_prompt_template'] ?? null);

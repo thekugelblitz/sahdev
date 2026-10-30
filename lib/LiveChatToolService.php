@@ -785,7 +785,9 @@ class LiveChatToolService
             if ($httpResult['status'] !== 'ok' || $httpStatus >= 400) {
                 self::releaseLock($cacheKey);
                 $errDetail = !empty($httpResult['error']) ? $httpResult['error'] : "HTTP {$httpStatus}";
-                ModuleLogger::warning('client_chat_tools', "ToolsAPI execution failed for {$toolName} [{$sanitizedTarget}]: {$errDetail}");
+                $execUrl = $httpResult['url'] ?? '';
+                $bodyExcerpt = substr(trim($rawBody), 0, 300);
+                ModuleLogger::warning('client_chat_tools', "ToolsAPI execution failed for {$toolName} [{$sanitizedTarget}]: {$errDetail} - URL: {$execUrl}" . ($bodyExcerpt !== '' ? " - Response: {$bodyExcerpt}" : ''));
                 return [
                     'success' => false,
                     'summary' => "Diagnostic check for {$sanitizedTarget} returned an error ({$errDetail}).",
@@ -947,6 +949,93 @@ class LiveChatToolService
     /**
      * Upstream HTTP client with authentication and path parameter binding.
      */
+    public static function buildUpstreamUrl(string $baseUrl, string $pathPattern, array $args, array &$consumedKeys = [], array &$queryParams = []): string
+    {
+        $consumedKeys = [];
+
+        $finalPath = preg_replace_callback('/(?:\{|%7B)([^}%]+)(?:\}|%7D)/i', function ($m) use ($args, &$consumedKeys) {
+            $key = $m[1];
+            $lowerKey = strtolower($key);
+
+            // 1. Direct match in $args
+            foreach ($args as $ak => $av) {
+                if (strtolower((string) $ak) === $lowerKey && trim((string) $av) !== '') {
+                    $consumedKeys[(string) $ak] = true;
+                    return rawurlencode(trim((string) $av));
+                }
+            }
+
+            // 2. Domain / Host / Target / URL alias resolution
+            if (in_array($lowerKey, ['domain', 'target', 'host', 'hostname', 'url'], true)) {
+                $candidateKeys = ['domain', 'target', 'host', 'hostname', 'url'];
+                foreach ($candidateKeys as $ck) {
+                    if (isset($args[$ck]) && trim((string) $args[$ck]) !== '') {
+                        $consumedKeys[$ck] = true;
+                        $val = trim((string) $args[$ck]);
+                        // If path expects domain or host, strip http:// or https:// and paths
+                        if (in_array($lowerKey, ['domain', 'host', 'hostname'], true) && preg_match('#^https?://#i', $val)) {
+                            $parsedHost = parse_url($val, PHP_URL_HOST);
+                            if (!empty($parsedHost)) {
+                                $val = $parsedHost;
+                            }
+                        }
+                        return rawurlencode($val);
+                    }
+                }
+            }
+
+            // 3. IP alias resolution
+            if (in_array($lowerKey, ['ip', 'host', 'target'], true)) {
+                $candidateKeys = ['ip', 'host', 'target'];
+                foreach ($candidateKeys as $ck) {
+                    if (isset($args[$ck]) && trim((string) $args[$ck]) !== '') {
+                        $consumedKeys[$ck] = true;
+                        return rawurlencode(trim((string) $args[$ck]));
+                    }
+                }
+            }
+
+            // 4. CIDR alias resolution
+            if ($lowerKey === 'cidr') {
+                if (isset($args['cidr']) && trim((string) $args['cidr']) !== '') {
+                    $consumedKeys['cidr'] = true;
+                    return rawurlencode(trim((string) $args['cidr']));
+                }
+            }
+
+            return $m[0]; // If unresolvable, leave intact
+        }, $pathPattern);
+
+        // Build query parameters, strictly excluding consumed path parameters
+        $queryParams = [];
+        foreach ($args as $ak => $av) {
+            if (!isset($consumedKeys[(string) $ak])) {
+                $queryParams[$ak] = $av;
+            }
+        }
+
+        // DNS type sanitization
+        if (strpos($finalPath, '/dns/') === 0 && isset($queryParams['type'])) {
+            $dnsType = strtoupper(trim((string) $queryParams['type']));
+            $allowedTypes = ['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'NS', 'SOA', 'PTR', 'SRV', 'CAA', 'DNSKEY', 'DS'];
+            if (!in_array($dnsType, $allowedTypes, true)) {
+                $dnsType = 'A'; // normalize from ANY / ALL / invalid
+            }
+            $queryParams['type'] = $dnsType;
+        }
+
+        $url = rtrim($baseUrl, '/') . $finalPath;
+        if (!empty($queryParams)) {
+            $qs = http_build_query($queryParams);
+            $url .= (strpos($url, '?') === false ? '?' : '&') . $qs;
+        }
+
+        return $url;
+    }
+
+    /**
+     * Upstream HTTP client with authentication and path parameter binding.
+     */
     private static function executeUpstreamHttp(string $method, string $pathPattern, array $args): array
     {
         $settings = null;
@@ -961,24 +1050,9 @@ class LiveChatToolService
             $apiKey = function_exists('decrypt') ? decrypt($apiKeyEncrypted) : $apiKeyEncrypted;
         }
 
-        // Apply path parameters
-        $finalPath = $pathPattern;
+        $consumedKeys = [];
         $queryParams = [];
-
-        foreach ($args as $key => $val) {
-            $placeholder = '{' . $key . '}';
-            if (strpos($finalPath, $placeholder) !== false) {
-                $finalPath = str_replace($placeholder, urlencode((string) $val), $finalPath);
-            } else {
-                $queryParams[$key] = $val;
-            }
-        }
-
-        $url = $baseUrl . $finalPath;
-        if (!empty($queryParams)) {
-            $qs = http_build_query($queryParams);
-            $url .= (strpos($url, '?') === false ? '?' : '&') . $qs;
-        }
+        $url = self::buildUpstreamUrl($baseUrl, $pathPattern, $args, $consumedKeys, $queryParams);
 
         $timeout = 15; // fast 15-second timeout for live chat interactive SLA
 
@@ -1009,6 +1083,7 @@ class LiveChatToolService
             'http_status' => $httpCode,
             'body'        => is_string($resp) ? $resp : '',
             'error'       => $error,
+            'url'         => $url,
         ];
     }
 

@@ -25,6 +25,11 @@ class LMStudioAIProvider implements AIProviderInterface
         }
     }
 
+    public function setTimeout(int $timeout): void
+    {
+        $this->timeout = max(3, $timeout);
+    }
+
     /**
      * @inheritDoc
      */
@@ -178,6 +183,9 @@ class LMStudioAIProvider implements AIProviderInterface
      */
     public function generateChat(array $messages, array $tools = [], array $settings = []): array
     {
+        if (!empty($settings['timeout'])) {
+            $this->timeout = (int) $settings['timeout'];
+        }
         $model = !empty($settings['model_name']) ? $settings['model_name'] : 'local-model';
 
         $payload = [
