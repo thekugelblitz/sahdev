@@ -214,6 +214,9 @@ class SchemaManager
                 'client_chat_tools_enabled'            => ['type' => 'boolean', 'default' => 0],
                 'client_chat_tool_max_executions'      => ['type' => 'integer', 'default' => 2],
                 'client_chat_tool_cache_ttl'           => ['type' => 'integer', 'default' => 900],
+
+                // UI Theme Mode: white, dark, black (Charcoal Black #222222 & #000000)
+                'ui_theme_mode'                        => ['type' => 'string', 'length' => 32, 'default' => 'black'],
             ];
 
             foreach ($columns as $name => $spec) {

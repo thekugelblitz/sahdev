@@ -471,8 +471,10 @@ class AdminController
     {
         $base = htmlspecialchars($this->moduleVars['modulelink']);
         require_once dirname(__DIR__) . '/lib/PermissionService.php';
+        require_once dirname(__DIR__) . '/lib/AdminPreferences.php';
         \Sahdev\Lib\PermissionService::ensureSchema();
         $adminId = \Sahdev\Lib\PermissionService::resolveCurrentAdminId();
+        $themeMode = \Sahdev\Lib\AdminPreferences::getThemeMode((int) $adminId);
         $isSuper = ($adminId === 1) || \Sahdev\Lib\PermissionService::isSuperAdmin($adminId);
 
         $hasSettingsPerm = $isSuper || \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_SETTINGS_MANAGE);
@@ -843,6 +845,262 @@ class AdminController
                 gap: 8px;
                 margin-left: auto;
             }
+            .sahdev-theme-switcher {
+                display: inline-flex;
+                align-items: center;
+                background: #f1f5f9;
+                border: 1px solid #cbd5e1;
+                border-radius: 20px;
+                padding: 2px;
+                gap: 2px;
+            }
+            .sahdev-theme-btn {
+                background: transparent;
+                border: none;
+                border-radius: 16px;
+                padding: 4px 8px;
+                font-size: 11px;
+                font-weight: 600;
+                color: #64748b;
+                cursor: pointer;
+                display: inline-flex;
+                align-items: center;
+                gap: 4px;
+                transition: all 0.15s ease;
+                line-height: 1.2;
+            }
+            .sahdev-theme-btn:hover {
+                color: #0f172a;
+            }
+            .sahdev-theme-btn.active {
+                background: #ffffff;
+                color: #0f172a;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            }
+            .sahdev-theme-btn.sahdev-theme-black.active {
+                background: #000000;
+                color: #ffffff;
+                box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+            }
+            .sahdev-theme-btn.sahdev-theme-dark.active {
+                background: #1e293b;
+                color: #38bdf8;
+                box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+            }
+            /* Charcoal Black Theme (#222222 & #000000 combined) */
+            [data-sahdev-theme="black"] {
+                background: #000000 !important;
+                color: #e4e4e7;
+            }
+            [data-sahdev-theme="black"] .sahdev-nav-system {
+                background: #222222 !important;
+                border: 1px solid #333333 !important;
+                box-shadow: 0 8px 32px rgba(0,0,0,0.85) !important;
+            }
+            [data-sahdev-theme="black"] .sahdev-nav-tier1 {
+                background: linear-gradient(180deg, #1c1c1c 0%, #161616 100%) !important;
+                border-bottom: 1px solid #2e2e2e !important;
+            }
+            [data-sahdev-theme="black"] .sahdev-nav-brand {
+                color: #ffffff !important;
+            }
+            [data-sahdev-theme="black"] .sahdev-cat-tab {
+                color: #a1a1aa !important;
+            }
+            [data-sahdev-theme="black"] .sahdev-cat-tab:hover {
+                background: #2a2a2a !important;
+                color: #ffffff !important;
+                border-color: #3a3a3a !important;
+            }
+            [data-sahdev-theme="black"] .sahdev-cat-tab.active {
+                background: #000000 !important;
+                color: #ffffff !important;
+                border-color: #444444 !important;
+                box-shadow: 0 2px 10px rgba(0, 0, 0, 0.8) !important;
+            }
+            [data-sahdev-theme="black"] .sahdev-cat-count {
+                background: #2a2a2a !important;
+                color: #d4d4d8 !important;
+            }
+            [data-sahdev-theme="black"] .sahdev-nav-tier2 {
+                background: #222222 !important;
+                border-bottom: 1px solid #2e2e2e !important;
+            }
+            [data-sahdev-theme="black"] .sahdev-subnav-context {
+                color: #71717a !important;
+            }
+            [data-sahdev-theme="black"] .sahdev-subnav-item {
+                background: #181818 !important;
+                color: #d4d4d8 !important;
+                border-color: #2f2f2f !important;
+            }
+            [data-sahdev-theme="black"] .sahdev-subnav-item:hover {
+                background: #2a2a2a !important;
+                color: #38bdf8 !important;
+                border-color: #404040 !important;
+            }
+            [data-sahdev-theme="black"] .sahdev-subnav-item.active {
+                background: #000000 !important;
+                color: #ffffff !important;
+                border-color: #6366f1 !important;
+                box-shadow: 0 0 12px rgba(99,102,241,0.35) !important;
+            }
+            [data-sahdev-theme="black"] .sahdev-quick-jump-trigger {
+                background: #181818 !important;
+                border-color: #333333 !important;
+                color: #e4e4e7 !important;
+            }
+            [data-sahdev-theme="black"] .sahdev-quick-jump-trigger kbd {
+                background: #262626 !important;
+                border-color: #3a3a3a !important;
+                color: #a1a1aa !important;
+            }
+            [data-sahdev-theme="black"] .sahdev-theme-switcher {
+                background: #181818 !important;
+                border-color: #333333 !important;
+            }
+            [data-sahdev-theme="black"] .sahdev-theme-btn {
+                color: #a1a1aa !important;
+            }
+            [data-sahdev-theme="black"] .sahdev-theme-btn:hover {
+                color: #ffffff !important;
+            }
+            [data-sahdev-theme="black"] .sahdev-page-container {
+                background: #000000 !important;
+                color: #e4e4e7 !important;
+            }
+            [data-sahdev-theme="black"] .panel {
+                background: #222222 !important;
+                border: 1px solid #333333 !important;
+                color: #f3f4f6 !important;
+            }
+            [data-sahdev-theme="black"] .panel-default > .panel-heading {
+                background: #1c1c1c !important;
+                border-color: #333333 !important;
+                color: #ffffff !important;
+            }
+            [data-sahdev-theme="black"] .panel-body {
+                background: #222222 !important;
+                color: #e4e4e7 !important;
+            }
+            [data-sahdev-theme="black"] .form-control {
+                background: #151515 !important;
+                border-color: #383838 !important;
+                color: #f4f4f5 !important;
+            }
+            [data-sahdev-theme="black"] .form-control:focus {
+                border-color: #6366f1 !important;
+                box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.35) !important;
+            }
+            [data-sahdev-theme="black"] table {
+                color: #e4e4e7 !important;
+            }
+            [data-sahdev-theme="black"] table th {
+                background: #181818 !important;
+                border-color: #333333 !important;
+                color: #ffffff !important;
+            }
+            [data-sahdev-theme="black"] table td {
+                border-color: #2e2e2e !important;
+            }
+            [data-sahdev-theme="black"] .text-muted {
+                color: #a1a1aa !important;
+            }
+            [data-sahdev-theme="black"] .well {
+                background: #181818 !important;
+                border: 1px solid #333333 !important;
+                color: #e4e4e7 !important;
+            }
+            [data-sahdev-theme="black"] .sahdev-qj-modal {
+                background: #222222 !important;
+                border-color: #383838 !important;
+            }
+            [data-sahdev-theme="black"] .sahdev-qj-header {
+                border-bottom: 1px solid #333333 !important;
+            }
+            [data-sahdev-theme="black"] .sahdev-qj-search-input {
+                color: #ffffff !important;
+            }
+            [data-sahdev-theme="black"] .sahdev-qj-item {
+                color: #e4e4e7 !important;
+            }
+            [data-sahdev-theme="black"] .sahdev-qj-item:hover,
+            [data-sahdev-theme="black"] .sahdev-qj-item.selected {
+                background: #181818 !important;
+                color: #38bdf8 !important;
+            }
+            [data-sahdev-theme="black"] .sahdev-qj-item-icon {
+                background: #181818 !important;
+                border-color: #333333 !important;
+                color: #a1a1aa !important;
+            }
+            [data-sahdev-theme="black"] .sahdev-qj-item-desc {
+                color: #a1a1aa !important;
+            }
+            [data-sahdev-theme="black"] .sahdev-qj-footer {
+                background: #1a1a1a !important;
+                border-top: 1px solid #333333 !important;
+                color: #a1a1aa !important;
+            }
+            /* Dark Theme (Slate/Navy) */
+            [data-sahdev-theme="dark"] {
+                background: #0b0f19 !important;
+                color: #cbd5e1;
+            }
+            [data-sahdev-theme="dark"] .sahdev-nav-system {
+                background: #131b2e !important;
+                border-color: #334155 !important;
+            }
+            [data-sahdev-theme="dark"] .sahdev-nav-tier1 {
+                background: #0f172a !important;
+                border-bottom: 1px solid #334155 !important;
+            }
+            [data-sahdev-theme="dark"] .sahdev-nav-brand {
+                color: #ffffff !important;
+            }
+            [data-sahdev-theme="dark"] .sahdev-cat-tab {
+                color: #94a3b8 !important;
+            }
+            [data-sahdev-theme="dark"] .sahdev-cat-tab.active {
+                background: #0b0f19 !important;
+                color: #ffffff !important;
+            }
+            [data-sahdev-theme="dark"] .sahdev-nav-tier2 {
+                background: #131b2e !important;
+            }
+            [data-sahdev-theme="dark"] .sahdev-subnav-item {
+                background: #0f172a !important;
+                color: #cbd5e1 !important;
+                border-color: #334155 !important;
+            }
+            [data-sahdev-theme="dark"] .sahdev-subnav-item.active {
+                background: #0284c7 !important;
+                color: #ffffff !important;
+                border-color: #0284c7 !important;
+            }
+            [data-sahdev-theme="dark"] .sahdev-theme-switcher {
+                background: #0f172a !important;
+                border-color: #334155 !important;
+            }
+            [data-sahdev-theme="dark"] .panel {
+                background: #131b2e !important;
+                border-color: #334155 !important;
+                color: #f8fafc !important;
+            }
+            [data-sahdev-theme="dark"] .panel-default > .panel-heading {
+                background: #0f172a !important;
+                border-color: #334155 !important;
+                color: #ffffff !important;
+            }
+            [data-sahdev-theme="dark"] .panel-body {
+                background: #131b2e !important;
+                color: #cbd5e1 !important;
+            }
+            [data-sahdev-theme="dark"] .form-control {
+                background: #0f172a !important;
+                border-color: #334155 !important;
+                color: #f8fafc !important;
+            }
             .sahdev-quick-jump-trigger {
                 padding: 6px 11px;
                 font-size: 12px;
@@ -1120,8 +1378,13 @@ class AdminController
         }
         $html .= '</nav>';
 
-        // Actions: Quick Jump (Alt+K / Ctrl+/) + Copilot Drawer shortcut
+        // Actions: Theme Switcher + Quick Jump (Alt+K / Ctrl+/) + Copilot Drawer shortcut
         $html .= '<div class="sahdev-nav-actions">';
+        $html .= '<div class="sahdev-theme-switcher" id="sahdevNavThemeSwitcher" title="Switch Theme (White / Dark / Charcoal Black)">'
+            . '<button type="button" class="sahdev-theme-btn sahdev-theme-white' . ($themeMode === 'white' ? ' active' : '') . '" onclick="sahdevGlobalSetTheme(\'white\')" title="Light / White Theme">☀️ <span class="sahdev-theme-lbl">Light</span></button>'
+            . '<button type="button" class="sahdev-theme-btn sahdev-theme-dark' . ($themeMode === 'dark' ? ' active' : '') . '" onclick="sahdevGlobalSetTheme(\'dark\')" title="Dark Slate Theme">🌙 <span class="sahdev-theme-lbl">Dark</span></button>'
+            . '<button type="button" class="sahdev-theme-btn sahdev-theme-black' . ($themeMode === 'black' ? ' active' : '') . '" onclick="sahdevGlobalSetTheme(\'black\')" title="Charcoal Black Theme (#222222 &amp; #000000)">🖤 <span class="sahdev-theme-lbl">Black</span></button>'
+            . '</div>';
         $html .= '<button type="button" class="sahdev-quick-jump-trigger" id="sahdevQuickJumpTrigger" title="Quick Jump (Alt+K or Ctrl+/)"><i class="fas fa-search"></i> <span>Quick Jump</span> <kbd>Alt+K</kbd></button>';
         if ($hasCopilotPerm) {
             $html .= '<button type="button" class="sahdev-copilot-quick-btn" onclick="if(typeof sahdevToggleAdminCopilot===\'function\'){sahdevToggleAdminCopilot(event);}" title="Toggle AI Operations Copilot"><i class="fas fa-robot"></i> <span>Copilot</span></button>';
@@ -1291,6 +1554,52 @@ class AdminController
                     renderResults(matched);
                 });
             }
+
+            window.sahdevGlobalSetTheme = function(mode, saveGlobal) {
+                var targets = [document.documentElement, document.body];
+                document.querySelectorAll(".sahdev-theme-wrapper, .sahdev-page-container, #sahdev-ai-panel, #sahdevThemeRoot").forEach(function(el) {
+                    targets.push(el);
+                });
+                targets.forEach(function(el) {
+                    if (el) el.setAttribute("data-sahdev-theme", mode);
+                });
+                document.querySelectorAll(".sahdev-theme-btn").forEach(function(b) {
+                    b.classList.remove("active");
+                });
+                document.querySelectorAll(".sahdev-theme-" + mode).forEach(function(b) {
+                    b.classList.add("active");
+                });
+                var radio = document.querySelector("input[name=\"ui_theme_mode\"][value=\"" + mode + "\"]");
+                if (radio) {
+                    radio.checked = true;
+                    document.querySelectorAll(".sdv-theme-card").forEach(function(c) { c.classList.remove("active"); });
+                    var card = radio.closest(".sdv-theme-card");
+                    if (card) card.classList.add("active");
+                }
+                try { localStorage.setItem("sahdev_theme_mode", mode); } catch(e) {}
+                var data = new URLSearchParams();
+                data.append("action", "set_theme_mode");
+                data.append("theme_mode", mode);
+                if (saveGlobal) data.append("save_global", "1");
+                fetch("addonmodules.php?module=sahdev&sahdev_act=ajax_handler", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                    body: data.toString()
+                });
+            };
+
+            // Initial theme sync from server / localStorage
+            (function() {
+                var mode = "' . htmlspecialchars($themeMode) . '";
+                try {
+                    var local = localStorage.getItem("sahdev_theme_mode");
+                    if (local && (local === "white" || local === "dark" || local === "black")) {
+                        mode = local;
+                    }
+                } catch(e) {}
+                document.documentElement.setAttribute("data-sahdev-theme", mode);
+                if (document.body) document.body.setAttribute("data-sahdev-theme", mode);
+            })();
         })();
         </script>';
 
@@ -1340,6 +1649,7 @@ class AdminController
                     'default_provider_id' => (int) ($_POST['default_provider_id'] ?? 0),
                     'tone_default'        => $toneDefault,
                     'ui_theme'            => strtolower(trim((string) ($_POST['ui_theme'] ?? 'remastered'))),
+                    'theme_mode'          => strtolower(trim((string) ($_POST['theme_mode'] ?? 'black'))),
                     'features'            => [],
                 ];
                 foreach (\Sahdev\Lib\AdminPreferences::allFeatureKeys() as $k) {
@@ -1431,6 +1741,15 @@ class AdminController
                             </select>
                             <p class="help-block">Choose the layout for the Sahdev AI panel on ticket pages. You can also switch instantly from the panel header.</p>
                         </div>
+                        <div class="form-group">
+                            <label>Color scheme &amp; theme mode</label>
+                            <select name="theme_mode" class="form-control" style="max-width:320px;" onchange="if(typeof sahdevGlobalSetTheme==='function'){sahdevGlobalSetTheme(this.value);}">
+                                <option value="black"<?php echo (($prefs['theme_mode'] ?? 'black') === 'black') ? ' selected' : ''; ?>>🖤 Charcoal Black (#222222 &amp; #000000)</option>
+                                <option value="dark"<?php echo (($prefs['theme_mode'] ?? '') === 'dark') ? ' selected' : ''; ?>>🌙 Modern Slate Dark</option>
+                                <option value="white"<?php echo (($prefs['theme_mode'] ?? '') === 'white') ? ' selected' : ''; ?>>☀️ Crisp Studio White</option>
+                            </select>
+                            <p class="help-block">Select your preferred color scheme for Sahdev UI elements across WHMCS.</p>
+                        </div>
                     </div>
                 </div>
 
@@ -1491,119 +1810,151 @@ class AdminController
             \Sahdev\Lib\SchemaManager::ensureSettingsColumns();
         } catch (\Throwable $ex) {}
 
+        // Inline migration: ensure ui_theme_mode exists
+        try {
+            Capsule::table('tblsahdev_settings')->select('ui_theme_mode')->first();
+        } catch (\Exception $e) {
+            try {
+                Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                    $table->string('ui_theme_mode', 32)->default('black');
+                });
+            } catch (\Throwable $ex) {}
+        }
+
         // Inline migration: ensure auto_analyze_on_load column exists on older installs
         try {
             Capsule::table('tblsahdev_settings')->select('auto_analyze_on_load')->first();
         } catch (\Exception $e) {
-            Capsule::schema()->table('tblsahdev_settings', function ($table) {
-                $table->boolean('auto_analyze_on_load')->default(0);
-            });
+            try {
+                Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                    $table->boolean('auto_analyze_on_load')->default(0);
+                });
+            } catch (\Throwable $ex) {}
         }
-        
+
         // Inline migration: ensure summarizer columns exist
         try {
             Capsule::table('tblsahdev_settings')->select('summarizer_enabled')->first();
         } catch (\Exception $e) {
-            Capsule::schema()->table('tblsahdev_settings', function ($table) {
-                $table->boolean('summarizer_enabled')->default(0);
-                $table->integer('summarizer_threshold')->default(15);
-            });
+            try {
+                Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                    $table->boolean('summarizer_enabled')->default(0);
+                    $table->integer('summarizer_threshold')->default(15);
+                });
+            } catch (\Throwable $ex) {}
         }
-        
+
         // Inline migration: ensure compliance_mode column exists
         try {
             Capsule::table('tblsahdev_settings')->select('compliance_mode')->first();
         } catch (\Exception $e) {
-            Capsule::schema()->table('tblsahdev_settings', function ($table) {
-                $table->boolean('compliance_mode')->default(0);
-                $table->boolean('scrub_emails')->default(1);
-                $table->boolean('scrub_cc')->default(1);
-                $table->boolean('scrub_ips')->default(1);
-                $table->boolean('scrub_passwords')->default(1);
-            });
+            try {
+                Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                    $table->boolean('compliance_mode')->default(0);
+                    $table->boolean('scrub_emails')->default(1);
+                    $table->boolean('scrub_cc')->default(1);
+                    $table->boolean('scrub_ips')->default(1);
+                    $table->boolean('scrub_passwords')->default(1);
+                });
+            } catch (\Throwable $ex) {}
         }
 
         // Granular columns inline check for existing installs
         try {
             Capsule::table('tblsahdev_settings')->select('scrub_emails')->first();
         } catch (\Exception $e) {
-            Capsule::schema()->table('tblsahdev_settings', function ($table) {
-                $table->boolean('scrub_emails')->default(1);
-                $table->boolean('scrub_cc')->default(1);
-                $table->boolean('scrub_ips')->default(1);
-                $table->boolean('scrub_passwords')->default(1);
-            });
+            try {
+                Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                    $table->boolean('scrub_emails')->default(1);
+                    $table->boolean('scrub_cc')->default(1);
+                    $table->boolean('scrub_ips')->default(1);
+                    $table->boolean('scrub_passwords')->default(1);
+                });
+            } catch (\Throwable $ex) {}
         }
 
         // Inline migration: ensure quality_scorer_enabled column exists
         try {
             Capsule::table('tblsahdev_settings')->select('quality_scorer_enabled')->first();
         } catch (\Exception $e) {
-            Capsule::schema()->table('tblsahdev_settings', function ($table) {
-                $table->boolean('quality_scorer_enabled')->default(1);
-            });
+            try {
+                Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                    $table->boolean('quality_scorer_enabled')->default(1);
+                });
+            } catch (\Throwable $ex) {}
         }
 
-        // Inline migration: ensure auto_tagging column exists (WHMCS Tag Cloud from cron insights)
+        // Inline migration: ensure auto_tagging column exists
         try {
             Capsule::table('tblsahdev_settings')->select('auto_tagging')->first();
         } catch (\Exception $e) {
-            Capsule::schema()->table('tblsahdev_settings', function ($table) {
-                $table->boolean('auto_tagging')->default(0);
-            });
+            try {
+                Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                    $table->boolean('auto_tagging')->default(0);
+                });
+            } catch (\Throwable $ex) {}
         }
 
         // Inline migration: ensure custom_attachments_dir column exists
         try {
             Capsule::table('tblsahdev_settings')->select('custom_attachments_dir')->first();
         } catch (\Exception $e) {
-            Capsule::schema()->table('tblsahdev_settings', function ($table) {
-                $table->string('custom_attachments_dir', 255)->nullable();
-            });
+            try {
+                Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                    $table->string('custom_attachments_dir', 255)->nullable();
+                });
+            } catch (\Throwable $ex) {}
         }
 
         // Multi-model orchestration: per-task provider map (JSON)
         try {
             Capsule::table('tblsahdev_settings')->select('task_provider_map')->first();
         } catch (\Exception $e) {
-            Capsule::schema()->table('tblsahdev_settings', function ($table) {
-                $table->longText('task_provider_map')->nullable();
-            });
+            try {
+                Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                    $table->longText('task_provider_map')->nullable();
+                });
+            } catch (\Throwable $ex) {}
         }
-        // Token fallback when model/global token value is unavailable.
+
+        // Token fallback when model/global token value is unavailable
         try {
             Capsule::table('tblsahdev_settings')->select('max_tokens_fallback')->first();
         } catch (\Exception $e) {
-            Capsule::schema()->table('tblsahdev_settings', function ($table) {
-                $table->integer('max_tokens_fallback')->default(4096);
-            });
+            try {
+                Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                    $table->integer('max_tokens_fallback')->default(4096);
+                });
+            } catch (\Throwable $ex) {}
         }
 
         try {
             Capsule::table('tblsahdev_settings')->select('context_enrichment_enabled')->first();
         } catch (\Exception $e) {
-            Capsule::schema()->table('tblsahdev_settings', function ($table) {
-                $table->boolean('context_enrichment_enabled')->default(1);
-                $table->integer('context_enrichment_max_chars')->default(2500);
-                $table->boolean('context_enrichment_invoices')->default(1);
-                $table->boolean('context_enrichment_domains')->default(1);
-                $table->boolean('context_enrichment_addons')->default(1);
-                $table->boolean('context_enrichment_custom_fields')->default(1);
-                $table->boolean('context_enrichment_hosting')->default(1);
-                $table->boolean('context_enrichment_client_notes')->default(0);
-                $table->text('context_enrichment_custom_field_allowlist')->nullable();
-                $table->boolean('context_enrichment_orders')->default(1);
-                $table->boolean('context_enrichment_cancellations')->default(1);
-                $table->boolean('context_enrichment_transactions')->default(1);
-                $table->boolean('context_enrichment_invoice_items')->default(1);
-                $table->boolean('context_enrichment_emails')->default(1);
-                $table->boolean('context_enrichment_ticket_log')->default(1);
-                $table->boolean('context_enrichment_ssl')->default(1);
-                $table->boolean('context_enrichment_quotes')->default(1);
-                $table->boolean('context_enrichment_activity_log')->default(0);
-                $table->boolean('context_enrichment_contacts')->default(1);
-                $table->boolean('context_enrichment_client_profile')->default(1);
-            });
+            try {
+                Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                    $table->boolean('context_enrichment_enabled')->default(1);
+                    $table->integer('context_enrichment_max_chars')->default(2500);
+                    $table->boolean('context_enrichment_invoices')->default(1);
+                    $table->boolean('context_enrichment_domains')->default(1);
+                    $table->boolean('context_enrichment_addons')->default(1);
+                    $table->boolean('context_enrichment_custom_fields')->default(1);
+                    $table->boolean('context_enrichment_hosting')->default(1);
+                    $table->boolean('context_enrichment_client_notes')->default(0);
+                    $table->text('context_enrichment_custom_field_allowlist')->nullable();
+                    $table->boolean('context_enrichment_orders')->default(1);
+                    $table->boolean('context_enrichment_cancellations')->default(1);
+                    $table->boolean('context_enrichment_transactions')->default(1);
+                    $table->boolean('context_enrichment_invoice_items')->default(1);
+                    $table->boolean('context_enrichment_emails')->default(1);
+                    $table->boolean('context_enrichment_ticket_log')->default(1);
+                    $table->boolean('context_enrichment_ssl')->default(1);
+                    $table->boolean('context_enrichment_quotes')->default(1);
+                    $table->boolean('context_enrichment_activity_log')->default(0);
+                    $table->boolean('context_enrichment_contacts')->default(1);
+                    $table->boolean('context_enrichment_client_profile')->default(1);
+                });
+            } catch (\Throwable $ex) {}
         }
 
         // Migrate individual new context enrichment columns if existing table lacks them
@@ -1660,8 +2011,6 @@ class AdminController
         // Create tblsahdev_server_telemetry
         try {
             Capsule::table('tblsahdev_server_telemetry')->first();
-
-            // Migrate: add is_monitored and server_role if missing
             try {
                 Capsule::table('tblsahdev_server_telemetry')->select('is_monitored')->first();
             } catch (\Exception $e) {
@@ -1738,22 +2087,26 @@ class AdminController
         try {
             Capsule::table('tblsahdev_settings')->select('scrub_phones')->first();
         } catch (\Exception $e) {
-            Capsule::schema()->table('tblsahdev_settings', function ($table) {
-                $table->boolean('scrub_phones')->default(1);
-            });
+            try {
+                Capsule::schema()->table('tblsahdev_settings', function ($table) {
+                    $table->boolean('scrub_phones')->default(1);
+                });
+            } catch (\Exception $ex) {}
         }
 
         try {
             Capsule::table('tblsahdev_module_logs')->first();
         } catch (\Exception $e) {
-            Capsule::schema()->create('tblsahdev_module_logs', function ($table) {
-                $table->increments('id');
-                $table->string('level', 16)->index();
-                $table->string('source', 128)->index();
-                $table->text('message');
-                $table->integer('ticket_id')->unsigned()->nullable()->index();
-                $table->timestamp('created_at')->useCurrent()->index();
-            });
+            try {
+                Capsule::schema()->create('tblsahdev_module_logs', function ($table) {
+                    $table->increments('id');
+                    $table->string('level', 16)->index();
+                    $table->string('source', 128)->index();
+                    $table->text('message');
+                    $table->integer('ticket_id')->unsigned()->nullable()->index();
+                    $table->timestamp('created_at')->useCurrent()->index();
+                });
+            } catch (\Exception $ex) {}
         }
 
         // Handle form submission
@@ -1831,21 +2184,8 @@ class AdminController
             }
             $taskProviderMapJson = $taskProviderMap === [] ? null : json_encode($taskProviderMap);
 
-            // Admin Ops Copilot Settings
-            $copilotEnabled = isset($_POST['copilot_enabled_submitted']) ? (!empty($_POST['copilot_enabled']) ? 1 : 0) : (!empty($_POST['copilot_enabled']) ? 1 : 1);
-            $copilotPrimaryProviderId = (int) ($_POST['copilot_primary_provider_id'] ?? 0);
-            $copilotFallbackProviderId = (int) ($_POST['copilot_fallback_provider_id'] ?? 0);
-            $copilotTemperature = (float) ($_POST['copilot_temperature'] ?? 0.70);
-            $copilotMaxTokens = max(256, (int) ($_POST['copilot_max_tokens'] ?? 2048));
-            $copilotStreamEnabled = !empty($_POST['copilot_stream_enabled']) ? 1 : 0;
-            $copilotShortcutKey = trim($_POST['copilot_shortcut_key'] ?? 'Ctrl+Space');
-            $copilotSystemPrompt = trim($_POST['copilot_system_prompt'] ?? '');
-            $opsRequirePasswordTier3 = !empty($_POST['ops_require_password_tier3']) ? 1 : 0;
-            $opsJournalRetentionDays = max(7, min(365, (int) ($_POST['ops_journal_retention_days'] ?? 90)));
-
-            // Organization Intelligence Settings
-            $metricsCronEnabled = !empty($_POST['metrics_cron_enabled']) ? 1 : 0;
-            $metricsRetentionDays = max(30, min(730, (int) ($_POST['metrics_retention_days'] ?? 365)));
+            // Subtab navigation state
+            $activeSubtab = !empty($_POST['active_subtab']) ? trim((string)$_POST['active_subtab']) : 'tab-appearance';
 
             // Ensure valid bounds
             if ($temperature < 0 || $temperature > 1) {
@@ -1899,61 +2239,38 @@ class AdminController
                 'incident_window_hours' => $incidentWindowHours,
                 'rag_knowledge_enabled' => $ragKnowledgeEnabled,
                 'rag_max_snippets' => $ragMaxSnippets,
-                'copilot_enabled' => $copilotEnabled,
-                'copilot_temperature' => $copilotTemperature,
-                'copilot_max_tokens' => $copilotMaxTokens,
-                'copilot_stream_enabled' => $copilotStreamEnabled,
-                'copilot_shortcut_key' => $copilotShortcutKey,
-                'copilot_system_prompt' => $copilotSystemPrompt,
-                'ops_require_password_tier3' => $opsRequirePasswordTier3,
-                'ops_journal_retention_days' => $opsJournalRetentionDays,
-                'metrics_cron_enabled' => $metricsCronEnabled,
-                'metrics_retention_days' => $metricsRetentionDays,
                 'updated_at' => \Carbon\Carbon::now(),
             ];
 
-            // Client Live Chat Settings (Only update if explicitly present in POST, avoiding accidental wipes from general settings)
-            if (isset($_POST['client_chat_enabled'])) {
-                $updatePayload['client_chat_enabled'] = !empty($_POST['client_chat_enabled']) ? 1 : 0;
+            // Theme Mode: white, dark, black (Charcoal Black #222222 & #000000)
+            if (isset($_POST['ui_theme_mode'])) {
+                $themeModeVal = strtolower(trim((string)$_POST['ui_theme_mode']));
+                if (in_array($themeModeVal, ['white', 'dark', 'black'], true)) {
+                    $updatePayload['ui_theme_mode'] = $themeModeVal;
+                    try {
+                        $curAdminId = \Sahdev\Lib\PermissionService::resolveCurrentAdminId();
+                        if ($curAdminId > 0) {
+                            $curPrefs = \Sahdev\Lib\AdminPreferences::load($curAdminId);
+                            $curPrefs['theme_mode'] = $themeModeVal;
+                            \Sahdev\Lib\AdminPreferences::save($curAdminId, $curPrefs);
+                        }
+                    } catch (\Throwable $e) {}
+                }
             }
-            if (isset($_POST['client_chat_tools_enabled'])) {
-                $updatePayload['client_chat_tools_enabled'] = !empty($_POST['client_chat_tools_enabled']) ? 1 : 0;
-            }
-            if (isset($_POST['client_chat_tool_max_executions'])) {
-                $updatePayload['client_chat_tool_max_executions'] = max(1, min(5, (int) $_POST['client_chat_tool_max_executions']));
-            }
-            if (isset($_POST['client_chat_tool_cache_ttl'])) {
-                $updatePayload['client_chat_tool_cache_ttl'] = max(60, min(86400, (int) $_POST['client_chat_tool_cache_ttl']));
-            }
-            if (isset($_POST['client_chat_title'])) {
-                $updatePayload['client_chat_title'] = trim((string)$_POST['client_chat_title']);
-            }
-            if (isset($_POST['client_chat_brand_color'])) {
-                $updatePayload['client_chat_brand_color'] = trim((string)$_POST['client_chat_brand_color']);
-            }
-            if (isset($_POST['client_chat_position'])) {
-                $updatePayload['client_chat_position'] = in_array($_POST['client_chat_position'] ?? '', ['bottom-left', 'bottom-right'], true) ? $_POST['client_chat_position'] : 'bottom-right';
-            }
-            if (isset($_POST['client_chat_welcome_message'])) {
-                $updatePayload['client_chat_welcome_message'] = trim((string)$_POST['client_chat_welcome_message']);
-            }
-            if (isset($_POST['client_chat_kb_enabled'])) {
-                $updatePayload['client_chat_kb_enabled'] = !empty($_POST['client_chat_kb_enabled']) ? 1 : 0;
-            }
-            if (isset($_POST['client_chat_require_prechat'])) {
-                $updatePayload['client_chat_require_prechat'] = !empty($_POST['client_chat_require_prechat']) ? 1 : 0;
-            }
-            if (isset($_POST['client_chat_proactive_delay'])) {
-                $updatePayload['client_chat_proactive_delay'] = max(0, (int) $_POST['client_chat_proactive_delay']);
-            }
-            if (isset($_POST['client_chat_proactive_message'])) {
-                $updatePayload['client_chat_proactive_message'] = trim((string)$_POST['client_chat_proactive_message']);
-            }
-            if (isset($_POST['client_chat_system_prompt'])) {
-                $updatePayload['client_chat_system_prompt'] = trim((string)$_POST['client_chat_system_prompt']);
-            }
-            if (isset($_POST['client_chat_debug'])) {
-                $updatePayload['client_chat_debug'] = !empty($_POST['client_chat_debug']) ? 1 : 0;
+
+            // Ticket Panel Layout
+            if (isset($_POST['ui_theme'])) {
+                $uiThemeVal = strtolower(trim((string)$_POST['ui_theme']));
+                if (in_array($uiThemeVal, ['classic', 'remastered'], true)) {
+                    try {
+                        $curAdminId = \Sahdev\Lib\PermissionService::resolveCurrentAdminId();
+                        if ($curAdminId > 0) {
+                            $curPrefs = \Sahdev\Lib\AdminPreferences::load($curAdminId);
+                            $curPrefs['ui_theme'] = $uiThemeVal;
+                            \Sahdev\Lib\AdminPreferences::save($curAdminId, $curPrefs);
+                        }
+                    } catch (\Throwable $e) {}
+                }
             }
 
             if (isset($_POST['primary_provider_id'])) {
@@ -1962,96 +2279,9 @@ class AdminController
             if (isset($_POST['fallback_provider_id'])) {
                 $updatePayload['fallback_provider_id'] = $fallbackProviderId ?: null;
             }
-            if (isset($_POST['copilot_primary_provider_id'])) {
-                $updatePayload['copilot_primary_provider_id'] = $copilotPrimaryProviderId ?: null;
-            }
-            if (isset($_POST['client_chat_auth_limit_count'])) {
-                $updatePayload['client_chat_auth_limit_count'] = max(0, (int) $_POST['client_chat_auth_limit_count']);
-            }
-            if (isset($_POST['client_chat_auth_limit_window'])) {
-                $updatePayload['client_chat_auth_limit_window'] = in_array($_POST['client_chat_auth_limit_window'], ['daily', 'weekly', 'monthly'], true) ? $_POST['client_chat_auth_limit_window'] : 'daily';
-            }
-            if (isset($_POST['client_chat_guest_limit_count'])) {
-                $updatePayload['client_chat_guest_limit_count'] = max(0, (int) $_POST['client_chat_guest_limit_count']);
-            }
-            if (isset($_POST['client_chat_max_msg_chars'])) {
-                $updatePayload['client_chat_max_msg_chars'] = max(0, (int) $_POST['client_chat_max_msg_chars']);
-            }
-            if (isset($_POST['client_chat_max_session_chars'])) {
-                $updatePayload['client_chat_max_session_chars'] = max(0, (int) $_POST['client_chat_max_session_chars']);
-            }
-            if (isset($_POST['client_chat_limit_message'])) {
-                $updatePayload['client_chat_limit_message'] = trim($_POST['client_chat_limit_message']) ?: null;
-            }
-            if (isset($_POST['client_chat_guest_limit_message'])) {
-                $updatePayload['client_chat_guest_limit_message'] = trim($_POST['client_chat_guest_limit_message']) ?: null;
-            }
-            if (isset($_POST['client_chat_pii_masking'])) {
-                $updatePayload['client_chat_pii_masking'] = !empty($_POST['client_chat_pii_masking']) ? 1 : 0;
-            }
-            if (isset($_POST['client_chat_csat_enabled'])) {
-                $updatePayload['client_chat_csat_enabled'] = !empty($_POST['client_chat_csat_enabled']) ? 1 : 0;
-            }
-            if (isset($_POST['client_chat_sound_enabled'])) {
-                $updatePayload['client_chat_sound_enabled'] = !empty($_POST['client_chat_sound_enabled']) ? 1 : 0;
-            }
-            if (isset($_POST['client_chat_starter_chips'])) {
-                $updatePayload['client_chat_starter_chips'] = trim($_POST['client_chat_starter_chips']) ?: null;
-            }
-            if (isset($_POST['client_chat_whatsapp_enabled'])) {
-                $updatePayload['client_chat_whatsapp_enabled'] = !empty($_POST['client_chat_whatsapp_enabled']) ? 1 : 0;
-            }
-            if (isset($_POST['client_chat_whatsapp_number'])) {
-                $updatePayload['client_chat_whatsapp_number'] = trim($_POST['client_chat_whatsapp_number']);
-            }
-            if (isset($_POST['client_chat_whatsapp_message'])) {
-                $updatePayload['client_chat_whatsapp_message'] = trim($_POST['client_chat_whatsapp_message']);
-            }
-            if (isset($_POST['client_chat_whatsapp_departments'])) {
-                $updatePayload['client_chat_whatsapp_departments'] = trim($_POST['client_chat_whatsapp_departments']) ?: null;
-            }
-            if (isset($_POST['client_chat_wa_verified_label'])) {
-                $updatePayload['client_chat_wa_verified_label'] = trim($_POST['client_chat_wa_verified_label']) ?: null;
-            }
-            if (isset($_POST['client_chat_wa_live_label'])) {
-                $updatePayload['client_chat_wa_live_label'] = trim($_POST['client_chat_wa_live_label']) ?: null;
-            }
-            if (isset($_POST['client_chat_wa_hero_title'])) {
-                $updatePayload['client_chat_wa_hero_title'] = trim($_POST['client_chat_wa_hero_title']) ?: null;
-            }
-            if (isset($_POST['client_chat_wa_hero_subtitle'])) {
-                $updatePayload['client_chat_wa_hero_subtitle'] = trim($_POST['client_chat_wa_hero_subtitle']) ?: null;
-            }
-            if (isset($_POST['client_chat_wa_dept_heading'])) {
-                $updatePayload['client_chat_wa_dept_heading'] = trim($_POST['client_chat_wa_dept_heading']) ?: null;
-            }
-            if (isset($_POST['client_chat_wa_speed_label'])) {
-                $updatePayload['client_chat_wa_speed_label'] = trim($_POST['client_chat_wa_speed_label']) ?: null;
-            }
-            if (isset($_POST['client_chat_siri_orb_enabled'])) {
-                $updatePayload['client_chat_siri_orb_enabled'] = !empty($_POST['client_chat_siri_orb_enabled']) ? 1 : 0;
-            }
-            if (isset($_POST['client_chat_ds_catalog'])) {
-                $updatePayload['client_chat_ds_catalog'] = !empty($_POST['client_chat_ds_catalog']) ? 1 : 0;
-            }
-            if (isset($_POST['client_chat_ds_domain_pricing'])) {
-                $updatePayload['client_chat_ds_domain_pricing'] = !empty($_POST['client_chat_ds_domain_pricing']) ? 1 : 0;
-            }
-            if (isset($_POST['client_chat_theme'])) {
-                $updatePayload['client_chat_theme'] = trim($_POST['client_chat_theme']);
-            }
-            if (isset($_POST['client_chat_logo'])) {
-                $updatePayload['client_chat_logo'] = trim($_POST['client_chat_logo']) ?: null;
-            }
-            if (isset($_POST['copilot_fallback_provider_id'])) {
-                $updatePayload['copilot_fallback_provider_id'] = $copilotFallbackProviderId ?: null;
-            }
             if (isset($_POST['task_provider_map'])) {
                 $updatePayload['task_provider_map'] = $taskProviderMapJson;
             }
-
-            // Subtab navigation state
-            $activeSubtab = !empty($_POST['active_subtab']) ? trim((string)$_POST['active_subtab']) : 'tab-ticket';
 
             // Firebase Cloud Messaging (FCM HTTP v1)
             $updatePayload['firebase_enabled'] = !empty($_POST['firebase_enabled']) ? 1 : 0;
@@ -2077,7 +2307,7 @@ class AdminController
                 $updatePayload['firebase_project_id'] = trim((string)$_POST['firebase_project_id']);
             }
 
-            // Live Support & Visitor Notification Alerts (Tab 2: Triggers, Focus Mode, Dedup, Audio)
+            // Live Support & Visitor Notification Alerts
             $updatePayload['client_chat_notify_new_visitor'] = !empty($_POST['client_chat_notify_new_visitor']) ? 1 : 0;
             $updatePayload['client_chat_notify_human_summon'] = !empty($_POST['client_chat_notify_human_summon']) ? 1 : 0;
             $updatePayload['client_chat_alert_focus_mode'] = !empty($_POST['client_chat_alert_focus_mode']) ? 1 : 0;
@@ -2106,6 +2336,7 @@ class AdminController
                 'max_tokens' => 2048,
                 'max_tokens_fallback' => 4096,
                 'tone_default' => 'Professional',
+                'ui_theme_mode' => 'black',
                 'max_messages' => 10,
                 'max_attachment_chars' => 5000,
                 'max_images' => 3,
@@ -2148,29 +2379,6 @@ class AdminController
                 'incident_window_hours' => 3,
                 'rag_knowledge_enabled' => 1,
                 'rag_max_snippets' => 3,
-                'copilot_enabled' => 1,
-                'copilot_primary_provider_id' => null,
-                'copilot_fallback_provider_id' => null,
-                'copilot_temperature' => 0.70,
-                'copilot_max_tokens' => 2048,
-                'copilot_stream_enabled' => 1,
-                'copilot_shortcut_key' => 'Ctrl+Space',
-                'copilot_system_prompt' => '',
-                'ops_require_password_tier3' => 1,
-                'ops_journal_retention_days' => 90,
-                'client_chat_enabled' => 1,
-                'client_chat_provider_id' => null,
-                'client_chat_fallback_provider_id' => null,
-                'client_chat_title' => 'Hosting Support Assistant',
-                'client_chat_brand_color' => '#0d6efd',
-                'client_chat_position' => 'bottom-right',
-                'client_chat_welcome_message' => 'Hello! How can we assist you today? Ask me about your services, billing, or hosting setup.',
-                'client_chat_kb_enabled' => 1,
-                'client_chat_require_prechat' => 0,
-                'client_chat_proactive_delay' => 15,
-                'client_chat_system_prompt' => '',
-                'metrics_cron_enabled' => 1,
-                'metrics_retention_days' => 365,
                 'client_chat_notify_new_visitor' => 1,
                 'client_chat_notify_human_summon' => 1,
                 'client_chat_alert_focus_mode' => 1,
@@ -2190,9 +2398,15 @@ class AdminController
             ];
         }
 
-        $activeSubtab = $activeSubtab ?? 'tab-ticket';
+        $activeAdminId = \Sahdev\Lib\PermissionService::resolveCurrentAdminId();
+        $adminPrefs = \Sahdev\Lib\AdminPreferences::load($activeAdminId);
+        $currentThemeMode = $settings->ui_theme_mode ?? ($adminPrefs['theme_mode'] ?? 'black');
+        $currentUiTheme = $adminPrefs['ui_theme'] ?? 'remastered';
 
-        $taskMapStored = TaskProviderResolver::parseTaskProviderMap($settings->task_provider_map ?? null);
+        $activeSubtab = $activeSubtab ?? 'tab-appearance';
+        if ($activeSubtab === 'tab-ticket') {
+            $activeSubtab = 'tab-ticket-ai';
+        }
 
         // Fetch all active providers & map names
         $providers = Capsule::table('tblsahdev_providers')->where('is_active', 1)->get();
@@ -2203,13 +2417,37 @@ class AdminController
         $ticketPrimaryName = $providerMap[(int)($settings->primary_provider_id ?? 0)] ?? 'Not Assigned';
         $ticketFallbackName = $providerMap[(int)($settings->fallback_provider_id ?? 0)] ?? null;
 
-        $copilotPrimaryId = (int)($settings->copilot_primary_provider_id ?? 0);
-        $copilotAssignedName = ($copilotPrimaryId > 0 && isset($providerMap[$copilotPrimaryId])) ? $providerMap[$copilotPrimaryId] : ($ticketPrimaryName . ' (Inherited from Ticket AI)');
-        $copilotFallbackId = (int)($settings->copilot_fallback_provider_id ?? 0);
-        $copilotFallbackName = ($copilotFallbackId > 0 && isset($providerMap[$copilotFallbackId])) ? $providerMap[$copilotFallbackId] : null;
+        // Firebase & Mobile Status Stats
+        $activeFcmCount = 0;
+        $pairedPhonesCount = 0;
+        $pairedPhoneList = [];
+        try {
+            \Sahdev\Lib\SchemaManager::ensureMobileFcmTokensTable();
+            \Sahdev\Lib\SchemaManager::ensureMobileTokensTable();
+            $activeFcmCount = (int) \WHMCS\Database\Capsule::table('tblsahdev_mobile_fcm_tokens')->where('is_active', 1)->count();
+            $pairedPhonesCount = (int) \WHMCS\Database\Capsule::table('tblsahdev_mobile_tokens')
+                ->where('token', 'not like', 'temp_%')
+                ->where('is_revoked', 0)
+                ->count();
 
-        $clientChatPrimaryId = (int)($settings->client_chat_provider_id ?? 0);
-        $clientChatAssignedName = ($clientChatPrimaryId > 0 && isset($providerMap[$clientChatPrimaryId])) ? $providerMap[$clientChatPrimaryId] : 'Not assigned in Client Live Chat settings';
+            $pairedPhoneList = \WHMCS\Database\Capsule::table('tblsahdev_mobile_tokens as mt')
+                ->leftJoin('tbladmins as a', 'a.id', '=', 'mt.admin_id')
+                ->select([
+                    'mt.id',
+                    'mt.admin_id',
+                    'mt.device_name',
+                    'mt.last_ip',
+                    'mt.last_active_at',
+                    'a.username',
+                    'a.firstname',
+                    'a.lastname',
+                ])
+                ->where('mt.token', 'not like', 'temp_%')
+                ->where('mt.is_revoked', 0)
+                ->orderBy('mt.last_active_at', 'desc')
+                ->get();
+        } catch (\Throwable $fex) {}
+        $hasServiceAccount = !empty($settings->firebase_service_account_json);
 
         $csrfToken = generate_token("form");
         $actionUrl = htmlspecialchars($this->moduleVars['modulelink']);
@@ -2217,752 +2455,1054 @@ class AdminController
         ob_start();
         ?>
 
-        <?php if (!empty($successMessage)): ?>
-            <div class="alert alert-success">
-                <i class="fas fa-check-circle"></i>
-                <?php echo htmlspecialchars($successMessage); ?>
-            </div>
-        <?php endif; ?>
-        
-
         <?php echo $this->getNavigationMarkup('settings'); ?>
-        <div class="sahdev-page-container">
 
-            <h2 style="border-bottom: 1px solid #eee; padding-bottom: 15px; margin-bottom: 20px;">Sahdev AI Intelligence - Settings</h2>
+        <style>
+        /* =========================================================
+           Sahdev Settings Overhaul - Design System & Clean Layout
+           ========================================================= */
+        .sdv-settings-dashboard {
+            width: 100%;
+            margin: 0 auto 40px auto;
+            box-sizing: border-box;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
 
-            <form method="post" action="<?php echo $actionUrl; ?>">
+        .sdv-settings-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 20px 24px;
+            background: var(--sdv-bg-surface, #ffffff);
+            border: 1px solid var(--sdv-border, #e2e8f0);
+            border-radius: 12px;
+            margin-bottom: 24px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.03);
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+        .sdv-settings-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 10.5px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            padding: 3px 8px;
+            border-radius: 6px;
+            background: linear-gradient(135deg, rgba(99,102,241,0.12), rgba(56,189,248,0.12));
+            color: #6366f1;
+            margin-bottom: 6px;
+        }
+        .sdv-settings-title {
+            margin: 0 0 6px 0;
+            font-size: 22px;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            color: var(--sdv-text-primary, #0f172a);
+        }
+        .sdv-settings-subtitle {
+            margin: 0;
+            font-size: 13px;
+            color: var(--sdv-text-muted, #64748b);
+            line-height: 1.5;
+            max-width: 820px;
+        }
+        .sdv-quick-stat-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 14px;
+            background: var(--sdv-bg-nested, #f8fafc);
+            border: 1px solid var(--sdv-border, #e2e8f0);
+            border-radius: 8px;
+            font-size: 12px;
+            color: var(--sdv-text-secondary, #334155);
+        }
+        .sdv-stat-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #10b981;
+            box-shadow: 0 0 0 3px rgba(16,185,129,0.2);
+        }
+
+        /* 2-Column Responsive Layout */
+        .sdv-settings-layout {
+            display: flex;
+            gap: 24px;
+            align-items: flex-start;
+        }
+        .sdv-settings-sidebar {
+            width: 270px;
+            flex-shrink: 0;
+            background: var(--sdv-bg-surface, #ffffff);
+            border: 1px solid var(--sdv-border, #e2e8f0);
+            border-radius: 12px;
+            padding: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.03);
+            position: sticky;
+            top: 20px;
+        }
+        .sdv-sidebar-heading {
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--sdv-text-muted, #64748b);
+            padding: 8px 12px 6px 12px;
+        }
+        .sdv-cat-btn {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            width: 100%;
+            padding: 10px 14px;
+            margin-bottom: 4px;
+            border-radius: 8px;
+            border: 1px solid transparent;
+            background: transparent;
+            color: var(--sdv-text-secondary, #475569);
+            font-size: 13px;
+            font-weight: 600;
+            text-align: left;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        .sdv-cat-btn-left {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .sdv-cat-btn i {
+            font-size: 14px;
+            width: 18px;
+            text-align: center;
+            color: #6366f1;
+        }
+        .sdv-cat-btn:hover {
+            background: var(--sdv-bg-nested, #f1f5f9);
+            color: var(--sdv-text-primary, #0f172a);
+        }
+        .sdv-cat-btn.active {
+            background: var(--sdv-bg-nested, #0f172a);
+            color: #ffffff !important;
+            border-color: rgba(99,102,241,0.3);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        }
+        .sdv-cat-btn.active i {
+            color: #38bdf8 !important;
+        }
+
+        /* Content Container & Cards */
+        .sdv-settings-main {
+            flex: 1;
+            min-width: 0;
+        }
+        .sdv-settings-pane {
+            display: none;
+            animation: sdvFadeIn 0.15s ease-out;
+        }
+        .sdv-settings-pane.active {
+            display: block;
+        }
+        @keyframes sdvFadeIn {
+            from { opacity: 0; transform: translateY(4px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .sdv-card {
+            background: var(--sdv-bg-surface, #ffffff);
+            border: 1px solid var(--sdv-border, #e2e8f0);
+            border-radius: 12px;
+            margin-bottom: 20px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.03);
+        }
+        .sdv-card-header {
+            padding: 14px 20px;
+            background: var(--sdv-bg-nested, #f8fafc);
+            border-bottom: 1px solid var(--sdv-border, #e2e8f0);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .sdv-card-title {
+            margin: 0;
+            font-size: 15px;
+            font-weight: 700;
+            color: var(--sdv-text-primary, #0f172a);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .sdv-card-title i {
+            color: #6366f1;
+        }
+        .sdv-card-body {
+            padding: 20px;
+            background: var(--sdv-bg-surface, #ffffff);
+            color: var(--sdv-text-secondary, #334155);
+        }
+
+        /* Modern Visual Theme Selector Cards */
+        .sdv-theme-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+        .sdv-theme-card {
+            position: relative;
+            border: 2px solid var(--sdv-border, #e2e8f0);
+            border-radius: 10px;
+            padding: 16px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        .sdv-theme-card:hover {
+            transform: translateY(-2px);
+            border-color: #6366f1;
+            box-shadow: 0 4px 14px rgba(99,102,241,0.15);
+        }
+        .sdv-theme-card.active {
+            border-color: #6366f1;
+            box-shadow: 0 0 0 3px rgba(99,102,241,0.25);
+        }
+        .sdv-theme-card-preview {
+            height: 60px;
+            border-radius: 6px;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+            border: 1px solid rgba(0,0,0,0.1);
+        }
+        .sdv-theme-card.active .sdv-theme-card-radio {
+            color: #6366f1;
+        }
+
+        /* Custom Toggle Switches */
+        .sdv-switch-row {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            padding: 12px 14px;
+            background: var(--sdv-bg-nested, #f8fafc);
+            border: 1px solid var(--sdv-border, #e2e8f0);
+            border-radius: 8px;
+            margin-bottom: 10px;
+            gap: 16px;
+        }
+        .sdv-switch-label {
+            font-weight: 600;
+            font-size: 13.5px;
+            color: var(--sdv-text-primary, #0f172a);
+            margin-bottom: 2px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .sdv-switch-desc {
+            font-size: 12px;
+            color: var(--sdv-text-muted, #64748b);
+            line-height: 1.4;
+            margin: 0;
+        }
+
+        /* Sticky Save Bar */
+        .sdv-sticky-save-bar {
+            position: sticky;
+            bottom: 15px;
+            z-index: 1000;
+            background: var(--sdv-bg-surface, #ffffff);
+            border: 1px solid var(--sdv-border, #e2e8f0);
+            border-radius: 12px;
+            padding: 14px 24px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-top: 30px;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+        .sdv-btn-save {
+            background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%);
+            color: #ffffff !important;
+            border: none;
+            border-radius: 8px;
+            padding: 11px 28px;
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(99,102,241,0.35);
+            transition: all 0.15s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .sdv-btn-save:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 14px rgba(99,102,241,0.45);
+        }
+
+        @media (max-width: 991px) {
+            .sdv-settings-layout {
+                flex-direction: column;
+            }
+            .sdv-settings-sidebar {
+                width: 100%;
+                position: static;
+                display: flex;
+                flex-wrap: wrap;
+                gap: 6px;
+            }
+            .sdv-cat-btn {
+                width: auto;
+                flex: 1 1 45%;
+            }
+        }
+        </style>
+
+        <div class="sahdev-page-container sdv-settings-dashboard">
+
+            <?php if (!empty($successMessage)): ?>
+                <div class="alert alert-success" style="border-radius: 10px; margin-bottom: 20px; font-weight: 600;">
+                    <i class="fas fa-check-circle" style="margin-right: 6px;"></i>
+                    <?php echo htmlspecialchars($successMessage); ?>
+                </div>
+            <?php endif; ?>
+
+            <!-- Header -->
+            <div class="sdv-settings-header">
+                <div class="sdv-settings-header-left">
+                    <div class="sdv-settings-badge"><i class="fas fa-cog"></i> Sahdev AI System Settings</div>
+                    <h2 class="sdv-settings-title">Module Settings &amp; Intelligence Controls</h2>
+                    <p class="sdv-settings-subtitle">Manage UI themes, multi-model AI routing, ticket automations, client 360 enrichment, security compliance, server telemetry, and live alerts.</p>
+                </div>
+                <div class="sdv-settings-header-right">
+                    <div class="sdv-quick-stat-badge">
+                        <span class="sdv-stat-dot"></span>
+                        <span>Assigned AI Model: <strong><?php echo htmlspecialchars($ticketPrimaryName); ?></strong></span>
+                    </div>
+                </div>
+            </div>
+
+            <form method="post" action="<?php echo $actionUrl; ?>" id="sdvSettingsForm">
                 <?php echo $csrfToken; ?>
                 <input type="hidden" name="action" value="settings">
                 <input type="hidden" name="save_settings" value="1">
                 <input type="hidden" name="active_subtab" id="sdv_active_subtab" value="<?php echo htmlspecialchars($activeSubtab); ?>">
 
-                <!-- Settings Navigation Sub-Tabs -->
-                <div class="sahdev-subtabs" style="display: flex; gap: 8px; margin-bottom: 25px; border-bottom: 2px solid #e2e8f0; padding-bottom: 12px; flex-wrap: wrap;">
-                    <button type="button" class="btn <?php echo ($activeSubtab === 'tab-ticket') ? 'btn-primary active' : 'btn-default'; ?> sdv-settings-tab-btn" data-tab="tab-ticket" onclick="switchSettingsSection('tab-ticket', this);"><i class="fas fa-ticket-alt"></i> Ticket AI Engine</button>
-                    <button type="button" class="btn <?php echo ($activeSubtab === 'tab-livechat-alerts') ? 'btn-primary active' : 'btn-default'; ?> sdv-settings-tab-btn" data-tab="tab-livechat-alerts" onclick="switchSettingsSection('tab-livechat-alerts', this);"><i class="fas fa-satellite-dish text-success"></i> Live Support &amp; Global Alert Rules</button>
-                    <button type="button" class="btn <?php echo ($activeSubtab === 'tab-firebase') ? 'btn-primary active' : 'btn-default'; ?> sdv-settings-tab-btn" data-tab="tab-firebase" onclick="switchSettingsSection('tab-firebase', this);"><i class="fas fa-bell text-warning"></i> Mobile &amp; Firebase Push</button>
-                </div>
+                <div class="sdv-settings-layout">
+                    <!-- Left Sidebar Menu -->
+                    <div class="sdv-settings-sidebar">
+                        <div class="sdv-sidebar-heading">Navigation Categories</div>
 
-                <!-- TAB 1: Ticket AI & Automation -->
-                <div id="tab-ticket" class="sdv-settings-pane" style="<?php echo ($activeSubtab === 'tab-ticket') ? 'display:block;' : 'display:none;'; ?>">
+                        <button type="button" class="sdv-cat-btn <?php echo ($activeSubtab === 'tab-appearance') ? 'active' : ''; ?>" data-tab="tab-appearance" onclick="switchSettingsSection('tab-appearance', this);">
+                            <span class="sdv-cat-btn-left"><i class="fas fa-palette"></i> <span>Appearance &amp; Theme</span></span>
+                            <i class="fas fa-chevron-right" style="font-size: 10px; opacity: 0.5;"></i>
+                        </button>
 
-                <!-- Active Model Status Banner (Managed in AI Providers) -->
-                <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-left: 4px solid #0d6efd; border-radius: 6px; padding: 14px 18px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
-                    <div>
-                        <div style="font-weight: 600; font-size: 14px; color: #1e293b; margin-bottom: 4px;">
-                            <i class="fas fa-ticket-alt text-primary"></i> Assigned Ticket AI Provider:
-                            <span class="label label-primary" style="font-size: 12.5px; font-weight: 600; margin-left: 6px;">
-                                <?php echo htmlspecialchars($ticketPrimaryName); ?>
-                            </span>
-                            <?php if ($ticketFallbackName): ?>
-                                <span class="text-muted" style="margin-left: 8px; font-size: 12px;">(Fallback: <strong><?php echo htmlspecialchars($ticketFallbackName); ?></strong>)</span>
-                            <?php endif; ?>
-                        </div>
-                        <small class="text-muted">Primary model, fallback, and per-task routing are managed centrally in the AI Providers hub.</small>
+                        <button type="button" class="sdv-cat-btn <?php echo ($activeSubtab === 'tab-ai-engine') ? 'active' : ''; ?>" data-tab="tab-ai-engine" onclick="switchSettingsSection('tab-ai-engine', this);">
+                            <span class="sdv-cat-btn-left"><i class="fas fa-microchip"></i> <span>AI Engine &amp; Tuning</span></span>
+                            <i class="fas fa-chevron-right" style="font-size: 10px; opacity: 0.5;"></i>
+                        </button>
+
+                        <button type="button" class="sdv-cat-btn <?php echo ($activeSubtab === 'tab-ticket-ai') ? 'active' : ''; ?>" data-tab="tab-ticket-ai" onclick="switchSettingsSection('tab-ticket-ai', this);">
+                            <span class="sdv-cat-btn-left"><i class="fas fa-ticket-alt"></i> <span>Ticket AI &amp; Automations</span></span>
+                            <i class="fas fa-chevron-right" style="font-size: 10px; opacity: 0.5;"></i>
+                        </button>
+
+                        <button type="button" class="sdv-cat-btn <?php echo ($activeSubtab === 'tab-security') ? 'active' : ''; ?>" data-tab="tab-security" onclick="switchSettingsSection('tab-security', this);">
+                            <span class="sdv-cat-btn-left"><i class="fas fa-user-shield"></i> <span>Privacy &amp; Compliance</span></span>
+                            <i class="fas fa-chevron-right" style="font-size: 10px; opacity: 0.5;"></i>
+                        </button>
+
+                        <button type="button" class="sdv-cat-btn <?php echo ($activeSubtab === 'tab-enrichment') ? 'active' : ''; ?>" data-tab="tab-enrichment" onclick="switchSettingsSection('tab-enrichment', this);">
+                            <span class="sdv-cat-btn-left"><i class="fas fa-id-card"></i> <span>Account Context 360</span></span>
+                            <i class="fas fa-chevron-right" style="font-size: 10px; opacity: 0.5;"></i>
+                        </button>
+
+                        <button type="button" class="sdv-cat-btn <?php echo ($activeSubtab === 'tab-telemetry') ? 'active' : ''; ?>" data-tab="tab-telemetry" onclick="switchSettingsSection('tab-telemetry', this);">
+                            <span class="sdv-cat-btn-left"><i class="fas fa-server"></i> <span>Server Health &amp; Outages</span></span>
+                            <i class="fas fa-chevron-right" style="font-size: 10px; opacity: 0.5;"></i>
+                        </button>
+
+                        <button type="button" class="sdv-cat-btn <?php echo ($activeSubtab === 'tab-livechat-alerts') ? 'active' : ''; ?>" data-tab="tab-livechat-alerts" onclick="switchSettingsSection('tab-livechat-alerts', this);">
+                            <span class="sdv-cat-btn-left"><i class="fas fa-satellite-dish"></i> <span>Live Support &amp; Alerts</span></span>
+                            <i class="fas fa-chevron-right" style="font-size: 10px; opacity: 0.5;"></i>
+                        </button>
+
+                        <button type="button" class="sdv-cat-btn <?php echo ($activeSubtab === 'tab-firebase') ? 'active' : ''; ?>" data-tab="tab-firebase" onclick="switchSettingsSection('tab-firebase', this);">
+                            <span class="sdv-cat-btn-left"><i class="fas fa-mobile-alt"></i> <span>Mobile App &amp; Push</span></span>
+                            <i class="fas fa-chevron-right" style="font-size: 10px; opacity: 0.5;"></i>
+                        </button>
                     </div>
-                    <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=providers" class="btn btn-sm btn-primary" style="font-weight: 600;">
-                        <i class="fas fa-sliders-h"></i> Configure in AI Providers & Routing &rarr;
-                    </a>
-                </div>
 
-                <div class="row" style="display: flex; gap: 20px; margin-bottom: 15px;">
-                    <div class="form-group" style="flex: 1;">
-                        <label style="font-weight: 600; display: block; margin-bottom: 5px;">Temperature</label>
-                        <input type="number" step="0.01" min="0" max="1" name="temperature" class="form-control"
-                            value="<?php echo htmlspecialchars($settings->temperature); ?>">
-                    </div>
+                    <!-- Right Main Content Panes -->
+                    <div class="sdv-settings-main">
 
-                    <div class="form-group" style="flex: 1;">
-                        <label style="font-weight: 600; display: block; margin-bottom: 5px;">Max Tokens</label>
-                        <input type="number" step="1" min="1" name="max_tokens" class="form-control"
-                            value="<?php echo htmlspecialchars($settings->max_tokens); ?>">
-                    </div>
-                    <div class="form-group" style="flex: 1;">
-                        <label style="font-weight: 600; display: block; margin-bottom: 5px;">Token Fallback (minimum)</label>
-                        <input type="number" step="1" min="4096" name="max_tokens_fallback" class="form-control"
-                            value="<?php echo htmlspecialchars((int) ($settings->max_tokens_fallback ?? 4096)); ?>">
-                        <small class="text-muted">Used when max_tokens is missing/unavailable (cron/tools fallback).</small>
-                    </div>
-                </div>
-
-                <div class="form-group" style="margin-bottom: 25px;">
-                    <label style="font-weight: 600; display: block; margin-bottom: 5px;">Default Tone</label>
-                    <select name="tone_default" class="form-control" style="width: 100%; max-width: 300px;">
-                        <?php
-                        $tones = ['Professional', 'Technical', 'Friendly', 'Strict', 'Custom'];
-                        foreach ($tones as $tone) {
-                            $selected = ($settings->tone_default === $tone) ? 'selected' : '';
-                            echo "<option value=\"$tone\" $selected>$tone</option>";
-                        }
-                        ?>
-                    </select>
-                </div>
-                
-                <div class="panel panel-default" style="margin-bottom: 25px; border-left: 4px solid #17a2b8;">
-                    <div class="panel-heading" style="background: #f4fbfc;">
-                        <h4 style="margin: 0; font-size: 15px; color:#117a8b;"><i class="fas fa-filter"></i> Data Extraction Limits <span class="label label-info" style="font-size: 11px; vertical-align: middle; margin-left: 6px;">Manage Context Size</span></h4>
-                    </div>
-                    <div class="panel-body">
-                        <div class="row" style="display: flex; gap: 20px;">
-                            <div class="form-group" style="flex: 1;">
-                                <label style="font-weight: 600; display: block; margin-bottom: 5px;">Recent Messages Limit</label>
-                                <input type="number" step="1" min="1" max="100" name="max_messages" class="form-control"
-                                    value="<?php echo htmlspecialchars($settings->max_messages ?? 10); ?>">
-                                <small class="text-muted">Number of most recent ticket replies to send to AI.</small>
-                            </div>
-                            <div class="form-group" style="flex: 1;">
-                                <label style="font-weight: 600; display: block; margin-bottom: 5px;">Text Attachment/Logs Chars</label>
-                                <input type="number" step="100" min="0" name="max_attachment_chars" class="form-control"
-                                    value="<?php echo htmlspecialchars($settings->max_attachment_chars ?? 5000); ?>">
-                                <small class="text-muted">Max characters extracted from attached .txt/.log files.</small>
-                            </div>
-                            <div class="form-group" style="flex: 1;">
-                                <label style="font-weight: 600; display: block; margin-bottom: 5px;">Max Images Analyzed</label>
-                                <input type="number" step="1" min="0" max="10" name="max_images" class="form-control"
-                                    value="<?php echo htmlspecialchars($settings->max_images ?? 3); ?>">
-                                <small class="text-muted">Number of recent images to send (Requires Gemini/GPT-4o).</small>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="panel panel-default" style="margin-bottom: 25px; border-left: 4px solid #5c4d7d;">
-                    <div class="panel-heading" style="background: #f7f5fc;">
-                        <h4 style="margin: 0; font-size: 15px; color:#3d3554;"><i class="fas fa-id-card"></i> Account context enrichment (read-only) <span class="label label-default" style="font-size: 11px; vertical-align: middle; margin-left: 6px;">WHMCS data</span></h4>
-                    </div>
-                    <div class="panel-body">
-                        <p class="text-muted" style="margin-top: 0; font-size: 13px;">
-                            Append bounded, read-only client account snippets (invoices, domains, addons, optional custom fields) to the <strong>Services</strong> block sent to the AI. Scoped by the ticket&rsquo;s client ID only; guest tickets are skipped.
-                        </p>
-                        <div class="checkbox" style="margin-top: 0;">
-                            <label style="font-weight: 600; font-size: 14px;">
-                                <input type="checkbox" name="context_enrichment_enabled" value="1" <?php echo !empty($settings->context_enrichment_enabled) ? 'checked' : ''; ?>>
-                                &nbsp;Enable account context enrichment
-                            </label>
-                        </div>
-                        <div class="form-group" style="margin-top: 12px; max-width: 280px;">
-                            <label style="font-weight: 600;">Max characters (entire services block)</label>
-                            <input type="number" name="context_enrichment_max_chars" class="form-control" min="500" max="20000" step="100"
-                                value="<?php echo htmlspecialchars((string) ($settings->context_enrichment_max_chars ?? 2500)); ?>">
-                        </div>
-                        <p style="font-weight: 600; margin: 16px 0 8px;">Include in enrichment (organized by data source)</p>
-                        
-                        <div style="margin-bottom: 12px; background: #faf9fd; padding: 10px 14px; border-radius: 6px; border: 1px solid #ede8f5;">
-                            <strong style="color: #4a3b69; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 8px;"><i class="fas fa-user-circle"></i> Profile & Services</strong>
-                            <div class="row" style="display: flex; flex-wrap: wrap; gap: 10px 20px;">
-                                <div class="checkbox" style="margin: 0;"><label><input type="checkbox" name="context_enrichment_client_profile" value="1" <?php echo !empty($settings->context_enrichment_client_profile) ? 'checked' : ''; ?>> Client Profile & Group (VIP, Credit, Last Login)</label></div>
-                                <div class="checkbox" style="margin: 0;"><label><input type="checkbox" name="context_enrichment_hosting" value="1" <?php echo !empty($settings->context_enrichment_hosting) ? 'checked' : ''; ?>> Hosting, Server & Suspend Reasons</label></div>
-                                <div class="checkbox" style="margin: 0;"><label><input type="checkbox" name="context_enrichment_domains" value="1" <?php echo !empty($settings->context_enrichment_domains) ? 'checked' : ''; ?>> Domains & Auto-Renew</label></div>
-                                <div class="checkbox" style="margin: 0;"><label><input type="checkbox" name="context_enrichment_addons" value="1" <?php echo !empty($settings->context_enrichment_addons) ? 'checked' : ''; ?>> Hosting Addons</label></div>
-                                <div class="checkbox" style="margin: 0;"><label><input type="checkbox" name="context_enrichment_ssl" value="1" <?php echo !empty($settings->context_enrichment_ssl) ? 'checked' : ''; ?>> SSL Certificates</label></div>
-                            </div>
-                        </div>
-
-                        <div style="margin-bottom: 12px; background: #f9fbf9; padding: 10px 14px; border-radius: 6px; border: 1px solid #e5f0e5;">
-                            <strong style="color: #2e6030; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 8px;"><i class="fas fa-file-invoice-dollar"></i> Billing & Orders</strong>
-                            <div class="row" style="display: flex; flex-wrap: wrap; gap: 10px 20px;">
-                                <div class="checkbox" style="margin: 0;"><label><input type="checkbox" name="context_enrichment_invoices" value="1" <?php echo !empty($settings->context_enrichment_invoices) ? 'checked' : ''; ?>> Invoices (Totals & Due Dates)</label></div>
-                                <div class="checkbox" style="margin: 0;"><label><input type="checkbox" name="context_enrichment_invoice_items" value="1" <?php echo !empty($settings->context_enrichment_invoice_items) ? 'checked' : ''; ?>> Invoice Line Items (Breakdown)</label></div>
-                                <div class="checkbox" style="margin: 0;"><label><input type="checkbox" name="context_enrichment_transactions" value="1" <?php echo !empty($settings->context_enrichment_transactions) ? 'checked' : ''; ?>> Transactions & Lifetime Spend</label></div>
-                                <div class="checkbox" style="margin: 0;"><label><input type="checkbox" name="context_enrichment_orders" value="1" <?php echo !empty($settings->context_enrichment_orders) ? 'checked' : ''; ?>> Recent Orders & Fraud Flags</label></div>
-                                <div class="checkbox" style="margin: 0;"><label><input type="checkbox" name="context_enrichment_cancellations" value="1" <?php echo !empty($settings->context_enrichment_cancellations) ? 'checked' : ''; ?>> Cancellation Requests (Churn)</label></div>
-                                <div class="checkbox" style="margin: 0;"><label><input type="checkbox" name="context_enrichment_quotes" value="1" <?php echo !empty($settings->context_enrichment_quotes) ? 'checked' : ''; ?>> Sales Quotes</label></div>
-                            </div>
-                        </div>
-
-                        <div style="margin-bottom: 12px; background: #f9fbff; padding: 10px 14px; border-radius: 6px; border: 1px solid #e5edfa;">
-                            <strong style="color: #2b4c7e; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 8px;"><i class="fas fa-history"></i> History, Logs & Notes</strong>
-                            <div class="row" style="display: flex; flex-wrap: wrap; gap: 10px 20px;">
-                                <div class="checkbox" style="margin: 0;"><label><input type="checkbox" name="context_enrichment_ticket_log" value="1" <?php echo !empty($settings->context_enrichment_ticket_log) ? 'checked' : ''; ?>> Ticket Journey & Transfer Log</label></div>
-                                <div class="checkbox" style="margin: 0;"><label><input type="checkbox" name="context_enrichment_emails" value="1" <?php echo !empty($settings->context_enrichment_emails) ? 'checked' : ''; ?>> Outgoing Email Dispatch Log</label></div>
-                                <div class="checkbox" style="margin: 0;"><label><input type="checkbox" name="context_enrichment_contacts" value="1" <?php echo !empty($settings->context_enrichment_contacts) ? 'checked' : ''; ?>> Authorized Sub-Accounts / Contacts</label></div>
-                                <div class="checkbox" style="margin: 0;"><label><input type="checkbox" name="context_enrichment_client_notes" value="1" <?php echo !empty($settings->context_enrichment_client_notes) ? 'checked' : ''; ?>> Staff Client Notes (Internal)</label></div>
-                                <div class="checkbox" style="margin: 0;"><label><input type="checkbox" name="context_enrichment_activity_log" value="1" <?php echo !empty($settings->context_enrichment_activity_log) ? 'checked' : ''; ?>> Client Portal Activity Log</label></div>
-                                <div class="checkbox" style="margin: 0;"><label><input type="checkbox" name="context_enrichment_custom_fields" value="1" <?php echo !empty($settings->context_enrichment_custom_fields) ? 'checked' : ''; ?>> Custom Fields (Safe Filtered)</label></div>
-                            </div>
-                        </div>
-
-                        <div class="form-group" style="margin-top: 14px;">
-                            <label style="font-weight: 600;">Custom field allowlist (optional)</label>
-                            <input type="text" name="context_enrichment_custom_field_allowlist" class="form-control" placeholder="e.g. VAT Number, 12, Company Name"
-                                value="<?php echo htmlspecialchars((string) ($settings->context_enrichment_custom_field_allowlist ?? '')); ?>">
-                            <small class="text-muted">Comma-separated field names or numeric field IDs. If empty, all non-sensitive fields are included.</small>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Next-Gen Intelligence: Server Telemetry, Incidents & RAG -->
-                <div class="panel panel-default" style="margin-bottom: 25px; border-left: 4px solid #20c997;">
-                    <div class="panel-heading" style="background: #f0fbf7;">
-                        <h4 style="margin: 0; font-size: 15px; color:#0e7c5b;"><i class="fas fa-satellite-dish"></i> Next-Gen Intelligence: Telemetry, Outages & RAG Knowledge <span class="label label-success" style="font-size: 11px; vertical-align: middle; margin-left: 6px;">Proactive</span></h4>
-                    </div>
-                    <div class="panel-body">
-                        <p class="text-muted" style="margin-top: 0; font-size: 13px;">
-                            Configure proactive background server health polling, ticket surge & outage clustering, and multi-layer RAG knowledge retrieval.
-                        </p>
-                        
-                        <div class="row" style="display: flex; flex-wrap: wrap; gap: 20px;">
-                            <!-- Server Telemetry -->
-                            <div style="flex: 1; min-width: 280px; background: #fafdfc; padding: 14px; border-radius: 6px; border: 1px solid #e1f5ed;">
-                                <div class="checkbox" style="margin-top: 0;">
-                                    <label style="font-weight: 600; font-size: 14px; color:#0e7c5b;">
-                                        <input type="checkbox" name="telemetry_enabled" value="1" <?php echo !empty($settings->telemetry_enabled) ? 'checked' : ''; ?>>
-                                        &nbsp;Live Server Telemetry (cPanel/WHM/Plesk)
-                                    </label>
+                        <!-- PANE 1: Appearance & Themes -->
+                        <div id="tab-appearance" class="sdv-settings-pane <?php echo ($activeSubtab === 'tab-appearance') ? 'active' : ''; ?>">
+                            <div class="sdv-card">
+                                <div class="sdv-card-header">
+                                    <h4 class="sdv-card-title"><i class="fas fa-palette"></i> Color Scheme &amp; Theme Mode</h4>
+                                    <span class="label label-info" style="font-size: 11px;">Instant Switcher</span>
                                 </div>
-                                <p class="text-muted" style="font-size: 12px; margin-bottom: 10px;">
-                                    Proactively polls server load, disk quota, and suspension status using reseller-safe API calls (never requires root).
-                                </p>
-                                <div class="form-group" style="margin-bottom: 0;">
-                                    <label style="font-size: 12px; font-weight: 600;">Poll Interval (Minutes):</label>
-                                    <input type="number" name="telemetry_poll_interval_mins" class="form-control input-sm" min="5" max="60" style="max-width: 120px;"
-                                        value="<?php echo htmlspecialchars((string) ($settings->telemetry_poll_interval_mins ?? 15)); ?>">
-                                </div>
-                            </div>
+                                <div class="sdv-card-body">
+                                    <p class="text-muted" style="margin-top: 0; font-size: 13px; margin-bottom: 16px;">
+                                        Select the color scheme for Sahdev UI elements. Choosing a theme instantly applies live preview across the entire interface.
+                                    </p>
 
-                            <!-- Incident Surge Clustering -->
-                            <div style="flex: 1; min-width: 280px; background: #fdfaf8; padding: 14px; border-radius: 6px; border: 1px solid #f9eee6;">
-                                <div class="checkbox" style="margin-top: 0;">
-                                    <label style="font-weight: 600; font-size: 14px; color:#c05621;">
-                                        <input type="checkbox" name="incident_detection_enabled" value="1" <?php echo !empty($settings->incident_detection_enabled) ? 'checked' : ''; ?>>
-                                        &nbsp;Outage & Surge Clustering
-                                    </label>
-                                </div>
-                                <p class="text-muted" style="font-size: 12px; margin-bottom: 10px;">
-                                    Detects server disruptions when multiple clients open tickets about the same server or issue topic within a rolling window.
-                                </p>
-                                <div style="display: flex; gap: 10px;">
-                                    <div class="form-group" style="margin-bottom: 0; flex: 1;">
-                                        <label style="font-size: 12px; font-weight: 600;">Surge Threshold (Tickets):</label>
-                                        <input type="number" name="incident_threshold_tickets" class="form-control input-sm" min="2" max="50"
-                                            value="<?php echo htmlspecialchars((string) ($settings->incident_threshold_tickets ?? 3)); ?>">
-                                    </div>
-                                    <div class="form-group" style="margin-bottom: 0; flex: 1;">
-                                        <label style="font-size: 12px; font-weight: 600;">Rolling Window (Hours):</label>
-                                        <input type="number" name="incident_window_hours" class="form-control input-sm" min="1" max="24"
-                                            value="<?php echo htmlspecialchars((string) ($settings->incident_window_hours ?? 3)); ?>">
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- RAG Knowledge Retrieval -->
-                            <div style="flex: 1; min-width: 280px; background: #f8faff; padding: 14px; border-radius: 6px; border: 1px solid #e2edff;">
-                                <div class="checkbox" style="margin-top: 0;">
-                                    <label style="font-weight: 600; font-size: 14px; color:#2b4c7e;">
-                                        <input type="checkbox" name="rag_knowledge_enabled" value="1" <?php echo !empty($settings->rag_knowledge_enabled) ? 'checked' : ''; ?>>
-                                        &nbsp;Multi-Layer RAG Knowledgebase
-                                    </label>
-                                </div>
-                                <p class="text-muted" style="font-size: 12px; margin-bottom: 10px;">
-                                    Indexes WHMCS KB articles, canned replies, and company runbooks to inject authoritative guidance into the prompt.
-                                </p>
-                                <div class="form-group" style="margin-bottom: 0;">
-                                    <label style="font-size: 12px; font-weight: 600;">Max Injected Snippets:</label>
-                                    <input type="number" name="rag_max_snippets" class="form-control input-sm" min="1" max="5" style="max-width: 120px;"
-                                        value="<?php echo htmlspecialchars((string) ($settings->rag_max_snippets ?? 3)); ?>">
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- AI Snapshot Feature Toggle -->
-                <div class="panel panel-default" style="margin-bottom: 25px; border-left: 4px solid #0d6efd;">
-                    <div class="panel-heading" style="background: #f0f5ff;">
-                        <h4 style="margin: 0; font-size: 15px;"><i class="fas fa-bolt"></i> AI Snapshot on Page Load <span class="label label-primary" style="font-size: 11px; vertical-align: middle; margin-left: 6px;">Feature Toggle</span></h4>
-                    </div>
-                    <div class="panel-body">
-                        <div class="checkbox" style="margin-top: 0;">
-                            <label style="font-weight: 600; font-size: 14px;">
-                                <input type="checkbox" name="auto_analyze_on_load" value="1" <?php echo !empty($settings->auto_analyze_on_load) ? 'checked' : ''; ?>>
-                                &nbsp;Enable automatic AI analysis when a ticket page loads
-                            </label>
-                        </div>
-                        <p class="text-muted" style="margin-top: 8px; margin-bottom: 0;">
-                            When <strong>ON</strong>: Sahdev will silently fetch the AI-generated <strong>Summary, Root Cause, Responsibility, Risk Level, and Action Plan</strong> as soon as a ticket page opens.<br>
-                            <em class="text-warning"><i class="fas fa-exclamation-triangle"></i> Note: This uses one AI call per ticket page load. Uses cache when available so repeat views are free.</em>
-                        </p>
-                    </div>
-                </div>
-
-                <!-- AI Summarizer Feature Toggle -->
-                <div class="panel panel-default" style="margin-bottom: 25px; border-left: 4px solid #6f42c1;">
-                    <div class="panel-heading" style="background: #fdfbff;">
-                        <h4 style="margin: 0; font-size: 15px; color:#4b2d8a;"><i class="fas fa-compress-alt"></i> Adaptive Ticket Summarizer <span class="label label-success" style="font-size: 11px; vertical-align: middle; margin-left: 6px; background:#6f42c1;">Saves Tokens</span></h4>
-                    </div>
-                    <div class="panel-body">
-                        <div class="checkbox" style="margin-top: 0;">
-                            <label style="font-weight: 600; font-size: 14px;">
-                                <input type="checkbox" name="summarizer_enabled" value="1" <?php echo !empty($settings->summarizer_enabled) ? 'checked' : ''; ?>>
-                                &nbsp;Enable Adaptive Ticket Summarizer
-                            </label>
-                        </div>
-                        <div style="margin-top: 10px; display:flex; align-items:center; gap:10px;">
-                            <label style="margin:0; font-weight:600;">Message Threshold:</label>
-                            <input type="number" name="summarizer_threshold" value="<?php echo htmlspecialchars($settings->summarizer_threshold ?? 15); ?>" class="form-control" style="width: 80px; display:inline-block;" min="3">
-                        </div>
-                        <p class="text-muted" style="margin-top: 8px; margin-bottom: 0; font-size:13px;">
-                            When a ticket reaches the threshold number of replies, the AI will use the generated summary of the conversation instead of the full raw message history. This drastically reduces input token usage for long tickets. Admins can manage these in the ticket sidebar.
-                        </p>
-                    </div>
-                </div>
-
-                <!-- Response Quality Scorer Feature Toggle -->
-                <div class="panel panel-default" style="margin-bottom: 25px; border-left: 4px solid #fd7e14;">
-                    <div class="panel-heading" style="background: #fff8f3;">
-                        <h4 style="margin: 0; font-size: 15px; color:#d35400;"><i class="fas fa-bullseye"></i> AI Response Quality Scorer <span class="label label-success" style="font-size: 11px; vertical-align: middle; margin-left: 6px; background:#fd7e14;">New</span></h4>
-                    </div>
-                    <div class="panel-body">
-                        <div class="checkbox" style="margin-top: 0;">
-                            <label style="font-weight: 600; font-size: 14px;">
-                                <input type="checkbox" name="quality_scorer_enabled" value="1" <?php echo !empty($settings->quality_scorer_enabled) ? 'checked' : ''; ?>>
-                                &nbsp;Enable Auto-Scoring for AI Generated Replies
-                            </label>
-                        </div>
-                        <p class="text-muted" style="margin-top: 8px; margin-bottom: 0; font-size:13px;">
-                            When enabled, Sahdev will automatically evaluate the clarity, tone, and completeness of its own generated replies and display a confidence score badge in the ticket panel in a single combined AI call. Manual draft scoring remains available regardless of this setting.
-                        </p>
-                    </div>
-                </div>
-
-                <!-- WHMCS Tag Cloud (cron insights) -->
-                <div class="panel panel-default" style="margin-bottom: 25px; border-left: 4px solid #0dcaf0;">
-                    <div class="panel-heading" style="background: #f0fcff;">
-                        <h4 style="margin: 0; font-size: 15px; color:#087990;"><i class="fas fa-tags"></i> WHMCS ticket tags (AI) <span class="label label-info" style="font-size: 11px; vertical-align: middle; margin-left: 6px;">Tag Cloud</span></h4>
-                    </div>
-                    <div class="panel-body">
-                        <div class="checkbox" style="margin-top: 0;">
-                            <label style="font-weight: 600; font-size: 14px;">
-                                <input type="checkbox" name="auto_tagging" value="1" <?php echo !empty($settings->auto_tagging) ? 'checked' : ''; ?>>
-                                &nbsp;Apply AI-generated tags from Ticket Insights (cron) to WHMCS
-                            </label>
-                        </div>
-                        <p class="text-muted" style="margin-top: 8px; margin-bottom: 0; font-size:13px;">
-                            When enabled, each successful cron or ticket-list “analyze” run pushes tags into WHMCS so they show in the <strong>native Tag Cloud</strong> field on the ticket (sidebar). Tags use the <code>ai-</code> prefix (e.g. <code>ai-billing</code>) so they stay distinct from manual tags; Sahdev replaces previous <code>ai-*</code> entries on that ticket when it re-analyzes. Sahdev tries the internal <code>UpdateTicket</code> API, the <code>tbltickets.tags</code> column if your build has it, and tag storage (including <code>tbltickettags</code> rows with <code>ticketid</code> + plain <code>tag</code> text, or <code>tag_id</code> + <code>tbltags</code>, or <code>tbltaglinks</code>). After enabling, run analysis again (or wait for cron) so existing tickets get tags. The ticket list still shows tag chips in Sahdev insights.
-                        </p>
-                    </div>
-                </div>
-
-                <!-- Compliance Mode Toggle -->
-                <div class="panel panel-default" style="margin-bottom: 25px; border-left: 4px solid #198754;">
-                    <div class="panel-heading" style="background: #f8fff9;">
-                        <h4 style="margin: 0; font-size: 15px; color:#146c43;"><i class="fas fa-user-shield"></i> Compliance Mode (PII Scrubber) <span class="label label-success" style="font-size: 11px; vertical-align: middle; margin-left: 6px; background:#198754;">Privacy</span></h4>
-                    </div>
-                    <div class="panel-body">
-                        <div class="checkbox" style="margin-top: 0;">
-                            <label style="font-weight: 600; font-size: 14px;">
-                                <input type="checkbox" name="compliance_mode" value="1" <?php echo !empty($settings->compliance_mode) ? 'checked' : ''; ?>>
-                                &nbsp;Enable PII Scrubber
-                            </label>
-                        </div>
-                        <div style="margin-top: 10px; display:flex; gap:15px; flex-wrap: wrap;">
-                            <label><input type="checkbox" name="scrub_emails" value="1" <?php echo (!isset($settings->scrub_emails) || !empty($settings->scrub_emails)) ? 'checked' : ''; ?>> <i class="fas fa-envelope text-muted"></i> Emails</label>
-                            <label><input type="checkbox" name="scrub_cc" value="1" <?php echo (!isset($settings->scrub_cc) || !empty($settings->scrub_cc)) ? 'checked' : ''; ?>> <i class="fas fa-credit-card text-muted"></i> Credit Cards</label>
-                            <label><input type="checkbox" name="scrub_ips" value="1" <?php echo (!isset($settings->scrub_ips) || !empty($settings->scrub_ips)) ? 'checked' : ''; ?>> <i class="fas fa-network-wired text-muted"></i> IPv4</label>
-                            <label><input type="checkbox" name="scrub_passwords" value="1" <?php echo (!isset($settings->scrub_passwords) || !empty($settings->scrub_passwords)) ? 'checked' : ''; ?>> <i class="fas fa-key text-muted"></i> Passwords</label>
-                            <label><input type="checkbox" name="scrub_phones" value="1" <?php echo (!isset($settings->scrub_phones) || !empty($settings->scrub_phones)) ? 'checked' : ''; ?>> <i class="fas fa-phone text-muted"></i> Phone numbers</label>
-                        </div>
-                        <p class="text-muted" style="margin-top: 8px; margin-bottom: 0; font-size:13px;">
-                            When enabled, Sahdev will automatically use regex to strip out selected sensitive information before sending the ticket context to the AI model. Essential context structure remains intact.
-                        </p>
-                    </div>
-                </div>
-
-                <!-- Advanced Path Settings -->
-                <div class="panel panel-default" style="margin-bottom: 25px; border-left: 4px solid #6c757d;">
-                    <div class="panel-heading" style="background: #f8f9fa;">
-                        <h4 style="margin: 0; font-size: 15px; color:#495057;"><i class="fas fa-folder-open"></i> Advanced Path Settings</h4>
-                    </div>
-                    <div class="panel-body">
-                        <div class="form-group" style="margin-bottom: 0;">
-                            <label style="font-weight: 600; display: block; margin-bottom: 5px;">Custom Attachments Directory Path (Optional)</label>
-                            <input type="text" name="custom_attachments_dir" class="form-control" placeholder="e.g. /home/user/whmcsdata/attachments" value="<?php echo htmlspecialchars($settings->custom_attachments_dir ?? ''); ?>">
-                            <p class="text-muted" style="margin-top: 8px; margin-bottom: 0; font-size:13px;">
-                                Leave blank to automatically detect the WHMCS attachments folder from <code>configuration.php</code>. If images are failing to load for AI analysis, you can hardcode the absolute server path to your attachments folder here.
-                            </p>
-                        </div>
-                    </div>
-                </div>
-
-                </div><!-- end #tab-ticket -->
-
-                <!-- TAB 2: Live Support & Global Alert Rules -->
-                <div id="tab-livechat-alerts" class="sdv-settings-pane" style="<?php echo ($activeSubtab === 'tab-livechat-alerts') ? 'display:block;' : 'display:none;'; ?>">
-                    <div class="panel panel-default" style="margin-bottom: 25px; border-left: 4px solid #10b981;">
-                        <div class="panel-heading" style="background: #f0fdf4; display: flex; justify-content: space-between; align-items: center;">
-                            <h4 style="margin: 0; font-size: 15px; color: #047857;"><i class="fas fa-satellite-dish"></i> Live Support &amp; Visitor Notification Alerts</h4>
-                            <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=live_console" class="btn btn-xs btn-success" style="font-weight: 600;">
-                                <i class="fas fa-external-link-alt"></i> Launch Live Console &rarr;
-                            </a>
-                        </div>
-                        <div class="panel-body">
-                            <p class="text-muted" style="margin-top: 0; font-size: 13px;">
-                                Configure real-time alerts for the WHMCS Admin area, Live Support Console, and paired mobile devices.
-                            </p>
-
-                            <!-- Section A: Triggers -->
-                            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 18px; margin-bottom: 20px;">
-                                <div style="font-weight: 700; font-size: 13.5px; color: #1e293b; margin-bottom: 12px;">
-                                    <i class="fas fa-bell text-primary"></i> 1. Live Chat Alert Event Triggers
-                                </div>
-                                <div class="row">
-                                    <div class="col-md-6">
-                                        <div class="checkbox" style="margin-top: 0;">
-                                            <label style="font-weight: 600; font-size: 13px; color: #0f172a;">
-                                                <input type="checkbox" name="client_chat_notify_new_visitor" value="1" <?php echo (!isset($settings->client_chat_notify_new_visitor) || !empty($settings->client_chat_notify_new_visitor)) ? 'checked' : ''; ?>>
-                                                👋 When New Visitor Arrives / Starts Chat
-                                            </label>
-                                            <small class="text-muted" style="display: block; margin-left: 20px;">Triggers an alert as soon as a visitor initiates a live chat on WHMCS or your embedded website.</small>
+                                    <div class="sdv-theme-grid">
+                                        <!-- Charcoal Black (#222222 & #000000) -->
+                                        <div class="sdv-theme-card <?php echo ($currentThemeMode === 'black') ? 'active' : ''; ?>" onclick="sdvSetThemeRadio('black');">
+                                            <div class="sdv-theme-card-preview" style="background: #000000; border: 1px solid #333333; color: #ffffff;">
+                                                <div style="width: 70%; height: 28px; background: #222222; border-radius: 4px; border: 1px solid #383838; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: #f3f4f6;">
+                                                    #222222 &bull; #000000
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <div style="font-weight: 700; font-size: 14px; margin-bottom: 4px; display: flex; align-items: center; justify-content: space-between;">
+                                                    <span>🖤 Charcoal Black</span>
+                                                    <input type="radio" name="ui_theme_mode" value="black" <?php echo ($currentThemeMode === 'black') ? 'checked' : ''; ?> style="margin: 0;">
+                                                </div>
+                                                <small class="text-muted" style="display: block; font-size: 11.5px; line-height: 1.4;">
+                                                    Combined pitch black (#000000) canvas with elevated #222222 charcoal panels and sleek #333333 borders.
+                                                </small>
+                                            </div>
                                         </div>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <div class="checkbox" style="margin-top: 0;">
-                                            <label style="font-weight: 600; font-size: 13px; color: #0f172a;">
-                                                <input type="checkbox" name="client_chat_notify_human_summon" value="1" <?php echo (!isset($settings->client_chat_notify_human_summon) || !empty($settings->client_chat_notify_human_summon)) ? 'checked' : ''; ?>>
-                                                🚨 When Client / Visitor Requests Human Staff
-                                            </label>
-                                            <small class="text-muted" style="display: block; margin-left: 20px;">Triggers immediate high-priority summoning alert when a user clicks 'Request Human Staff' in widget.</small>
+
+                                        <!-- Slate Dark (#0f172a & #1e293b) -->
+                                        <div class="sdv-theme-card <?php echo ($currentThemeMode === 'dark') ? 'active' : ''; ?>" onclick="sdvSetThemeRadio('dark');">
+                                            <div class="sdv-theme-card-preview" style="background: #0b0f19; border: 1px solid #334155; color: #38bdf8;">
+                                                <div style="width: 70%; height: 28px; background: #1e293b; border-radius: 4px; border: 1px solid #475569; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: #38bdf8;">
+                                                    Slate Navy
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <div style="font-weight: 700; font-size: 14px; margin-bottom: 4px; display: flex; align-items: center; justify-content: space-between;">
+                                                    <span>🌙 Modern Slate Dark</span>
+                                                    <input type="radio" name="ui_theme_mode" value="dark" <?php echo ($currentThemeMode === 'dark') ? 'checked' : ''; ?> style="margin: 0;">
+                                                </div>
+                                                <small class="text-muted" style="display: block; font-size: 11.5px; line-height: 1.4;">
+                                                    Deep space blue-gray (#0f172a / #1e293b) with celestial cyan highlights and cool tones.
+                                                </small>
+                                            </div>
                                         </div>
-                                    </div>
-                                </div>
-                            </div>
 
-                            <!-- Section B: Focus-Aware Mode -->
-                            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 18px; margin-bottom: 20px;">
-                                <div style="font-weight: 700; font-size: 13.5px; color: #1e293b; margin-bottom: 8px;">
-                                    <i class="fas fa-eye text-info"></i> 2. Focus-Aware Intelligent Alerting Mode
-                                </div>
-                                <div class="checkbox" style="margin-top: 4px;">
-                                    <label style="font-weight: 600; font-size: 13px; color: #0f172a;">
-                                        <input type="checkbox" name="client_chat_alert_focus_mode" value="1" <?php echo (!isset($settings->client_chat_alert_focus_mode) || !empty($settings->client_chat_alert_focus_mode)) ? 'checked' : ''; ?>>
-                                        Enable Focus-Aware Alert Mode (Silent gentle ping when in focus; loud ring when minimized/background)
-                                    </label>
-                                </div>
-                                <div style="margin-left: 20px; font-size: 12.5px; color: #64748b; line-height: 1.5; margin-top: 4px;">
-                                    <div style="margin-bottom: 4px;"><strong class="text-success"><i class="fas fa-check-circle"></i> When WHMCS or Mobile App is OPEN / IN FOCUS:</strong> plays a soft gentle ping chime. Does not ring loud repeating alarm audio.</div>
-                                    <div><strong class="text-danger"><i class="fas fa-exclamation-circle"></i> When WHMCS or Mobile App is MINIMIZED / BACKGROUND / NOT IN FOCUS:</strong> rings repeating alert sound, flashes browser tab title, and sends desktop push notification.</div>
-                                </div>
-                            </div>
-
-                            <!-- Section C: Multi-Staff Deduplication -->
-                            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 18px; margin-bottom: 20px;">
-                                <div style="font-weight: 700; font-size: 13.5px; color: #1e293b; margin-bottom: 8px;">
-                                    <i class="fas fa-user-check text-success"></i> 3. Multi-Staff &amp; Channel Deduplication
-                                </div>
-                                <div class="checkbox" style="margin-top: 4px;">
-                                    <label style="font-weight: 600; font-size: 13px; color: #0f172a;">
-                                        <input type="checkbox" name="client_chat_alert_dedup_active_staff" value="1" <?php echo (!isset($settings->client_chat_alert_dedup_active_staff) || !empty($settings->client_chat_alert_dedup_active_staff)) ? 'checked' : ''; ?>>
-                                        Suppress duplicate alerts if a staff member is already actively attending the chat
-                                    </label>
-                                </div>
-                                <small class="text-muted" style="display: block; margin-left: 20px; font-size: 12.5px;">
-                                    Prevents cross-staff alert spam. Once an agent accepts or takes over a conversation, incoming messages are routed exclusively to that assigned agent and will not buzz or alert other staff members.
-                                </small>
-                            </div>
-
-                            <!-- Section D: Audio Synthesizer & Ring Duration -->
-                            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 18px; margin-bottom: 20px;">
-                                <div style="font-weight: 700; font-size: 13.5px; color: #1e293b; margin-bottom: 12px;">
-                                    <i class="fas fa-volume-up text-warning"></i> 4. Audio Synthesizer &amp; Ring Duration
-                                </div>
-                                <div class="row">
-                                    <div class="col-md-4">
-                                        <div class="checkbox" style="margin-top: 0; margin-bottom: 12px;">
-                                            <label style="font-weight: 600; font-size: 13px;">
-                                                <input type="checkbox" name="client_chat_sound_admin_alert" value="1" <?php echo (!isset($settings->client_chat_sound_admin_alert) || !empty($settings->client_chat_sound_admin_alert)) ? 'checked' : ''; ?>>
-                                                Enable Web Audio Chime in WHMCS
-                                            </label>
-                                        </div>
-                                    </div>
-                                    <div class="col-md-4">
-                                        <div class="form-group" style="margin-bottom: 0;">
-                                            <label style="font-weight: 600; font-size: 12px;">Sound Preset</label>
-                                            <div style="display: flex; gap: 8px;">
-                                                <select name="client_chat_sound_type" id="sdv_settings_sound_type" class="form-control input-sm">
-                                                    <option value="chime" <?php echo (($settings->client_chat_sound_type ?? 'chime') === 'chime') ? 'selected' : ''; ?>>Executive Chime (Harmonic D5 &rarr; A5)</option>
-                                                    <option value="bell" <?php echo (($settings->client_chat_sound_type ?? '') === 'bell') ? 'selected' : ''; ?>>Triple Bell (Modern Multi-Tone)</option>
-                                                    <option value="ping" <?php echo (($settings->client_chat_sound_type ?? '') === 'ping') ? 'selected' : ''; ?>>High Tone Ping (Minimalist)</option>
-                                                </select>
-                                                <button type="button" class="btn btn-default btn-sm" onclick="sdvPreviewAlertSound();" title="Preview Alert Chime" style="flex-shrink: 0; font-weight: 600;">
-                                                    <i class="fas fa-volume-up"></i> Test
-                                                </button>
+                                        <!-- Studio White (#ffffff & #f8fafc) -->
+                                        <div class="sdv-theme-card <?php echo ($currentThemeMode === 'white') ? 'active' : ''; ?>" onclick="sdvSetThemeRadio('white');">
+                                            <div class="sdv-theme-card-preview" style="background: #f8fafc; border: 1px solid #e2e8f0; color: #0d6efd;">
+                                                <div style="width: 70%; height: 28px; background: #ffffff; border-radius: 4px; border: 1px solid #cbd5e1; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: #0d6efd;">
+                                                    Studio White
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <div style="font-weight: 700; font-size: 14px; margin-bottom: 4px; display: flex; align-items: center; justify-content: space-between;">
+                                                    <span>☀️ Studio White</span>
+                                                    <input type="radio" name="ui_theme_mode" value="white" <?php echo ($currentThemeMode === 'white') ? 'checked' : ''; ?> style="margin: 0;">
+                                                </div>
+                                                <small class="text-muted" style="display: block; font-size: 11.5px; line-height: 1.4;">
+                                                    Crisp, bright daylight interface with clean white surfaces matching classic WHMCS admin.
+                                                </small>
                                             </div>
                                         </div>
                                     </div>
-                                    <div class="col-md-4">
-                                        <div class="form-group" style="margin-bottom: 0;">
-                                            <label style="font-weight: 600; font-size: 12px;">Alarm Ring Window (Seconds)</label>
-                                            <input type="number" min="3" max="120" name="client_chat_alert_duration" class="form-control input-sm" value="<?php echo htmlspecialchars((string)($settings->client_chat_alert_duration ?? 15)); ?>">
-                                            <small class="text-muted">Maximum seconds repeating alarm plays before auto-silencing.</small>
+
+                                    <hr style="margin: 20px 0; border-color: var(--sdv-border, #e2e8f0);">
+
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <div class="form-group" style="margin-bottom: 0;">
+                                                <label style="font-weight: 600;">Ticket View Panel Layout</label>
+                                                <select name="ui_theme" class="form-control" style="max-width: 320px;">
+                                                    <option value="remastered" <?php echo ($currentUiTheme === 'remastered') ? 'selected' : ''; ?>>✨ Remastered (Compact Tabbed Cards)</option>
+                                                    <option value="classic" <?php echo ($currentUiTheme === 'classic') ? 'selected' : ''; ?>>📋 Classic (Stacked Expanded Panels)</option>
+                                                </select>
+                                                <small class="text-muted" style="display: block; margin-top: 4px;">Controls how the Sahdev AI widget renders in support ticket sidebars.</small>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="form-group" style="margin-bottom: 0;">
+                                                <label style="font-weight: 600;">Organization Default Tone</label>
+                                                <select name="tone_default" class="form-control" style="max-width: 320px;">
+                                                    <?php
+                                                    $tones = ['Professional', 'Technical', 'Friendly', 'Strict', 'Custom'];
+                                                    foreach ($tones as $tone) {
+                                                        $selected = ($settings->tone_default === $tone) ? 'selected' : '';
+                                                        echo "<option value=\"$tone\" $selected>$tone</option>";
+                                                    }
+                                                    ?>
+                                                </select>
+                                                <small class="text-muted" style="display: block; margin-top: 4px;">Default voice and tone applied when drafting responses.</small>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
                             </div>
+                        </div>
 
-                            <!-- Quick Hub Navigation Cards -->
-                            <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px;">
-                                <div style="font-weight: 700; font-size: 13px; color: #475569; text-transform: uppercase; margin-bottom: 12px;">
-                                    Dedicated Hubs &amp; Deep Management
+                        <!-- PANE 2: AI Engine & Tuning -->
+                        <div id="tab-ai-engine" class="sdv-settings-pane <?php echo ($activeSubtab === 'tab-ai-engine') ? 'active' : ''; ?>">
+                            <div class="sdv-card">
+                                <div class="sdv-card-header">
+                                    <h4 class="sdv-card-title"><i class="fas fa-microchip"></i> Active AI Provider Routing</h4>
+                                    <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=providers" class="btn btn-xs btn-primary" style="font-weight: 600;">
+                                        <i class="fas fa-sliders-h"></i> Manage AI Providers &rarr;
+                                    </a>
                                 </div>
-                                <div class="row" style="display: flex; gap: 12px; flex-wrap: wrap;">
-                                    <div style="flex: 1; min-width: 220px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px;">
-                                        <div style="font-weight: 600; font-size: 13px; margin-bottom: 4px;"><i class="fas fa-satellite-dish text-primary"></i> Live Support Console</div>
-                                        <p style="font-size: 11.5px; color: #64748b; margin-bottom: 8px;">Real-time visitor sneak-peek, 1-click takeover, and live typing stream.</p>
-                                        <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=live_console" class="btn btn-xs btn-primary">Open Console &rarr;</a>
+                                <div class="sdv-card-body">
+                                    <div style="background: var(--sdv-bg-nested, #f8fafc); border: 1px solid var(--sdv-border, #e2e8f0); border-radius: 8px; padding: 14px 18px; margin-bottom: 18px;">
+                                        <div style="font-weight: 700; font-size: 14px; margin-bottom: 4px;">
+                                            <i class="fas fa-check-circle text-success"></i> Primary Ticket AI Provider:
+                                            <span class="label label-primary" style="font-size: 12px; margin-left: 6px;"><?php echo htmlspecialchars($ticketPrimaryName); ?></span>
+                                            <?php if ($ticketFallbackName): ?>
+                                                <span class="text-muted" style="margin-left: 8px; font-size: 12px;">(Fallback: <strong><?php echo htmlspecialchars($ticketFallbackName); ?></strong>)</span>
+                                            <?php endif; ?>
+                                        </div>
+                                        <small class="text-muted">Primary model, fallback failover, and task routing are centrally configured in the AI Providers hub.</small>
                                     </div>
-                                    <div style="flex: 1; min-width: 220px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px;">
-                                        <div style="font-weight: 600; font-size: 13px; margin-bottom: 4px;"><i class="fas fa-headset text-info"></i> Client Live Chat Hub</div>
-                                        <p style="font-size: 11.5px; color: #64748b; margin-bottom: 8px;">Portal widget design, branding, system prompts, quotas, and embed codes.</p>
-                                        <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=client_chat" class="btn btn-xs btn-default">Open Chat Hub &rarr;</a>
+
+                                    <div class="row">
+                                        <div class="col-md-4">
+                                            <div class="form-group">
+                                                <label style="font-weight: 600;">Creativity Temperature (0.00 - 1.00)</label>
+                                                <input type="number" step="0.01" min="0" max="1" name="temperature" id="sdv_input_temp" class="form-control" value="<?php echo htmlspecialchars((string)$settings->temperature); ?>">
+                                                <div style="display: flex; gap: 4px; margin-top: 6px;">
+                                                    <button type="button" class="btn btn-default btn-xs" onclick="sdvSetTempPreset(0.20)">0.20 Precise</button>
+                                                    <button type="button" class="btn btn-default btn-xs" onclick="sdvSetTempPreset(0.70)">0.70 Balanced</button>
+                                                    <button type="button" class="btn btn-default btn-xs" onclick="sdvSetTempPreset(0.90)">0.90 Creative</button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <div class="form-group">
+                                                <label style="font-weight: 600;">Max Response Tokens</label>
+                                                <input type="number" step="1" min="256" max="16384" name="max_tokens" class="form-control" value="<?php echo htmlspecialchars((string)$settings->max_tokens); ?>">
+                                                <small class="text-muted">Output token ceiling per completion call.</small>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <div class="form-group">
+                                                <label style="font-weight: 600;">Token Fallback Floor (Minimum)</label>
+                                                <input type="number" step="1" min="4096" name="max_tokens_fallback" class="form-control" value="<?php echo htmlspecialchars((string)($settings->max_tokens_fallback ?? 4096)); ?>">
+                                                <small class="text-muted">Safety floor used when model metadata is missing.</small>
+                                            </div>
+                                        </div>
                                     </div>
-                                    <div style="flex: 1; min-width: 220px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px;">
-                                        <div style="font-weight: 600; font-size: 13px; margin-bottom: 4px;"><i class="fas fa-terminal text-purple"></i> Admin Ops Copilot</div>
-                                        <p style="font-size: 11.5px; color: #64748b; margin-bottom: 8px;">Autonomous server operations, journal logs, and Safe Ops rollback.</p>
-                                        <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=admin_copilot" class="btn btn-xs btn-default">Open Copilot &rarr;</a>
-                                    </div>
-                                    <div style="flex: 1; min-width: 220px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px;">
-                                        <div style="font-weight: 600; font-size: 13px; margin-bottom: 4px;"><i class="fas fa-chart-pie text-success"></i> Org Intelligence</div>
-                                        <p style="font-size: 11.5px; color: #64748b; margin-bottom: 8px;">Executive MRR, Churn, LTV, and AI-driven business analytics.</p>
-                                        <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=organization_intelligence" class="btn btn-xs btn-default">Open Intelligence &rarr;</a>
+
+                                    <div class="form-group" style="margin-top: 10px; margin-bottom: 0;">
+                                        <label style="font-weight: 600;">Custom Attachments Server Directory Path (Optional)</label>
+                                        <input type="text" name="custom_attachments_dir" class="form-control" placeholder="e.g. /home/user/whmcsdata/attachments" value="<?php echo htmlspecialchars($settings->custom_attachments_dir ?? ''); ?>">
+                                        <small class="text-muted" style="display: block; margin-top: 4px;">
+                                            Leave empty to auto-detect from WHMCS configuration.php. Use only if images fail to load for AI vision analysis.
+                                        </small>
                                     </div>
                                 </div>
                             </div>
-
                         </div>
-                    </div>
-                </div>
 
-                <!-- TAB 5: Mobile & Firebase Push Notifications -->
-                <?php
-                $activeFcmCount = 0;
-                $pairedPhonesCount = 0;
-                $pairedPhoneList = [];
-                try {
-                    \Sahdev\Lib\SchemaManager::ensureMobileFcmTokensTable();
-                    \Sahdev\Lib\SchemaManager::ensureMobileTokensTable();
-                    $activeFcmCount = (int) \WHMCS\Database\Capsule::table('tblsahdev_mobile_fcm_tokens')->where('is_active', 1)->count();
-                    $pairedPhonesCount = (int) \WHMCS\Database\Capsule::table('tblsahdev_mobile_tokens')
-                        ->where('token', 'not like', 'temp_%')
-                        ->where('is_revoked', 0)
-                        ->count();
-
-                    $pairedPhoneList = \WHMCS\Database\Capsule::table('tblsahdev_mobile_tokens as mt')
-                        ->leftJoin('tbladmins as a', 'a.id', '=', 'mt.admin_id')
-                        ->select([
-                            'mt.id',
-                            'mt.admin_id',
-                            'mt.device_name',
-                            'mt.last_ip',
-                            'mt.last_active_at',
-                            'a.username',
-                            'a.firstname',
-                            'a.lastname',
-                        ])
-                        ->where('mt.token', 'not like', 'temp_%')
-                        ->where('mt.is_revoked', 0)
-                        ->orderBy('mt.last_active_at', 'desc')
-                        ->get();
-                } catch (\Throwable $fex) {}
-                $hasServiceAccount = !empty($settings->firebase_service_account_json);
-                ?>
-                <div id="tab-firebase" class="sdv-settings-pane" style="<?php echo ($activeSubtab === 'tab-firebase') ? 'display:block;' : 'display:none;'; ?>">
-                    <div class="panel panel-default" style="margin-bottom: 25px; border-left: 4px solid #f59e0b;">
-                        <div class="panel-heading" style="background: #fffbeb; display: flex; justify-content: space-between; align-items: center;">
-                            <h4 style="margin: 0; font-size: 15px; color: #b45309;"><i class="fas fa-bell text-warning"></i> Firebase Cloud Messaging (FCM HTTP v1) Push Notifications</h4>
-                            <span class="label <?php echo (!empty($settings->firebase_enabled) && $hasServiceAccount) ? 'label-success' : 'label-warning'; ?>">
-                                <?php echo (!empty($settings->firebase_enabled) && $hasServiceAccount) ? 'Active & Ready' : 'Setup Required'; ?>
-                            </span>
-                        </div>
-                        <div class="panel-body">
-                            <p class="text-muted" style="margin-top: 0; font-size: 13px;">
-                                Direct native push notifications wake the Sahdev Mobile Support App (Android/Flutter) even when the phone is locked, swiped away from recent apps, or in deep Android Doze mode.
-                            </p>
-
-                            <div class="row" style="margin-bottom: 20px;">
-                                <div class="col-md-6">
-                                    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px;">
-                                        <div style="font-size: 12px; text-transform: uppercase; font-weight: 700; color: #64748b;">Registered Staff Devices</div>
-                                        <div style="font-size: 24px; font-weight: 700; color: #1e293b; margin: 4px 0;">
-                                            <?php echo $pairedPhonesCount; ?> <small style="font-size: 13px; font-weight: normal; color: #64748b;">paired</small>
-                                            <span style="color: #cbd5e1; margin: 0 6px;">/</span>
-                                            <span style="color: <?php echo $activeFcmCount > 0 ? '#16a34a' : '#f59e0b'; ?>;"><?php echo $activeFcmCount; ?></span> <small style="font-size: 13px; font-weight: normal; color: #64748b;">FCM push active</small>
-                                        </div>
-                                        <small class="text-muted">Staff phones paired with WHMCS via QR code.</small>
-                                    </div>
+                        <!-- PANE 3: Ticket AI & Automations -->
+                        <div id="tab-ticket-ai" class="sdv-settings-pane <?php echo ($activeSubtab === 'tab-ticket-ai') ? 'active' : ''; ?>">
+                            <div class="sdv-card">
+                                <div class="sdv-card-header">
+                                    <h4 class="sdv-card-title"><i class="fas fa-ticket-alt"></i> Autonomous Ticket Features</h4>
                                 </div>
-                                <div class="col-md-6">
-                                    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; display: flex; flex-direction: column; justify-content: space-between; height: 100%;">
+                                <div class="sdv-card-body">
+
+                                    <div class="sdv-switch-row">
                                         <div>
-                                            <div style="font-size: 12px; text-transform: uppercase; font-weight: 700; color: #64748b;">Connection Verification</div>
-                                            <div style="font-size: 13px; color: #334155; margin-top: 4px;">Send a test push to verify your Firebase credentials and device connectivity.</div>
+                                            <div class="sdv-switch-label"><i class="fas fa-bolt text-primary"></i> Instant AI Snapshot on Ticket Load</div>
+                                            <p class="sdv-switch-desc">Silently generates ticket Summary, Root Cause, Responsibility, Risk Level, and Action Plan as soon as staff opens a ticket. Uses smart caching so repeated views are free.</p>
                                         </div>
-                                        <div style="margin-top: 10px;">
-                                            <button type="button" class="btn btn-warning btn-sm" id="btn-sdv-test-push" onclick="sendTestFirebasePush();">
-                                                <i class="fas fa-paper-plane"></i> Send Test Push to Staff Devices
-                                            </button>
-                                            <span id="sdv-test-push-status" style="margin-left: 10px; font-size: 12px; font-weight: 600;"></span>
+                                        <input type="checkbox" name="auto_analyze_on_load" value="1" <?php echo !empty($settings->auto_analyze_on_load) ? 'checked' : ''; ?> style="width: 18px; height: 18px; cursor: pointer;">
+                                    </div>
+
+                                    <div class="sdv-switch-row">
+                                        <div>
+                                            <div class="sdv-switch-label"><i class="fas fa-compress-alt text-purple"></i> Adaptive Ticket Conversation Summarizer</div>
+                                            <p class="sdv-switch-desc">When a ticket reaches the message threshold, compresses older dialogue into an authoritative summary snippet instead of sending raw thread history. Drastically saves input tokens.</p>
+                                            <div style="margin-top: 8px; display: flex; align-items: center; gap: 8px;">
+                                                <span style="font-size: 12px; font-weight: 600;">Message Trigger Threshold:</span>
+                                                <input type="number" name="summarizer_threshold" value="<?php echo htmlspecialchars((string)($settings->summarizer_threshold ?? 15)); ?>" class="form-control input-sm" style="width: 80px;" min="3">
+                                            </div>
+                                        </div>
+                                        <input type="checkbox" name="summarizer_enabled" value="1" <?php echo !empty($settings->summarizer_enabled) ? 'checked' : ''; ?> style="width: 18px; height: 18px; cursor: pointer;">
+                                    </div>
+
+                                    <div class="sdv-switch-row">
+                                        <div>
+                                            <div class="sdv-switch-label"><i class="fas fa-bullseye text-warning"></i> AI Response Quality Scorer</div>
+                                            <p class="sdv-switch-desc">Automatically inspects tone, clarity, and completeness of generated draft replies, rendering a confidence score badge in a single combined call.</p>
+                                        </div>
+                                        <input type="checkbox" name="quality_scorer_enabled" value="1" <?php echo !empty($settings->quality_scorer_enabled) ? 'checked' : ''; ?> style="width: 18px; height: 18px; cursor: pointer;">
+                                    </div>
+
+                                    <div class="sdv-switch-row">
+                                        <div>
+                                            <div class="sdv-switch-label"><i class="fas fa-tags text-info"></i> Native WHMCS Tag Cloud Automation (AI Tags)</div>
+                                            <p class="sdv-switch-desc">Syncs AI-generated classification tags (with ai- prefix, e.g. ai-billing) natively into WHMCS ticket sidebar tags and tag links.</p>
+                                        </div>
+                                        <input type="checkbox" name="auto_tagging" value="1" <?php echo !empty($settings->auto_tagging) ? 'checked' : ''; ?> style="width: 18px; height: 18px; cursor: pointer;">
+                                    </div>
+
+                                    <hr style="margin: 20px 0; border-color: var(--sdv-border, #e2e8f0);">
+
+                                    <h5 style="font-weight: 700; margin-bottom: 12px;"><i class="fas fa-filter"></i> Context Extraction Boundaries</h5>
+                                    <div class="row">
+                                        <div class="col-md-4">
+                                            <div class="form-group" style="margin-bottom: 0;">
+                                                <label style="font-weight: 600; font-size: 12px;">Recent Messages Limit</label>
+                                                <input type="number" step="1" min="1" max="100" name="max_messages" class="form-control input-sm" value="<?php echo htmlspecialchars((string)($settings->max_messages ?? 10)); ?>">
+                                                <small class="text-muted">Most recent ticket replies provided to model.</small>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <div class="form-group" style="margin-bottom: 0;">
+                                                <label style="font-weight: 600; font-size: 12px;">Attachment Log Chars Bound</label>
+                                                <input type="number" step="100" min="0" name="max_attachment_chars" class="form-control input-sm" value="<?php echo htmlspecialchars((string)($settings->max_attachment_chars ?? 5000)); ?>">
+                                                <small class="text-muted">Max characters extracted from .txt/.log files.</small>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <div class="form-group" style="margin-bottom: 0;">
+                                                <label style="font-weight: 600; font-size: 12px;">Max Vision Images Analyzed</label>
+                                                <input type="number" step="1" min="0" max="10" name="max_images" class="form-control input-sm" value="<?php echo htmlspecialchars((string)($settings->max_images ?? 3)); ?>">
+                                                <small class="text-muted">Screenshots analyzed via multimodal vision.</small>
+                                            </div>
                                         </div>
                                     </div>
+
                                 </div>
-                            </div>
-
-                            <?php if (!empty($pairedPhoneList)): ?>
-                                <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px; margin-bottom: 20px;">
-                                    <div style="font-weight: 600; font-size: 13px; color: #334155; margin-bottom: 8px;">
-                                        <i class="fas fa-mobile-alt text-primary"></i> Paired Staff Devices &amp; Push Status
-                                    </div>
-                                    <div class="table-responsive" style="margin-bottom: 0;">
-                                        <table class="table table-condensed table-hover" style="margin-bottom: 0; font-size: 12.5px;">
-                                            <thead>
-                                                <tr style="color: #64748b;">
-                                                    <th>Device</th>
-                                                    <th>Staff Admin</th>
-                                                    <th>Last Active</th>
-                                                    <th>WHMCS Pairing</th>
-                                                    <th>Firebase Push (FCM)</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                <?php 
-                                                foreach ($pairedPhoneList as $dev): 
-                                                    $hasFcm = false;
-                                                    try {
-                                                        $hasFcm = \WHMCS\Database\Capsule::table('tblsahdev_mobile_fcm_tokens')
-                                                            ->where('admin_id', $dev->admin_id)
-                                                            ->where('is_active', 1)
-                                                            ->exists();
-                                                    } catch (\Throwable $e) {}
-                                                    $adminLabel = !empty($dev->firstname) ? ($dev->firstname . ' ' . $dev->lastname) : ($dev->username ?: 'Admin #' . $dev->admin_id);
-                                                ?>
-                                                <tr>
-                                                    <td><strong><?php echo htmlspecialchars($dev->device_name ?: 'Android Staff Phone'); ?></strong></td>
-                                                    <td><?php echo htmlspecialchars($adminLabel); ?></td>
-                                                    <td class="text-muted"><?php echo !empty($dev->last_active_at) ? htmlspecialchars($dev->last_active_at) : '—'; ?></td>
-                                                    <td><span class="label label-success"><i class="fas fa-link"></i> Paired</span></td>
-                                                    <td>
-                                                        <?php if ($hasFcm): ?>
-                                                            <span class="label label-success"><i class="fas fa-check-circle"></i> Push Active</span>
-                                                        <?php else: ?>
-                                                            <span class="label label-warning" title="Install updated app build to register push token"><i class="fas fa-clock"></i> Push Token Pending</span>
-                                                            <small class="text-muted" style="display: block; font-size: 11px;">Open the updated Sahdev app to register FCM</small>
-                                                        <?php endif; ?>
-                                                    </td>
-                                                </tr>
-                                                <?php endforeach; ?>
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </div>
-                            <?php endif; ?>
-
-                            <div class="form-group" style="margin-bottom: 20px;">
-                                <label style="font-weight: 600; font-size: 14px;">
-                                    <input type="checkbox" name="firebase_enabled" value="1" <?php echo !empty($settings->firebase_enabled) ? 'checked' : ''; ?>>
-                                    Enable Firebase Cloud Messaging Push Notifications
-                                </label>
-                                <small class="text-muted" style="display: block;">When enabled, urgent summons and support events will dispatch instant push notifications to staff phones.</small>
-                            </div>
-
-                            <div class="form-group" style="margin-bottom: 20px;">
-                                <label style="font-weight: 600;">Firebase Service Account Private Key JSON (FCM HTTP v1)</label>
-                                <?php 
-                                require_once __DIR__ . '/../lib/FirebasePushService.php';
-                                $displayServiceAccountJson = \Sahdev\Lib\FirebasePushService::cleanJsonString((string)($settings->firebase_service_account_json ?? ''));
-                                ?>
-                                <textarea name="firebase_service_account_json" rows="8" class="form-control" placeholder='{"type": "service_account", "project_id": "...", "private_key": "-----BEGIN PRIVATE KEY-----\n...", "client_email": "..."}' style="font-family: monospace; font-size: 12px;"><?php echo htmlspecialchars($displayServiceAccountJson, ENT_QUOTES, 'UTF-8'); ?></textarea>
-                                <small class="text-muted" style="display: block; margin-top: 5px;">
-                                    Download this from Google Cloud / Firebase Console: <strong>Project Settings &gt; Service Accounts &gt; Generate New Private Key</strong>. Paste the entire JSON content here.
-                                </small>
-                            </div>
-
-                            <div class="form-group" style="max-width: 450px; margin-bottom: 20px;">
-                                <label style="font-weight: 600;">Firebase Project ID</label>
-                                <input type="text" name="firebase_project_id" class="form-control" value="<?php echo htmlspecialchars((string)($settings->firebase_project_id ?? '')); ?>" placeholder="e.g. sahdev-support-app">
-                                <small class="text-muted">Auto-extracted from your Service Account JSON, or enter manually.</small>
-                            </div>
-
-                            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 18px; margin-bottom: 20px;">
-                                <div style="font-weight: 600; font-size: 13.5px; color: #1e293b; margin-bottom: 10px;"><i class="fas fa-sliders-h text-primary"></i> Notification Event Dispatch Triggers</div>
-                                <div class="row">
-                                    <div class="col-md-6">
-                                        <div class="checkbox" style="margin-top: 0;">
-                                            <label style="font-weight: 600; font-size: 13px;">
-                                                <input type="checkbox" name="firebase_notify_new_visitor" value="1" <?php echo (!isset($settings->firebase_notify_new_visitor) || !empty($settings->firebase_notify_new_visitor)) ? 'checked' : ''; ?>>
-                                                👋 New Live Chat Visitor Arrival
-                                            </label>
-                                            <small class="text-muted" style="display: block; margin-left: 20px;">Pushes an instant alert when a new visitor starts a live chat session.</small>
-                                        </div>
-                                        <div class="checkbox" style="margin-top: 12px;">
-                                            <label style="font-weight: 600; font-size: 13px;">
-                                                <input type="checkbox" name="firebase_notify_summons" value="1" <?php echo (!isset($settings->firebase_notify_summons) || !empty($settings->firebase_notify_summons)) ? 'checked' : ''; ?>>
-                                                🚨 Urgent Live Chat Human Summons
-                                            </label>
-                                            <small class="text-muted" style="display: block; margin-left: 20px;">High-priority full-screen alarm alert when website visitor requests a live agent.</small>
-                                        </div>
-                                        <div class="checkbox" style="margin-top: 12px;">
-                                            <label style="font-weight: 600; font-size: 13px;">
-                                                <input type="checkbox" name="firebase_notify_chat_messages" value="1" <?php echo (!isset($settings->firebase_notify_chat_messages) || !empty($settings->firebase_notify_chat_messages)) ? 'checked' : ''; ?>>
-                                                💬 Active Chat Incoming Messages
-                                            </label>
-                                            <small class="text-muted" style="display: block; margin-left: 20px;">Alerts staff when a customer sends a message on taken-over chats.</small>
-                                        </div>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <div class="checkbox" style="margin-top: 0;">
-                                            <label style="font-weight: 600; font-size: 13px;">
-                                                <input type="checkbox" name="firebase_notify_tickets" value="1" <?php echo (!isset($settings->firebase_notify_tickets) || !empty($settings->firebase_notify_tickets)) ? 'checked' : ''; ?>>
-                                                🎫 WHMCS Tickets & Customer Replies
-                                            </label>
-                                            <small class="text-muted" style="display: block; margin-left: 20px;">Pushes new ticket dispatches and client responses to staff with department access.</small>
-                                        </div>
-                                        <div class="checkbox" style="margin-top: 12px;">
-                                            <label style="font-weight: 600; font-size: 13px;">
-                                                <input type="checkbox" name="firebase_notify_system_alerts" value="1" <?php echo (!isset($settings->firebase_notify_system_alerts) || !empty($settings->firebase_notify_system_alerts)) ? 'checked' : ''; ?>>
-                                                ⚠️ Autonomous AI & System Critical Notices
-                                            </label>
-                                            <small class="text-muted" style="display: block; margin-left: 20px;">Alerts when AI fallback occurs or API rate limits/quotas require attention.</small>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div class="form-group" style="max-width: 550px; margin-bottom: 0;">
-                                <label style="font-weight: 600;">Push Relay Gateway URL <span class="label label-default" style="font-size: 10px;">Optional / Future Commercial Marketplace</span></label>
-                                <input type="url" name="firebase_gateway_url" class="form-control" value="<?php echo htmlspecialchars((string)($settings->firebase_gateway_url ?? '')); ?>" placeholder="https://toolsapi.2hs.in/api/v1/push/send">
-                                <small class="text-muted">Leave blank to dispatch directly from this WHMCS server to Google FCM v1.</small>
                             </div>
                         </div>
+
+                        <!-- PANE 4: Privacy & Compliance -->
+                        <div id="tab-security" class="sdv-settings-pane <?php echo ($activeSubtab === 'tab-security') ? 'active' : ''; ?>">
+                            <div class="sdv-card">
+                                <div class="sdv-card-header">
+                                    <h4 class="sdv-card-title"><i class="fas fa-user-shield"></i> PII Scrubber &amp; Data Protection</h4>
+                                    <span class="label label-success" style="font-size: 11px;">Zero-Leak Redaction</span>
+                                </div>
+                                <div class="sdv-card-body">
+                                    <div class="sdv-switch-row" style="margin-bottom: 18px;">
+                                        <div>
+                                            <div class="sdv-switch-label"><i class="fas fa-shield-alt text-success"></i> Master Compliance Mode (PII Scrubber)</div>
+                                            <p class="sdv-switch-desc">Automatically scans and redacts sensitive client credentials and identifiers before ticket text leaves your server.</p>
+                                        </div>
+                                        <input type="checkbox" name="compliance_mode" value="1" <?php echo !empty($settings->compliance_mode) ? 'checked' : ''; ?> style="width: 18px; height: 18px; cursor: pointer;">
+                                    </div>
+
+                                    <h5 style="font-weight: 700; margin-bottom: 12px;">Active Redaction Filters:</h5>
+                                    <div class="row" style="display: flex; flex-wrap: wrap; gap: 12px;">
+                                        <div style="flex: 1; min-width: 180px; background: var(--sdv-bg-nested, #f8fafc); border: 1px solid var(--sdv-border, #e2e8f0); border-radius: 8px; padding: 12px;">
+                                            <label style="font-weight: 600; font-size: 13px; margin: 0; display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                                <input type="checkbox" name="scrub_emails" value="1" <?php echo (!isset($settings->scrub_emails) || !empty($settings->scrub_emails)) ? 'checked' : ''; ?>>
+                                                <span><i class="fas fa-envelope text-muted"></i> Email Addresses</span>
+                                            </label>
+                                        </div>
+                                        <div style="flex: 1; min-width: 180px; background: var(--sdv-bg-nested, #f8fafc); border: 1px solid var(--sdv-border, #e2e8f0); border-radius: 8px; padding: 12px;">
+                                            <label style="font-weight: 600; font-size: 13px; margin: 0; display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                                <input type="checkbox" name="scrub_cc" value="1" <?php echo (!isset($settings->scrub_cc) || !empty($settings->scrub_cc)) ? 'checked' : ''; ?>>
+                                                <span><i class="fas fa-credit-card text-muted"></i> Credit Cards</span>
+                                            </label>
+                                        </div>
+                                        <div style="flex: 1; min-width: 180px; background: var(--sdv-bg-nested, #f8fafc); border: 1px solid var(--sdv-border, #e2e8f0); border-radius: 8px; padding: 12px;">
+                                            <label style="font-weight: 600; font-size: 13px; margin: 0; display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                                <input type="checkbox" name="scrub_ips" value="1" <?php echo (!isset($settings->scrub_ips) || !empty($settings->scrub_ips)) ? 'checked' : ''; ?>>
+                                                <span><i class="fas fa-network-wired text-muted"></i> IPv4 &amp; IPv6</span>
+                                            </label>
+                                        </div>
+                                        <div style="flex: 1; min-width: 180px; background: var(--sdv-bg-nested, #f8fafc); border: 1px solid var(--sdv-border, #e2e8f0); border-radius: 8px; padding: 12px;">
+                                            <label style="font-weight: 600; font-size: 13px; margin: 0; display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                                <input type="checkbox" name="scrub_passwords" value="1" <?php echo (!isset($settings->scrub_passwords) || !empty($settings->scrub_passwords)) ? 'checked' : ''; ?>>
+                                                <span><i class="fas fa-key text-muted"></i> Passwords &amp; Keys</span>
+                                            </label>
+                                        </div>
+                                        <div style="flex: 1; min-width: 180px; background: var(--sdv-bg-nested, #f8fafc); border: 1px solid var(--sdv-border, #e2e8f0); border-radius: 8px; padding: 12px;">
+                                            <label style="font-weight: 600; font-size: 13px; margin: 0; display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                                <input type="checkbox" name="scrub_phones" value="1" <?php echo (!isset($settings->scrub_phones) || !empty($settings->scrub_phones)) ? 'checked' : ''; ?>>
+                                                <span><i class="fas fa-phone text-muted"></i> Phone Numbers</span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- PANE 5: Account Context 360 -->
+                        <div id="tab-enrichment" class="sdv-settings-pane <?php echo ($activeSubtab === 'tab-enrichment') ? 'active' : ''; ?>">
+                            <div class="sdv-card">
+                                <div class="sdv-card-header">
+                                    <h4 class="sdv-card-title"><i class="fas fa-id-card"></i> Account Context 360 (Read-Only)</h4>
+                                    <span class="label label-primary" style="font-size: 11px;">Client Scope Only</span>
+                                </div>
+                                <div class="sdv-card-body">
+                                    <div class="sdv-switch-row" style="margin-bottom: 16px;">
+                                        <div>
+                                            <div class="sdv-switch-label"><i class="fas fa-link text-primary"></i> Master Context Enrichment</div>
+                                            <p class="sdv-switch-desc">Appends strictly read-only, scoped client intelligence to the AI prompt (invoices, services, domains, notes). Guest tickets are safely skipped.</p>
+                                        </div>
+                                        <input type="checkbox" name="context_enrichment_enabled" value="1" <?php echo !empty($settings->context_enrichment_enabled) ? 'checked' : ''; ?> style="width: 18px; height: 18px; cursor: pointer;">
+                                    </div>
+
+                                    <div class="form-group" style="max-width: 320px; margin-bottom: 20px;">
+                                        <label style="font-weight: 600;">Max Context Characters (Enrichment Ceiling)</label>
+                                        <input type="number" name="context_enrichment_max_chars" class="form-control" min="500" max="20000" step="100" value="<?php echo htmlspecialchars((string)($settings->context_enrichment_max_chars ?? 2500)); ?>">
+                                    </div>
+
+                                    <!-- Section 1: Profile & Services -->
+                                    <div style="background: var(--sdv-bg-nested, #f8fafc); border: 1px solid var(--sdv-border, #e2e8f0); border-radius: 8px; padding: 14px; margin-bottom: 14px;">
+                                        <div style="font-weight: 700; font-size: 12.5px; text-transform: uppercase; color: #4f46e5; margin-bottom: 8px;"><i class="fas fa-user-circle"></i> Profile &amp; Services</div>
+                                        <div class="row" style="display: flex; flex-wrap: wrap; gap: 8px 16px;">
+                                            <label style="font-size: 12.5px; cursor: pointer;"><input type="checkbox" name="context_enrichment_client_profile" value="1" <?php echo !empty($settings->context_enrichment_client_profile) ? 'checked' : ''; ?>> Client Profile (VIP, Credit, Last Login)</label>
+                                            <label style="font-size: 12.5px; cursor: pointer;"><input type="checkbox" name="context_enrichment_hosting" value="1" <?php echo !empty($settings->context_enrichment_hosting) ? 'checked' : ''; ?>> Hosting &amp; Server Suspend Status</label>
+                                            <label style="font-size: 12.5px; cursor: pointer;"><input type="checkbox" name="context_enrichment_domains" value="1" <?php echo !empty($settings->context_enrichment_domains) ? 'checked' : ''; ?>> Domains &amp; Auto-Renew</label>
+                                            <label style="font-size: 12.5px; cursor: pointer;"><input type="checkbox" name="context_enrichment_addons" value="1" <?php echo !empty($settings->context_enrichment_addons) ? 'checked' : ''; ?>> Hosting Addons</label>
+                                            <label style="font-size: 12.5px; cursor: pointer;"><input type="checkbox" name="context_enrichment_ssl" value="1" <?php echo !empty($settings->context_enrichment_ssl) ? 'checked' : ''; ?>> SSL Certificates</label>
+                                        </div>
+                                    </div>
+
+                                    <!-- Section 2: Billing & Orders -->
+                                    <div style="background: var(--sdv-bg-nested, #f8fafc); border: 1px solid var(--sdv-border, #e2e8f0); border-radius: 8px; padding: 14px; margin-bottom: 14px;">
+                                        <div style="font-weight: 700; font-size: 12.5px; text-transform: uppercase; color: #059669; margin-bottom: 8px;"><i class="fas fa-file-invoice-dollar"></i> Billing &amp; Orders</div>
+                                        <div class="row" style="display: flex; flex-wrap: wrap; gap: 8px 16px;">
+                                            <label style="font-size: 12.5px; cursor: pointer;"><input type="checkbox" name="context_enrichment_invoices" value="1" <?php echo !empty($settings->context_enrichment_invoices) ? 'checked' : ''; ?>> Unpaid Invoices &amp; Totals</label>
+                                            <label style="font-size: 12.5px; cursor: pointer;"><input type="checkbox" name="context_enrichment_invoice_items" value="1" <?php echo !empty($settings->context_enrichment_invoice_items) ? 'checked' : ''; ?>> Invoice Line Item Breakdown</label>
+                                            <label style="font-size: 12.5px; cursor: pointer;"><input type="checkbox" name="context_enrichment_transactions" value="1" <?php echo !empty($settings->context_enrichment_transactions) ? 'checked' : ''; ?>> Transactions &amp; Lifetime Value</label>
+                                            <label style="font-size: 12.5px; cursor: pointer;"><input type="checkbox" name="context_enrichment_orders" value="1" <?php echo !empty($settings->context_enrichment_orders) ? 'checked' : ''; ?>> Recent Orders &amp; Fraud Risk</label>
+                                            <label style="font-size: 12.5px; cursor: pointer;"><input type="checkbox" name="context_enrichment_cancellations" value="1" <?php echo !empty($settings->context_enrichment_cancellations) ? 'checked' : ''; ?>> Cancellation Requests (Churn Risk)</label>
+                                            <label style="font-size: 12.5px; cursor: pointer;"><input type="checkbox" name="context_enrichment_quotes" value="1" <?php echo !empty($settings->context_enrichment_quotes) ? 'checked' : ''; ?>> Open Sales Quotes</label>
+                                        </div>
+                                    </div>
+
+                                    <!-- Section 3: History & Logs -->
+                                    <div style="background: var(--sdv-bg-nested, #f8fafc); border: 1px solid var(--sdv-border, #e2e8f0); border-radius: 8px; padding: 14px; margin-bottom: 14px;">
+                                        <div style="font-weight: 700; font-size: 12.5px; text-transform: uppercase; color: #0284c7; margin-bottom: 8px;"><i class="fas fa-history"></i> History, Logs &amp; Custom Fields</div>
+                                        <div class="row" style="display: flex; flex-wrap: wrap; gap: 8px 16px;">
+                                            <label style="font-size: 12.5px; cursor: pointer;"><input type="checkbox" name="context_enrichment_ticket_log" value="1" <?php echo !empty($settings->context_enrichment_ticket_log) ? 'checked' : ''; ?>> Ticket Journey &amp; Escalation Log</label>
+                                            <label style="font-size: 12.5px; cursor: pointer;"><input type="checkbox" name="context_enrichment_emails" value="1" <?php echo !empty($settings->context_enrichment_emails) ? 'checked' : ''; ?>> Outgoing Email Dispatch History</label>
+                                            <label style="font-size: 12.5px; cursor: pointer;"><input type="checkbox" name="context_enrichment_contacts" value="1" <?php echo !empty($settings->context_enrichment_contacts) ? 'checked' : ''; ?>> Authorized Sub-Accounts &amp; Contacts</label>
+                                            <label style="font-size: 12.5px; cursor: pointer;"><input type="checkbox" name="context_enrichment_client_notes" value="1" <?php echo !empty($settings->context_enrichment_client_notes) ? 'checked' : ''; ?>> Internal Staff Notes</label>
+                                            <label style="font-size: 12.5px; cursor: pointer;"><input type="checkbox" name="context_enrichment_activity_log" value="1" <?php echo !empty($settings->context_enrichment_activity_log) ? 'checked' : ''; ?>> Client Portal Activity Log</label>
+                                            <label style="font-size: 12.5px; cursor: pointer;"><input type="checkbox" name="context_enrichment_custom_fields" value="1" <?php echo !empty($settings->context_enrichment_custom_fields) ? 'checked' : ''; ?>> Custom Client Fields</label>
+                                        </div>
+                                    </div>
+
+                                    <div class="form-group" style="margin-bottom: 0;">
+                                        <label style="font-weight: 600;">Custom Field Allowlist Filter (Optional)</label>
+                                        <input type="text" name="context_enrichment_custom_field_allowlist" class="form-control" placeholder="e.g. VAT Number, Company Name, 12" value="<?php echo htmlspecialchars((string)($settings->context_enrichment_custom_field_allowlist ?? '')); ?>">
+                                        <small class="text-muted">Comma-separated field names or IDs. Leave empty to allow all non-sensitive fields.</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- PANE 6: Server Health & Outages -->
+                        <div id="tab-telemetry" class="sdv-settings-pane <?php echo ($activeSubtab === 'tab-telemetry') ? 'active' : ''; ?>">
+                            <div class="sdv-card">
+                                <div class="sdv-card-header">
+                                    <h4 class="sdv-card-title"><i class="fas fa-server"></i> Server Health &amp; Outage Watch</h4>
+                                    <span class="label label-success" style="font-size: 11px;">Reseller-Safe Polling</span>
+                                </div>
+                                <div class="sdv-card-body">
+                                    <div class="sdv-switch-row" style="margin-bottom: 16px;">
+                                        <div>
+                                            <div class="sdv-switch-label"><i class="fas fa-satellite-dish text-success"></i> Live Server Telemetry (cPanel / WHM / Plesk)</div>
+                                            <p class="sdv-switch-desc">Proactively polls server CPU load, disk quotas, and reachability using reseller-safe API tokens without root access.</p>
+                                            <div style="margin-top: 8px; display: flex; align-items: center; gap: 8px;">
+                                                <span style="font-size: 12px; font-weight: 600;">Polling Interval (Minutes):</span>
+                                                <input type="number" name="telemetry_poll_interval_mins" min="5" max="60" class="form-control input-sm" style="width: 80px;" value="<?php echo htmlspecialchars((string)($settings->telemetry_poll_interval_mins ?? 15)); ?>">
+                                            </div>
+                                        </div>
+                                        <input type="checkbox" name="telemetry_enabled" value="1" <?php echo !empty($settings->telemetry_enabled) ? 'checked' : ''; ?> style="width: 18px; height: 18px; cursor: pointer;">
+                                    </div>
+
+                                    <div class="sdv-switch-row" style="margin-bottom: 16px;">
+                                        <div>
+                                            <div class="sdv-switch-label"><i class="fas fa-fire-extinguisher text-warning"></i> Incident &amp; Ticket Surge Clustering</div>
+                                            <p class="sdv-switch-desc">Automatically identifies server outages when multiple customers open tickets regarding the same server within a rolling window.</p>
+                                            <div style="margin-top: 8px; display: flex; gap: 14px; flex-wrap: wrap;">
+                                                <div style="display: flex; align-items: center; gap: 6px;">
+                                                    <span style="font-size: 12px; font-weight: 600;">Surge Threshold (Tickets):</span>
+                                                    <input type="number" name="incident_threshold_tickets" min="2" max="50" class="form-control input-sm" style="width: 70px;" value="<?php echo htmlspecialchars((string)($settings->incident_threshold_tickets ?? 3)); ?>">
+                                                </div>
+                                                <div style="display: flex; align-items: center; gap: 6px;">
+                                                    <span style="font-size: 12px; font-weight: 600;">Rolling Window (Hours):</span>
+                                                    <input type="number" name="incident_window_hours" min="1" max="24" class="form-control input-sm" style="width: 70px;" value="<?php echo htmlspecialchars((string)($settings->incident_window_hours ?? 3)); ?>">
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <input type="checkbox" name="incident_detection_enabled" value="1" <?php echo !empty($settings->incident_detection_enabled) ? 'checked' : ''; ?> style="width: 18px; height: 18px; cursor: pointer;">
+                                    </div>
+
+                                    <div class="sdv-switch-row" style="margin-bottom: 0;">
+                                        <div>
+                                            <div class="sdv-switch-label"><i class="fas fa-book-open text-info"></i> Multi-Layer RAG Knowledge Base Retrieval</div>
+                                            <p class="sdv-switch-desc">Searches WHMCS Knowledge Base articles and canned responses to augment prompt context with authoritative answers.</p>
+                                            <div style="margin-top: 8px; display: flex; align-items: center; gap: 8px;">
+                                                <span style="font-size: 12px; font-weight: 600;">Max Injected Snippets:</span>
+                                                <input type="number" name="rag_max_snippets" min="1" max="5" class="form-control input-sm" style="width: 70px;" value="<?php echo htmlspecialchars((string)($settings->rag_max_snippets ?? 3)); ?>">
+                                            </div>
+                                        </div>
+                                        <input type="checkbox" name="rag_knowledge_enabled" value="1" <?php echo !empty($settings->rag_knowledge_enabled) ? 'checked' : ''; ?> style="width: 18px; height: 18px; cursor: pointer;">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- PANE 7: Live Support & Alerts -->
+                        <div id="tab-livechat-alerts" class="sdv-settings-pane <?php echo ($activeSubtab === 'tab-livechat-alerts') ? 'active' : ''; ?>">
+                            <div class="sdv-card">
+                                <div class="sdv-card-header">
+                                    <h4 class="sdv-card-title"><i class="fas fa-satellite-dish"></i> Live Support Alerts &amp; Audio Notifications</h4>
+                                    <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=live_console" class="btn btn-xs btn-success" style="font-weight: 600;">
+                                        <i class="fas fa-external-link-alt"></i> Launch Live Console &rarr;
+                                    </a>
+                                </div>
+                                <div class="sdv-card-body">
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <div class="sdv-switch-row">
+                                                <div>
+                                                    <div class="sdv-switch-label">👋 New Visitor Chat Arrival</div>
+                                                    <p class="sdv-switch-desc">Alerts staff immediately when a visitor starts a new chat on WHMCS or website.</p>
+                                                </div>
+                                                <input type="checkbox" name="client_chat_notify_new_visitor" value="1" <?php echo (!isset($settings->client_chat_notify_new_visitor) || !empty($settings->client_chat_notify_new_visitor)) ? 'checked' : ''; ?> style="width: 18px; height: 18px; cursor: pointer;">
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="sdv-switch-row">
+                                                <div>
+                                                    <div class="sdv-switch-label">🚨 Human Staff Summons</div>
+                                                    <p class="sdv-switch-desc">High-priority alarm when visitor clicks 'Request Human Staff'.</p>
+                                                </div>
+                                                <input type="checkbox" name="client_chat_notify_human_summon" value="1" <?php echo (!isset($settings->client_chat_notify_human_summon) || !empty($settings->client_chat_notify_human_summon)) ? 'checked' : ''; ?> style="width: 18px; height: 18px; cursor: pointer;">
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="sdv-switch-row">
+                                        <div>
+                                            <div class="sdv-switch-label"><i class="fas fa-eye text-info"></i> Focus-Aware Smart Alert Mode</div>
+                                            <p class="sdv-switch-desc">Plays a gentle subtle ping when WHMCS tab is in focus; plays repeating audible chime and flashes browser tab when minimized or in background.</p>
+                                        </div>
+                                        <input type="checkbox" name="client_chat_alert_focus_mode" value="1" <?php echo (!isset($settings->client_chat_alert_focus_mode) || !empty($settings->client_chat_alert_focus_mode)) ? 'checked' : ''; ?> style="width: 18px; height: 18px; cursor: pointer;">
+                                    </div>
+
+                                    <div class="sdv-switch-row">
+                                        <div>
+                                            <div class="sdv-switch-label"><i class="fas fa-user-check text-success"></i> Multi-Staff Alert Deduplication</div>
+                                            <p class="sdv-switch-desc">Suppresses repeating alerts to other staff once an agent takes over or attends the conversation.</p>
+                                        </div>
+                                        <input type="checkbox" name="client_chat_alert_dedup_active_staff" value="1" <?php echo (!isset($settings->client_chat_alert_dedup_active_staff) || !empty($settings->client_chat_alert_dedup_active_staff)) ? 'checked' : ''; ?> style="width: 18px; height: 18px; cursor: pointer;">
+                                    </div>
+
+                                    <hr style="margin: 20px 0; border-color: var(--sdv-border, #e2e8f0);">
+
+                                    <div class="row">
+                                        <div class="col-md-4">
+                                            <div class="form-group">
+                                                <label style="font-weight: 600;">Enable Web Audio Chime</label>
+                                                <div class="checkbox" style="margin-top: 4px;">
+                                                    <label><input type="checkbox" name="client_chat_sound_admin_alert" value="1" <?php echo (!isset($settings->client_chat_sound_admin_alert) || !empty($settings->client_chat_sound_admin_alert)) ? 'checked' : ''; ?>> Synthesizer Audio Alerts</label>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <div class="form-group">
+                                                <label style="font-weight: 600;">Sound Preset</label>
+                                                <div style="display: flex; gap: 6px;">
+                                                    <select name="client_chat_sound_type" id="sdv_settings_sound_type" class="form-control input-sm">
+                                                        <option value="chime" <?php echo (($settings->client_chat_sound_type ?? 'chime') === 'chime') ? 'selected' : ''; ?>>Executive Chime (D5 &rarr; A5)</option>
+                                                        <option value="bell" <?php echo (($settings->client_chat_sound_type ?? '') === 'bell') ? 'selected' : ''; ?>>Triple Bell (Modern)</option>
+                                                        <option value="ping" <?php echo (($settings->client_chat_sound_type ?? '') === 'ping') ? 'selected' : ''; ?>>High Tone Ping (Minimalist)</option>
+                                                    </select>
+                                                    <button type="button" class="btn btn-default btn-sm" onclick="sdvPreviewAlertSound();" title="Preview Audio Chime">
+                                                        <i class="fas fa-volume-up"></i> Test
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <div class="form-group">
+                                                <label style="font-weight: 600;">Alarm Ring Window (Seconds)</label>
+                                                <input type="number" min="3" max="120" name="client_chat_alert_duration" class="form-control input-sm" value="<?php echo htmlspecialchars((string)($settings->client_chat_alert_duration ?? 15)); ?>">
+                                                <small class="text-muted">Seconds before repeating alarm auto-silences.</small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- PANE 8: Mobile App & Push -->
+                        <div id="tab-firebase" class="sdv-settings-pane <?php echo ($activeSubtab === 'tab-firebase') ? 'active' : ''; ?>">
+                            <div class="sdv-card">
+                                <div class="sdv-card-header">
+                                    <h4 class="sdv-card-title"><i class="fas fa-mobile-alt"></i> Mobile Staff App &amp; Firebase Push (FCM HTTP v1)</h4>
+                                    <span class="label <?php echo (!empty($settings->firebase_enabled) && $hasServiceAccount) ? 'label-success' : 'label-warning'; ?>">
+                                        <?php echo (!empty($settings->firebase_enabled) && $hasServiceAccount) ? 'Active & Ready' : 'Setup Required'; ?>
+                                    </span>
+                                </div>
+                                <div class="sdv-card-body">
+                                    <div class="row" style="margin-bottom: 20px;">
+                                        <div class="col-md-6">
+                                            <div style="background: var(--sdv-bg-nested, #f8fafc); border: 1px solid var(--sdv-border, #e2e8f0); border-radius: 8px; padding: 14px;">
+                                                <div style="font-size: 11px; text-transform: uppercase; font-weight: 700; color: var(--sdv-text-muted, #64748b);">Connected Staff Devices</div>
+                                                <div style="font-size: 22px; font-weight: 800; color: var(--sdv-text-primary, #0f172a); margin: 4px 0;">
+                                                    <?php echo $pairedPhonesCount; ?> <small style="font-size: 13px; font-weight: normal;">paired phones</small>
+                                                    <span style="opacity: 0.4; margin: 0 6px;">/</span>
+                                                    <span style="color: #10b981;"><?php echo $activeFcmCount; ?></span> <small style="font-size: 13px; font-weight: normal;">FCM push active</small>
+                                                </div>
+                                                <small class="text-muted">Paired via staff QR code in Mobile Staff App tab.</small>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div style="background: var(--sdv-bg-nested, #f8fafc); border: 1px solid var(--sdv-border, #e2e8f0); border-radius: 8px; padding: 14px; display: flex; flex-direction: column; justify-content: space-between; height: 100%;">
+                                                <div style="font-size: 11px; text-transform: uppercase; font-weight: 700; color: var(--sdv-text-muted, #64748b);">Verification Dispatch</div>
+                                                <div style="margin-top: 8px;">
+                                                    <button type="button" class="btn btn-warning btn-sm" id="btn-sdv-test-push" onclick="sendTestFirebasePush();">
+                                                        <i class="fas fa-paper-plane"></i> Send Test Push to Staff Devices
+                                                    </button>
+                                                    <span id="sdv-test-push-status" style="margin-left: 8px; font-size: 12px; font-weight: 600;"></span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <?php if (!empty($pairedPhoneList)): ?>
+                                        <div style="background: var(--sdv-bg-nested, #f8fafc); border: 1px solid var(--sdv-border, #e2e8f0); border-radius: 8px; padding: 12px; margin-bottom: 20px;">
+                                            <div style="font-weight: 700; font-size: 12.5px; margin-bottom: 8px;"><i class="fas fa-mobile text-primary"></i> Paired Staff Devices List</div>
+                                            <div class="table-responsive" style="margin-bottom: 0;">
+                                                <table class="table table-condensed" style="margin-bottom: 0; font-size: 12px;">
+                                                    <thead>
+                                                        <tr>
+                                                            <th>Device</th>
+                                                            <th>Staff Admin</th>
+                                                            <th>Last Active</th>
+                                                            <th>Pairing</th>
+                                                            <th>Firebase FCM Status</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        <?php
+                                                        foreach ($pairedPhoneList as $dev):
+                                                            $hasFcm = false;
+                                                            try {
+                                                                $hasFcm = \WHMCS\Database\Capsule::table('tblsahdev_mobile_fcm_tokens')
+                                                                    ->where('admin_id', $dev->admin_id)
+                                                                    ->where('is_active', 1)
+                                                                    ->exists();
+                                                            } catch (\Throwable $e) {}
+                                                            $adminLabel = !empty($dev->firstname) ? ($dev->firstname . ' ' . $dev->lastname) : ($dev->username ?: 'Admin #' . $dev->admin_id);
+                                                        ?>
+                                                        <tr>
+                                                            <td><strong><?php echo htmlspecialchars($dev->device_name ?: 'Android Staff Phone'); ?></strong></td>
+                                                            <td><?php echo htmlspecialchars($adminLabel); ?></td>
+                                                            <td><?php echo !empty($dev->last_active_at) ? htmlspecialchars($dev->last_active_at) : '—'; ?></td>
+                                                            <td><span class="label label-success">Paired</span></td>
+                                                            <td>
+                                                                <?php if ($hasFcm): ?>
+                                                                    <span class="label label-success"><i class="fas fa-check"></i> Push Active</span>
+                                                                <?php else: ?>
+                                                                    <span class="label label-warning">Token Pending</span>
+                                                                <?php endif; ?>
+                                                            </td>
+                                                        </tr>
+                                                        <?php endforeach; ?>
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    <?php endif; ?>
+
+                                    <div class="sdv-switch-row" style="margin-bottom: 16px;">
+                                        <div>
+                                            <div class="sdv-switch-label"><i class="fas fa-bell text-warning"></i> Enable Firebase Cloud Messaging Push Notifications</div>
+                                            <p class="sdv-switch-desc">Wakes the Sahdev Mobile Support App even during Android Doze mode or when phone is locked.</p>
+                                        </div>
+                                        <input type="checkbox" name="firebase_enabled" value="1" <?php echo !empty($settings->firebase_enabled) ? 'checked' : ''; ?> style="width: 18px; height: 18px; cursor: pointer;">
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label style="font-weight: 600;">Firebase Service Account Private Key JSON (FCM HTTP v1)</label>
+                                        <?php 
+                                        require_once __DIR__ . '/../lib/FirebasePushService.php';
+                                        $displayServiceAccountJson = \Sahdev\Lib\FirebasePushService::cleanJsonString((string)($settings->firebase_service_account_json ?? ''));
+                                        ?>
+                                        <textarea name="firebase_service_account_json" rows="6" class="form-control" placeholder='{"type": "service_account", "project_id": "...", "private_key": "-----BEGIN PRIVATE KEY-----\n..."}' style="font-family: monospace; font-size: 12px;"><?php echo htmlspecialchars($displayServiceAccountJson, ENT_QUOTES, 'UTF-8'); ?></textarea>
+                                        <small class="text-muted" style="display: block; margin-top: 4px;">Download from Google Cloud / Firebase Console: Project Settings &gt; Service Accounts &gt; Generate New Private Key.</small>
+                                    </div>
+
+                                    <div class="form-group" style="max-width: 450px;">
+                                        <label style="font-weight: 600;">Firebase Project ID</label>
+                                        <input type="text" name="firebase_project_id" class="form-control" value="<?php echo htmlspecialchars((string)($settings->firebase_project_id ?? '')); ?>" placeholder="Auto-extracted from private key JSON">
+                                    </div>
+
+                                    <div style="background: var(--sdv-bg-nested, #f8fafc); border: 1px solid var(--sdv-border, #e2e8f0); border-radius: 8px; padding: 14px; margin-bottom: 16px;">
+                                        <div style="font-weight: 700; font-size: 12.5px; margin-bottom: 8px;"><i class="fas fa-sliders-h text-primary"></i> Notification Dispatch Triggers</div>
+                                        <div class="row" style="display: flex; flex-wrap: wrap; gap: 8px 16px;">
+                                            <label style="font-size: 12.5px; cursor: pointer;"><input type="checkbox" name="firebase_notify_new_visitor" value="1" <?php echo (!isset($settings->firebase_notify_new_visitor) || !empty($settings->firebase_notify_new_visitor)) ? 'checked' : ''; ?>> 👋 New Visitor Chat Arrival</label>
+                                            <label style="font-size: 12.5px; cursor: pointer;"><input type="checkbox" name="firebase_notify_summons" value="1" <?php echo (!isset($settings->firebase_notify_summons) || !empty($settings->firebase_notify_summons)) ? 'checked' : ''; ?>> 🚨 Urgent Human Staff Summons</label>
+                                            <label style="font-size: 12.5px; cursor: pointer;"><input type="checkbox" name="firebase_notify_chat_messages" value="1" <?php echo (!isset($settings->firebase_notify_chat_messages) || !empty($settings->firebase_notify_chat_messages)) ? 'checked' : ''; ?>> 💬 Active Taken-Over Chat Messages</label>
+                                            <label style="font-size: 12.5px; cursor: pointer;"><input type="checkbox" name="firebase_notify_tickets" value="1" <?php echo (!isset($settings->firebase_notify_tickets) || !empty($settings->firebase_notify_tickets)) ? 'checked' : ''; ?>> 🎫 WHMCS Tickets &amp; Client Replies</label>
+                                            <label style="font-size: 12.5px; cursor: pointer;"><input type="checkbox" name="firebase_notify_system_alerts" value="1" <?php echo (!isset($settings->firebase_notify_system_alerts) || !empty($settings->firebase_notify_system_alerts)) ? 'checked' : ''; ?>> ⚠️ Critical System Notices</label>
+                                        </div>
+                                    </div>
+
+                                    <div class="form-group" style="margin-bottom: 0;">
+                                        <label style="font-weight: 600;">Push Relay Gateway URL (Optional)</label>
+                                        <input type="url" name="firebase_gateway_url" class="form-control" value="<?php echo htmlspecialchars((string)($settings->firebase_gateway_url ?? '')); ?>" placeholder="Leave blank to dispatch directly to Google FCM">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                     </div>
                 </div>
 
-                <div style="margin-top: 25px; padding-top: 15px; border-top: 1px solid #e2e8f0;">
-                    <button type="submit" class="btn btn-primary btn-lg" style="padding: 10px 28px; font-weight: 600;">
-                        <i class="fas fa-save" style="margin-right: 6px;"></i> Save All Settings
+                <!-- Sticky Bottom Save Action Bar -->
+                <div class="sdv-sticky-save-bar">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <i class="fas fa-shield-alt text-primary" style="font-size: 18px;"></i>
+                        <span style="font-size: 13px; color: var(--sdv-text-secondary, #334155); font-weight: 500;">
+                            Changes apply immediately upon saving. Use <kbd style="padding: 2px 6px; background: var(--sdv-bg-nested, #f1f5f9); border: 1px solid var(--sdv-border, #cbd5e1); border-radius: 4px; font-weight: 700;">Ctrl+S</kbd> to save anytime.
+                        </span>
+                    </div>
+                    <button type="submit" class="sdv-btn-save">
+                        <i class="fas fa-save"></i> Save All Settings
                     </button>
                 </div>
+
             </form>
         </div>
 
         <script>
         function switchSettingsSection(tabId, btn) {
             document.querySelectorAll('.sdv-settings-pane').forEach(function(pane) {
-                pane.style.display = 'none';
+                pane.classList.remove('active');
             });
-            document.querySelectorAll('.sdv-settings-tab-btn').forEach(function(b) {
-                b.classList.remove('active', 'btn-primary');
-                b.classList.add('btn-default');
+            document.querySelectorAll('.sdv-cat-btn').forEach(function(b) {
+                b.classList.remove('active');
             });
             var target = document.getElementById(tabId);
-            if (target) target.style.display = 'block';
+            if (target) target.classList.add('active');
             if (btn) {
-                btn.classList.remove('btn-default');
-                btn.classList.add('active', 'btn-primary');
+                btn.classList.add('active');
             } else {
-                var matchingBtn = document.querySelector('.sdv-settings-tab-btn[data-tab="' + tabId + '"]');
-                if (matchingBtn) {
-                    matchingBtn.classList.remove('btn-default');
-                    matchingBtn.classList.add('active', 'btn-primary');
-                }
+                var matchingBtn = document.querySelector('.sdv-cat-btn[data-tab="' + tabId + '"]');
+                if (matchingBtn) matchingBtn.classList.add('active');
             }
             var hiddenSubtab = document.getElementById('sdv_active_subtab');
             if (hiddenSubtab) {
@@ -2975,6 +3515,24 @@ class AdminController
                     window.location.hash = tabId;
                 }
             } catch(e) {}
+        }
+
+        function sdvSetThemeRadio(mode) {
+            var radio = document.querySelector('input[name="ui_theme_mode"][value="' + mode + '"]');
+            if (radio) {
+                radio.checked = true;
+                document.querySelectorAll('.sdv-theme-card').forEach(function(c) { c.classList.remove('active'); });
+                var card = radio.closest('.sdv-theme-card');
+                if (card) card.classList.add('active');
+            }
+            if (typeof sahdevGlobalSetTheme === 'function') {
+                sahdevGlobalSetTheme(mode, false);
+            }
+        }
+
+        function sdvSetTempPreset(val) {
+            var el = document.getElementById('sdv_input_temp');
+            if (el) el.value = val;
         }
 
         function sdvPreviewAlertSound() {
@@ -3034,6 +3592,17 @@ class AdminController
             }
         });
 
+        // Ctrl+S / Cmd+S save hotkey
+        document.addEventListener('keydown', function(e) {
+            if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S' || e.code === 'KeyS')) {
+                var form = document.getElementById('sdvSettingsForm');
+                if (form) {
+                    e.preventDefault();
+                    form.submit();
+                }
+            }
+        });
+
         function sendTestFirebasePush() {
             var btn = document.getElementById('btn-sdv-test-push');
             var statusSpan = document.getElementById('sdv-test-push-status');
@@ -3047,7 +3616,6 @@ class AdminController
             data.append('action', 'admin_test_firebase_push');
             data.append('sahdev_act', 'ajax_handler');
 
-            // Include CSRF token if present on page for WHMCS compatibility
             var tokenInput = document.querySelector('input[name="token"]');
             if (tokenInput && tokenInput.value) {
                 data.append('token', tokenInput.value);

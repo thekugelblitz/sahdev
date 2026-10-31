@@ -44,6 +44,7 @@ function sahdev_inject_ticket_panel($vars)
 
     $adminPrefs = \Sahdev\Lib\AdminPreferences::load((int) $adminId);
     $uiTheme = $adminPrefs['ui_theme'] ?? \Sahdev\Lib\AdminPreferences::THEME_REMASTERED;
+    $themeMode = \Sahdev\Lib\AdminPreferences::getThemeMode((int) $adminId);
 
     $defaultTone = 'Professional';
     if ($adminPrefs['tone_default'] !== null && $adminPrefs['tone_default'] !== '') {
@@ -292,23 +293,37 @@ INC_HTML;
 
     // Server-side inline styles for each theme — eliminates flash entirely
     $isRemastered = ($uiTheme === \Sahdev\Lib\AdminPreferences::THEME_REMASTERED);
-    $panelStyle   = $isRemastered
-        ? 'margin-top:14px;border:none;border-radius:10px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08);'
-        : 'margin-top: 20px; border-color: #0d6efd;';
+    if ($themeMode === \Sahdev\Lib\AdminPreferences::THEME_MODE_BLACK) {
+        $panelStyle   = 'margin-top:14px;border:1px solid #333333;border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,0.85);background:#222222;color:#f3f4f6;';
+        $headingStyle = 'background:linear-gradient(135deg,#181818 0%,#222222 100%);color:#ffffff;padding:10px 16px;border:none;border-bottom:1px solid #333333;display:flex;justify-content:space-between;align-items:center;cursor:pointer;';
+        $robotColor   = 'color:#818cf8;';
+        $linkStyle    = 'font-size:11px;color:#a1a1aa;font-weight:500;';
+        $bodyStyle    = 'display:none;visibility:hidden;background:#222222;color:#f3f4f6;';
+    } elseif ($themeMode === \Sahdev\Lib\AdminPreferences::THEME_MODE_DARK) {
+        $panelStyle   = 'margin-top:14px;border:1px solid #334155;border-radius:10px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.4);background:#1e293b;color:#f8fafc;';
+        $headingStyle = 'background:linear-gradient(135deg,#0f172a 0%,#1e293b 100%);color:#ffffff;padding:10px 16px;border:none;border-bottom:1px solid #334155;display:flex;justify-content:space-between;align-items:center;cursor:pointer;';
+        $robotColor   = 'color:#38bdf8;';
+        $linkStyle    = 'font-size:11px;color:#94a3b8;font-weight:500;';
+        $bodyStyle    = 'display:none;visibility:hidden;background:#1e293b;color:#f8fafc;';
+    } else {
+        $panelStyle   = $isRemastered
+            ? 'margin-top:14px;border:none;border-radius:10px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08);background:#ffffff;'
+            : 'margin-top: 20px; border-color: #0d6efd;';
+        $headingStyle = $isRemastered
+            ? 'background:linear-gradient(135deg,#0f172a 0%,#1e293b 100%);color:#e2e8f0;padding:10px 16px;border:none;display:flex;justify-content:space-between;align-items:center;cursor:pointer;'
+            : 'background-color: #0d6efd; color: white; display: flex; justify-content: space-between; align-items: center; cursor: pointer;';
+        $robotColor   = $isRemastered ? 'color:#818cf8;' : '';
+        $linkStyle    = $isRemastered
+            ? 'font-size:11px;color:#94a3b8;font-weight:500;'
+            : 'font-size:12px;color:#e7f1ff;font-weight:500;';
+        $bodyStyle    = $isRemastered
+            ? 'display:none;visibility:hidden;'
+            : 'display: none; background: #f8f9fa;';
+    }
     $panelClass   = $isRemastered ? 'panel panel-info sahdev-remastered' : 'panel panel-info';
-    $headingStyle = $isRemastered
-        ? 'background:linear-gradient(135deg,#0f172a 0%,#1e293b 100%);color:#e2e8f0;padding:10px 16px;border:none;display:flex;justify-content:space-between;align-items:center;cursor:pointer;'
-        : 'background-color: #0d6efd; color: white; display: flex; justify-content: space-between; align-items: center; cursor: pointer;';
     $titleStyle   = $isRemastered
         ? 'display:flex;align-items:center;flex-wrap:wrap;gap:8px;font-size:14px;font-weight:700;letter-spacing:0.3px;'
         : 'display:flex;align-items:center;flex-wrap:wrap;gap:8px;';
-    $robotColor   = $isRemastered ? 'color:#818cf8;' : '';
-    $linkStyle    = $isRemastered
-        ? 'font-size:11px;color:#94a3b8;font-weight:500;'
-        : 'font-size:12px;color:#e7f1ff;font-weight:500;';
-    $bodyStyle    = $isRemastered
-        ? 'display:none;visibility:hidden;'
-        : 'display: none; background: #f8f9fa;';
 
     $logoIconSvg = '<span style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:6px;background:linear-gradient(135deg,#6366f1,#8b5cf6);box-shadow:0 2px 8px rgba(99,102,241,0.35);margin-right:2px;flex-shrink:0;">'
         . '<svg width="14" height="14" viewBox="0 0 100 100" fill="none">'
@@ -322,15 +337,28 @@ INC_HTML;
         . '<line x1="76" y1="35" x2="62" y2="43" stroke="#ffffff" stroke-width="6" stroke-linecap="round"/>'
         . '</svg></span>';
 
+    $opWhite = ($themeMode === 'white') ? '1' : '0.5';
+    $opDark  = ($themeMode === 'dark') ? '1' : '0.5';
+    $opBlack = ($themeMode === 'black') ? '1' : '0.5';
+
+    $themeSwitcherHtml = <<<HTML
+<span class="sahdev-ticket-theme-pills" style="display:inline-flex;align-items:center;background:rgba(0,0,0,0.35);border:1px solid rgba(255,255,255,0.12);border-radius:14px;padding:1px 3px;gap:2px;font-size:10px;" onclick="event.stopPropagation();">
+    <button type="button" class="btn btn-xs" style="background:transparent;border:none;padding:1px 4px;line-height:1;color:#f3f4f6;cursor:pointer;opacity:{$opWhite};" onclick="sahdevSetThemeMode('white')" title="Light / White Theme">☀️</button>
+    <button type="button" class="btn btn-xs" style="background:transparent;border:none;padding:1px 4px;line-height:1;color:#f3f4f6;cursor:pointer;opacity:{$opDark};" onclick="sahdevSetThemeMode('dark')" title="Dark Slate Theme">🌙</button>
+    <button type="button" class="btn btn-xs" style="background:transparent;border:none;padding:1px 4px;line-height:1;color:#f3f4f6;cursor:pointer;opacity:{$opBlack};" onclick="sahdevSetThemeMode('black')" title="Charcoal Black Theme (#222222 &amp; #000000)">🖤</button>
+</span>
+HTML;
+
     $htmlPanel = <<<HTML
 {$incidentAlertBanner}
-<div class="{$panelClass}" id="sahdev-ai-panel" style="{$panelStyle}">
+<div class="{$panelClass}" id="sahdev-ai-panel" data-sahdev-theme="{$themeMode}" style="{$panelStyle}">
     <div class="panel-heading" style="{$headingStyle}" onclick="$('#sahdev-ai-body').slideToggle();">
         <h3 class="panel-title" style="{$titleStyle}">
             {$logoIconSvg}
             <span>Sahdev AI <span style="font-weight:400;font-size:12px;opacity:0.85;">Ticket Intelligence</span></span>
             {$serverHealthBadge}
             <span style="display:inline-flex;gap:8px;margin-left:auto;align-items:center;">
+                {$themeSwitcherHtml}
                 <a href="addonmodules.php?module=sahdev&amp;action=my_preferences" style="{$linkStyle}" onclick="event.stopPropagation();" title="Configure AI &amp; Theme"><i class="fas fa-sliders-h"></i> Preferences</a>
                 <span style="color:#64748b;font-size:10px;">|</span>
                 <a href="addonmodules.php?module=sahdev&amp;action=help" style="{$linkStyle}" onclick="event.stopPropagation();" title="Documentation, FAQ &amp; Glossary"><i class="fas fa-question-circle"></i> Help &amp; KB</a>
@@ -798,13 +826,11 @@ INC_HTML;
 HTML;
 
 
-    // Output: CSS first (for remastered styling), then HTML
+    // Output: CSS first (for styling & theme modes), then HTML
     $output = '';
-    if ($uiTheme === \Sahdev\Lib\AdminPreferences::THEME_REMASTERED) {
-        $rmCssPath = __DIR__ . '/ui/remastered.css';
-        if (file_exists($rmCssPath)) {
-            $output .= "<style>\n" . file_get_contents($rmCssPath) . "\n</style>\n";
-        }
+    $rmCssPath = __DIR__ . '/ui/remastered.css';
+    if (file_exists($rmCssPath)) {
+        $output .= "<style>\n" . file_get_contents($rmCssPath) . "\n</style>\n";
     }
     $output .= $htmlPanel;
 
@@ -815,7 +841,16 @@ HTML;
     var sahdevAjaxUrl = "{$ajaxUrl}";
     var sahdevAutoAnalyze = {$autoAnalyzeEnabled};
     var sahdevQualityScorer = {$qualityScorerEnabled};
-    console.log("Sahdev AI initialized with AJAX URL:", sahdevAjaxUrl, "| Auto-analyze:", sahdevAutoAnalyze);
+    var sahdevCurrentTheme = "{$themeMode}";
+    window.sahdevSetThemeMode = function(mode) {
+        var p = document.getElementById('sahdev-ai-panel');
+        if (p) p.setAttribute('data-sahdev-theme', mode);
+        var root = document.getElementById('sahdevThemeRoot');
+        if (root) root.setAttribute('data-sahdev-theme', mode);
+        try { localStorage.setItem('sahdev_theme_mode', mode); } catch(e) {}
+        $.post(sahdevAjaxUrl, { action: 'set_theme_mode', theme_mode: mode });
+    };
+    console.log("Sahdev AI initialized with AJAX URL:", sahdevAjaxUrl, "| Auto-analyze:", sahdevAutoAnalyze, "| Theme:", sahdevCurrentTheme);
 HTML;
 
     // Inject active admin's signature into JS payload for dynamic appending

@@ -873,7 +873,7 @@ $allowedActions = [
     'save_canned_response', 'save_kb_article', 'get_analytics', 'get_ticket_insights',
     'trigger_cron_run', 'get_insights_queue', 'analyze_single_insight', 'test_whmcs_cron_http',
     'run_tools_for_ticket', 'get_tools_ticket_status', 'run_tools_queue', 'get_tools_operations',
-    'run_manual_tool', 'autopilot_test_run', 'set_ui_theme', 'get_header_server_widget',
+    'run_manual_tool', 'autopilot_test_run', 'set_ui_theme', 'set_theme_mode', 'get_header_server_widget',
     'server_sso',
     // Sahdev 3.2 Organization Assistant: Copilot, Safe Ops, Chat, Metrics
     'copilot_send_message', 'copilot_stream', 'copilot_execute_op', 'copilot_rollback_op',
@@ -991,7 +991,7 @@ if ($intensity > 3) {
         'get_analytics', 'get_ticket_insights', 'trigger_cron_run', 'get_insights_queue', 'analyze_single_insight',
         'test_whmcs_cron_http', 'run_tools_queue', 'get_tools_operations',
         'get_open_payload', 'analyze_open_context',
-        'autopilot_test_run', 'set_ui_theme', 'get_header_server_widget',
+        'autopilot_test_run', 'set_ui_theme', 'set_theme_mode', 'get_header_server_widget',
         'copilot_send_message', 'copilot_stream', 'copilot_execute_op', 'copilot_rollback_op',
         'chat_takeover', 'fetch_openrouter_models', 'get_metrics_data',
         'client_chat_init', 'client_chat_message', 'client_chat_escalate',
@@ -1667,6 +1667,29 @@ try {
             $prefs['ui_theme'] = $theme;
             \Sahdev\Lib\AdminPreferences::save((int) $adminId, $prefs);
             $response = ['status' => 'success', 'theme' => $theme];
+        }
+    } elseif ($action === 'set_theme_mode') {
+        // Switch color scheme: white, dark, black (Charcoal Black #222222 & #000000)
+        $mode = strtolower(trim((string) ($_POST['theme_mode'] ?? $_POST['mode'] ?? 'black')));
+        $allowed = [
+            \Sahdev\Lib\AdminPreferences::THEME_MODE_WHITE,
+            \Sahdev\Lib\AdminPreferences::THEME_MODE_DARK,
+            \Sahdev\Lib\AdminPreferences::THEME_MODE_BLACK
+        ];
+        if (!in_array($mode, $allowed, true)) {
+            $response = ['status' => 'error', 'message' => 'Invalid theme mode. Allowed: white, dark, black'];
+        } else {
+            $prefs = \Sahdev\Lib\AdminPreferences::load((int) $adminId);
+            $prefs['theme_mode'] = $mode;
+            \Sahdev\Lib\AdminPreferences::save((int) $adminId, $prefs);
+
+            // If global save is requested (e.g. from general settings):
+            if (!empty($_POST['save_global'])) {
+                try {
+                    \WHMCS\Database\Capsule::table('tblsahdev_settings')->update(['ui_theme_mode' => $mode]);
+                } catch (\Throwable $e) {}
+            }
+            $response = ['status' => 'success', 'theme_mode' => $mode];
         }
     } elseif ($action === 'get_header_server_widget') {
         require_once __DIR__ . '/lib/ServerTelemetryService.php';

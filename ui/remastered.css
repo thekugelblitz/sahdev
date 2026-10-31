@@ -252,3 +252,174 @@
     .sahdev-rm-tab .rm-tab-icon { display: none; }
     .sahdev-remastered > .panel-heading .panel-title a { display: none; }
 }
+
+/* ================================================================
+   Sahdev AI — Color Scheme Modes (White / Dark / Charcoal Black)
+   Charcoal Black: Combines #222222 and #000000 with subtle #333333 borders
+   ================================================================ */
+
+/* --- Charcoal Black Theme (#222222 & #000000) --- */
+#sahdev-ai-panel[data-sahdev-theme="black"],
+.sahdev-theme-black #sahdev-ai-panel,
+[data-sahdev-theme="black"] .sahdev-remastered.panel {
+    background: #222222 !important;
+    border: 1px solid #333333 !important;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.9) !important;
+    color: #f3f4f6 !important;
+}
+
+#sahdev-ai-panel[data-sahdev-theme="black"] > .panel-heading,
+[data-sahdev-theme="black"] .sahdev-remastered > .panel-heading {
+    background: linear-gradient(135deg, #181818 0%, #222222 100%) !important;
+    color: #ffffff !important;
+    border-bottom: 1px solid #333333 !important;
+}
+
+#sahdev-ai-panel[data-sahdev-theme="black"] > #sahdev-ai-body,
+#sahdev-ai-panel[data-sahdev-theme="black"] > .panel-body,
+[data-sahdev-theme="black"] .sahdev-remastered > .panel-body {
+    background: #222222 !important;
+    color: #e4e4e7 !important;
+}
+
+#sahdev-ai-panel[data-sahdev-theme="black"] .sahdev-rm-tabs {
+    background: #181818 !important;
+    border-bottom: 1px solid #333333 !important;
+}
+
+#sahdev-ai-panel[data-sahdev-theme="black"] .sahdev-rm-tab {
+    color: #a1a1aa !important;
+    background: transparent !important;
+}
+
+#sahdev-ai-panel[data-sahdev-theme="black"] .sahdev-rm-tab:hover {
+    color: #ffffff !important;
+    background: #282828 !important;
+}
+
+#sahdev-ai-panel[data-sahdev-theme="black"] .sahdev-rm-tab.active {
+    color: #38bdf8 !important;
+    border-bottom-color: #38bdf8 !important;
+    background: #222222 !important;
+}
+
+#sahdev-ai-panel[data-sahdev-theme="black"] .form-control,
+#sahdev-ai-panel[data-sahdev-theme="black"] select,
+#sahdev-ai-panel[data-sahdev-theme="black"] input[type="text"],
+#sahdev-ai-panel[data-sahdev-theme="black"] input[type="number"],
+#sahdev-ai-panel[data-sahdev-theme="black"] textarea {
+    background: #151515 !important;
+    color: #f4f4f5 !important;
+    border: 1px solid #383838 !important;
+}
+
+#sahdev-ai-panel[data-sahdev-theme="black"] .form-control:focus {
+    border-color: #6366f1 !important;
+    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.3) !important;
+}
+
+#sahdev-ai-panel[data-sahdev-theme="black"] label {
+    color: #e4e4e7 !important;
+}
+
+#sahdev-ai-panel[data-sahdev-theme="black"] .sahdev-intent-btn {
+    background: #181818 !important;
+    border: 1px solid #383838 !important;
+    color: #d4d4d8 !important;
+}
+
+#sahdev-ai-panel[data-sahdev-theme="black"] .sahdev-intent-btn:hover,
+#sahdev-ai-panel[data-sahdev-theme="black"] .sahdev-intent-btn.active {
+    background: #000000 !important;
+    border-color: #6366f1 !important;
+    color: #ffffff !important;
+}
+
+#sahdev-ai-panel[data-sahdev-theme="black"] #sahdev-results .well {
+    background: #181818 !important;
+    border: 1px solid #333333 !important;
+    color: #e4e4e7 !important;
+}
+
+#sahdev-ai-panel[data-sahdev-theme="black"] #sahdev-results .well p {
+    color: #d4d4d8 !important;
+}
+
+#sahdev-ai-panel[data-sahdev-theme="black"] #sahdev-results .panel {
+    background: #1c1c1c !important;
+    border: 1px solid #333333 !important;
+}
+
+#sahdev-ai-panel[data-sahdev-theme="black"] #sahdev-results .panel-heading {
+    background: #161616 !important;
+    border-bottom: 1px solid #333333 !important;
+    color: #ffffff !important;
+}
+
+#sahdev-ai-panel[data-sahdev-theme="black"] #sahdev-results .panel-body {
+    background: #181818 !important;
+    color: #f4f4f5 !important;
+}
+
+#sahdev-ai-panel[data-sahdev-theme="black"] .sahdev-rm-rewrite {
+    background: #181818 !important;
+    border-top: 1px solid #333333 !important;
+}
+
+#sahdev-ai-panel[data-sahdev-theme="black"] .sahdev-rm-rewrite label {
+    color: #e4e4e7 !important;
+}
+
+#sahdev-ai-panel[data-sahdev-theme="black"] .sahdev-rm-tech-toggle {
+    background: #181818 !important;
+    color: #818cf8 !important;
+    border-left: 3px solid #6366f1 !important;
+}
+
+/* --- Dark Theme (Deep Navy/Slate) --- */
+#sahdev-ai-panel[data-sahdev-theme="dark"],
+.sahdev-theme-dark #sahdev-ai-panel,
+[data-sahdev-theme="dark"] .sahdev-remastered.panel {
+    background: #1e293b !important;
+    border: 1px solid #334155 !important;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4) !important;
+    color: #f8fafc !important;
+}
+
+#sahdev-ai-panel[data-sahdev-theme="dark"] > .panel-heading {
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%) !important;
+    color: #ffffff !important;
+    border-bottom: 1px solid #334155 !important;
+}
+
+#sahdev-ai-panel[data-sahdev-theme="dark"] > #sahdev-ai-body,
+#sahdev-ai-panel[data-sahdev-theme="dark"] > .panel-body {
+    background: #1e293b !important;
+    color: #cbd5e1 !important;
+}
+
+#sahdev-ai-panel[data-sahdev-theme="dark"] .sahdev-rm-tabs {
+    background: #0f172a !important;
+    border-bottom: 1px solid #334155 !important;
+}
+
+#sahdev-ai-panel[data-sahdev-theme="dark"] .sahdev-rm-tab {
+    color: #94a3b8 !important;
+}
+
+#sahdev-ai-panel[data-sahdev-theme="dark"] .sahdev-rm-tab.active {
+    color: #38bdf8 !important;
+    border-bottom-color: #38bdf8 !important;
+}
+
+#sahdev-ai-panel[data-sahdev-theme="dark"] .form-control {
+    background: #0f172a !important;
+    color: #f8fafc !important;
+    border-color: #334155 !important;
+}
+
+#sahdev-ai-panel[data-sahdev-theme="dark"] #sahdev-results .well {
+    background: #0f172a !important;
+    border: 1px solid #334155 !important;
+}
+

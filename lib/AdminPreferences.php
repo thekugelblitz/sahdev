@@ -83,7 +83,13 @@ class AdminPreferences
     public const THEME_CLASSIC     = 'classic';
     public const THEME_REMASTERED  = 'remastered';
 
+    /** Valid theme appearance modes (color schemes). */
+    public const THEME_MODE_WHITE = 'white';
+    public const THEME_MODE_DARK  = 'dark';
+    public const THEME_MODE_BLACK = 'black'; // Charcoal Black #222222 & #000000 combined
+
     private static array $validThemes = [self::THEME_CLASSIC, self::THEME_REMASTERED];
+    private static array $validThemeModes = [self::THEME_MODE_WHITE, self::THEME_MODE_DARK, self::THEME_MODE_BLACK];
 
     public static function load(int $adminId): array
     {
@@ -136,6 +142,10 @@ class AdminPreferences
             $theme = strtolower(trim((string) ($raw['ui_theme'] ?? '')));
             $out['ui_theme'] = in_array($theme, self::$validThemes, true) ? $theme : self::THEME_REMASTERED;
         }
+        if (array_key_exists('theme_mode', $raw)) {
+            $mode = strtolower(trim((string) ($raw['theme_mode'] ?? '')));
+            $out['theme_mode'] = in_array($mode, self::$validThemeModes, true) ? $mode : self::THEME_MODE_BLACK;
+        }
         $featIn = isset($raw['features']) && is_array($raw['features']) ? $raw['features'] : [];
         foreach (self::allFeatureKeys() as $k) {
             if (array_key_exists($k, $featIn)) {
@@ -153,6 +163,27 @@ class AdminPreferences
     {
         $prefs = self::load($adminId);
         return $prefs['ui_theme'] ?? self::THEME_REMASTERED;
+    }
+
+    /**
+     * Convenience helper: get effective theme mode (white, dark, black) for an admin.
+     */
+    public static function getThemeMode(int $adminId = 0): string
+    {
+        if ($adminId > 0) {
+            $prefs = self::load($adminId);
+            if (!empty($prefs['theme_mode']) && in_array($prefs['theme_mode'], self::$validThemeModes, true)) {
+                return $prefs['theme_mode'];
+            }
+        }
+        try {
+            $row = Capsule::table('tblsahdev_settings')->select('ui_theme_mode')->first();
+            if ($row && !empty($row->ui_theme_mode) && in_array($row->ui_theme_mode, self::$validThemeModes, true)) {
+                return $row->ui_theme_mode;
+            }
+        } catch (\Throwable $e) {}
+
+        return self::THEME_MODE_BLACK;
     }
 
     /**
@@ -316,7 +347,7 @@ class AdminPreferences
     /** Actions that skip per-admin feature checks (organizational / power). */
     public static function unguardedActions(): array
     {
-        return ['set_ui_theme'];
+        return ['set_ui_theme', 'set_theme_mode'];
     }
 
     /**
@@ -357,6 +388,7 @@ class AdminPreferences
             'default_provider_id' => 0,
             'tone_default'        => null,
             'ui_theme'            => self::THEME_REMASTERED,
+            'theme_mode'          => self::THEME_MODE_BLACK,
             'features'            => $features,
         ];
     }
