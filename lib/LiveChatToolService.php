@@ -233,34 +233,59 @@ class LiveChatToolService
     ];
 
     /**
-     * Check if Live Chat Tool calling is enabled in settings.
+     * Optional override for unit testing / mocking.
+     * @var bool|null
+     */
+    private static ?bool $enabledOverride = null;
+
+    /**
+     * Set test override for tool calling enabled state.
+     * Pass null to restore database lookup behavior.
+     */
+    public static function setEnabledOverride(?bool $enabled): void
+    {
+        self::$enabledOverride = $enabled;
+    }
+
+    /**
+     * Check if Live Chat Tool calling is enabled.
+     * By default, it is DISABLED (0) to eliminate latency and preserve fast responses.
+     * Must be explicitly enabled (1) in settings.
+     *
+     * @return bool
      */
     public static function isEnabled(): bool
     {
+        if (self::$enabledOverride !== null) {
+            return self::$enabledOverride;
+        }
+
         try {
             if (!class_exists('WHMCS\\Database\\Capsule')) {
-                return true;
+                return false;
             }
             try {
                 if (!Capsule::schema()->hasTable('tblsahdev_settings')) {
-                    return true;
+                    return false;
                 }
             } catch (\Throwable $t) {
-                return true; // Unit test / standalone CLI fallback
+                return false;
             }
 
             $settings = Capsule::table('tblsahdev_settings')->first();
             if (!$settings) {
-                return true;
+                return false;
             }
 
-            // Explicit client_chat_tools_enabled setting, fallback to general tools_execution_enabled
+            // Strictly check client_chat_tools_enabled.
+            // By default, it must be disabled (0). Never inherit general ticket tools_execution_enabled.
             if (isset($settings->client_chat_tools_enabled)) {
                 return (int) $settings->client_chat_tools_enabled === 1;
             }
-            return (int) ($settings->tools_execution_enabled ?? 1) === 1;
+
+            return false;
         } catch (\Throwable $e) {
-            return true;
+            return false;
         }
     }
 
@@ -691,6 +716,15 @@ class LiveChatToolService
      */
     public static function executeToolCall(string $toolName, array $args, int $sessionId, ?int $clientId = null): array
     {
+        if (!self::isEnabled()) {
+            return [
+                'success' => false,
+                'summary' => 'Tool calling is currently disabled for live chat.',
+                'cached'  => false,
+                'error'   => 'tools_disabled',
+            ];
+        }
+
         $registry = self::getToolRegistry();
         if (!isset($registry[$toolName])) {
             return [

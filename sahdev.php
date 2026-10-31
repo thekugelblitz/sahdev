@@ -371,6 +371,9 @@ function sahdev_activate()
                     $table->boolean('client_chat_sound_admin_alert')->default(1);
                     $table->text('client_chat_cors_origins')->nullable();
                     $table->boolean('client_chat_external_embed_enabled')->default(1);
+                    $table->boolean('client_chat_tools_enabled')->default(0);
+                    $table->integer('client_chat_tool_max_executions')->default(2);
+                    $table->integer('client_chat_tool_cache_ttl')->default(900);
                     $table->timestamps(); // creates created_at, updated_at
                 }
             );
@@ -429,6 +432,9 @@ function sahdev_activate()
                 'context_enrichment_contacts' => 1,
                 'context_enrichment_client_profile' => 1,
                 'scrub_phones' => 1,
+                'client_chat_tools_enabled' => 0,
+                'client_chat_tool_max_executions' => 2,
+                'client_chat_tool_cache_ttl' => 900,
                 'created_at' => \Carbon\Carbon::now(),
                 'updated_at' => \Carbon\Carbon::now(),
             ]);

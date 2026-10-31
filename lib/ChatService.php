@@ -1018,15 +1018,19 @@ class ChatService
                 } catch (\Throwable $logEx) {}
             }
 
-            // Evaluate intelligent tool pre-routing for ToolsAPI
-            $preRoute = LiveChatToolService::evaluatePreRoute($messageText, $sessionId, $clientId);
-            $exposedTools = $preRoute['needs_tools'] ? $preRoute['tools'] : [];
+            // Evaluate intelligent tool pre-routing for ToolsAPI (only when tool calling is enabled)
+            $isToolCallingEnabled = LiveChatToolService::isEnabled();
+            $exposedTools = [];
+            if ($isToolCallingEnabled) {
+                $preRoute = LiveChatToolService::evaluatePreRoute($messageText, $sessionId, $clientId);
+                $exposedTools = $preRoute['needs_tools'] ? $preRoute['tools'] : [];
 
-            if (!empty($exposedTools) && isset($chatHistory[0]['content'])) {
-                $chatHistory[0]['content'] .= "\n\n=== DIAGNOSTIC TOOLS AVAILABLE ===\n"
-                    . "You have access to real-time external diagnostic tools (DNS, WHOIS, SSL, Ping, etc.). "
-                    . "When the user asks for technical verification or live status of a domain or host, call the appropriate tool to retrieve verified facts before answering. "
-                    . "If a tool reports an error or unavailable result, say you could not verify the result and do not guess diagnostic facts.";
+                if (!empty($exposedTools) && isset($chatHistory[0]['content'])) {
+                    $chatHistory[0]['content'] .= "\n\n=== DIAGNOSTIC TOOLS AVAILABLE ===\n"
+                        . "You have access to real-time external diagnostic tools (DNS, WHOIS, SSL, Ping, etc.). "
+                        . "When the user asks for technical verification or live status of a domain or host, call the appropriate tool to retrieve verified facts before answering. "
+                        . "If a tool reports an error or unavailable result, say you could not verify the result and do not guess diagnostic facts.";
+                }
             }
 
             $toolCallsExecuted = [];
@@ -1036,8 +1040,8 @@ class ChatService
                 $reply = $res['content'] ?? '';
                 $toolCalls = $res['tool_calls'] ?? [];
 
-                // Server-side Tool Execution Loop
-                if (!empty($toolCalls) && !empty($exposedTools)) {
+                // Server-side Tool Execution Loop (only when enabled and tools were exposed)
+                if ($isToolCallingEnabled && !empty($toolCalls) && !empty($exposedTools)) {
                     $maxExecutions = LiveChatToolService::getMaxExecutionsPerTurn();
                     $maxRounds = 2;
                     $executionsCount = 0;

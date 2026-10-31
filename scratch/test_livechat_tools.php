@@ -26,8 +26,68 @@ echo "==========================================================================
 echo "           SAHDEV AI LIVE CHAT TOOL CALLING VERIFICATION SUITE\n";
 echo "================================================================================\n\n";
 
+// TEST GROUP 0: Feature Toggle & Default Disabled State
+echo "--- TEST GROUP 0: Live Chat Tool Calling Toggle & Default Disabled State ---\n";
+
+// Ensure clean state (no override)
+LiveChatToolService::setEnabledOverride(null);
+runTest(
+    "Tool calling is DISABLED by default (isEnabled === false)",
+    LiveChatToolService::isEnabled() === false,
+    "Expected isEnabled() to be false by default"
+);
+
+// When disabled, technical queries MUST NOT trigger tools
+$disabledRoute = LiveChatToolService::evaluatePreRoute("Can you check the DNS records for mydomain.com?", 0, null);
+runTest(
+    "When disabled: pre-router ignores technical query and exposes NO tools",
+    $disabledRoute['needs_tools'] === false && empty($disabledRoute['tools']),
+    "Expected needs_tools=false and empty tools when disabled"
+);
+
+// When disabled, executeToolCall MUST reject immediately with tools_disabled error
+$disabledExec = LiveChatToolService::executeToolCall('toolsapi_dns_lookup', ['domain' => 'mydomain.com'], 0, null);
+runTest(
+    "When disabled: executeToolCall returns error 'tools_disabled'",
+    $disabledExec['success'] === false && ($disabledExec['error'] ?? '') === 'tools_disabled',
+    "Expected tools_disabled error, got: " . json_encode($disabledExec)
+);
+
+// Test explicit enabling
+LiveChatToolService::setEnabledOverride(true);
+runTest(
+    "Setting enabled activates tool calling (isEnabled === true)",
+    LiveChatToolService::isEnabled() === true,
+    "Expected isEnabled() to be true after enabling"
+);
+
+$enabledRoute = LiveChatToolService::evaluatePreRoute("Can you check the DNS records for mydomain.com?", 0, null);
+runTest(
+    "When enabled: pre-router correctly identifies technical query and exposes tools",
+    $enabledRoute['needs_tools'] === true && !empty($enabledRoute['tools']),
+    "Expected needs_tools=true when enabled"
+);
+
+// Test toggling back to disabled
+LiveChatToolService::setEnabledOverride(false);
+runTest(
+    "Setting disabled immediately deactivates tool calling (isEnabled === false)",
+    LiveChatToolService::isEnabled() === false,
+    "Expected isEnabled() to be false after disabling"
+);
+
+$disabledAgainRoute = LiveChatToolService::evaluatePreRoute("Can you check the DNS records for mydomain.com?", 0, null);
+runTest(
+    "When toggled off: technical queries once again return zero tools",
+    $disabledAgainRoute['needs_tools'] === false && empty($disabledAgainRoute['tools']),
+    "Expected needs_tools=false when toggled off"
+);
+
+// Enable override for remaining diagnostic routing & security test groups
+LiveChatToolService::setEnabledOverride(true);
+
 // TEST GROUP 1: Pre-Router Direct Answer Routing (Non-Tool Queries)
-echo "--- TEST GROUP 1: Pre-Router Non-Tool Direct Routing ---\n";
+echo "\n--- TEST GROUP 1: Pre-Router Non-Tool Direct Routing ---\n";
 
 $nonToolQueries = [
     'Hi there!',
@@ -391,6 +451,13 @@ runTest(
     "Rejects tool call when target cannot be resolved",
     $noTargetExec['success'] === false && $noTargetExec['error'] === 'missing_target',
     json_encode($noTargetExec)
+);
+
+// Restore override to null to verify final production default
+LiveChatToolService::setEnabledOverride(null);
+runTest(
+    "Final check: tool calling remains DISABLED by default when override is cleared",
+    LiveChatToolService::isEnabled() === false
 );
 
 echo "\n================================================================================\n";

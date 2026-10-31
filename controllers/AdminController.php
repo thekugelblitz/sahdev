@@ -1916,6 +1916,15 @@ class AdminController
             if (isset($_POST['client_chat_enabled'])) {
                 $updatePayload['client_chat_enabled'] = !empty($_POST['client_chat_enabled']) ? 1 : 0;
             }
+            if (isset($_POST['client_chat_tools_enabled'])) {
+                $updatePayload['client_chat_tools_enabled'] = !empty($_POST['client_chat_tools_enabled']) ? 1 : 0;
+            }
+            if (isset($_POST['client_chat_tool_max_executions'])) {
+                $updatePayload['client_chat_tool_max_executions'] = max(1, min(5, (int) $_POST['client_chat_tool_max_executions']));
+            }
+            if (isset($_POST['client_chat_tool_cache_ttl'])) {
+                $updatePayload['client_chat_tool_cache_ttl'] = max(60, min(86400, (int) $_POST['client_chat_tool_cache_ttl']));
+            }
             if (isset($_POST['client_chat_title'])) {
                 $updatePayload['client_chat_title'] = trim((string)$_POST['client_chat_title']);
             }
@@ -9123,6 +9132,9 @@ class AdminController
                     'client_chat_enabled'           => !empty($_POST['client_chat_enabled']) ? 1 : 0,
                     'client_chat_provider_id'       => $clientChatProviderId,
                     'client_chat_fallback_provider_id' => $clientChatFallbackProviderId,
+                    'client_chat_tools_enabled'          => !empty($_POST['client_chat_tools_enabled']) ? 1 : 0,
+                    'client_chat_tool_max_executions'    => max(1, min(5, (int)($_POST['client_chat_tool_max_executions'] ?? 2))),
+                    'client_chat_tool_cache_ttl'         => max(60, min(86400, (int)($_POST['client_chat_tool_cache_ttl'] ?? 900))),
                     'client_chat_admin_id'          => $chosenAdminId ?: null,
                     'client_chat_admin_username'    => $chosenAdminUsername ?: null,
                     'client_chat_department_id'     => (int) ($_POST['client_chat_department_id'] ?? 0) ?: null,
@@ -11906,6 +11918,54 @@ class AdminController
                                                         <?php endforeach; ?>
                                                     </select>
                                                     <span class="help-block">Used only if the Live Chat primary fails. Ticket fallback is never used here.</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Real-Time Diagnostic Tools (ToolsAPI) Panel -->
+                                    <div class="panel panel-default" style="border-radius: 8px; margin-bottom: 22px; background: #f8fafc; border: 1px solid #cbd5e1;">
+                                        <div class="panel-heading" style="background: #e2e8f0; padding: 10px 15px; font-weight: 700; font-size: 13px; color: #1e293b; display: flex; justify-content: space-between; align-items: center;">
+                                            <span><i class="fas fa-tools text-primary"></i> Real-Time Diagnostic Tool Calling (ToolsAPI)</span>
+                                            <span class="label <?php echo !empty($settings->client_chat_tools_enabled) ? 'label-success' : 'label-default'; ?>">
+                                                <?php echo !empty($settings->client_chat_tools_enabled) ? 'Enabled' : 'Disabled (Default)'; ?>
+                                            </span>
+                                        </div>
+                                        <div class="panel-body" style="padding: 15px;">
+                                            <div class="checkbox" style="margin-top: 0; margin-bottom: 12px;">
+                                                <label style="font-weight: 700; color: #1e293b;">
+                                                    <input type="checkbox" name="client_chat_tools_enabled" value="1" <?php echo !empty($settings->client_chat_tools_enabled) ? 'checked' : ''; ?>>
+                                                    Enable Diagnostic Tool Calling in Live Chat
+                                                </label>
+                                                <span class="help-block" style="font-size: 11.5px; margin-top: 4px; color: #64748b;">
+                                                    When <strong>disabled (recommended / default)</strong>, the AI replies instantly using conversational knowledge without making external network calls, ensuring lowest latency.
+                                                    When <strong>enabled</strong>, the AI model can automatically trigger diagnostic tools (DNS lookup, WHOIS expiration, SSL certificate inspection, Ping) to diagnose client domains in real time.
+                                                    <em>Note: Tool execution queries live external endpoints, which may introduce latency before the response is returned.</em>
+                                                </span>
+                                            </div>
+
+                                            <div class="row" style="margin-top: 15px; border-top: 1px dashed #cbd5e1; padding-top: 12px;">
+                                                <div class="col-md-6 form-group" style="margin-bottom: 0;">
+                                                    <label style="font-size: 12px; font-weight: 600; color: #334155;">Max Tool Executions Per Turn</label>
+                                                    <select name="client_chat_tool_max_executions" class="form-control input-sm">
+                                                        <?php $curMaxExec = (int)($settings->client_chat_tool_max_executions ?? 2); ?>
+                                                        <option value="1" <?php echo ($curMaxExec === 1) ? 'selected' : ''; ?>>1 tool call (fastest)</option>
+                                                        <option value="2" <?php echo ($curMaxExec === 2 || $curMaxExec <= 0) ? 'selected' : ''; ?>>2 tool calls (recommended default)</option>
+                                                        <option value="3" <?php echo ($curMaxExec === 3) ? 'selected' : ''; ?>>3 tool calls</option>
+                                                        <option value="5" <?php echo ($curMaxExec === 5) ? 'selected' : ''; ?>>5 tool calls (deep diagnostics)</option>
+                                                    </select>
+                                                    <span class="help-block" style="font-size: 11px; margin-top: 2px;">Limits how many external diagnostic calls the AI can perform in a single message turn.</span>
+                                                </div>
+                                                <div class="col-md-6 form-group" style="margin-bottom: 0;">
+                                                    <label style="font-size: 12px; font-weight: 600; color: #334155;">Tool Result Cache Duration (TTL)</label>
+                                                    <select name="client_chat_tool_cache_ttl" class="form-control input-sm">
+                                                        <?php $curTtl = (int)($settings->client_chat_tool_cache_ttl ?? 900); ?>
+                                                        <option value="300" <?php echo ($curTtl === 300) ? 'selected' : ''; ?>>5 minutes</option>
+                                                        <option value="900" <?php echo ($curTtl === 900 || $curTtl <= 0) ? 'selected' : ''; ?>>15 minutes (recommended default)</option>
+                                                        <option value="1800" <?php echo ($curTtl === 1800) ? 'selected' : ''; ?>>30 minutes</option>
+                                                        <option value="3600" <?php echo ($curTtl === 3600) ? 'selected' : ''; ?>>1 hour</option>
+                                                    </select>
+                                                    <span class="help-block" style="font-size: 11px; margin-top: 2px;">Caches identical diagnostic results in <code>tblsahdev_tool_cache</code> to eliminate latency on repeated queries.</span>
                                                 </div>
                                             </div>
                                         </div>

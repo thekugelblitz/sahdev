@@ -211,7 +211,7 @@ class SchemaManager
                 'client_chat_alert_dedup_active_staff' => ['type' => 'boolean', 'default' => 1],
 
                 // Client Live Chat Tool Calling Automation
-                'client_chat_tools_enabled'            => ['type' => 'boolean', 'default' => 1],
+                'client_chat_tools_enabled'            => ['type' => 'boolean', 'default' => 0],
                 'client_chat_tool_max_executions'      => ['type' => 'integer', 'default' => 2],
                 'client_chat_tool_cache_ttl'           => ['type' => 'integer', 'default' => 900],
             ];
@@ -261,6 +261,7 @@ class SchemaManager
                         'client_chat_enabled' => 1,
                         'client_chat_kb_enabled' => 1,
                         'client_chat_brand_color' => '#0d6efd',
+                        'client_chat_tools_enabled' => 0,
                         'created_at'          => \Carbon\Carbon::now(),
                         'updated_at'          => \Carbon\Carbon::now(),
                     ]);
