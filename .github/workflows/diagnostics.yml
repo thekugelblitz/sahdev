@@ -17,7 +17,10 @@ jobs:
           extensions: mbstring, pdo_sqlite, dom, curl
           coverage: none
       - name: Syntax
-        run: find lib controllers modules -name '*.php' -print0 | xargs -0 -n1 php -l
+        run: |
+          find lib controllers modules -name '*.php' -print0 | xargs -0 -n1 php -l
+          php -l hooks.php
+          php -l ajax.php
       - name: Offline contract and lifecycle checks
         run: |
           php scratch/test_diagnostic_contracts.php
@@ -26,3 +29,23 @@ jobs:
           php scratch/test_diagnostic_exchange.php
           php scratch/test_settings_theme.php
           php scratch/test_command_station.php
+          php scratch/test_copilot.php
+          node scratch/test_copilot_ajax.cjs
+  copilot-browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: mbstring, dom, curl
+          coverage: none
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install browser test tools
+        run: |
+          npm install --no-save --package-lock=false playwright@1.62.1
+          npx playwright install --with-deps chromium
+      - name: Copilot browser flows
+        run: node scratch/test_copilot_ui.cjs

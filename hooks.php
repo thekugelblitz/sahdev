@@ -5668,11 +5668,9 @@ function sahdev_render_admin_copilot_drawer(array $vars = []): string
     var statusEl = document.getElementById('sdv-copilot-status');
     var statusText = document.getElementById('sdv-copilot-status-text');
 
-    var sessionUuid = sessionStorage.getItem('sdv_copilot_uuid');
-    if (!sessionUuid) {
-        sessionUuid = 'cop_' + Math.random().toString(36).substring(2, 12) + Date.now().toString(36);
-        sessionStorage.setItem('sdv_copilot_uuid', sessionUuid);
-    }
+    // The server owns session identifiers. Storage can be unavailable in private/embedded contexts.
+    var sessionUuid = '';
+    try { sessionUuid = sessionStorage.getItem('sdv_copilot_uuid') || ''; } catch (e) {}
 
     function toggleDrawer(open) {
         var shouldOpen = typeof open === 'boolean' ? open : !drawer.classList.contains('sdv-open');
@@ -5738,7 +5736,7 @@ function sahdev_render_admin_copilot_drawer(array $vars = []): string
             { id: 'customizer', category: 'Live Chat', label: 'Chat Widget Customizer', icon: 'fas fa-palette', url: baseMod + '&action=client_chat&tab=customizer', desc: 'Styling, layout, welcome message & colors' },
             { id: 'ticket_reply', category: 'Ticketing', label: 'Ticket AI Assistant', icon: 'fas fa-ticket-alt', url: baseMod + '&action=ticket_reply', desc: 'Smart ticket drafting, suggestions & triage' },
             { id: 'kb_generator', category: 'Knowledge', label: 'KB Article Generator', icon: 'fas fa-book', url: baseMod + '&action=kb_generator', desc: 'Generate and publish KB articles using AI' },
-            { id: 'copilot', category: 'Operations', label: 'Ops Copilot & BI Console', icon: 'fas fa-robot', url: baseMod + '&action=copilot', desc: 'Interactive ops dispatcher & system telemetry' },
+            { id: 'copilot', category: 'Operations', label: 'Ops Copilot & BI Console', icon: 'fas fa-robot', url: baseMod + '&action=admin_copilot', desc: 'Interactive ops dispatcher & system telemetry' },
             { id: 'email_composer', category: 'Communication', label: 'Email AI Composer', icon: 'fas fa-envelope', url: baseMod + '&action=email_composer', desc: 'Marketing, billing and announcement drafts' },
             { id: 'product_catalog', category: 'Commerce', label: 'Product & Domain Catalog', icon: 'fas fa-shopping-cart', url: baseMod + '&action=product_catalog', desc: 'Catalog grounding for autonomous sales' },
             { id: 'providers', category: 'Settings', label: 'AI Providers & Models', icon: 'fas fa-microchip', url: baseMod + '&action=providers', desc: 'Configure OpenAI, Anthropic, Gemini gateways' },
@@ -5769,7 +5767,7 @@ function sahdev_render_admin_copilot_drawer(array $vars = []): string
             '.sahdev-qj-item-desc { font-size: 11px; color: #64748b; }',
             '.sahdev-qj-item-badge { font-size: 10px; font-weight: 700; text-transform: uppercase; padding: 2px 7px; border-radius: 9999px; background: #e2e8f0; color: #475569; }',
             '.sahdev-qj-footer { padding: 8px 16px; background: #f8fafc; border-top: 1px solid #e2e8f0; font-size: 11px; color: #64748b; display: flex; align-items: center; justify-content: space-between; }'
-        ].join('\n');
+        ].join('\\n');
         document.head.appendChild(styleEl);
 
         var overlay = document.createElement('div');
@@ -5915,7 +5913,10 @@ function sahdev_render_admin_copilot_drawer(array $vars = []): string
     function appendMsg(role, text) {
         var d = document.createElement('div');
         d.className = 'sdv-msg ' + (role === 'user' ? 'sdv-msg-user' : 'sdv-msg-bot');
-        d.innerHTML = text.replace(/\\n/g, '<br>');
+        var content = document.createElement('span');
+        content.textContent = text;
+        content.style.whiteSpace = 'pre-wrap';
+        d.appendChild(content);
         msgsEl.appendChild(d);
         msgsEl.scrollTop = msgsEl.scrollHeight;
         return d;
@@ -5927,7 +5928,7 @@ function sahdev_render_admin_copilot_drawer(array $vars = []): string
             url: window.location.href,
             pathname: window.location.pathname,
             ticket_id: params.get('id') || params.get('ticketid') || '',
-            user_id: params.get('userid') || '',
+            client_id: params.get('userid') || '',
             service_id: params.get('serviceid') || params.get('hostingid') || '',
             invoice_id: params.get('invoiceid') || '',
             action: params.get('action') || ''
@@ -5936,7 +5937,7 @@ function sahdev_render_admin_copilot_drawer(array $vars = []): string
 
     function sendMessage() {
         var text = (inputEl.value || '').trim();
-        if (!text) return;
+        if (!text || sendBtn.disabled) return;
 
         appendMsg('user', text);
         inputEl.value = '';
@@ -5965,6 +5966,11 @@ function sahdev_render_admin_copilot_drawer(array $vars = []): string
             sendBtn.disabled = false;
             inputEl.focus();
 
+            if (data.session_uuid) {
+                sessionUuid = data.session_uuid;
+                try { sessionStorage.setItem('sdv_copilot_uuid', sessionUuid); } catch (e) {}
+            }
+
             if (data.status === 'success' || data.success) {
                 var botMsg = appendMsg('bot', data.reply || 'Operation completed.');
 
@@ -5987,6 +5993,11 @@ function sahdev_render_admin_copilot_drawer(array $vars = []): string
     }
 
     function renderActionCard(parentEl, card) {
+        function escapeText(value) {
+            var el = document.createElement('span');
+            el.textContent = value == null ? '' : (typeof value === 'object' ? JSON.stringify(value) : String(value));
+            return el.innerHTML;
+        }
         var cardDiv = document.createElement('div');
         var isDestructive = card.risk_tier === 3 || card.requires_password;
         cardDiv.className = 'sdv-action-proposal' + (isDestructive ? ' tier-destructive' : '');
@@ -5997,7 +6008,7 @@ function sahdev_render_admin_copilot_drawer(array $vars = []): string
                 if (card.diff.hasOwnProperty(prop)) {
                     var beforeVal = card.diff[prop].before != null ? String(card.diff[prop].before) : '(none)';
                     var afterVal = card.diff[prop].after != null ? String(card.diff[prop].after) : '(none)';
-                    diffRows += '<tr><td><strong>' + prop + '</strong></td><td class="sdv-diff-before">' + beforeVal + '</td><td>&rarr;</td><td class="sdv-diff-after">' + afterVal + '</td></tr>';
+                    diffRows += '<tr><td><strong>' + escapeText(prop) + '</strong></td><td class="sdv-diff-before">' + escapeText(beforeVal) + '</td><td>&rarr;</td><td class="sdv-diff-after">' + escapeText(afterVal) + '</td></tr>';
                 }
             }
         }
@@ -6008,12 +6019,12 @@ function sahdev_render_admin_copilot_drawer(array $vars = []): string
 
         cardDiv.innerHTML =
             '<div class="sdv-action-header">' +
-                '<strong>' + (card.title || card.action_key) + '</strong>' +
+                '<strong>' + escapeText(card.title || card.action_key) + '</strong>' +
                 '<span class="sdv-tier-pill' + (isDestructive ? ' tier-destructive' : '') + '">' +
                     (card.risk_tier === 3 ? 'Tier 3 (Destructive)' : 'Tier 2 (Reversible)') +
                 '</span>' +
             '</div>' +
-            '<div style="font-size:11px;color:#cbd5e1;">' + (card.description || '') + '</div>' +
+            '<div style="font-size:11px;color:#cbd5e1;">' + escapeText(card.description || '') + '</div>' +
             (diffRows ? '<table class="sdv-action-diff-tbl"><tbody>' + diffRows + '</tbody></table>' : '') +
             pwdPrompt +
             '<div class="sdv-action-footer">' +
@@ -6056,13 +6067,13 @@ function sahdev_render_admin_copilot_drawer(array $vars = []): string
             .then(function(r) { return r.json(); })
             .then(function(execRes) {
                 if (execRes.status === 'success' || execRes.success) {
-                    var jId = execRes.journal_id || '';
+                    var jId = Number(execRes.journal_id) || '';
                     cardDiv.innerHTML =
                         '<div style="color:#34d399;font-weight:700;font-size:12px;display:flex;justify-content:space-between;align-items:center;">' +
                             '<span>✓ Executed ' + (jId ? '[Journal #' + jId + ']' : '') + '</span>' +
                             (jId ? '<button type="button" class="sdv-btn-rollback" data-journal="' + jId + '">↩ Rollback</button>' : '') +
                         '</div>' +
-                        '<div style="font-size:11px;color:#94a3b8;margin-top:4px;">' + (execRes.message || 'Operation executed successfully.') + '</div>';
+                        '<div style="font-size:11px;color:#94a3b8;margin-top:4px;">' + escapeText(execRes.message || 'Operation executed successfully.') + '</div>';
 
                     var rbBtn = cardDiv.querySelector('.sdv-btn-rollback');
                     if (rbBtn) {
@@ -6099,7 +6110,7 @@ function sahdev_render_admin_copilot_drawer(array $vars = []): string
         .then(function(r) { return r.json(); })
         .then(function(data) {
             if (data.status === 'success' || data.success) {
-                containerEl.innerHTML = '<div style="color:#f59e0b;font-weight:700;font-size:12px;">↩ Rolled Back Successfully</div><div style="font-size:11px;color:#94a3b8;">' + (data.message || '') + '</div>';
+                containerEl.textContent = '↩ Rolled Back Successfully. ' + (data.message || '');
             } else {
                 alert('Rollback failed: ' + (data.message || data.error || 'Unknown error'));
             }

@@ -38,6 +38,16 @@
 
 ## 1. Project Overview
 
+### Admin Ops Copilot request path (November 2026 repair)
+
+`hooks.php::sahdev_render_admin_copilot_drawer()` and `AdminController::admin_copilot()` post to the existing addon AJAX handler. Message, execute, rollback and takeover requests include the WHMCS plain CSRF token. Both UIs display the endpoint's `error` or `message`; response text and proposal diffs are rendered as text.
+
+Copilot actions bypass construction of the Ticket AI controller, retaining their existing authentication, CSRF and permission checks. `ChatService::handleAdminMessage()` returns additive `session_uuid` and `session_id` fields on success and provider errors. The drawer saves the server-issued UUID and resends it on follow-up turns; unavailable browser storage does not prevent opening or chatting. No schema migration is required.
+
+`SafeOpsService` exposes `financial_metrics` (requires `metrics_view`) and `open_tickets` (requires `copilot_use`) for the advertised shortcuts. Financial queries default to the WHMCS default currency, accept an optional `currency_id`, and reuse `MetricsIntelligenceService::getFinancialMetrics($currencyId)`. Currency-scoped MRR covers active hosting services; paid values are invoice totals, including tax, rather than net receipts. The optional currency filter preserves the existing no-argument dashboard contract. Open ticket results are limited to 50 records. Mutations remain proposals until explicitly confirmed, and Tier 3 confirmation includes the admin password.
+
+Offline regressions: `php scratch/test_copilot.php`, `node scratch/test_copilot_ajax.cjs`, and `node scratch/test_copilot_ui.cjs` (uses the existing optional `SAHDEV_PLAYWRIGHT` / `SAHDEV_BROWSER_EXECUTABLE` test environment). These execute real renderers, the AJAX dispatcher, provider serialization and operations with simulated database/HTTP boundaries; they do not verify production credentials or WHMCS hosting-module side effects.
+
 **Sahdev** is a WHMCS Addon Module that injects AI intelligence directly into the WHMCS admin ticket view. It connects to large language model (LLM) providers (Google Gemini, local LM Studio / OpenAI-compatible endpoints, or Replicate) to:
 
 - Analyze support tickets and generate structured JSON analysis (`ROOT_CAUSE`, `RESPONSIBILITY`, `RISK_LEVEL`, `INTERNAL_ACTION_PLAN`, `CLIENT_REPLY`)

@@ -1156,7 +1156,12 @@ try {
         }
     }
 
-    $controller = new \Sahdev\Lib\AIController($ticketId, $adminId);
+    // Ops uses its own provider routing. A missing Ticket AI provider must not
+    // prevent Copilot, confirmed operations, or rollback from reaching their handlers.
+    $isCopilotAction = in_array($action, [
+        'copilot_send_message', 'copilot_stream', 'copilot_execute_op', 'copilot_rollback_op', 'chat_takeover',
+    ], true);
+    $controller = $isCopilotAction ? null : new \Sahdev\Lib\AIController($ticketId, $adminId);
 
     if ($action === 'get_analytics_period') {
         // AJAX: return period-filtered KPI data for the analytics dashboard

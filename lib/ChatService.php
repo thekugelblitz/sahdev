@@ -258,6 +258,8 @@ class ChatService
             return [
                 'success' => true,
                 'reply'   => $botReply,
+                'session_uuid' => $session['session_uuid'],
+                'session_id' => $sessionId,
             ];
         }
 
@@ -351,6 +353,10 @@ class ChatService
                 $assistantContent = "I've prepared the following WHMCS operation for your review. Please confirm below:";
             }
 
+            if (trim($assistantContent) === '') {
+                throw new \RuntimeException('The AI provider returned an empty reply. Please retry or check the Copilot provider configuration.');
+            }
+
             // 6. Record Assistant Message in DB
             $msgId = self::recordAssistantMessage($sessionId, $assistantContent, $actionCards, $toolCalls);
 
@@ -359,6 +365,8 @@ class ChatService
                 'message_id'   => $msgId,
                 'reply'        => trim($assistantContent),
                 'action_cards' => $actionCards,
+                'session_uuid' => $session['session_uuid'],
+                'session_id'   => $sessionId,
             ];
         } catch (\Throwable $e) {
             $errorMsg = "Copilot Error: " . $e->getMessage();
@@ -366,6 +374,8 @@ class ChatService
             return [
                 'success' => false,
                 'error'   => $errorMsg,
+                'session_uuid' => $session['session_uuid'],
+                'session_id' => $sessionId,
             ];
         }
     }

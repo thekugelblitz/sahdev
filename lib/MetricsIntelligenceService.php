@@ -110,14 +110,18 @@ class MetricsIntelligenceService
     }
 
     /**
-     * Compute Monthly Recurring Revenue (MRR) from active hosting services & addons.
+     * Compute Monthly Recurring Revenue (MRR) from active hosting services.
+     * A currency ID restricts the calculation to clients using that currency.
      */
-    public static function calculateMRR(): float
+    public static function calculateMRR(?int $currencyId = null): float
     {
         try {
-            $services = Capsule::table('tblhosting')
-                ->where('domainstatus', 'Active')
-                ->get(['amount', 'billingcycle']);
+            $query = Capsule::table('tblhosting')->where('domainstatus', 'Active');
+            if ($currencyId !== null) {
+                $query->join('tblclients', 'tblclients.id', '=', 'tblhosting.userid')
+                    ->where('tblclients.currency', $currencyId);
+            }
+            $services = $query->get(['tblhosting.amount', 'tblhosting.billingcycle']);
 
             $mrr = 0.0;
             foreach ($services as $s) {
@@ -147,6 +151,9 @@ class MetricsIntelligenceService
 
             return round($mrr, 2);
         } catch (\Throwable $e) {
+            if ($currencyId !== null) {
+                throw $e;
+            }
             return 0.0;
         }
     }
@@ -154,30 +161,35 @@ class MetricsIntelligenceService
     /**
      * Financial KPI Summary.
      */
-    public static function getFinancialMetrics(): array
+    public static function getFinancialMetrics(?int $currencyId = null): array
     {
-        $mrr = self::calculateMRR();
+        $mrr = self::calculateMRR($currencyId);
         $arr = $mrr * 12;
 
-        $unpaidInvoices = Capsule::table('tblinvoices')->where('status', 'Unpaid')->count();
-        $unpaidAmount = (float) Capsule::table('tblinvoices')->where('status', 'Unpaid')->sum('total');
+        $invoices = Capsule::table('tblinvoices');
+        if ($currencyId !== null) {
+            $invoices->join('tblclients', 'tblclients.id', '=', 'tblinvoices.userid')
+                ->where('tblclients.currency', $currencyId);
+        }
+        $unpaidInvoices = (clone $invoices)->where('tblinvoices.status', 'Unpaid')->count();
+        $unpaidAmount = (float) (clone $invoices)->where('tblinvoices.status', 'Unpaid')->sum('tblinvoices.total');
 
-        $thisMonthPaid = (float) Capsule::table('tblinvoices')
-            ->where('status', 'Paid')
+        $thisMonthPaid = (float) (clone $invoices)
+            ->where('tblinvoices.status', 'Paid')
             ->where('datepaid', '>=', Carbon::now()->startOfMonth()->toDateTimeString())
-            ->sum('total');
+            ->sum('tblinvoices.total');
 
-        $lastMonthPaid = (float) Capsule::table('tblinvoices')
-            ->where('status', 'Paid')
+        $lastMonthPaid = (float) (clone $invoices)
+            ->where('tblinvoices.status', 'Paid')
             ->whereBetween('datepaid', [
                 Carbon::now()->subMonth()->startOfMonth()->toDateTimeString(),
                 Carbon::now()->subMonth()->endOfMonth()->toDateTimeString(),
             ])
-            ->sum('total');
+            ->sum('tblinvoices.total');
 
         $growthPct = $lastMonthPaid > 0 ? round((($thisMonthPaid - $lastMonthPaid) / $lastMonthPaid) * 100, 1) : 0.0;
 
-        return [
+        $metrics = [
             'mrr'                => $mrr,
             'arr'                => $arr,
             'this_month_paid'    => $thisMonthPaid,
@@ -186,6 +198,14 @@ class MetricsIntelligenceService
             'unpaid_count'       => $unpaidInvoices,
             'unpaid_amount'      => round($unpaidAmount, 2),
         ];
+        if ($currencyId !== null) {
+            $metrics['today_paid'] = (float) (clone $invoices)
+                ->where('tblinvoices.status', 'Paid')
+                ->where('datepaid', '>=', Carbon::today()->toDateTimeString())
+                ->where('datepaid', '<', Carbon::today()->addDay()->toDateTimeString())
+                ->sum('tblinvoices.total');
+        }
+        return $metrics;
     }
 
     /**

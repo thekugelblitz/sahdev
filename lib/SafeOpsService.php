@@ -209,6 +209,26 @@ class SafeOpsService
             ],
 
             // --- SYSTEM & TELEMETRY OPS ---
+            'financial_metrics' => [
+                'tier'        => self::TIER_READ_ONLY,
+                'category'    => 'Metrics',
+                'title'       => 'MRR and Revenue Status',
+                'description' => 'Current hosting MRR/ARR, invoices paid today and this month, growth, and unpaid balances in one currency. Defaults to the WHMCS default currency.',
+                'permission'  => PermissionService::PERM_METRICS_VIEW,
+                'params'      => [
+                    'currency_id' => ['type' => 'int', 'required' => false, 'desc' => 'WHMCS currency ID; omit for the default currency. Amounts are never combined across currencies.'],
+                ],
+            ],
+            'open_tickets' => [
+                'tier'        => self::TIER_READ_ONLY,
+                'category'    => 'Tickets',
+                'title'       => 'List Open Support Tickets',
+                'description' => 'List recent tickets awaiting a reply or in progress, with status, priority, and last reply time.',
+                'permission'  => PermissionService::PERM_COPILOT_USE,
+                'params'      => [
+                    'limit' => ['type' => 'int', 'required' => false, 'desc' => 'Maximum tickets to return (1-50, default 20).'],
+                ],
+            ],
             'server_telemetry_query' => [
                 'tier'        => self::TIER_READ_ONLY,
                 'category'    => 'System',
@@ -315,6 +335,27 @@ class SafeOpsService
     {
         try {
             switch ($actionKey) {
+                case 'financial_metrics':
+                    $currencyId = (int) ($params['currency_id'] ?? 0);
+                    $currencyQuery = Capsule::table('tblcurrencies');
+                    $currency = $currencyId > 0 ? $currencyQuery->where('id', $currencyId)->first() : $currencyQuery->where('default', 1)->first();
+                    if (!$currency) return ['success' => false, 'error' => 'The requested WHMCS currency was not found.'];
+                    return ['success' => true, 'data' => [
+                        'currency' => $currency->code,
+                        'currency_id' => (int) $currency->id,
+                        'as_of' => Carbon::now()->toDateTimeString(),
+                        'scope' => 'Active hosting service MRR; paid invoice totals include tax and are not net cash receipts. Amounts are limited to clients using this currency, without conversion.',
+                        'metrics' => MetricsIntelligenceService::getFinancialMetrics((int) $currency->id),
+                    ]];
+
+                case 'open_tickets':
+                    $tickets = Capsule::table('tbltickets')
+                        ->whereIn('status', ['Open', 'Customer-Reply', 'In Progress', 'On Hold'])
+                        ->orderBy('lastreply', 'desc')
+                        ->limit(max(1, min(50, (int) ($params['limit'] ?? 20))))
+                        ->get(['id', 'tid', 'userid', 'title', 'status', 'urgency', 'lastreply']);
+                    return ['success' => true, 'data' => $tickets];
+
                 case 'ticket_lookup':
                     $ticketId = (int) ($params['ticket_id'] ?? 0);
                     $ticket = Capsule::table('tbltickets')->where('id', $ticketId)->orWhere('tid', $ticketId)->first();

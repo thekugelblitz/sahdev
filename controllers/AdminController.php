@@ -7738,6 +7738,7 @@ class AdminController
 
         $activeSubTab = $_GET['subtab'] ?? 'console';
         $actionUrl = htmlspecialchars($this->moduleVars['modulelink']) . '&action=admin_copilot';
+        $copilotToken = function_exists('generate_token') ? generate_token('plain') : ($_SESSION['token'] ?? '');
 
         // Load active session
         $sessionUuid = $_GET['session'] ?? null;
@@ -7929,6 +7930,31 @@ class AdminController
                 </li>
             </ul>
 
+            <script>
+            function copilotRequest(action, fields) {
+                const body = new URLSearchParams(fields);
+                body.set('action', action);
+                body.set('token', <?php echo json_encode($copilotToken, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>);
+                return fetch('addonmodules.php?module=sahdev&sahdev_act=ajax_handler', {
+                    method: 'POST', credentials: 'same-origin', body: body
+                }).then(async response => {
+                    let data;
+                    try { data = await response.json(); }
+                    catch (error) { throw new Error('The server returned an invalid response. Refresh the page and check your admin session.'); }
+                    if (!response.ok && !data.error && !data.message) {
+                        throw new Error('Request failed (HTTP ' + response.status + '). Please try again.');
+                    }
+                    data.success = data.success === true || data.status === 'success';
+                    data.error = data.error || data.message;
+                    return data;
+                });
+            }
+            function escapeCopilotHtml(value) {
+                const el = document.createElement('span');
+                el.textContent = value == null ? '' : (typeof value === 'object' ? JSON.stringify(value) : String(value));
+                return el.innerHTML;
+            }
+            </script>
             <?php if ($activeSubTab === 'console'): ?>
                 <div class="copilot-container">
                     <!-- Sidebar: Past Sessions -->
@@ -7987,7 +8013,7 @@ class AdminController
                                                 <div class="action-card">
                                                     <div class="action-card-header">
                                                         <i class="fas fa-shield-alt"></i> Action Proposal: <?php echo htmlspecialchars($card['title']); ?>
-                                                        <span class="label label-warning pull-right">Tier <?php echo $card['risk_tier']; ?> Reversible</span>
+                                                        <span class="label label-warning pull-right">Tier <?php echo (int) $card['risk_tier']; ?> <?php echo !empty($card['requires_password']) ? 'Destructive' : 'Reversible'; ?></span>
                                                     </div>
                                                     <div style="font-size: 12px; color: var(--sdv-text-secondary, #4a5568);">
                                                         Target: <strong><?php echo htmlspecialchars($card['target'] ?? 'Record'); ?></strong>
@@ -8013,10 +8039,13 @@ class AdminController
                                                         </table>
                                                     <?php endif; ?>
 
+                                                    <?php if (!empty($card['requires_password']) || (int) $card['risk_tier'] === 3): ?>
+                                                        <input type="password" class="form-control copilot-admin-password" placeholder="Admin password required" autocomplete="current-password">
+                                                    <?php endif; ?>
                                                     <div style="margin-top: 12px; display: flex; justify-content: flex-end; gap: 10px;">
                                                         <button type="button" class="btn btn-xs btn-default" onclick="dismissActionCard(this)">Dismiss</button>
                                                         <button type="button" class="btn btn-sm btn-success" 
-                                                                onclick="executeActionProposal('<?php echo $card['action_key']; ?>', <?php echo htmlspecialchars(json_encode($card['params'])); ?>, '<?php echo $activeSessionUuid; ?>', this)">
+                                                                onclick="executeActionProposal(<?php echo htmlspecialchars(json_encode($card['action_key']), ENT_QUOTES, 'UTF-8'); ?>, <?php echo htmlspecialchars(json_encode($card['params']), ENT_QUOTES, 'UTF-8'); ?>, <?php echo $sessionId; ?>, this)">
                                                             <i class="fas fa-check"></i> Confirm & Execute
                                                         </button>
                                                     </div>
@@ -8071,7 +8100,7 @@ class AdminController
                 function sendCopilotMessage() {
                     const input = document.getElementById('copilot-input');
                     const msg = input.value.trim();
-                    if (!msg) return;
+                    if (!msg || document.getElementById('copilot-send-btn').disabled) return;
 
                     const container = document.getElementById('copilot-messages-container');
                     
@@ -8093,19 +8122,19 @@ class AdminController
                     const btn = document.getElementById('copilot-send-btn');
                     btn.disabled = true;
 
-                    fetch('addonmodules.php?module=sahdev&sahdev_act=ajax_handler&action=copilot_send_message', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                        body: 'session_uuid=<?php echo $activeSessionUuid; ?>&message=' + encodeURIComponent(msg)
+                    copilotRequest('copilot_send_message', {
+                        session_uuid: <?php echo json_encode($activeSessionUuid); ?>, message: msg
                     })
-                    .then(r => r.json())
                     .then(data => {
                         btn.disabled = false;
                         thinking.remove();
                         if (data.success) {
                             const botBubble = document.createElement('div');
                             botBubble.className = 'copilot-bubble bubble-assistant';
-                            botBubble.innerHTML = (data.reply || '').replace(/\n/g, '<br>');
+                            const replyText = document.createElement('span');
+                            replyText.textContent = data.reply || '';
+                            replyText.style.whiteSpace = 'pre-wrap';
+                            botBubble.appendChild(replyText);
 
                             if (data.action_cards && data.action_cards.length > 0) {
                                 data.action_cards.forEach(card => {
@@ -8119,7 +8148,7 @@ class AdminController
                         } else {
                             const errBubble = document.createElement('div');
                             errBubble.className = 'copilot-bubble bubble-assistant';
-                            errBubble.innerHTML = '⚠️ <strong>Error:</strong> ' + (data.error || 'Failed to complete request.');
+                            errBubble.textContent = '⚠️ Error: ' + (data.error || 'Failed to complete request.');
                             container.appendChild(errBubble);
                             scrollToBottom();
                         }
@@ -8127,7 +8156,11 @@ class AdminController
                     .catch(err => {
                         btn.disabled = false;
                         thinking.remove();
-                        alert('Network Error: ' + err.message);
+                        const errBubble = document.createElement('div');
+                        errBubble.className = 'copilot-bubble bubble-assistant';
+                        errBubble.textContent = '⚠️ ' + err.message;
+                        container.appendChild(errBubble);
+                        scrollToBottom();
                     });
                 }
 
@@ -8137,27 +8170,31 @@ class AdminController
                     let diffRows = '';
                     if (card.diff) {
                         for (let k in card.diff) {
-                            diffRows += `<tr><td><strong>${k}</strong></td><td class="diff-before">${card.diff[k].before}</td><td class="diff-after">${card.diff[k].after}</td></tr>`;
+                            diffRows += `<tr><td><strong>${escapeCopilotHtml(k)}</strong></td><td class="diff-before">${escapeCopilotHtml(card.diff[k].before)}</td><td class="diff-after">${escapeCopilotHtml(card.diff[k].after)}</td></tr>`;
                         }
                     }
 
                     div.innerHTML = `
                         <div class="action-card-header">
-                            <i class="fas fa-shield-alt"></i> Action Proposal: ${card.title}
-                            <span class="label label-warning pull-right">Tier ${card.risk_tier} Reversible</span>
+                            <i class="fas fa-shield-alt"></i> Action Proposal: ${escapeCopilotHtml(card.title)}
+                            <span class="label label-warning pull-right">Tier ${Number(card.risk_tier)} ${card.requires_password || Number(card.risk_tier) === 3 ? 'Destructive' : 'Reversible'}</span>
                         </div>
-                        <div style="font-size: 12px; color: var(--sdv-text-secondary, #4a5568);">Target: <strong>${card.target || 'Record'}</strong></div>
+                        <div style="font-size: 12px; color: var(--sdv-text-secondary, #4a5568);">Target: <strong>${escapeCopilotHtml(card.target || 'Record')}</strong></div>
                         <table class="diff-table">
                             <thead><tr style="background: var(--sdv-bg-nested, #f8fafc);"><th>Property</th><th>Current</th><th>Proposed</th></tr></thead>
                             <tbody>${diffRows}</tbody>
                         </table>
+                        ${card.requires_password || Number(card.risk_tier) === 3 ? '<input type="password" class="form-control copilot-admin-password" placeholder="Admin password required" autocomplete="current-password">' : ''}
                         <div style="margin-top: 12px; display: flex; justify-content: flex-end; gap: 10px;">
                             <button type="button" class="btn btn-xs btn-default" onclick="dismissActionCard(this)">Dismiss</button>
-                            <button type="button" class="btn btn-sm btn-success" onclick='executeActionProposal("${card.action_key}", ${JSON.stringify(card.params)}, "<?php echo $activeSessionUuid; ?>", this)'>
+                            <button type="button" class="btn btn-sm btn-success copilot-confirm-action">
                                 <i class="fas fa-check"></i> Confirm & Execute
                             </button>
                         </div>
                     `;
+                    div.querySelector('.copilot-confirm-action').addEventListener('click', function() {
+                        executeActionProposal(card.action_key, card.params || {}, <?php echo $sessionId; ?>, this);
+                    });
                     return div;
                 }
 
@@ -8165,18 +8202,24 @@ class AdminController
                     btn.closest('.action-card').remove();
                 }
 
-                function executeActionProposal(actionKey, params, sessionUuid, btn) {
+                function executeActionProposal(actionKey, params, sessionId, btn) {
+                    if (btn.disabled) return;
+                    const passwordInput = btn.closest('.action-card').querySelector('.copilot-admin-password');
+                    if (passwordInput && !passwordInput.value) {
+                        alert('Administrator password is required for Tier-3 operations.');
+                        passwordInput.focus();
+                        return;
+                    }
                     btn.disabled = true;
                     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Executing...';
 
-                    fetch('addonmodules.php?module=sahdev&sahdev_act=ajax_handler&action=copilot_execute_op', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                        body: 'action_key=' + encodeURIComponent(actionKey) + '&params=' + encodeURIComponent(JSON.stringify(params)) + '&session_uuid=' + encodeURIComponent(sessionUuid)
+                    copilotRequest('copilot_execute_op', {
+                        action_key: actionKey, params: JSON.stringify(params), session_id: sessionId,
+                        admin_password: passwordInput ? passwordInput.value : ''
                     })
-                    .then(r => r.json())
                     .then(data => {
                         if (data.success) {
+                            if (passwordInput) passwordInput.remove();
                             btn.className = 'btn btn-sm btn-default';
                             btn.innerHTML = `<i class="fas fa-check-circle text-success"></i> Executed [Journal #${data.journal_id}]`;
                             btn.onclick = null;
@@ -8266,12 +8309,9 @@ class AdminController
                     btn.disabled = true;
                     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Reverting...';
 
-                    fetch('addonmodules.php?module=sahdev&sahdev_act=ajax_handler&action=copilot_rollback_op', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                        body: 'journal_id=' + journalId
+                    copilotRequest('copilot_rollback_op', {
+                        journal_id: journalId
                     })
-                    .then(r => r.json())
                     .then(data => {
                         if (data.success) {
                             alert(data.message || "Operation successfully rolled back!");
@@ -8352,16 +8392,13 @@ class AdminController
                 function claimChatTakeover(uuid) {
                     if (!confirm("Take over this conversation from AI? You will be connected directly to the visitor.")) return;
 
-                    fetch('addonmodules.php?module=sahdev&sahdev_act=ajax_handler&action=chat_takeover', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                        body: 'session_uuid=' + encodeURIComponent(uuid)
+                    copilotRequest('chat_takeover', {
+                        session_uuid: uuid
                     })
-                    .then(r => r.json())
                     .then(data => {
                         if (data.success) {
                             alert("You have taken over this session! Opening console...");
-                            window.location.href = 'addonmodules.php?module=sahdev&action=admin_copilot&subtab=console&session=' + uuid;
+                            window.location.href = 'addonmodules.php?module=sahdev&action=live_console&session=' + encodeURIComponent(uuid);
                         } else {
                             alert("Takeover error: " + (data.error || 'Failed'));
                         }
