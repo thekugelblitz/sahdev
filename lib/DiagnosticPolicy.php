@@ -4,12 +4,14 @@ use WHMCS\Database\Capsule;
 
 class DiagnosticPolicy
 {
+    public const VERSION = '5.0.1';
     public static function defaults(): array
     {
         return ['enabled' => true, 'emergency_stop' => false, 'tickets' => true, 'livechat' => true,
             'enrichment' => true, 'telemetry' => true, 'planner' => 'auto', 'planner_provider' => 0,
             'planner_fallback' => 0, 'max_checks' => 3, 'deadline_seconds' => 20,
-            'categories' => ['dns', 'ssl', 'web', 'email', 'network', 'whois'], 'disabled_tools' => []];
+            'categories' => ['dns', 'ssl', 'web', 'email', 'network', 'whois'], 'disabled_tools' => [],
+            'logs_enabled' => true, 'logs_auto_cleanup' => false, 'log_retention_days' => 7];
     }
     public static function get(): array
     {
@@ -21,13 +23,14 @@ class DiagnosticPolicy
     public static function normalize(array $input): array
     {
         $out = self::defaults();
-        foreach (['enabled', 'emergency_stop', 'tickets', 'livechat', 'enrichment', 'telemetry'] as $k) {
+        foreach (['enabled', 'emergency_stop', 'tickets', 'livechat', 'enrichment', 'telemetry', 'logs_enabled', 'logs_auto_cleanup'] as $k) {
             if (array_key_exists($k, $input)) $out[$k] = (bool) $input[$k];
         }
         $out['planner'] = in_array($input['planner'] ?? '', ['auto', 'always', 'off'], true) ? $input['planner'] : 'auto';
         foreach (['planner_provider', 'planner_fallback'] as $k) $out[$k] = max(0, (int) ($input[$k] ?? 0));
         $out['max_checks'] = max(1, min(5, (int) ($input['max_checks'] ?? 3)));
         $out['deadline_seconds'] = max(5, min(30, (int) ($input['deadline_seconds'] ?? 20)));
+        $out['log_retention_days'] = max(1, min(90, (int) ($input['log_retention_days'] ?? 7)));
         if (isset($input['categories']) && is_array($input['categories'])) $out['categories'] = array_values(array_intersect($out['categories'], $input['categories']));
         $out['disabled_tools'] = array_values(array_filter((array) ($input['disabled_tools'] ?? []), static function ($n) { return is_string($n) && preg_match('/^toolsapi_[a-z_]+$/D', $n); }));
         return $out;
@@ -66,6 +69,14 @@ class DiagnosticPolicy
     }
     public static function migrate(): void
     {
+        if (!Capsule::schema()->hasTable('tblsahdev_module_logs')) Capsule::schema()->create('tblsahdev_module_logs', function ($t) {
+            $t->increments('id');
+            $t->string('level', 16)->index();
+            $t->string('source', 128)->index();
+            $t->text('message');
+            $t->integer('ticket_id')->unsigned()->nullable()->index();
+            $t->timestamp('created_at')->index();
+        });
         if (!Capsule::schema()->hasColumn('tblsahdev_settings', 'diagnostic_policy_json')) {
             Capsule::schema()->table('tblsahdev_settings', function ($t) { $t->text('diagnostic_policy_json')->nullable(); });
         }

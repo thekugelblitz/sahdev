@@ -4,7 +4,6 @@ namespace Sahdev\Lib;
 
 use WHMCS\Database\Capsule;
 use Carbon\Carbon;
-use Sahdev\Lib\ModuleLogger;
 
 /**
  * Service for managing intelligent, cost-efficient, and secure ToolsAPI
@@ -23,6 +22,7 @@ use Sahdev\Lib\ModuleLogger;
 require_once __DIR__ . '/DiagnosticPolicy.php';
 require_once __DIR__ . '/DiagnosticLock.php';
 require_once __DIR__ . '/DiagnosticEvidence.php';
+require_once __DIR__ . '/DiagnosticTrace.php';
 
 class LiveChatToolService
 {
@@ -740,7 +740,25 @@ class LiveChatToolService
      * @param int|null $clientId Client ID
      * @return array ['success' => bool, 'summary' => string, 'cached' => bool, 'error' => ?string]
      */
-    public static function executeToolCall(string $toolName, array $args, int $sessionId, ?int $clientId = null, string $channel = 'livechat', ?float $deadline = null, bool $fresh = false): array
+    public static function executeToolCall(string $toolName, array $args, int $sessionId, ?int $clientId = null, string $channel = 'livechat', ?float $deadline = null, bool $fresh = false, string $traceId = ''): array
+    {
+        $policy = DiagnosticPolicy::get();
+        $context = ['channel'=>$channel, 'scope_id'=>$sessionId, 'trace_id'=>$traceId, 'tool'=>$toolName];
+        DiagnosticTrace::record('tool_requested', $context, $policy);
+        $started = microtime(true);
+        try {
+            $result = self::executeToolCallInternal($toolName, $args, $sessionId, $clientId, $channel, $deadline, $fresh);
+        } catch (\Throwable $e) {
+            $result = ['success'=>false, 'cached'=>false, 'summary'=>'Diagnostic execution is unavailable.', 'error'=>'execution_failed'];
+        }
+        $error = (string) ($result['error'] ?? '');
+        DiagnosticTrace::record('tool_result', $context + ['success'=>$result['success'], 'cached'=>$result['cached'],
+            'error_code'=>preg_match('/^[a-z_]{1,64}$/D', $error) ? $error : ($error !== '' ? 'upstream_error' : ''),
+            'http_status'=>(int) ($result['http_status'] ?? 0), 'elapsed_ms'=>(int) round((microtime(true)-$started)*1000)], $policy);
+        return $result;
+    }
+
+    private static function executeToolCallInternal(string $toolName, array $args, int $sessionId, ?int $clientId = null, string $channel = 'livechat', ?float $deadline = null, bool $fresh = false): array
     {
         $policy = DiagnosticPolicy::get();
         $channelEnabled = self::isEnabled();
@@ -807,7 +825,6 @@ class LiveChatToolService
         $cacheKey = self::generateCacheKey($toolName, $args);
         $cachedResult = $fresh ? null : self::getCachedResult($cacheKey);
         if ($cachedResult !== null) {
-            ModuleLogger::info('client_chat_tools', "Cache HIT for {$toolName} [target: {$sanitizedTarget}]");
             return [
                 'success' => true,
                 'summary' => $cachedResult['normalized_summary'],
@@ -823,9 +840,7 @@ class LiveChatToolService
 
         // 5. Upstream HTTP Execution
         try {
-            $startTime = microtime(true);
             $httpResult = self::executeUpstreamHttp($method, $pathPattern, $args, $deadline);
-            $latencyMs = (int) round((microtime(true) - $startTime) * 1000);
 
             $httpStatus = (int) ($httpResult['http_status'] ?? 0);
             $rawBody = (string) ($httpResult['body'] ?? '');
@@ -833,24 +848,17 @@ class LiveChatToolService
             if ($httpResult['status'] !== 'ok' || $httpStatus < 200 || $httpStatus >= 300) {
                 self::releaseLock($cacheKey);
                 $errDetail = !empty($httpResult['error']) ? $httpResult['error'] : "HTTP {$httpStatus}";
-                $execUrl = $pathPattern; // Never log URL query strings or upstream response bodies.
-                $bodyExcerpt = '';
-                $attempts = (int) ($httpResult['attempts'] ?? 1);
-                ModuleLogger::warning('client_chat_tools', "ToolsAPI execution failed for {$toolName} [{$sanitizedTarget}] after {$attempts} attempt(s): {$errDetail} - URL: {$execUrl}" . ($bodyExcerpt !== '' ? " - Response: {$bodyExcerpt}" : ''));
                 return [
                     'success' => false,
                     'summary' => "Diagnostic check for {$sanitizedTarget} returned an error ({$errDetail}).",
                     'cached'  => false,
-                    'error'   => $errDetail,
+                    'error'   => ($httpResult['curl_errno'] ?? 0) === 28 ? 'timeout' : ($httpStatus === 401 || $httpStatus === 403 ? 'authentication_failed' : ($httpStatus === 429 ? 'rate_limited' : 'upstream_error')),
+                    'http_status' => $httpStatus,
                 ];
             }
 
-            if ((int) ($httpResult['attempts'] ?? 1) > 1) {
-                ModuleLogger::info('client_chat_tools', "ToolsAPI recovered for {$toolName} [{$sanitizedTarget}] after " . (int) $httpResult['attempts'] . " attempts (HTTP {$httpStatus})");
-            }
-
             $contract = DiagnosticEvidence::decode($pathPattern, $rawBody);
-            if (!$contract['valid']) return ['success'=>false,'cached'=>false,'summary'=>$contract['error'],'error'=>'invalid_response'];
+            if (!$contract['valid']) return ['success'=>false,'cached'=>false,'summary'=>$contract['error'],'error'=>'invalid_response', 'http_status'=>$httpStatus];
             // 6. Compact Output Normalization
             $normalizedSummary = self::normalizeOutput($toolName, $pathPattern, $rawBody, $sanitizedTarget);
 
@@ -864,34 +872,21 @@ class LiveChatToolService
             // 7. Store in Persistent Cache
             self::storeCache($cacheKey, $toolName, $sanitizedTarget, $args, $rawBody, $normalizedSummary, $ttl);
 
-            // 8. Record Diagnostic Log
-            try {
-                if (Capsule::schema()->hasTable('tblsahdev_module_logs')) {
-                    Capsule::table('tblsahdev_module_logs')->insert([
-                        'level'      => 'info',
-                        'source'     => 'LiveChatToolService',
-                        'message'    => "Executed {$toolName} for [{$sanitizedTarget}] in {$latencyMs}ms (HTTP {$httpStatus})",
-                        'ticket_id'  => null,
-                        'created_at' => Carbon::now(),
-                    ]);
-                }
-            } catch (\Throwable $e) {}
-
             return [
                 'success' => true,
                 'summary' => $normalizedSummary,
+                'http_status' => $httpStatus,
                 'data'    => json_decode($rawBody, true),
                 'cached'  => false,
                 'error'   => null,
             ];
         } catch (\Throwable $e) {
             self::releaseLock($cacheKey);
-            ModuleLogger::error('client_chat_tools', "Exception executing {$toolName}: " . $e->getMessage());
             return [
                 'success' => false,
                 'summary' => 'Diagnostic execution is unavailable. Please retry shortly.',
                 'cached'  => false,
-                'error'   => 'execution_failed',
+                'error'   => preg_match('/API key|ToolsAPI key/i', $e->getMessage()) ? 'credentials_missing' : 'execution_failed',
             ];
         } finally { self::releaseLock($cacheKey); }
     }
@@ -1095,6 +1090,7 @@ class LiveChatToolService
             $resp = curl_exec($ch);
             $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
             $error = curl_error($ch);
+            $curlErrno = curl_errno($ch);
             curl_close($ch);
 
             $result = [
@@ -1102,6 +1098,7 @@ class LiveChatToolService
                 'http_status' => $httpCode,
                 'body'        => $responseBody,
                 'error'       => $error,
+                'curl_errno'  => $curlErrno,
                 'url'         => $url,
                 'attempts'    => $attempt,
             ];
@@ -1226,7 +1223,7 @@ class LiveChatToolService
                 ]
             );
         } catch (\Throwable $e) {
-            ModuleLogger::warning('client_chat_tools', 'Failed to store tool cache: ' . $e->getMessage());
+            DiagnosticTrace::record('cache_write_failed', ['reason'=>'cache_storage_unavailable']);
         }
     }
 

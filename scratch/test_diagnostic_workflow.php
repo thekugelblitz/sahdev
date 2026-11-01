@@ -22,10 +22,11 @@ namespace WHMCS\Database {
         public function first($fields=['*']) { return $this->limit(1)->get($fields)->getArrayCopy()[0] ?? null; }
         public function value($field) { $row=$this->first([$field]); return $row->$field ?? null; }
         public function exists() { return $this->first() !== null; }
+        public function insert($values) { $q=Capsule::$db->prepare('INSERT INTO '.$this->table.' ('.implode(',',array_keys($values)).') VALUES ('.implode(',',array_fill(0,count($values),'?')).')'); $q->execute(array_values($values)); }
         public function update($values) { $q=Capsule::$db->prepare('UPDATE '.$this->table.' SET '.implode(',',array_map(static function($f){return $f.'=?';},array_keys($values))).$this->clause()); $q->execute(array_merge(array_values($values),$this->params)); }
         public function pluck($field) { return new Rows(array_map(static function($r)use($field){return $r->$field;},$this->get([$field])->getArrayCopy())); }
         public function updateOrInsert($keys,$values) { $data=array_merge($keys,$values); $fields=array_keys($data); $sql='INSERT INTO '.$this->table.' ('.implode(',',$fields).') VALUES ('.implode(',',array_fill(0,count($fields),'?')).') ON CONFLICT('.implode(',',array_keys($keys)).') DO UPDATE SET '.implode(',',array_map(static function($f){return $f.'=excluded.'.$f;},array_keys($values))); $q=Capsule::$db->prepare($sql); $q->execute(array_values($data)); }
-        public function delete() { $q=Capsule::$db->prepare('DELETE FROM '.$this->table.$this->clause()); $q->execute($this->params); }
+        public function delete() { $q=Capsule::$db->prepare('DELETE FROM '.$this->table.$this->clause()); $q->execute($this->params); return $q->rowCount(); }
     }
 }
 namespace Sahdev\Lib {
@@ -33,7 +34,8 @@ namespace Sahdev\Lib {
     // Planner fixture never contacts an AI provider.
     class ChatService {
         public static $calls=0;
-        public static function instantiateProviderFromRecord($row) { return new class { public function generateChat($messages,$tools,$settings) { ChatService::$calls++; return ['content'=>'invalid planner JSON']; } public function getLastTokenDetails() { return ['input'=>10,'output'=>3]; } }; }
+        public static $reply='invalid planner JSON';
+        public static function instantiateProviderFromRecord($row) { return new class { public function generateChat($messages,$tools,$settings) { ChatService::$calls++; return ['content'=>ChatService::$reply]; } public function getLastTokenDetails() { return ['input'=>10,'output'=>3]; } }; }
     }
 }
 namespace {
@@ -45,6 +47,7 @@ namespace {
     DB::$db=new PDO('sqlite::memory:'); DB::$db->setAttribute(PDO::ATTR_ERRMODE,PDO::ERRMODE_EXCEPTION);
     DB::$db->exec('CREATE TABLE tblsahdev_settings (diagnostic_policy_json TEXT,client_chat_tools_enabled INTEGER,tools_execution_enabled INTEGER,client_chat_tool_max_executions INTEGER)');
     DB::$db->exec('INSERT INTO tblsahdev_settings VALUES (NULL,1,1,2)');
+    DB::$db->exec('CREATE TABLE tblsahdev_module_logs (id INTEGER PRIMARY KEY AUTOINCREMENT,source TEXT,level TEXT,message TEXT,ticket_id INTEGER,created_at TEXT)');
     foreach (['tblsahdev_diagnostic_state','tblsahdev_diagnostic_runs'] as $table) DB::$db->exec("CREATE TABLE $table (record_key TEXT PRIMARY KEY,payload TEXT,expires_at TEXT,created_at TEXT,updated_at TEXT)");
     DB::$db->exec('CREATE TABLE tblservers (id INTEGER PRIMARY KEY,hostname TEXT,ipaddress TEXT,nameserver1 TEXT,nameserver2 TEXT)');
     DB::$db->exec("INSERT INTO tblservers VALUES (1,'hosting.example.net','8.8.8.8','ns1.example.net','ns2.example.net')");
@@ -113,5 +116,44 @@ namespace {
     expect(!P::get()['enabled'] && P::get()['categories']===[] && P::get()['planner_provider']===1,'Unchecked switches and categories persist as disabled');
     try { \Sahdev\Lib\DiagnosticSettings::save(['diagnostic_policy_present'=>1,'diagnostics'=>['planner_provider'=>999]]); throw new RuntimeException('Expected invalid provider rejection'); }
     catch (RuntimeException $e) { expect(P::get()['planner_provider']===1,'Invalid provider cannot overwrite saved route'); }
+    $policy=P::defaults(); $policy['disabled_tools']=array_keys(T::getToolRegistry());policy($policy);
+    $r=W::run('indiaremediesoverseas.com is not loading','livechat',100,1,'1');
+    expect($r['category']==='web' && $r['checks'][0]['tool']==='toolsapi_dns_lookup','Reported not-loading wording starts DNS and web checks');
+    $r=W::run('Can you check where it is pointing right now with A record IP share it','livechat',100,1,'2');
+    expect($r['category']==='dns' && $r['target']['host']==='indiaremediesoverseas.com' && count($r['checks'])===1,'Reported follow-up keeps domain and selects only DNS');
+    DB::$db->exec('UPDATE tblsahdev_settings SET client_chat_tools_enabled=0');
+    W::run('Check example.com','livechat',100,1,'3');
+    $last=json_decode(DB::$db->query('SELECT message FROM tblsahdev_module_logs ORDER BY id DESC LIMIT 1')->fetchColumn(),true);
+    expect($last['reason']==='client_chat_tools_enabled_off','Disabled legacy switch logs its exact blocker');
+    $blocks=\Sahdev\Lib\DiagnosticSettings::readiness(DB::table('tblsahdev_settings')->first(),$policy);
+    expect(in_array('Enable Diagnostic Tool Calling in Live Chat is off',$blocks['livechat'],true),'Readiness exposes separate chat execution gate');
+    $policy['logs_enabled']=false;policy($policy);
+    $before=DB::$db->query('SELECT COUNT(*) FROM tblsahdev_module_logs')->fetchColumn();
+    W::run('Check example.com','livechat',100,1,'4');
+    T::executeToolCall('toolsapi_dns_lookup',['domain'=>'example.com'],100);
+    expect(DB::$db->query('SELECT COUNT(*) FROM tblsahdev_module_logs')->fetchColumn()===$before,'Logging off suppresses both routing and executor events');
+    $policy['logs_enabled']=true;policy($policy);
+    \Sahdev\Lib\DiagnosticTrace::record('privacy_test',['api_key'=>'SECRET','message'=>'PRIVATE','body'=>'RAW','reason'=>'safe']);
+    $last=DB::$db->query('SELECT message FROM tblsahdev_module_logs ORDER BY id DESC LIMIT 1')->fetchColumn();
+    expect(strpos($last,'SECRET')===false && strpos($last,'PRIVATE')===false && strpos($last,'RAW')===false,'Trace excludes unknown secret-bearing fields');
+    DB::$db->exec("INSERT INTO tblsahdev_module_logs (source,message,created_at) VALUES ('diagnostic_workflow','expired','2000-01-01'),('diagnostic_usage','expired usage','2000-01-01'),('billing','keep','2000-01-01')");
+    $policy['logs_enabled']=false; $policy['logs_auto_cleanup']=false;policy($policy);
+    expect(\Sahdev\Lib\DiagnosticTrace::automaticCleanup()===0,'Automatic cleanup can be disabled independently');
+    expect(\Sahdev\Lib\DiagnosticTrace::cleanup(false,1)===1,'Cleanup honors batch cap while recording is off');
+    $policy['logs_auto_cleanup']=true;policy($policy);
+    expect(\Sahdev\Lib\DiagnosticTrace::automaticCleanup()===1,'Automatic retention still works with recording off');
+    expect(DB::$db->query("SELECT COUNT(*) FROM tblsahdev_module_logs WHERE source='billing'")->fetchColumn()==1,'Retention preserves unrelated logs');
+    expect(\Sahdev\Lib\DiagnosticTrace::cleanup(true,5000)>0,'Manual clear removes recent diagnostic rows');
+    expect(DB::$db->query('SELECT COUNT(*) FROM tblsahdev_module_logs')->fetchColumn()==1,'Manual clear preserves unrelated logs');
+    expect(P::normalize(['log_retention_days'=>1000])['log_retention_days']===90,'Retention is bounded');
+    \Sahdev\Lib\DiagnosticSettings::save(['diagnostic_policy_present'=>1,'diagnostic_livechat_gate_present'=>1,'client_chat_tools_enabled'=>1,
+        'diagnostics'=>['enabled'=>1,'livechat'=>1,'logs_enabled'=>1,'logs_auto_cleanup'=>1,'log_retention_days'=>14]]);
+    expect(DB::table('tblsahdev_settings')->value('client_chat_tools_enabled')==1,'Tools page explicitly enables the canonical live-chat gate');
+    expect(P::get()['logs_enabled'] && P::get()['logs_auto_cleanup'] && P::get()['log_retention_days']===14,'Log recording and retention persist through real settings save');
+    \Sahdev\Lib\DiagnosticSettings::save(['diagnostic_policy_present'=>1,'diagnostic_livechat_gate_present'=>1,'diagnostics'=>['log_retention_days'=>14]]);
+    expect(!P::get()['logs_enabled'] && !P::get()['logs_auto_cleanup'] && DB::table('tblsahdev_settings')->value('client_chat_tools_enabled')==0,'Unchecked log and execution switches persist as off');
+    ob_start();\Sahdev\Lib\DiagnosticSettings::render();$html=ob_get_clean();
+    $dom=new DOMDocument();libxml_use_internal_errors(true);$dom->loadHTML($html);$xpath=new DOMXPath($dom);
+    expect($xpath->query('//button[@name="diagnostic_log_cleanup"]')->length===2 && $xpath->query('//input[@name="diagnostics[logs_enabled]"]')->length===1,'Rendered controls expose both cleanup actions and log toggle');
     echo "Diagnostic workflow: $count checks passed\n";
 }

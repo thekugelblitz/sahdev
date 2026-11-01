@@ -23,4 +23,5 @@ jobs:
           php scratch/test_diagnostic_contracts.php
           php scratch/test_diagnostic_workflow.php
           php scratch/test_diagnostic_providers.php
+          php scratch/test_diagnostic_exchange.php
           php scratch/test_settings_theme.php

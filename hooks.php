@@ -3817,6 +3817,12 @@ function sahdev_execute_background_cron(bool $verbose = false): array
         $moduleDir = __DIR__;
         $settings = \WHMCS\Database\Capsule::table('tblsahdev_settings')->first();
 
+        // Cleanup remains independent of diagnostic execution and recording switches.
+        try {
+            require_once $moduleDir . '/lib/DiagnosticTrace.php';
+            $results['diagnostic_logs_cleaned'] = \Sahdev\Lib\DiagnosticTrace::automaticCleanup();
+        } catch (\Throwable $e) { $results['errors'][] = 'Diagnostic log cleanup failed.'; }
+
         // 1. Proactive Server Telemetry & Health Monitoring
         if (!isset($settings->telemetry_enabled) || (int) $settings->telemetry_enabled !== 0) {
             try {

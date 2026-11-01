@@ -4104,6 +4104,7 @@ class AdminController
     public function module_logs()
     {
         $successMessage = '';
+        $diagnosticsOnly = !empty($_GET['diagnostics_only']);
 
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             check_token("WHMCS.admin.default");
@@ -4113,15 +4114,17 @@ class AdminController
                 $days = (int) ($_POST['delete_days'] ?? 0);
                 if ($days > 0 && Capsule::schema()->hasTable('tblsahdev_module_logs')) {
                     $cutoffDate = \Carbon\Carbon::now()->subDays($days);
-                    $deleted = Capsule::table('tblsahdev_module_logs')
-                        ->where('created_at', '<', $cutoffDate)
-                        ->delete();
+                    $query = Capsule::table('tblsahdev_module_logs')->where('created_at', '<', $cutoffDate);
+                    if ($diagnosticsOnly) $query->whereIn('source', \Sahdev\Lib\DiagnosticTrace::SOURCES);
+                    $deleted = $query->delete();
                     $successMessage = "Deleted {$deleted} module log entries older than {$days} days.";
                 }
             } elseif ($action === 'delete_single') {
                 $id = (int) ($_POST['log_id'] ?? 0);
                 if ($id > 0 && Capsule::schema()->hasTable('tblsahdev_module_logs')) {
-                    Capsule::table('tblsahdev_module_logs')->where('id', $id)->delete();
+                    $query = Capsule::table('tblsahdev_module_logs')->where('id', $id);
+                    if ($diagnosticsOnly) $query->whereIn('source', \Sahdev\Lib\DiagnosticTrace::SOURCES);
+                    $query->delete();
                     $successMessage = 'Log entry deleted.';
                 }
             }
@@ -4129,19 +4132,19 @@ class AdminController
 
         $logs = null;
         if (Capsule::schema()->hasTable('tblsahdev_module_logs')) {
-            $logs = Capsule::table('tblsahdev_module_logs')
+            $logsQuery = Capsule::table('tblsahdev_module_logs')
                 ->leftJoin('tbltickets', 'tblsahdev_module_logs.ticket_id', '=', 'tbltickets.id')
                 ->select(
                     'tblsahdev_module_logs.*',
                     'tbltickets.tid as ticket_mask'
                 )
-                ->orderBy('tblsahdev_module_logs.id', 'desc')
-                ->limit(500)
-                ->get();
+                ->orderBy('tblsahdev_module_logs.id', 'desc');
+            if ($diagnosticsOnly) $logsQuery->whereIn('tblsahdev_module_logs.source', \Sahdev\Lib\DiagnosticTrace::SOURCES);
+            $logs = $logsQuery->limit(500)->get();
         }
 
         $csrfToken = generate_token("form");
-        $actionUrl = htmlspecialchars($this->moduleVars['modulelink']) . '&action=module_logs';
+        $actionUrl = htmlspecialchars($this->moduleVars['modulelink']) . '&action=module_logs' . ($diagnosticsOnly ? '&diagnostics_only=1' : '');
 
         ob_start();
         ?>
@@ -4151,7 +4154,7 @@ class AdminController
                 <div>
                     <h2 style="margin:0 0 6px 0;">Module diagnostic log</h2>
                     <p class="text-muted" style="margin:0; font-size:13px;">
-                        Warnings, errors, and live chat AI payloads (when Debug mode is enabled in Settings).
+                        Diagnostic events follow Tools Execution logging controls. Full AI payloads use the separate Live Chat Debug setting.
                     </p>
                 </div>
                 <div style="background: #fff3cd; padding:10px 15px; border-radius:6px; border: 1px solid #ffc107;">
@@ -5695,7 +5698,13 @@ class AdminController
         }
 
         $successMessage = '';
-        if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_tools_settings'])) {
+        if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['diagnostic_log_cleanup'])) {
+            check_token("WHMCS.admin.default");
+            $cleanup = (string) $_POST['diagnostic_log_cleanup'];
+            if (!in_array($cleanup, ['expired', 'all'], true)) throw new \RuntimeException('Unknown diagnostic cleanup action.');
+            $deleted = \Sahdev\Lib\DiagnosticTrace::cleanup($cleanup === 'all', 5000);
+            $successMessage = "Removed {$deleted} diagnostic log entries. Other module logs and unsaved settings were not changed.";
+        } elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_tools_settings'])) {
             check_token("WHMCS.admin.default");
             $enabled = !empty($_POST['tools_execution_enabled']) ? 1 : 0;
             $baseUrl = trim((string) ($_POST['tools_api_base_url'] ?? 'https://toolsapi.2hs.in'));
@@ -5761,7 +5770,7 @@ class AdminController
             </div>
             <form method="post" action="<?php echo $actionUrl; ?>">
                 <?php echo $csrfToken; ?>
-                <?php \Sahdev\Lib\DiagnosticSettings::render(); ?>
+                <?php \Sahdev\Lib\DiagnosticSettings::render($this->moduleVars['modulelink']); ?>
                 <div class="checkbox">
                     <label><input type="checkbox" name="tools_execution_enabled" <?php echo !empty($settings->tools_execution_enabled) ? 'checked' : ''; ?>> Enable tools execution module</label>
                 </div>
@@ -11206,8 +11215,8 @@ class AdminController
                                                     Enable Diagnostic Tool Calling in Live Chat
                                                 </label>
                                                 <span class="help-block" style="font-size: 11.5px; margin-top: 4px; color: var(--sdv-text-muted, #64748b);">
-                                                    When <strong>disabled (recommended / default)</strong>, the AI replies instantly using conversational knowledge without making external network calls, ensuring lowest latency.
-                                                    When <strong>enabled</strong>, the AI model can automatically trigger diagnostic tools (DNS lookup, WHOIS expiration, SSL certificate inspection, Ping) to diagnose client domains in real time.
+                                                    When <strong>disabled</strong>, live diagnostic checks are skipped and replies use available account context.
+                                                    When <strong>enabled</strong>, Sahdev can run diagnostic tools (DNS lookup, WHOIS expiration, SSL certificate inspection, Ping) to diagnose client domains in real time.
                                                     <em>Note: Tool execution queries live external endpoints, which may introduce latency before the response is returned.</em>
                                                 </span>
                                             </div>

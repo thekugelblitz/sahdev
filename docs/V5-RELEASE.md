@@ -2,6 +2,20 @@
 
 This release builds on the settings overhaul and dark, black and white palettes already on `feature/live-chat-tool-calling`. It moves automated ticket and live-chat checks into a shared, bounded workflow. It uses the existing ToolsAPI REST endpoints; no ToolsAPI deployment, new AI subscription or MCP server is required.
 
+## 5.0.1: routing and controllable diagnostics logging
+
+Fixed the missed `example.com is not loading` route. Explicit A/AAAA/MX/TXT/NS/CNAME/CAA/SOA record requests select DNS directly, preserve the requested type, and reuse the conversation target. If an older live-chat session has no diagnostic state, recovery reads at most six recent customer messages from that owned session; assistant links are never used as targets. A planner returning no checks cannot silently suppress the local recipe for a recognized diagnostic request.
+
+**Tools Execution** now shows channel blockers and exposes the same **Enable Diagnostic Tool Calling in Live Chat** switch used by Live Chat settings. Selecting a reconnaissance model alone never enables this switch. Existing disabled settings are preserved. A basic DNS query does not require an AI planning call.
+
+Under **Diagnostic logging and cleanup**, administrators can enable/disable event recording and automatic cleanup independently, set retention to 1–90 days (default seven), clean expired entries, or clear up to 5,000 diagnostic entries per click. Cleanup remains available when recording is off. Sahdev cron removes at most 1,000 expired rows per run; scheduling cron is required for automatic retention. Cleanup preserves unrelated module logs. The filtered diagnostic log page also restricts its prune/delete actions to diagnostic sources.
+
+Event recording defaults to on for troubleshooting. Automatic cleanup is opt-in: existing entries remain until an administrator enables retention cleanup or explicitly cleans them.
+
+Events record a version, trace/session or ticket ID, routing reason, target host, tool outcome, HTTP status and elapsed time. Disabled switches, unrecognized requests, missing targets, unavailable locks, exhausted deadlines and failed API responses are observable without enabling full-payload debugging. Keys, full chat messages, prompts and raw HTTP response bodies are excluded. The existing full-payload Live Chat Debug setting remains independent. If the module log table cannot be written, enabled event logging falls back to the PHP error log; that file follows the server's own retention policy, not the database cleanup controls.
+
+Verification includes the reported two-message exchange against a simulated HTTP boundary, real router/executor/response normalization, customer-scoped history recovery, authentication/schema/timeout errors, disabled gates, logging on/off, bounded retention and unrelated-log preservation. These tests do not assert the live DNS or availability of the reported website.
+
 ## Request flow
 
 1. Parse domains, nested subdomains, URLs, email domains and IPv4/IPv6 locally. Email diagnostics use the domain, not the mailbox local part.

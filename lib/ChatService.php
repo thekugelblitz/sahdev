@@ -1075,7 +1075,7 @@ class ChatService
                 $reply = $res['__raw_text__'] ?? $res['CLIENT_REPLY'] ?? '';
             }
 
-            ModuleLogger::info('diagnostic_usage', json_encode(['channel' => 'livechat', 'session_id' => $sessionId, 'provider_id' => $pRecord->id ?? null, 'reply_tokens' => $provider->getLastTokenDetails(), 'planner_usage' => $diagnostic['usage'] ?? []]));
+            if (DiagnosticPolicy::get()['logs_enabled']) ModuleLogger::info('diagnostic_usage', json_encode(['channel' => 'livechat', 'session_id' => $sessionId, 'provider_id' => $pRecord->id ?? null, 'reply_tokens' => $provider->getLastTokenDetails(), 'planner_usage' => $diagnostic['usage'] ?? []]));
             $successfulToolCount = count(array_filter($toolCallsExecuted, static function (array $toolCall): bool {
                 return !empty($toolCall['success']);
             }));
@@ -1139,7 +1139,7 @@ class ChatService
                                 ], $fbSettings, 'Friendly', $systemPrompt);
                                 $fallbackReply = $fbRes['__raw_text__'] ?? $fbRes['CLIENT_REPLY'] ?? '';
                             }
-                            ModuleLogger::info('diagnostic_usage', json_encode(['channel'=>'livechat_fallback', 'session_id'=>$sessionId, 'provider_id'=>$fbData->id, 'tokens'=>$fbProvider->getLastTokenDetails()]));
+                            if (DiagnosticPolicy::get()['logs_enabled']) ModuleLogger::info('diagnostic_usage', json_encode(['channel'=>'livechat_fallback', 'session_id'=>$sessionId, 'provider_id'=>$fbData->id, 'tokens'=>$fbProvider->getLastTokenDetails()]));
                             $fallbackReply = trim((string) $fallbackReply);
                             if (!empty($fallbackReply)) {
                                 $fallbackSuccess = true;

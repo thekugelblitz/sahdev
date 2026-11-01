@@ -48,6 +48,13 @@ $summary = [
 ];
 
 try {
+    $summary['diagnostic_logs_cleaned'] = \Sahdev\Lib\DiagnosticTrace::automaticCleanup();
+} catch (\Throwable $e) {
+    $summary['errors'][] = 'Diagnostic log cleanup failed.';
+    $exitCode = 1;
+}
+
+try {
     $summary['telemetry'] = \Sahdev\Lib\ServerTelemetryService::pollActiveServers($verbose);
 } catch (\Throwable $e) {
     $summary['errors'][] = 'Server telemetry polling failed: ' . $e->getMessage();
