@@ -515,7 +515,7 @@ class AdminController
                 'tools' => []
             ],
             'settings' => [
-                'title' => 'Configuration',
+                'title' => 'Workspace',
                 'icon'  => 'fas fa-cog',
                 'tools' => []
             ],
@@ -677,7 +677,7 @@ class AdminController
         // 6. Configuration (General Settings, AI Providers, Permissions, Preferences)
         if ($hasSettingsPerm) {
             $categories['settings']['tools']['settings'] = [
-                'label' => 'General Settings',
+                'label' => 'Settings',
                 'icon'  => 'fas fa-sliders-h',
                 'url'   => $base,
                 'desc'  => 'Global feature switches, alert rules & notifications'
@@ -727,881 +727,31 @@ class AdminController
             $activeCat = $catKeys[0] ?? 'settings';
         }
 
-        // Build items for Quick Jump modal
-        $quickJumpItems = [];
+        // Real, permission-filtered links remain usable without JavaScript.
+        $html = '<!--sahdev-navigation--><nav class="sdv-workspace-nav" aria-label="Sahdev workspace">';
+        $html .= '<a class="sdv-brand" href="' . $base . '"><span class="sdv-brand-mark" aria-hidden="true">S</span> SAHDEV</a>';
+        $html .= '<button type="button" class="sdv-menu-toggle" aria-expanded="false" aria-controls="sdv-nav-content">Browse workspace</button><div id="sdv-nav-content" class="sdv-nav-content"><label class="sr-only" for="sdv-menu-search">Find a page</label><input id="sdv-menu-search" class="sdv-menu-search" type="search" placeholder="Find a page…" autocomplete="off"><div class="sdv-nav-groups">';
         foreach ($categories as $catKey => $cat) {
+            $html .= '<details class="sdv-nav-group"' . ($catKey === $activeCat ? ' open data-current-group' : '') . '><summary>' . htmlspecialchars($cat['title']) . '</summary>';
             foreach ($cat['tools'] as $toolKey => $tool) {
-                $quickJumpItems[] = [
-                    'id'       => $toolKey,
-                    'category' => $cat['title'],
-                    'label'    => $tool['label'],
-                    'icon'     => $tool['icon'],
-                    'url'      => $tool['url'],
-                    'desc'     => $tool['desc'],
-                    'active'   => ($toolKey === $activeTab)
-                ];
+                $current = $toolKey === $activeTab ? ' aria-current="page"' : '';
+                $html .= '<a href="' . $tool['url'] . '" title="' . htmlspecialchars($tool['desc'], ENT_QUOTES, 'UTF-8') . '"' . $current . '><i class="' . $tool['icon'] . '" aria-hidden="true"></i><span>' . htmlspecialchars($tool['label']) . '</span></a>';
             }
+            $html .= '</details>';
         }
-        $quickJumpJson = htmlspecialchars(json_encode($quickJumpItems), ENT_QUOTES, 'UTF-8');
-
-        $html = '<style>
-            .sahdev-nav-system {
-                background: #ffffff;
-                border-radius: 12px;
-                box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.08), 0 1px 3px rgba(15, 23, 42, 0.04);
-                border: 1px solid #e2e8f0;
-                margin-bottom: 25px;
-                overflow: hidden;
-                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            }
-            .sahdev-nav-tier1 {
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                padding: 10px 18px;
-                background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
-                border-bottom: 1px solid #e2e8f0;
-                gap: 12px;
-                flex-wrap: wrap;
-            }
-            .sahdev-nav-brand-wrap {
-                display: flex;
-                align-items: center;
-                gap: 10px;
-            }
-            .sahdev-nav-brand {
-                display: inline-flex;
-                align-items: center;
-                gap: 8px;
-                font-weight: 800;
-                font-size: 15px;
-                color: #0f172a;
-                text-decoration: none !important;
-                letter-spacing: -0.02em;
-            }
-            .sahdev-nav-brand i {
-                color: #4f46e5;
-                font-size: 17px;
-            }
-            .sahdev-ai-badge {
-                padding: 2px 7px;
-                font-size: 10px;
-                font-weight: 700;
-                background: linear-gradient(135deg, #0d6efd, #6366f1);
-                color: #ffffff;
-                border-radius: 9999px;
-                text-transform: uppercase;
-                letter-spacing: 0.05em;
-            }
-            .sahdev-nav-categories {
-                display: flex;
-                align-items: center;
-                gap: 6px;
-                flex-wrap: wrap;
-            }
-            .sahdev-cat-tab {
-                padding: 6px 12px;
-                font-size: 13px;
-                font-weight: 600;
-                color: #475569;
-                border-radius: 8px;
-                text-decoration: none !important;
-                display: inline-flex;
-                align-items: center;
-                gap: 7px;
-                transition: all 0.18s ease;
-                background: transparent;
-                border: 1px solid transparent;
-            }
-            .sahdev-cat-tab:hover {
-                background: #e2e8f0;
-                color: #0f172a;
-                border-color: #cbd5e1;
-            }
-            .sahdev-cat-tab.active {
-                background: #0f172a;
-                color: #ffffff !important;
-                border-color: #0f172a;
-                box-shadow: 0 2px 8px rgba(15, 23, 42, 0.25);
-            }
-            .sahdev-cat-tab.active i {
-                color: #38bdf8;
-            }
-            .sahdev-cat-count {
-                font-size: 10px;
-                font-weight: 700;
-                padding: 1px 6px;
-                border-radius: 9999px;
-                background: #e2e8f0;
-                color: #475569;
-            }
-            .sahdev-cat-tab.active .sahdev-cat-count {
-                background: rgba(255, 255, 255, 0.2);
-                color: #ffffff;
-            }
-            .sahdev-nav-actions {
-                display: flex;
-                align-items: center;
-                gap: 8px;
-                margin-left: auto;
-            }
-            .sahdev-theme-switcher {
-                display: inline-flex;
-                align-items: center;
-                background: #f1f5f9;
-                border: 1px solid #cbd5e1;
-                border-radius: 20px;
-                padding: 2px;
-                gap: 2px;
-            }
-            .sahdev-theme-btn {
-                background: transparent;
-                border: none;
-                border-radius: 16px;
-                padding: 4px 8px;
-                font-size: 11px;
-                font-weight: 600;
-                color: #64748b;
-                cursor: pointer;
-                display: inline-flex;
-                align-items: center;
-                gap: 4px;
-                transition: all 0.15s ease;
-                line-height: 1.2;
-            }
-            .sahdev-theme-btn:hover {
-                color: #0f172a;
-            }
-            .sahdev-theme-btn.active {
-                background: #ffffff;
-                color: #0f172a;
-                box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-            }
-            .sahdev-theme-btn.sahdev-theme-black.active {
-                background: #000000;
-                color: #ffffff;
-                box-shadow: 0 1px 4px rgba(0,0,0,0.4);
-            }
-            .sahdev-theme-btn.sahdev-theme-dark.active {
-                background: #1e293b;
-                color: #38bdf8;
-                box-shadow: 0 1px 4px rgba(0,0,0,0.3);
-            }
-            /* Charcoal Black Theme (#222222 & #000000 combined) */
-            [data-sahdev-theme="black"] {
-                background: #000000 !important;
-                color: #e4e4e7;
-            }
-            [data-sahdev-theme="black"] .sahdev-nav-system {
-                background: #222222 !important;
-                border: 1px solid #333333 !important;
-                box-shadow: 0 8px 32px rgba(0,0,0,0.85) !important;
-            }
-            [data-sahdev-theme="black"] .sahdev-nav-tier1 {
-                background: linear-gradient(180deg, #1c1c1c 0%, #161616 100%) !important;
-                border-bottom: 1px solid #2e2e2e !important;
-            }
-            [data-sahdev-theme="black"] .sahdev-nav-brand {
-                color: #ffffff !important;
-            }
-            [data-sahdev-theme="black"] .sahdev-cat-tab {
-                color: #a1a1aa !important;
-            }
-            [data-sahdev-theme="black"] .sahdev-cat-tab:hover {
-                background: #2a2a2a !important;
-                color: #ffffff !important;
-                border-color: #3a3a3a !important;
-            }
-            [data-sahdev-theme="black"] .sahdev-cat-tab.active {
-                background: #000000 !important;
-                color: #ffffff !important;
-                border-color: #444444 !important;
-                box-shadow: 0 2px 10px rgba(0, 0, 0, 0.8) !important;
-            }
-            [data-sahdev-theme="black"] .sahdev-cat-count {
-                background: #2a2a2a !important;
-                color: #d4d4d8 !important;
-            }
-            [data-sahdev-theme="black"] .sahdev-nav-tier2 {
-                background: #222222 !important;
-                border-bottom: 1px solid #2e2e2e !important;
-            }
-            [data-sahdev-theme="black"] .sahdev-subnav-context {
-                color: #71717a !important;
-            }
-            [data-sahdev-theme="black"] .sahdev-subnav-item {
-                background: #181818 !important;
-                color: #d4d4d8 !important;
-                border-color: #2f2f2f !important;
-            }
-            [data-sahdev-theme="black"] .sahdev-subnav-item:hover {
-                background: #2a2a2a !important;
-                color: #38bdf8 !important;
-                border-color: #404040 !important;
-            }
-            [data-sahdev-theme="black"] .sahdev-subnav-item.active {
-                background: #000000 !important;
-                color: #ffffff !important;
-                border-color: #6366f1 !important;
-                box-shadow: 0 0 12px rgba(99,102,241,0.35) !important;
-            }
-            [data-sahdev-theme="black"] .sahdev-quick-jump-trigger {
-                background: #181818 !important;
-                border-color: #333333 !important;
-                color: #e4e4e7 !important;
-            }
-            [data-sahdev-theme="black"] .sahdev-quick-jump-trigger kbd {
-                background: #262626 !important;
-                border-color: #3a3a3a !important;
-                color: #a1a1aa !important;
-            }
-            [data-sahdev-theme="black"] .sahdev-theme-switcher {
-                background: #181818 !important;
-                border-color: #333333 !important;
-            }
-            [data-sahdev-theme="black"] .sahdev-theme-btn {
-                color: #a1a1aa !important;
-            }
-            [data-sahdev-theme="black"] .sahdev-theme-btn:hover {
-                color: #ffffff !important;
-            }
-            [data-sahdev-theme="black"] .sahdev-page-container {
-                background: #000000 !important;
-                color: #e4e4e7 !important;
-            }
-            [data-sahdev-theme="black"] .panel {
-                background: #222222 !important;
-                border: 1px solid #333333 !important;
-                color: #f3f4f6 !important;
-            }
-            [data-sahdev-theme="black"] .panel-default > .panel-heading {
-                background: #1c1c1c !important;
-                border-color: #333333 !important;
-                color: #ffffff !important;
-            }
-            [data-sahdev-theme="black"] .panel-body {
-                background: #222222 !important;
-                color: #e4e4e7 !important;
-            }
-            [data-sahdev-theme="black"] .form-control {
-                background: #151515 !important;
-                border-color: #383838 !important;
-                color: #f4f4f5 !important;
-            }
-            [data-sahdev-theme="black"] .form-control:focus {
-                border-color: #6366f1 !important;
-                box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.35) !important;
-            }
-            [data-sahdev-theme="black"] table {
-                color: #e4e4e7 !important;
-            }
-            [data-sahdev-theme="black"] table th {
-                background: #181818 !important;
-                border-color: #333333 !important;
-                color: #ffffff !important;
-            }
-            [data-sahdev-theme="black"] table td {
-                border-color: #2e2e2e !important;
-            }
-            [data-sahdev-theme="black"] .text-muted {
-                color: #a1a1aa !important;
-            }
-            [data-sahdev-theme="black"] .well {
-                background: #181818 !important;
-                border: 1px solid #333333 !important;
-                color: #e4e4e7 !important;
-            }
-            [data-sahdev-theme="black"] .sahdev-qj-modal {
-                background: #222222 !important;
-                border-color: #383838 !important;
-            }
-            [data-sahdev-theme="black"] .sahdev-qj-header {
-                border-bottom: 1px solid #333333 !important;
-            }
-            [data-sahdev-theme="black"] .sahdev-qj-search-input {
-                color: #ffffff !important;
-            }
-            [data-sahdev-theme="black"] .sahdev-qj-item {
-                color: #e4e4e7 !important;
-            }
-            [data-sahdev-theme="black"] .sahdev-qj-item:hover,
-            [data-sahdev-theme="black"] .sahdev-qj-item.selected {
-                background: #181818 !important;
-                color: #38bdf8 !important;
-            }
-            [data-sahdev-theme="black"] .sahdev-qj-item-icon {
-                background: #181818 !important;
-                border-color: #333333 !important;
-                color: #a1a1aa !important;
-            }
-            [data-sahdev-theme="black"] .sahdev-qj-item-desc {
-                color: #a1a1aa !important;
-            }
-            [data-sahdev-theme="black"] .sahdev-qj-footer {
-                background: #1a1a1a !important;
-                border-top: 1px solid #333333 !important;
-                color: #a1a1aa !important;
-            }
-            /* Dark Theme (Slate/Navy) */
-            [data-sahdev-theme="dark"] {
-                background: #0b0f19 !important;
-                color: #cbd5e1;
-            }
-            [data-sahdev-theme="dark"] .sahdev-nav-system {
-                background: #131b2e !important;
-                border-color: #334155 !important;
-            }
-            [data-sahdev-theme="dark"] .sahdev-nav-tier1 {
-                background: #0f172a !important;
-                border-bottom: 1px solid #334155 !important;
-            }
-            [data-sahdev-theme="dark"] .sahdev-nav-brand {
-                color: #ffffff !important;
-            }
-            [data-sahdev-theme="dark"] .sahdev-cat-tab {
-                color: #94a3b8 !important;
-            }
-            [data-sahdev-theme="dark"] .sahdev-cat-tab.active {
-                background: #0b0f19 !important;
-                color: #ffffff !important;
-            }
-            [data-sahdev-theme="dark"] .sahdev-nav-tier2 {
-                background: #131b2e !important;
-            }
-            [data-sahdev-theme="dark"] .sahdev-subnav-item {
-                background: #0f172a !important;
-                color: #cbd5e1 !important;
-                border-color: #334155 !important;
-            }
-            [data-sahdev-theme="dark"] .sahdev-subnav-item.active {
-                background: #0284c7 !important;
-                color: #ffffff !important;
-                border-color: #0284c7 !important;
-            }
-            [data-sahdev-theme="dark"] .sahdev-theme-switcher {
-                background: #0f172a !important;
-                border-color: #334155 !important;
-            }
-            [data-sahdev-theme="dark"] .panel {
-                background: #131b2e !important;
-                border-color: #334155 !important;
-                color: #f8fafc !important;
-            }
-            [data-sahdev-theme="dark"] .panel-default > .panel-heading {
-                background: #0f172a !important;
-                border-color: #334155 !important;
-                color: #ffffff !important;
-            }
-            [data-sahdev-theme="dark"] .panel-body {
-                background: #131b2e !important;
-                color: #cbd5e1 !important;
-            }
-            [data-sahdev-theme="dark"] .form-control {
-                background: #0f172a !important;
-                border-color: #334155 !important;
-                color: #f8fafc !important;
-            }
-            .sahdev-quick-jump-trigger {
-                padding: 6px 11px;
-                font-size: 12px;
-                font-weight: 600;
-                color: #334155;
-                background: #ffffff;
-                border: 1px solid #cbd5e1;
-                border-radius: 8px;
-                display: inline-flex;
-                align-items: center;
-                gap: 7px;
-                cursor: pointer;
-                transition: all 0.15s ease;
-                box-shadow: 0 1px 2px rgba(0,0,0,0.04);
-                line-height: 1.4;
-            }
-            .sahdev-quick-jump-trigger:hover {
-                background: #f8fafc;
-                border-color: #94a3b8;
-                color: #0f172a;
-            }
-            .sahdev-quick-jump-trigger kbd {
-                padding: 1px 5px;
-                font-size: 10px;
-                font-family: inherit;
-                font-weight: 700;
-                background: #f1f5f9;
-                border: 1px solid #cbd5e1;
-                border-radius: 4px;
-                color: #64748b;
-            }
-            .sahdev-copilot-quick-btn {
-                padding: 6px 12px;
-                font-size: 12px;
-                font-weight: 600;
-                color: #4338ca;
-                background: #eef2ff;
-                border: 1px solid #c7d2fe;
-                border-radius: 8px;
-                display: inline-flex;
-                align-items: center;
-                gap: 6px;
-                cursor: pointer;
-                transition: all 0.15s ease;
-                line-height: 1.4;
-            }
-            .sahdev-copilot-quick-btn:hover {
-                background: #e0e7ff;
-                border-color: #a5b4fc;
-                color: #312e81;
-            }
-            .sahdev-nav-tier2 {
-                display: flex;
-                align-items: center;
-                padding: 10px 18px;
-                background: #ffffff;
-                gap: 8px;
-                flex-wrap: wrap;
-            }
-            .sahdev-subnav-context {
-                font-size: 11px;
-                font-weight: 700;
-                color: #94a3b8;
-                text-transform: uppercase;
-                letter-spacing: 0.05em;
-                margin-right: 6px;
-                display: inline-flex;
-                align-items: center;
-                gap: 6px;
-            }
-            .sahdev-subnav-item {
-                display: inline-flex;
-                align-items: center;
-                gap: 7px;
-                padding: 6px 13px;
-                font-size: 13px;
-                font-weight: 500;
-                color: #334155;
-                background: #f8fafc;
-                border: 1px solid #e2e8f0;
-                border-radius: 7px;
-                text-decoration: none !important;
-                transition: all 0.15s ease;
-            }
-            .sahdev-subnav-item:hover {
-                background: #f1f5f9;
-                color: #0d6efd;
-                border-color: #cbd5e1;
-                transform: translateY(-1px);
-            }
-            .sahdev-subnav-item.active {
-                background: #0d6efd;
-                color: #ffffff !important;
-                border-color: #0d6efd;
-                font-weight: 600;
-                box-shadow: 0 2px 8px rgba(13, 110, 253, 0.28);
-            }
-            .sahdev-subnav-item i {
-                font-size: 12px;
-            }
-            .sahdev-page-container {
-                width: 100%;
-                padding: 20px;
-            }
-            /* Quick Jump Modal Overlay */
-            .sahdev-qj-overlay {
-                position: fixed;
-                top: 0;
-                left: 0;
-                right: 0;
-                bottom: 0;
-                background: rgba(15, 23, 42, 0.55);
-                backdrop-filter: blur(4px);
-                z-index: 100000;
-                display: none;
-                align-items: flex-start;
-                justify-content: center;
-                padding-top: 12vh;
-            }
-            .sahdev-qj-modal {
-                width: 100%;
-                max-width: 560px;
-                background: #ffffff;
-                border-radius: 12px;
-                box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
-                border: 1px solid #cbd5e1;
-                overflow: hidden;
-                display: flex;
-                flex-direction: column;
-                animation: sahdevQjSlide 0.15s ease-out;
-            }
-            @keyframes sahdevQjSlide {
-                from { opacity: 0; transform: translateY(-10px) scale(0.98); }
-                to { opacity: 1; transform: translateY(0) scale(1); }
-            }
-            .sahdev-qj-header {
-                display: flex;
-                align-items: center;
-                padding: 14px 16px;
-                border-bottom: 1px solid #e2e8f0;
-                gap: 10px;
-            }
-            .sahdev-qj-search-input {
-                flex: 1;
-                border: none;
-                outline: none;
-                font-size: 15px;
-                color: #0f172a;
-                background: transparent;
-            }
-            .sahdev-qj-close {
-                background: transparent;
-                border: none;
-                cursor: pointer;
-                color: #94a3b8;
-                font-size: 16px;
-                padding: 4px;
-            }
-            .sahdev-qj-close:hover {
-                color: #0f172a;
-            }
-            .sahdev-qj-body {
-                max-height: 380px;
-                overflow-y: auto;
-                padding: 8px;
-            }
-            .sahdev-qj-item {
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                padding: 9px 12px;
-                border-radius: 8px;
-                text-decoration: none !important;
-                color: #1e293b;
-                transition: background 0.12s ease;
-                cursor: pointer;
-            }
-            .sahdev-qj-item:hover, .sahdev-qj-item.selected {
-                background: #f1f5f9;
-                color: #0d6efd;
-            }
-            .sahdev-qj-item-left {
-                display: flex;
-                align-items: center;
-                gap: 12px;
-            }
-            .sahdev-qj-item-icon {
-                width: 32px;
-                height: 32px;
-                border-radius: 6px;
-                background: #f8fafc;
-                border: 1px solid #e2e8f0;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                font-size: 14px;
-                color: #64748b;
-            }
-            .sahdev-qj-item:hover .sahdev-qj-item-icon, .sahdev-qj-item.selected .sahdev-qj-item-icon {
-                background: #0d6efd;
-                color: #ffffff;
-                border-color: #0d6efd;
-            }
-            .sahdev-qj-item-info {
-                display: flex;
-                flex-direction: column;
-            }
-            .sahdev-qj-item-title {
-                font-size: 13px;
-                font-weight: 600;
-            }
-            .sahdev-qj-item-desc {
-                font-size: 11px;
-                color: #64748b;
-            }
-            .sahdev-qj-item-badge {
-                font-size: 10px;
-                font-weight: 700;
-                text-transform: uppercase;
-                padding: 2px 7px;
-                border-radius: 9999px;
-                background: #e2e8f0;
-                color: #475569;
-            }
-            .sahdev-qj-footer {
-                padding: 8px 16px;
-                background: #f8fafc;
-                border-top: 1px solid #e2e8f0;
-                font-size: 11px;
-                color: #64748b;
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-            }
-        </style>';
-
-        $brandLogoSvg = '<span style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:7px;background:linear-gradient(135deg,#6366f1,#8b5cf6);box-shadow:0 2px 8px rgba(99,102,241,0.35);flex-shrink:0;">'
-            . '<svg width="16" height="16" viewBox="0 0 100 100" fill="none">'
-            . '<path d="M50 8 L86.4 29 v42 L50 92 L13.6 71 V29 Z" stroke="#ffffff" stroke-width="8" fill="none" stroke-linejoin="round"/>'
-            . '<circle cx="50" cy="50" r="14" fill="#38bdf8"/>'
-            . '<line x1="50" y1="20" x2="50" y2="36" stroke="#ffffff" stroke-width="6" stroke-linecap="round"/>'
-            . '<line x1="50" y1="64" x2="50" y2="80" stroke="#ffffff" stroke-width="6" stroke-linecap="round"/>'
-            . '<line x1="24" y1="35" x2="38" y2="43" stroke="#ffffff" stroke-width="6" stroke-linecap="round"/>'
-            . '<line x1="76" y1="65" x2="62" y2="57" stroke="#ffffff" stroke-width="6" stroke-linecap="round"/>'
-            . '<line x1="24" y1="65" x2="38" y2="57" stroke="#ffffff" stroke-width="6" stroke-linecap="round"/>'
-            . '<line x1="76" y1="35" x2="62" y2="43" stroke="#ffffff" stroke-width="6" stroke-linecap="round"/>'
-            . '</svg></span>';
-
-        $html .= '<div class="sahdev-nav-system">';
-        // Tier 1: Categories Bar
-        $html .= '<div class="sahdev-nav-tier1">';
-        $html .= '<div class="sahdev-nav-brand-wrap">';
-        $html .= '<a href="' . $base . '" class="sahdev-nav-brand">' . $brandLogoSvg . ' SAHDEV <span class="sahdev-ai-badge">AI Core</span></a>';
-        $html .= '</div>';
-
-        $html .= '<nav class="sahdev-nav-categories">';
-        foreach ($categories as $catKey => $cat) {
-            $isCatActive = ($catKey === $activeCat);
-            $activeClass = $isCatActive ? ' active' : '';
-            $firstTool = reset($cat['tools']);
-            $catUrl = $firstTool['url'] ?? $base;
-            if ($isCatActive && isset($cat['tools'][$activeTab])) {
-                $catUrl = $cat['tools'][$activeTab]['url'];
-            }
-            $toolCount = count($cat['tools']);
-            $html .= sprintf(
-                '<a href="%s" class="sahdev-cat-tab%s" title="%s"><i class="%s"></i> %s <span class="sahdev-cat-count">%d</span></a>',
-                $catUrl,
-                $activeClass,
-                htmlspecialchars($cat['title']),
-                $cat['icon'],
-                htmlspecialchars($cat['title']),
-                $toolCount
-            );
+        $html .= '</div><p class="sdv-menu-empty" role="status" hidden>No matching pages.</p></div></nav><!--/sahdev-navigation-->';
+        $activeCategory = $categories[$activeCat];
+        $activeLabel = $activeCategory['tools'][$activeTab]['label'] ?? $activeCategory['title'];
+        $html .= '<header class="sdv-workspace-toolbar"><div class="sdv-breadcrumb">' . htmlspecialchars($activeCategory['title']) . ' &nbsp;/&nbsp; <strong>' . htmlspecialchars($activeLabel) . '</strong></div>';
+        if ($activeTab !== 'settings' && $activeTab !== 'my_preferences') {
+            $html .= '<div class="sdv-appearance-switch" role="group" aria-label="Your appearance">';
+            foreach (['black' => 'Black', 'dark' => 'Dark', 'white' => 'White'] as $mode => $label) {
+                $selected = $themeMode === $mode;
+                $html .= '<button type="button" data-sahdev-mode="' . $mode . '" aria-pressed="' . ($selected ? 'true' : 'false') . '" class="' . ($selected ? 'active' : '') . '">' . $label . '</button>';
+            }
+            $html .= '</div>';
         }
-        $html .= '</nav>';
-
-        // Actions: Theme Switcher + Quick Jump (Alt+K / Ctrl+/) + Copilot Drawer shortcut
-        $html .= '<div class="sahdev-nav-actions">';
-        $html .= '<div class="sahdev-theme-switcher" id="sahdevNavThemeSwitcher" title="Switch Theme (White / Dark / Charcoal Black)">'
-            . '<button type="button" class="sahdev-theme-btn sahdev-theme-white' . ($themeMode === 'white' ? ' active' : '') . '" onclick="sahdevGlobalSetTheme(\'white\')" title="Light / White Theme">☀️ <span class="sahdev-theme-lbl">Light</span></button>'
-            . '<button type="button" class="sahdev-theme-btn sahdev-theme-dark' . ($themeMode === 'dark' ? ' active' : '') . '" onclick="sahdevGlobalSetTheme(\'dark\')" title="Dark Slate Theme">🌙 <span class="sahdev-theme-lbl">Dark</span></button>'
-            . '<button type="button" class="sahdev-theme-btn sahdev-theme-black' . ($themeMode === 'black' ? ' active' : '') . '" onclick="sahdevGlobalSetTheme(\'black\')" title="Charcoal Black Theme (#222222 &amp; #000000)">🖤 <span class="sahdev-theme-lbl">Black</span></button>'
-            . '</div>';
-        $html .= '<button type="button" class="sahdev-quick-jump-trigger" id="sahdevQuickJumpTrigger" title="Quick Jump (Alt+K or Ctrl+/)"><i class="fas fa-search"></i> <span>Quick Jump</span> <kbd>Alt+K</kbd></button>';
-        if ($hasCopilotPerm) {
-            $html .= '<button type="button" class="sahdev-copilot-quick-btn" onclick="if(typeof sahdevToggleAdminCopilot===\'function\'){sahdevToggleAdminCopilot(event);}" title="Toggle AI Operations Copilot"><i class="fas fa-robot"></i> <span>Copilot</span></button>';
-        }
-        $html .= '</div>';
-        $html .= '</div>'; // End Tier 1
-
-        // Tier 2: Sub-Tools Bar for active category
-        $activeCategoryData = $categories[$activeCat] ?? reset($categories);
-        $html .= '<div class="sahdev-nav-tier2">';
-        $html .= '<span class="sahdev-subnav-context"><i class="' . $activeCategoryData['icon'] . '"></i> ' . htmlspecialchars($activeCategoryData['title']) . ':</span>';
-        foreach ($activeCategoryData['tools'] as $toolKey => $tool) {
-            $isToolActive = ($toolKey === $activeTab);
-            $activeClass = $isToolActive ? ' active' : '';
-            $html .= sprintf(
-                '<a href="%s" class="sahdev-subnav-item%s" title="%s"><i class="%s"></i> <span>%s</span></a>',
-                $tool['url'],
-                $activeClass,
-                htmlspecialchars($tool['desc']),
-                $tool['icon'],
-                htmlspecialchars($tool['label'])
-            );
-        }
-        $html .= '</div>'; // End Tier 2
-
-        $html .= '</div>'; // End nav system
-
-        // Quick Jump Modal Markup & Script
-        $html .= '<div class="sahdev-qj-overlay" id="sahdevQuickJumpOverlay">';
-        $html .= '<div class="sahdev-qj-modal">';
-        $html .= '<div class="sahdev-qj-header">';
-        $html .= '<i class="fas fa-search" style="color: #64748b;"></i>';
-        $html .= '<input type="text" id="sahdevQuickJumpInput" class="sahdev-qj-search-input" placeholder="Jump to any AI tool or setting... (Type or use ↑↓)" autocomplete="off">';
-        $html .= '<button type="button" class="sahdev-qj-close" id="sahdevQuickJumpClose" title="Close (Esc)">&times;</button>';
-        $html .= '</div>';
-        $html .= '<div class="sahdev-qj-body" id="sahdevQuickJumpResults"></div>';
-        $html .= '<div class="sahdev-qj-footer">';
-        $html .= '<span>Navigation: <kbd style="padding:1px 4px;background:#e2e8f0;border-radius:3px;">↑</kbd> <kbd style="padding:1px 4px;background:#e2e8f0;border-radius:3px;">↓</kbd> select, <kbd style="padding:1px 4px;background:#e2e8f0;border-radius:3px;">Enter</kbd> jump</span>';
-        $html .= '<span>Shortcuts: <kbd style="padding:1px 4px;background:#e2e8f0;border-radius:3px;">Alt+K</kbd> / <kbd style="padding:1px 4px;background:#e2e8f0;border-radius:3px;">Ctrl+/</kbd> &bull; <kbd style="padding:1px 4px;background:#e2e8f0;border-radius:3px;">Esc</kbd> exit</span>';
-        $html .= '</div>';
-        $html .= '</div>';
-        $html .= '</div>';
-
-        $html .= '<script>
-        (function() {
-            var items = ' . $quickJumpJson . ';
-            var overlay = document.getElementById("sahdevQuickJumpOverlay");
-            var trigger = document.getElementById("sahdevQuickJumpTrigger");
-            var closeBtn = document.getElementById("sahdevQuickJumpClose");
-            var input = document.getElementById("sahdevQuickJumpInput");
-            var results = document.getElementById("sahdevQuickJumpResults");
-            var selectedIdx = 0;
-            var filtered = [];
-
-            function renderResults(list) {
-                filtered = list;
-                results.innerHTML = "";
-                if (!list || list.length === 0) {
-                    results.innerHTML = \'<div style="padding: 24px; text-align: center; color: #94a3b8; font-size: 13px;"><i class="fas fa-search" style="font-size: 20px; margin-bottom: 8px; display:block;"></i>No tools or settings found matching your search.</div>\';
-                    return;
-                }
-                list.forEach(function(item, idx) {
-                    var a = document.createElement("a");
-                    a.href = item.url;
-                    a.className = "sahdev-qj-item" + (idx === selectedIdx ? " selected" : "");
-                    a.innerHTML = \'<div class="sahdev-qj-item-left">\' +
-                        \'<div class="sahdev-qj-item-icon"><i class="\' + item.icon + \'"></i></div>\' +
-                        \'<div class="sahdev-qj-item-info">\' +
-                            \'<span class="sahdev-qj-item-title">\' + item.label + (item.active ? \' <span style="font-size:10px; color:#0d6efd; font-weight:700;">● Active Page</span>\' : \'\') + \'</span>\' +
-                            \'<span class="sahdev-qj-item-desc">\' + item.desc + \'</span>\' +
-                        \'</div>\' +
-                    \'</div>\' +
-                    \'<span class="sahdev-qj-item-badge">\' + item.category + \'</span>\';
-                    results.appendChild(a);
-                });
-            }
-
-            function openModal() {
-                if (!overlay) return;
-                overlay.style.display = "flex";
-                if (input) {
-                    input.value = "";
-                    selectedIdx = 0;
-                    renderResults(items);
-                    setTimeout(function() { input.focus(); }, 50);
-                }
-            }
-
-            function closeModal() {
-                if (!overlay) return;
-                overlay.style.display = "none";
-            }
-
-            window.sahdevOpenQuickJump = openModal;
-            window.sahdevCloseQuickJump = closeModal;
-
-            if (trigger) trigger.addEventListener("click", openModal);
-            if (closeBtn) closeBtn.addEventListener("click", closeModal);
-            if (overlay) {
-                overlay.addEventListener("click", function(e) {
-                    if (e.target === overlay) closeModal();
-                });
-            }
-
-            document.addEventListener("keydown", function(e) {
-                var isAltK = (e.altKey && (e.key === "k" || e.key === "K" || e.code === "KeyK"));
-                var isCtrlSlash = ((e.ctrlKey || e.metaKey) && (e.key === "/" || e.code === "Slash"));
-                var isCtrlK = ((e.ctrlKey || e.metaKey) && (e.key === "k" || e.key === "K" || e.code === "KeyK"));
-                var targetTag = e.target ? (e.target.tagName || "").toLowerCase() : "";
-                var isInputFocused = (targetTag === "input" || targetTag === "textarea" || targetTag === "select" || (e.target && e.target.isContentEditable));
-                var isSlashOnly = (!e.ctrlKey && !e.altKey && !e.metaKey && e.key === "/" && !isInputFocused);
-
-                if (isAltK || isCtrlSlash || isCtrlK || isSlashOnly) {
-                    e.preventDefault();
-                    if (overlay && overlay.style.display === "flex") {
-                        closeModal();
-                    } else {
-                        openModal();
-                    }
-                } else if (e.key === "Escape" && overlay && overlay.style.display === "flex") {
-                    closeModal();
-                } else if (overlay && overlay.style.display === "flex") {
-                    if (e.key === "ArrowDown") {
-                        e.preventDefault();
-                        if (filtered.length > 0) {
-                            selectedIdx = (selectedIdx + 1) % filtered.length;
-                            renderResults(filtered);
-                            ensureVisible();
-                        }
-                    } else if (e.key === "ArrowUp") {
-                        e.preventDefault();
-                        if (filtered.length > 0) {
-                            selectedIdx = (selectedIdx - 1 + filtered.length) % filtered.length;
-                            renderResults(filtered);
-                            ensureVisible();
-                        }
-                    } else if (e.key === "Enter") {
-                        e.preventDefault();
-                        if (filtered[selectedIdx]) {
-                            window.location.href = filtered[selectedIdx].url;
-                        }
-                    }
-                }
-            });
-
-            function ensureVisible() {
-                var el = results.querySelectorAll(".sahdev-qj-item")[selectedIdx];
-                if (el) {
-                    el.scrollIntoView({ block: "nearest" });
-                }
-            }
-
-            if (input) {
-                input.addEventListener("input", function() {
-                    var q = this.value.toLowerCase().trim();
-                    selectedIdx = 0;
-                    if (!q) {
-                        renderResults(items);
-                        return;
-                    }
-                    var matched = items.filter(function(it) {
-                        return it.label.toLowerCase().indexOf(q) !== -1 ||
-                               it.desc.toLowerCase().indexOf(q) !== -1 ||
-                               it.category.toLowerCase().indexOf(q) !== -1 ||
-                               it.id.toLowerCase().indexOf(q) !== -1;
-                    });
-                    renderResults(matched);
-                });
-            }
-
-            window.sahdevGlobalSetTheme = function(mode, saveGlobal) {
-                var targets = [document.documentElement, document.body];
-                document.querySelectorAll(".sahdev-theme-wrapper, .sahdev-page-container, #sahdev-ai-panel, #sahdevThemeRoot").forEach(function(el) {
-                    targets.push(el);
-                });
-                targets.forEach(function(el) {
-                    if (el) el.setAttribute("data-sahdev-theme", mode);
-                });
-                document.querySelectorAll(".sahdev-theme-btn").forEach(function(b) {
-                    b.classList.remove("active");
-                });
-                document.querySelectorAll(".sahdev-theme-" + mode).forEach(function(b) {
-                    b.classList.add("active");
-                });
-                var radio = document.querySelector("input[name=\"ui_theme_mode\"][value=\"" + mode + "\"]");
-                if (radio) {
-                    radio.checked = true;
-                    document.querySelectorAll(".sdv-theme-card").forEach(function(c) { c.classList.remove("active"); });
-                    var card = radio.closest(".sdv-theme-card");
-                    if (card) card.classList.add("active");
-                }
-                try { localStorage.setItem("sahdev_theme_mode", mode); } catch(e) {}
-                var data = new URLSearchParams();
-                data.append("action", "set_theme_mode");
-                data.append("theme_mode", mode);
-                if (saveGlobal) data.append("save_global", "1");
-                fetch("addonmodules.php?module=sahdev&sahdev_act=ajax_handler", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-                    body: data.toString()
-                });
-            };
-
-            // Initial theme sync from server / localStorage
-            (function() {
-                var mode = "' . htmlspecialchars($themeMode) . '";
-                try {
-                    var local = localStorage.getItem("sahdev_theme_mode");
-                    if (local && (local === "white" || local === "dark" || local === "black")) {
-                        mode = local;
-                    }
-                } catch(e) {}
-                document.documentElement.setAttribute("data-sahdev-theme", mode);
-                if (document.body) document.body.setAttribute("data-sahdev-theme", mode);
-            })();
-        })();
-        </script>';
+        $html .= '</header>';
 
         // Auto-render copilot drawer on all Sahdev module pages if not yet rendered
         if (function_exists('sahdev_render_admin_copilot_drawer')) {
@@ -1649,7 +799,7 @@ class AdminController
                     'default_provider_id' => (int) ($_POST['default_provider_id'] ?? 0),
                     'tone_default'        => $toneDefault,
                     'ui_theme'            => strtolower(trim((string) ($_POST['ui_theme'] ?? 'remastered'))),
-                    'theme_mode'          => strtolower(trim((string) ($_POST['theme_mode'] ?? 'black'))),
+                    'theme_mode'          => strtolower(trim((string) ($_POST['theme_mode'] ?? ''))),
                     'features'            => [],
                 ];
                 foreach (\Sahdev\Lib\AdminPreferences::allFeatureKeys() as $k) {
@@ -1743,8 +893,9 @@ class AdminController
                         </div>
                         <div class="form-group">
                             <label>Color scheme &amp; theme mode</label>
-                            <select name="theme_mode" class="form-control" style="max-width:320px;" onchange="if(typeof sahdevGlobalSetTheme==='function'){sahdevGlobalSetTheme(this.value);}">
-                                <option value="black"<?php echo (($prefs['theme_mode'] ?? 'black') === 'black') ? ' selected' : ''; ?>>🖤 Charcoal Black (#222222 &amp; #000000)</option>
+                            <select name="theme_mode" class="form-control" style="max-width:320px;" data-workspace-theme="<?php echo htmlspecialchars(\Sahdev\Lib\AdminPreferences::getThemeMode(), ENT_QUOTES, 'UTF-8'); ?>" onchange="if(typeof sahdevGlobalSetTheme==='function'){sahdevGlobalSetTheme(this.value || this.dataset.workspaceTheme, false);}">
+                                <option value=""<?php echo empty($prefs['theme_mode']) ? ' selected' : ''; ?>>Use workspace default</option>
+                                <option value="black"<?php echo (($prefs['theme_mode'] ?? '') === 'black') ? ' selected' : ''; ?>>🖤 Charcoal Black (#222222 &amp; #000000)</option>
                                 <option value="dark"<?php echo (($prefs['theme_mode'] ?? '') === 'dark') ? ' selected' : ''; ?>>🌙 Modern Slate Dark</option>
                                 <option value="white"<?php echo (($prefs['theme_mode'] ?? '') === 'white') ? ' selected' : ''; ?>>☀️ Crisp Studio White</option>
                             </select>
@@ -1806,20 +957,13 @@ class AdminController
      */
     public function settings()
     {
+        $adminId = \Sahdev\Lib\PermissionService::resolveCurrentAdminId();
+        if (!\Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_SETTINGS_MANAGE)) {
+            return $this->getNavigationMarkup('settings') . '<div class="alert alert-danger">You do not have permission to manage workspace settings.</div>';
+        }
         try {
             \Sahdev\Lib\SchemaManager::ensureSettingsColumns();
         } catch (\Throwable $ex) {}
-
-        // Inline migration: ensure ui_theme_mode exists
-        try {
-            Capsule::table('tblsahdev_settings')->select('ui_theme_mode')->first();
-        } catch (\Exception $e) {
-            try {
-                Capsule::schema()->table('tblsahdev_settings', function ($table) {
-                    $table->string('ui_theme_mode', 32)->default('black');
-                });
-            } catch (\Throwable $ex) {}
-        }
 
         // Inline migration: ensure auto_analyze_on_load column exists on older installs
         try {
@@ -2242,35 +1386,13 @@ class AdminController
                 'updated_at' => \Carbon\Carbon::now(),
             ];
 
-            // Theme Mode: white, dark, black (Charcoal Black #222222 & #000000)
-            if (isset($_POST['ui_theme_mode'])) {
-                $themeModeVal = strtolower(trim((string)$_POST['ui_theme_mode']));
-                if (in_array($themeModeVal, ['white', 'dark', 'black'], true)) {
-                    $updatePayload['ui_theme_mode'] = $themeModeVal;
-                    try {
-                        $curAdminId = \Sahdev\Lib\PermissionService::resolveCurrentAdminId();
-                        if ($curAdminId > 0) {
-                            $curPrefs = \Sahdev\Lib\AdminPreferences::load($curAdminId);
-                            $curPrefs['theme_mode'] = $themeModeVal;
-                            \Sahdev\Lib\AdminPreferences::save($curAdminId, $curPrefs);
-                        }
-                    } catch (\Throwable $e) {}
-                }
+            $preferenceUpdates = [];
+            if (isset($_POST['ui_theme_mode']) && in_array($_POST['ui_theme_mode'], ['white', 'dark', 'black'], true)) {
+                $updatePayload['ui_theme_mode'] = $_POST['ui_theme_mode'];
+                $preferenceUpdates['theme_mode'] = $_POST['ui_theme_mode'];
             }
-
-            // Ticket Panel Layout
-            if (isset($_POST['ui_theme'])) {
-                $uiThemeVal = strtolower(trim((string)$_POST['ui_theme']));
-                if (in_array($uiThemeVal, ['classic', 'remastered'], true)) {
-                    try {
-                        $curAdminId = \Sahdev\Lib\PermissionService::resolveCurrentAdminId();
-                        if ($curAdminId > 0) {
-                            $curPrefs = \Sahdev\Lib\AdminPreferences::load($curAdminId);
-                            $curPrefs['ui_theme'] = $uiThemeVal;
-                            \Sahdev\Lib\AdminPreferences::save($curAdminId, $curPrefs);
-                        }
-                    } catch (\Throwable $e) {}
-                }
+            if (isset($_POST['ui_theme']) && in_array($_POST['ui_theme'], ['classic', 'remastered'], true)) {
+                $preferenceUpdates['ui_theme'] = $_POST['ui_theme'];
             }
 
             if (isset($_POST['primary_provider_id'])) {
@@ -2318,10 +1440,14 @@ class AdminController
 
             $existingSetting = Capsule::table('tblsahdev_settings')->first();
             $settingsId = $existingSetting ? $existingSetting->id : 1;
-            Capsule::table('tblsahdev_settings')->updateOrInsert(
-                ['id' => $settingsId],
-                $updatePayload
-            );
+            Capsule::connection()->transaction(function () use ($settingsId, $updatePayload, $preferenceUpdates) {
+                Capsule::table('tblsahdev_settings')->updateOrInsert(['id' => $settingsId], $updatePayload);
+                $currentAdminId = \Sahdev\Lib\PermissionService::resolveCurrentAdminId();
+                if ($currentAdminId > 0 && $preferenceUpdates) {
+                    $prefs = \Sahdev\Lib\AdminPreferences::load($currentAdminId);
+                    \Sahdev\Lib\AdminPreferences::save($currentAdminId, array_merge($prefs, $preferenceUpdates));
+                }
+            });
 
             $successMessage = "Settings saved successfully.";
         }
@@ -2400,13 +1526,29 @@ class AdminController
 
         $activeAdminId = \Sahdev\Lib\PermissionService::resolveCurrentAdminId();
         $adminPrefs = \Sahdev\Lib\AdminPreferences::load($activeAdminId);
-        $currentThemeMode = $settings->ui_theme_mode ?? ($adminPrefs['theme_mode'] ?? 'black');
+        $currentThemeMode = \Sahdev\Lib\AdminPreferences::getThemeMode();
         $currentUiTheme = $adminPrefs['ui_theme'] ?? 'remastered';
 
+        $settingsSections = [
+            'Workspace' => ['tab-appearance' => ['Appearance', 'fa-palette']],
+            'AI & Tickets' => [
+                'tab-ai-engine' => ['Models & generation', 'fa-microchip'],
+                'tab-ticket-ai' => ['Ticket assistance', 'fa-ticket-alt'],
+            ],
+            'Safety & Context' => [
+                'tab-security' => ['Privacy & data', 'fa-user-shield'],
+                'tab-enrichment' => ['Account context', 'fa-id-card'],
+            ],
+            'Support & Operations' => [
+                'tab-livechat-alerts' => ['Live chat alerts', 'fa-bell'],
+                'tab-firebase' => ['Mobile & push', 'fa-mobile-alt'],
+                'tab-telemetry' => ['Server monitoring', 'fa-server'],
+            ],
+        ];
+        $validSections = array_merge(...array_map('array_keys', array_values($settingsSections)));
         $activeSubtab = $activeSubtab ?? 'tab-appearance';
-        if ($activeSubtab === 'tab-ticket') {
-            $activeSubtab = 'tab-ticket-ai';
-        }
+        if ($activeSubtab === 'tab-ticket') $activeSubtab = 'tab-ticket-ai';
+        if (!in_array($activeSubtab, $validSections, true)) $activeSubtab = 'tab-appearance';
 
         // Fetch all active providers & map names
         $providers = Capsule::table('tblsahdev_providers')->where('is_active', 1)->get();
@@ -2457,321 +1599,6 @@ class AdminController
 
         <?php echo $this->getNavigationMarkup('settings'); ?>
 
-        <style>
-        /* =========================================================
-           Sahdev Settings Overhaul - Design System & Clean Layout
-           ========================================================= */
-        .sdv-settings-dashboard {
-            width: 100%;
-            margin: 0 auto 40px auto;
-            box-sizing: border-box;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-        }
-
-        .sdv-settings-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 20px 24px;
-            background: var(--sdv-bg-surface, #ffffff);
-            border: 1px solid var(--sdv-border, #e2e8f0);
-            border-radius: 12px;
-            margin-bottom: 24px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.03);
-            flex-wrap: wrap;
-            gap: 16px;
-        }
-        .sdv-settings-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            font-size: 10.5px;
-            font-weight: 700;
-            letter-spacing: 0.08em;
-            text-transform: uppercase;
-            padding: 3px 8px;
-            border-radius: 6px;
-            background: linear-gradient(135deg, rgba(99,102,241,0.12), rgba(56,189,248,0.12));
-            color: #6366f1;
-            margin-bottom: 6px;
-        }
-        .sdv-settings-title {
-            margin: 0 0 6px 0;
-            font-size: 22px;
-            font-weight: 800;
-            letter-spacing: -0.02em;
-            color: var(--sdv-text-primary, #0f172a);
-        }
-        .sdv-settings-subtitle {
-            margin: 0;
-            font-size: 13px;
-            color: var(--sdv-text-muted, #64748b);
-            line-height: 1.5;
-            max-width: 820px;
-        }
-        .sdv-quick-stat-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            padding: 8px 14px;
-            background: var(--sdv-bg-nested, #f8fafc);
-            border: 1px solid var(--sdv-border, #e2e8f0);
-            border-radius: 8px;
-            font-size: 12px;
-            color: var(--sdv-text-secondary, #334155);
-        }
-        .sdv-stat-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: #10b981;
-            box-shadow: 0 0 0 3px rgba(16,185,129,0.2);
-        }
-
-        /* 2-Column Responsive Layout */
-        .sdv-settings-layout {
-            display: flex;
-            gap: 24px;
-            align-items: flex-start;
-        }
-        .sdv-settings-sidebar {
-            width: 270px;
-            flex-shrink: 0;
-            background: var(--sdv-bg-surface, #ffffff);
-            border: 1px solid var(--sdv-border, #e2e8f0);
-            border-radius: 12px;
-            padding: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.03);
-            position: sticky;
-            top: 20px;
-        }
-        .sdv-sidebar-heading {
-            font-size: 11px;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.08em;
-            color: var(--sdv-text-muted, #64748b);
-            padding: 8px 12px 6px 12px;
-        }
-        .sdv-cat-btn {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            width: 100%;
-            padding: 10px 14px;
-            margin-bottom: 4px;
-            border-radius: 8px;
-            border: 1px solid transparent;
-            background: transparent;
-            color: var(--sdv-text-secondary, #475569);
-            font-size: 13px;
-            font-weight: 600;
-            text-align: left;
-            cursor: pointer;
-            transition: all 0.15s ease;
-        }
-        .sdv-cat-btn-left {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        .sdv-cat-btn i {
-            font-size: 14px;
-            width: 18px;
-            text-align: center;
-            color: #6366f1;
-        }
-        .sdv-cat-btn:hover {
-            background: var(--sdv-bg-nested, #f1f5f9);
-            color: var(--sdv-text-primary, #0f172a);
-        }
-        .sdv-cat-btn.active {
-            background: var(--sdv-bg-nested, #0f172a);
-            color: #ffffff !important;
-            border-color: rgba(99,102,241,0.3);
-            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-        }
-        .sdv-cat-btn.active i {
-            color: #38bdf8 !important;
-        }
-
-        /* Content Container & Cards */
-        .sdv-settings-main {
-            flex: 1;
-            min-width: 0;
-        }
-        .sdv-settings-pane {
-            display: none;
-            animation: sdvFadeIn 0.15s ease-out;
-        }
-        .sdv-settings-pane.active {
-            display: block;
-        }
-        @keyframes sdvFadeIn {
-            from { opacity: 0; transform: translateY(4px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        .sdv-card {
-            background: var(--sdv-bg-surface, #ffffff);
-            border: 1px solid var(--sdv-border, #e2e8f0);
-            border-radius: 12px;
-            margin-bottom: 20px;
-            overflow: hidden;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.03);
-        }
-        .sdv-card-header {
-            padding: 14px 20px;
-            background: var(--sdv-bg-nested, #f8fafc);
-            border-bottom: 1px solid var(--sdv-border, #e2e8f0);
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 12px;
-            flex-wrap: wrap;
-        }
-        .sdv-card-title {
-            margin: 0;
-            font-size: 15px;
-            font-weight: 700;
-            color: var(--sdv-text-primary, #0f172a);
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        .sdv-card-title i {
-            color: #6366f1;
-        }
-        .sdv-card-body {
-            padding: 20px;
-            background: var(--sdv-bg-surface, #ffffff);
-            color: var(--sdv-text-secondary, #334155);
-        }
-
-        /* Modern Visual Theme Selector Cards */
-        .sdv-theme-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-            gap: 16px;
-            margin-bottom: 20px;
-        }
-        .sdv-theme-card {
-            position: relative;
-            border: 2px solid var(--sdv-border, #e2e8f0);
-            border-radius: 10px;
-            padding: 16px;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-        }
-        .sdv-theme-card:hover {
-            transform: translateY(-2px);
-            border-color: #6366f1;
-            box-shadow: 0 4px 14px rgba(99,102,241,0.15);
-        }
-        .sdv-theme-card.active {
-            border-color: #6366f1;
-            box-shadow: 0 0 0 3px rgba(99,102,241,0.25);
-        }
-        .sdv-theme-card-preview {
-            height: 60px;
-            border-radius: 6px;
-            margin-bottom: 12px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 22px;
-            border: 1px solid rgba(0,0,0,0.1);
-        }
-        .sdv-theme-card.active .sdv-theme-card-radio {
-            color: #6366f1;
-        }
-
-        /* Custom Toggle Switches */
-        .sdv-switch-row {
-            display: flex;
-            align-items: flex-start;
-            justify-content: space-between;
-            padding: 12px 14px;
-            background: var(--sdv-bg-nested, #f8fafc);
-            border: 1px solid var(--sdv-border, #e2e8f0);
-            border-radius: 8px;
-            margin-bottom: 10px;
-            gap: 16px;
-        }
-        .sdv-switch-label {
-            font-weight: 600;
-            font-size: 13.5px;
-            color: var(--sdv-text-primary, #0f172a);
-            margin-bottom: 2px;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }
-        .sdv-switch-desc {
-            font-size: 12px;
-            color: var(--sdv-text-muted, #64748b);
-            line-height: 1.4;
-            margin: 0;
-        }
-
-        /* Sticky Save Bar */
-        .sdv-sticky-save-bar {
-            position: sticky;
-            bottom: 15px;
-            z-index: 1000;
-            background: var(--sdv-bg-surface, #ffffff);
-            border: 1px solid var(--sdv-border, #e2e8f0);
-            border-radius: 12px;
-            padding: 14px 24px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.15);
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin-top: 30px;
-            flex-wrap: wrap;
-            gap: 12px;
-        }
-        .sdv-btn-save {
-            background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%);
-            color: #ffffff !important;
-            border: none;
-            border-radius: 8px;
-            padding: 11px 28px;
-            font-size: 14px;
-            font-weight: 700;
-            cursor: pointer;
-            box-shadow: 0 2px 8px rgba(99,102,241,0.35);
-            transition: all 0.15s ease;
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-        }
-        .sdv-btn-save:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 4px 14px rgba(99,102,241,0.45);
-        }
-
-        @media (max-width: 991px) {
-            .sdv-settings-layout {
-                flex-direction: column;
-            }
-            .sdv-settings-sidebar {
-                width: 100%;
-                position: static;
-                display: flex;
-                flex-wrap: wrap;
-                gap: 6px;
-            }
-            .sdv-cat-btn {
-                width: auto;
-                flex: 1 1 45%;
-            }
-        }
-        </style>
-
         <div class="sahdev-page-container sdv-settings-dashboard">
 
             <?php if (!empty($successMessage)): ?>
@@ -2785,13 +1612,13 @@ class AdminController
             <div class="sdv-settings-header">
                 <div class="sdv-settings-header-left">
                     <div class="sdv-settings-badge"><i class="fas fa-cog"></i> Sahdev AI System Settings</div>
-                    <h2 class="sdv-settings-title">Module Settings &amp; Intelligence Controls</h2>
-                    <p class="sdv-settings-subtitle">Manage UI themes, multi-model AI routing, ticket automations, client 360 enrichment, security compliance, server telemetry, and live alerts.</p>
+                    <h2 class="sdv-settings-title">Settings</h2>
+                    <p class="sdv-settings-subtitle">A focused workspace for how Sahdev looks, responds, and supports your team.</p>
                 </div>
                 <div class="sdv-settings-header-right">
                     <div class="sdv-quick-stat-badge">
-                        <span class="sdv-stat-dot"></span>
-                        <span>Assigned AI Model: <strong><?php echo htmlspecialchars($ticketPrimaryName); ?></strong></span>
+                        <i class="fas fa-microchip" aria-hidden="true"></i>
+                        <span>Primary model: <strong><?php echo htmlspecialchars($ticketPrimaryName); ?></strong></span>
                     </div>
                 </div>
             </div>
@@ -2804,119 +1631,49 @@ class AdminController
 
                 <div class="sdv-settings-layout">
                     <!-- Left Sidebar Menu -->
-                    <div class="sdv-settings-sidebar">
-                        <div class="sdv-sidebar-heading">Navigation Categories</div>
-
-                        <button type="button" class="sdv-cat-btn <?php echo ($activeSubtab === 'tab-appearance') ? 'active' : ''; ?>" data-tab="tab-appearance" onclick="switchSettingsSection('tab-appearance', this);">
-                            <span class="sdv-cat-btn-left"><i class="fas fa-palette"></i> <span>Appearance &amp; Theme</span></span>
-                            <i class="fas fa-chevron-right" style="font-size: 10px; opacity: 0.5;"></i>
-                        </button>
-
-                        <button type="button" class="sdv-cat-btn <?php echo ($activeSubtab === 'tab-ai-engine') ? 'active' : ''; ?>" data-tab="tab-ai-engine" onclick="switchSettingsSection('tab-ai-engine', this);">
-                            <span class="sdv-cat-btn-left"><i class="fas fa-microchip"></i> <span>AI Engine &amp; Tuning</span></span>
-                            <i class="fas fa-chevron-right" style="font-size: 10px; opacity: 0.5;"></i>
-                        </button>
-
-                        <button type="button" class="sdv-cat-btn <?php echo ($activeSubtab === 'tab-ticket-ai') ? 'active' : ''; ?>" data-tab="tab-ticket-ai" onclick="switchSettingsSection('tab-ticket-ai', this);">
-                            <span class="sdv-cat-btn-left"><i class="fas fa-ticket-alt"></i> <span>Ticket AI &amp; Automations</span></span>
-                            <i class="fas fa-chevron-right" style="font-size: 10px; opacity: 0.5;"></i>
-                        </button>
-
-                        <button type="button" class="sdv-cat-btn <?php echo ($activeSubtab === 'tab-security') ? 'active' : ''; ?>" data-tab="tab-security" onclick="switchSettingsSection('tab-security', this);">
-                            <span class="sdv-cat-btn-left"><i class="fas fa-user-shield"></i> <span>Privacy &amp; Compliance</span></span>
-                            <i class="fas fa-chevron-right" style="font-size: 10px; opacity: 0.5;"></i>
-                        </button>
-
-                        <button type="button" class="sdv-cat-btn <?php echo ($activeSubtab === 'tab-enrichment') ? 'active' : ''; ?>" data-tab="tab-enrichment" onclick="switchSettingsSection('tab-enrichment', this);">
-                            <span class="sdv-cat-btn-left"><i class="fas fa-id-card"></i> <span>Account Context 360</span></span>
-                            <i class="fas fa-chevron-right" style="font-size: 10px; opacity: 0.5;"></i>
-                        </button>
-
-                        <button type="button" class="sdv-cat-btn <?php echo ($activeSubtab === 'tab-telemetry') ? 'active' : ''; ?>" data-tab="tab-telemetry" onclick="switchSettingsSection('tab-telemetry', this);">
-                            <span class="sdv-cat-btn-left"><i class="fas fa-server"></i> <span>Server Health &amp; Outages</span></span>
-                            <i class="fas fa-chevron-right" style="font-size: 10px; opacity: 0.5;"></i>
-                        </button>
-
-                        <button type="button" class="sdv-cat-btn <?php echo ($activeSubtab === 'tab-livechat-alerts') ? 'active' : ''; ?>" data-tab="tab-livechat-alerts" onclick="switchSettingsSection('tab-livechat-alerts', this);">
-                            <span class="sdv-cat-btn-left"><i class="fas fa-satellite-dish"></i> <span>Live Support &amp; Alerts</span></span>
-                            <i class="fas fa-chevron-right" style="font-size: 10px; opacity: 0.5;"></i>
-                        </button>
-
-                        <button type="button" class="sdv-cat-btn <?php echo ($activeSubtab === 'tab-firebase') ? 'active' : ''; ?>" data-tab="tab-firebase" onclick="switchSettingsSection('tab-firebase', this);">
-                            <span class="sdv-cat-btn-left"><i class="fas fa-mobile-alt"></i> <span>Mobile App &amp; Push</span></span>
-                            <i class="fas fa-chevron-right" style="font-size: 10px; opacity: 0.5;"></i>
-                        </button>
-                    </div>
+                    <nav class="sdv-settings-sidebar" aria-label="Settings categories">
+                        <label class="sr-only" for="sdv-settings-search">Search settings</label>
+                        <input id="sdv-settings-search" class="sdv-settings-search" type="search" placeholder="Search settings…" autocomplete="off" aria-controls="sdv-settings-main">
+                        <div class="sdv-settings-category-list">
+                        <?php foreach ($settingsSections as $group => $sections): ?>
+                            <div class="sdv-settings-category">
+                                <div class="sdv-sidebar-heading"><?php echo htmlspecialchars($group); ?></div>
+                                <?php foreach ($sections as $id => $section): ?>
+                                    <a href="#<?php echo $id; ?>" class="sdv-cat-btn <?php echo $activeSubtab === $id ? 'active' : ''; ?>" data-tab="<?php echo $id; ?>" aria-controls="<?php echo $id; ?>"<?php echo $activeSubtab === $id ? ' aria-current="true"' : ''; ?>>
+                                        <i class="fas <?php echo $section[1]; ?>" aria-hidden="true"></i><span><?php echo htmlspecialchars($section[0]); ?></span>
+                                    </a>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php endforeach; ?>
+                        </div>
+                    </nav>
 
                     <!-- Right Main Content Panes -->
-                    <div class="sdv-settings-main">
+                    <div class="sdv-settings-main" id="sdv-settings-main">
+                        <p class="sdv-search-empty" id="sdv-settings-empty" role="status" hidden>No settings match your search. Try “tokens”, “privacy”, or “alerts”.</p>
 
                         <!-- PANE 1: Appearance & Themes -->
                         <div id="tab-appearance" class="sdv-settings-pane <?php echo ($activeSubtab === 'tab-appearance') ? 'active' : ''; ?>">
                             <div class="sdv-card">
                                 <div class="sdv-card-header">
-                                    <h4 class="sdv-card-title"><i class="fas fa-palette"></i> Color Scheme &amp; Theme Mode</h4>
-                                    <span class="label label-info" style="font-size: 11px;">Instant Switcher</span>
+                                    <h4 class="sdv-card-title"><i class="fas fa-palette"></i> Appearance</h4>
+                                    <span class="text-muted" style="font-size:12px;">Workspace default</span>
                                 </div>
                                 <div class="sdv-card-body">
-                                    <p class="text-muted" style="margin-top: 0; font-size: 13px; margin-bottom: 16px;">
-                                        Select the color scheme for Sahdev UI elements. Choosing a theme instantly applies live preview across the entire interface.
-                                    </p>
-
-                                    <div class="sdv-theme-grid">
-                                        <!-- Charcoal Black (#222222 & #000000) -->
-                                        <div class="sdv-theme-card <?php echo ($currentThemeMode === 'black') ? 'active' : ''; ?>" onclick="sdvSetThemeRadio('black');">
-                                            <div class="sdv-theme-card-preview" style="background: #000000; border: 1px solid #333333; color: #ffffff;">
-                                                <div style="width: 70%; height: 28px; background: #222222; border-radius: 4px; border: 1px solid #383838; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: #f3f4f6;">
-                                                    #222222 &bull; #000000
-                                                </div>
-                                            </div>
-                                            <div>
-                                                <div style="font-weight: 700; font-size: 14px; margin-bottom: 4px; display: flex; align-items: center; justify-content: space-between;">
-                                                    <span>🖤 Charcoal Black</span>
-                                                    <input type="radio" name="ui_theme_mode" value="black" <?php echo ($currentThemeMode === 'black') ? 'checked' : ''; ?> style="margin: 0;">
-                                                </div>
-                                                <small class="text-muted" style="display: block; font-size: 11.5px; line-height: 1.4;">
-                                                    Combined pitch black (#000000) canvas with elevated #222222 charcoal panels and sleek #333333 borders.
-                                                </small>
-                                            </div>
-                                        </div>
-
-                                        <!-- Slate Dark (#0f172a & #1e293b) -->
-                                        <div class="sdv-theme-card <?php echo ($currentThemeMode === 'dark') ? 'active' : ''; ?>" onclick="sdvSetThemeRadio('dark');">
-                                            <div class="sdv-theme-card-preview" style="background: #0b0f19; border: 1px solid #334155; color: #38bdf8;">
-                                                <div style="width: 70%; height: 28px; background: #1e293b; border-radius: 4px; border: 1px solid #475569; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: #38bdf8;">
-                                                    Slate Navy
-                                                </div>
-                                            </div>
-                                            <div>
-                                                <div style="font-weight: 700; font-size: 14px; margin-bottom: 4px; display: flex; align-items: center; justify-content: space-between;">
-                                                    <span>🌙 Modern Slate Dark</span>
-                                                    <input type="radio" name="ui_theme_mode" value="dark" <?php echo ($currentThemeMode === 'dark') ? 'checked' : ''; ?> style="margin: 0;">
-                                                </div>
-                                                <small class="text-muted" style="display: block; font-size: 11.5px; line-height: 1.4;">
-                                                    Deep space blue-gray (#0f172a / #1e293b) with celestial cyan highlights and cool tones.
-                                                </small>
-                                            </div>
-                                        </div>
-
-                                        <!-- Studio White (#ffffff & #f8fafc) -->
-                                        <div class="sdv-theme-card <?php echo ($currentThemeMode === 'white') ? 'active' : ''; ?>" onclick="sdvSetThemeRadio('white');">
-                                            <div class="sdv-theme-card-preview" style="background: #f8fafc; border: 1px solid #e2e8f0; color: #0d6efd;">
-                                                <div style="width: 70%; height: 28px; background: #ffffff; border-radius: 4px; border: 1px solid #cbd5e1; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: #0d6efd;">
-                                                    Studio White
-                                                </div>
-                                            </div>
-                                            <div>
-                                                <div style="font-weight: 700; font-size: 14px; margin-bottom: 4px; display: flex; align-items: center; justify-content: space-between;">
-                                                    <span>☀️ Studio White</span>
-                                                    <input type="radio" name="ui_theme_mode" value="white" <?php echo ($currentThemeMode === 'white') ? 'checked' : ''; ?> style="margin: 0;">
-                                                </div>
-                                                <small class="text-muted" style="display: block; font-size: 11.5px; line-height: 1.4;">
-                                                    Crisp, bright daylight interface with clean white surfaces matching classic WHMCS admin.
-                                                </small>
-                                            </div>
-                                        </div>
+                                    <p class="text-muted">Choose a default for Sahdev admin pages and ticket panels. Preview it here, then save. Staff can override it in My Preferences.</p>
+                                    <div class="sdv-theme-grid" role="radiogroup" aria-label="Workspace color scheme">
+                                        <?php foreach ([
+                                            'black' => ['Charcoal Black', '#000000', '#222222', '#ffffff', 'Pure black canvas. Charcoal surfaces.'],
+                                            'dark' => ['Dark', '#15181d', '#242930', '#f3f5f7', 'Soft graphite with a cooler finish.'],
+                                            'white' => ['White', '#f4f4f5', '#ffffff', '#222222', 'Bright surfaces and crisp contrast.'],
+                                        ] as $mode => $swatch): ?>
+                                            <label class="sdv-theme-card">
+                                                <span class="sdv-theme-card-preview" style="background:<?php echo $swatch[1]; ?>;" aria-hidden="true">
+                                                    <span style="display:block;width:76%;height:52px;padding:10px;background:<?php echo $swatch[2]; ?>;color:<?php echo $swatch[3]; ?>;border-radius:5px;font-size:11px;">Sahdev<br>──────</span>
+                                                </span>
+                                                <span><input type="radio" name="ui_theme_mode" value="<?php echo $mode; ?>" <?php echo $currentThemeMode === $mode ? 'checked' : ''; ?>><strong><?php echo $swatch[0]; ?></strong><small><?php echo $swatch[4]; ?></small></span>
+                                            </label>
+                                        <?php endforeach; ?>
                                     </div>
 
                                     <hr style="margin: 20px 0; border-color: var(--sdv-border, #e2e8f0);">
@@ -2930,21 +1687,6 @@ class AdminController
                                                     <option value="classic" <?php echo ($currentUiTheme === 'classic') ? 'selected' : ''; ?>>📋 Classic (Stacked Expanded Panels)</option>
                                                 </select>
                                                 <small class="text-muted" style="display: block; margin-top: 4px;">Controls how the Sahdev AI widget renders in support ticket sidebars.</small>
-                                            </div>
-                                        </div>
-                                        <div class="col-md-6">
-                                            <div class="form-group" style="margin-bottom: 0;">
-                                                <label style="font-weight: 600;">Organization Default Tone</label>
-                                                <select name="tone_default" class="form-control" style="max-width: 320px;">
-                                                    <?php
-                                                    $tones = ['Professional', 'Technical', 'Friendly', 'Strict', 'Custom'];
-                                                    foreach ($tones as $tone) {
-                                                        $selected = ($settings->tone_default === $tone) ? 'selected' : '';
-                                                        echo "<option value=\"$tone\" $selected>$tone</option>";
-                                                    }
-                                                    ?>
-                                                </select>
-                                                <small class="text-muted" style="display: block; margin-top: 4px;">Default voice and tone applied when drafting responses.</small>
                                             </div>
                                         </div>
                                     </div>
@@ -3019,6 +1761,23 @@ class AdminController
                                     <h4 class="sdv-card-title"><i class="fas fa-ticket-alt"></i> Autonomous Ticket Features</h4>
                                 </div>
                                 <div class="sdv-card-body">
+                                    <div class="row" style="margin-bottom:20px;">                                        <div class="col-md-6">
+                                            <div class="form-group" style="margin-bottom: 0;">
+                                                <label style="font-weight: 600;">Organization Default Tone</label>
+                                                <select name="tone_default" class="form-control" style="max-width: 320px;">
+                                                    <?php
+                                                    $tones = ['Professional', 'Technical', 'Friendly', 'Strict', 'Custom'];
+                                                    foreach ($tones as $tone) {
+                                                        $selected = ($settings->tone_default === $tone) ? 'selected' : '';
+                                                        echo "<option value=\"$tone\" $selected>$tone</option>";
+                                                    }
+                                                    ?>
+                                                </select>
+                                                <small class="text-muted" style="display: block; margin-top: 4px;">Default voice and tone applied when drafting responses.</small>
+                                            </div>
+                                        </div>
+</div>
+
 
                                     <div class="sdv-switch-row">
                                         <div>
@@ -3472,67 +2231,18 @@ class AdminController
                     </div>
                 </div>
 
-                <!-- Sticky Bottom Save Action Bar -->
                 <div class="sdv-sticky-save-bar">
-                    <div style="display: flex; align-items: center; gap: 10px;">
-                        <i class="fas fa-shield-alt text-primary" style="font-size: 18px;"></i>
-                        <span style="font-size: 13px; color: var(--sdv-text-secondary, #334155); font-weight: 500;">
-                            Changes apply immediately upon saving. Use <kbd style="padding: 2px 6px; background: var(--sdv-bg-nested, #f1f5f9); border: 1px solid var(--sdv-border, #cbd5e1); border-radius: 4px; font-weight: 700;">Ctrl+S</kbd> to save anytime.
-                        </span>
-                    </div>
-                    <button type="submit" class="sdv-btn-save">
-                        <i class="fas fa-save"></i> Save All Settings
-                    </button>
+                    <div class="sdv-save-copy"><strong id="sdv-save-status" role="status" aria-live="polite">All changes saved</strong>Changes across all categories are saved together. <kbd>Ctrl / ⌘ + S</kbd></div>
+                    <div class="sdv-save-actions"><button type="reset" class="btn btn-default" id="sdv-settings-reset" hidden>Discard changes</button><button type="submit" class="sdv-btn-save">Save settings</button></div>
                 </div>
 
             </form>
         </div>
 
         <script>
-        function switchSettingsSection(tabId, btn) {
-            document.querySelectorAll('.sdv-settings-pane').forEach(function(pane) {
-                pane.classList.remove('active');
-            });
-            document.querySelectorAll('.sdv-cat-btn').forEach(function(b) {
-                b.classList.remove('active');
-            });
-            var target = document.getElementById(tabId);
-            if (target) target.classList.add('active');
-            if (btn) {
-                btn.classList.add('active');
-            } else {
-                var matchingBtn = document.querySelector('.sdv-cat-btn[data-tab="' + tabId + '"]');
-                if (matchingBtn) matchingBtn.classList.add('active');
-            }
-            var hiddenSubtab = document.getElementById('sdv_active_subtab');
-            if (hiddenSubtab) {
-                hiddenSubtab.value = tabId;
-            }
-            try {
-                if (window.history && window.history.replaceState) {
-                    window.history.replaceState(null, '', '#' + tabId);
-                } else {
-                    window.location.hash = tabId;
-                }
-            } catch(e) {}
-        }
-
-        function sdvSetThemeRadio(mode) {
-            var radio = document.querySelector('input[name="ui_theme_mode"][value="' + mode + '"]');
-            if (radio) {
-                radio.checked = true;
-                document.querySelectorAll('.sdv-theme-card').forEach(function(c) { c.classList.remove('active'); });
-                var card = radio.closest('.sdv-theme-card');
-                if (card) card.classList.add('active');
-            }
-            if (typeof sahdevGlobalSetTheme === 'function') {
-                sahdevGlobalSetTheme(mode, false);
-            }
-        }
-
         function sdvSetTempPreset(val) {
             var el = document.getElementById('sdv_input_temp');
-            if (el) el.value = val;
+            if (el) { el.value = val; el.dispatchEvent(new Event('input', { bubbles: true })); }
         }
 
         function sdvPreviewAlertSound() {
@@ -3584,24 +2294,6 @@ class AdminController
                 console.warn('Audio preview error:', e);
             }
         }
-
-        document.addEventListener('DOMContentLoaded', function() {
-            var hash = (window.location.hash || '').replace('#', '');
-            if (hash && document.getElementById(hash)) {
-                switchSettingsSection(hash);
-            }
-        });
-
-        // Ctrl+S / Cmd+S save hotkey
-        document.addEventListener('keydown', function(e) {
-            if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S' || e.code === 'KeyS')) {
-                var form = document.getElementById('sdvSettingsForm');
-                if (form) {
-                    e.preventDefault();
-                    form.submit();
-                }
-            }
-        });
 
         function sendTestFirebasePush() {
             var btn = document.getElementById('btn-sdv-test-push');
@@ -3662,6 +2354,7 @@ class AdminController
             });
         }
         </script>
+        <script><?php echo file_get_contents(dirname(__DIR__) . '/ui/settings.js'); ?></script>
         <?php
         return ob_get_clean();
     }
@@ -3803,16 +2496,16 @@ class AdminController
         ?>
         <style>
             .provider-card {
-                border: 1px solid #e2e8f0;
+                border: 1px solid var(--sdv-border, #e2e8f0);
                 border-radius: 8px;
                 padding: 18px;
                 margin-bottom: 18px;
-                background: #fff;
+                background: var(--sdv-bg-surface, #fff);
                 box-shadow: 0 1px 3px rgba(0,0,0,0.04);
             }
             .provider-header {
                 margin-bottom: 15px;
-                border-bottom: 1px solid #edf2f7;
+                border-bottom: 1px solid var(--sdv-border, #edf2f7);
                 padding-bottom: 10px;
                 display: flex;
                 justify-content: space-between;
@@ -3838,7 +2531,7 @@ class AdminController
             <?php endif; ?>
 
             <!-- Active Provider Role Assignments Card -->
-            <div class="provider-card" style="border-left: 4px solid #0d6efd; background: #f8fafc; margin-bottom: 25px;">
+            <div class="provider-card" style="border-left: 4px solid #0d6efd; background: var(--sdv-bg-nested, #f8fafc); margin-bottom: 25px;">
                 <div class="provider-header">
                     <div>
                         <h4 style="margin:0; color: #0d6efd; font-weight: 700;"><i class="fas fa-sliders-h"></i> Active AI Provider Roles & Assignments</h4>
@@ -3906,7 +2599,7 @@ class AdminController
                     <!-- Model Routing (Per Task) Table -->
                     <div class="panel panel-default" style="margin-bottom: 20px; border-left: 4px solid #6f42c1;">
                         <div class="panel-heading" style="background: #faf8ff;">
-                            <h4 style="margin: 0; font-size: 14px; color:#5a32a3; font-weight: 700;">
+                            <h4 style="margin: 0; font-size: 14px; color: #5a32a3; font-weight: 700;">
                                 <i class="fas fa-route"></i> Granular Model Routing (Per Feature / Task)
                             </h4>
                         </div>
@@ -4364,15 +3057,15 @@ class AdminController
         ?>
         <style>
             .intent-card {
-                border: 1px solid #ddd;
+                border: 1px solid var(--sdv-border, #ddd);
                 border-radius: 6px;
                 padding: 15px;
                 margin-bottom: 15px;
-                background: #fafafa;
+                background: var(--sdv-bg-nested, #fafafa);
             }
             .intent-header {
                 margin-bottom: 15px;
-                border-bottom: 1px solid #eee;
+                border-bottom: 1px solid var(--sdv-border, #eee);
                 padding-bottom: 10px;
             }
         </style>
@@ -4564,11 +3257,11 @@ class AdminController
         <style>
 
             .kb-file-card {
-                border: 1px solid #ddd;
+                border: 1px solid var(--sdv-border, #ddd);
                 border-radius: 6px;
                 padding: 15px;
                 margin-bottom: 15px;
-                background: #fafafa;
+                background: var(--sdv-bg-nested, #fafafa);
             }
 
             .kb-file-header {
@@ -4889,16 +3582,16 @@ class AdminController
         ?>
         <style>
             .pm-card {
-                background: #fff;
-                border: 1px solid #e2e8f0;
+                background: var(--sdv-bg-surface, #fff);
+                border: 1px solid var(--sdv-border, #e2e8f0);
                 border-radius: 8px;
                 margin-bottom: 18px;
                 overflow: hidden;
                 box-shadow: 0 1px 4px rgba(0,0,0,0.05);
             }
             .pm-card-header {
-                background: #f8fafc;
-                border-bottom: 1px solid #e2e8f0;
+                background: var(--sdv-bg-nested, #f8fafc);
+                border-bottom: 1px solid var(--sdv-border, #e2e8f0);
                 padding: 14px 18px;
                 display: flex;
                 justify-content: space-between;
@@ -4907,12 +3600,12 @@ class AdminController
                 user-select: none;
             }
             .pm-card-header:hover { background: #f0f4f8; }
-            .pm-card-header h5 { margin:0; font-size:14px; font-weight:600; color:#2d3748; }
-            .pm-card-header .pm-desc { font-size:12px; color:#718096; margin-top:3px; }
+            .pm-card-header h5 { margin:0; font-size:14px; font-weight:600; color: var(--sdv-text-primary, #2d3748); }
+            .pm-card-header .pm-desc { font-size:12px; color: var(--sdv-text-muted, #718096); margin-top:3px; }
             .pm-card-header .pm-badge {
                 font-size:11px;
-                background:#e2e8f0;
-                color:#4a5568;
+                background: var(--sdv-bg-nested, #e2e8f0);
+                color: var(--sdv-text-secondary, #4a5568);
                 padding:3px 8px;
                 border-radius:20px;
                 white-space:nowrap;
@@ -4922,8 +3615,8 @@ class AdminController
             .pm-textarea {
                 font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
                 font-size: 12.5px;
-                background: #1a202c;
-                color: #e2e8f0;
+                background: var(--sdv-bg-surface, #1a202c);
+                color: var(--sdv-text-secondary, #e2e8f0);
                 border: 1px solid #4a5568;
                 border-radius: 6px;
                 width: 100%;
@@ -4935,7 +3628,7 @@ class AdminController
             }
             .pm-tag {
                 display: inline-block;
-                background: #2d3748;
+                background: var(--sdv-bg-surface, #2d3748);
                 color: #90cdf4;
                 padding: 2px 7px;
                 border-radius: 4px;
@@ -4944,14 +3637,14 @@ class AdminController
                 margin: 1px;
             }
             .pm-panel {
-                background: #fff;
-                border: 1px solid #e2e8f0;
+                background: var(--sdv-bg-surface, #fff);
+                border: 1px solid var(--sdv-border, #e2e8f0);
                 border-radius: 8px;
                 padding: 18px;
                 margin-bottom: 20px;
                 box-shadow: 0 1px 4px rgba(0,0,0,0.05);
             }
-            .pm-panel h5 { margin: 0 0 14px; font-size: 14px; font-weight: 600; color: #2d3748; }
+            .pm-panel h5 { margin: 0 0 14px; font-size: 14px; font-weight: 600; color: var(--sdv-text-primary, #2d3748); }
         </style>
 
         <?php echo $this->getNavigationMarkup('prompt_manager'); ?>
@@ -4976,7 +3669,7 @@ class AdminController
 
                 <!-- Presets Panel -->
                 <div class="pm-panel" style="flex:1; min-width:280px;">
-                    <h5><i class="fas fa-layer-group" style="color:#667eea;"></i> Presets</h5>
+                    <h5><i class="fas fa-layer-group" style="color: #667eea;"></i> Presets</h5>
                     <?php if ($presets->isEmpty()): ?>
                         <p class="text-muted" style="font-size:13px; margin-bottom:12px;">No presets saved yet. Save the current configuration as a preset below.</p>
                     <?php else: ?>
@@ -5017,7 +3710,7 @@ class AdminController
 
                 <!-- Import/Export Panel -->
                 <div class="pm-panel" style="flex:1; min-width:280px;">
-                    <h5><i class="fas fa-exchange-alt" style="color:#48bb78;"></i> Import / Export</h5>
+                    <h5><i class="fas fa-exchange-alt" style="color: #48bb78;"></i> Import / Export</h5>
                     <form method="post" action="<?php echo $actionUrl; ?>" style="margin-bottom:12px;">
                         <?php echo $csrfToken; ?>
                         <input type="hidden" name="prompt_mgr_action" value="export_prompts">
@@ -5044,7 +3737,7 @@ class AdminController
                 </div>
             </div>
 
-            <h4 style="margin-bottom:15px; font-size:15px; border-bottom:1px solid #e2e8f0; padding-bottom:10px;">
+            <h4 style="margin-bottom:15px; font-size:15px; border-bottom: 1px solid var(--sdv-border, #e2e8f0); padding-bottom:10px;">
                 <i class="fas fa-magic"></i> Prompt Templates
             </h4>
             <p class="text-muted" style="font-size:12px; margin:-8px 0 16px;">
@@ -5108,23 +3801,23 @@ class AdminController
             <div class="pm-card">
                 <div class="pm-card-header" onclick="this.nextElementSibling.classList.toggle('open')">
                     <div>
-                        <h5><i class="<?php echo $icon; ?>" style="margin-right:7px; color:#667eea;"></i><?php echo htmlspecialchars($tpl->label); ?></h5>
+                        <h5><i class="<?php echo $icon; ?>" style="margin-right:7px; color: #667eea;"></i><?php echo htmlspecialchars($tpl->label); ?></h5>
                         <div class="pm-desc"><?php echo htmlspecialchars($tpl->description ?? ''); ?></div>
                     </div>
                     <div style="display:flex; gap:6px; align-items:center;">
                         <?php if ($isModified): ?>
-                            <span class="pm-badge" style="background:#fef3c7; color:#92400e;"><i class="fas fa-pencil-alt"></i> Modified</span>
+                            <span class="pm-badge" style="background: #fef3c7; color: #92400e;"><i class="fas fa-pencil-alt"></i> Modified</span>
                         <?php else: ?>
-                            <span class="pm-badge" style="background:#d1fae5; color:#065f46;"><i class="fas fa-check"></i> Default</span>
+                            <span class="pm-badge" style="background: #d1fae5; color: #065f46;"><i class="fas fa-check"></i> Default</span>
                         <?php endif; ?>
                         <span class="pm-badge"><code style="font-size:10px;"><?php echo htmlspecialchars($key); ?></code></span>
-                        <i class="fas fa-chevron-down" style="color:#a0aec0; font-size:12px;"></i>
+                        <i class="fas fa-chevron-down" style="color: var(--sdv-text-muted, #a0aec0); font-size:12px;"></i>
                     </div>
                 </div>
                 <div class="pm-card-body">
                     <?php if (!empty($hints)): ?>
-                        <div style="margin-bottom:10px; background:#2d3748; padding:8px 12px; border-radius:6px;">
-                            <small style="color:#a0aec0; font-size:11px;"><strong>Placeholders:</strong> </small>
+                        <div style="margin-bottom:10px; background: var(--sdv-bg-surface, #2d3748); padding:8px 12px; border-radius:6px;">
+                            <small style="color: var(--sdv-text-muted, #a0aec0); font-size:11px;"><strong>Placeholders:</strong> </small>
                             <?php foreach ($hints as $ph): ?>
                                 <span class="pm-tag"><?php echo htmlspecialchars($ph); ?></span>
                             <?php endforeach; ?>
@@ -5218,7 +3911,7 @@ class AdminController
             <?php endif; ?>
             
             <table class="table table-striped table-bordered text-center" style="font-size:13px;">
-                <thead style="background:#f8f9fa;">
+                <thead style="background: var(--sdv-bg-nested, #f8f9fa);">
                     <tr>
                         <th width="80" class="text-center">ID</th>
                         <th width="120" class="text-center">Ticket</th>
@@ -5241,7 +3934,7 @@ class AdminController
                                     </a>
                                 </td>
                                 <td class="text-left">
-                                    <div style="max-height:80px; overflow-y:auto; font-size:12px; white-space:pre-wrap; color:#333;"><?php echo htmlspecialchars($s->summary); ?></div>
+                                    <div style="max-height:80px; overflow-y:auto; font-size:12px; white-space:pre-wrap; color: var(--sdv-text-primary, #333);"><?php echo htmlspecialchars($s->summary); ?></div>
                                 </td>
                                 <td><?php echo htmlspecialchars($s->admin_username ?? 'System'); ?></td>
                                 <td><span class="text-muted" style="font-size:11px;"><?php echo $s->updated_at; ?></span></td>
@@ -5322,11 +4015,11 @@ class AdminController
                     <h2 style="margin-bottom:5px; margin-top:0;">🕵️ AI Audit Trail</h2>
                     <p class="text-muted" style="margin-bottom:0px;">Complete record of what is sent to and received from the AI models. Showing last 500 entries.</p>
                 </div>
-                <div style="background:#f8d7da; padding:10px 15px; border-radius:6px; border:1px solid #f5c6cb;">
+                <div style="background: #f8d7da; padding:10px 15px; border-radius:6px; border: 1px solid #f5c6cb;">
                     <form method="post" action="<?php echo $actionUrl; ?>" class="form-inline" style="margin:0;" onsubmit="return confirm('WARNING: This will permanently delete old audit logs. Proceed?');">
                         <?php echo $csrfToken; ?>
                         <input type="hidden" name="audit_action" value="delete_range">
-                        <label style="color:#721c24; margin-right:10px; font-weight:600;"><i class="fas fa-trash-alt"></i> Auto-Prune Logs:</label>
+                        <label style="color: #721c24; margin-right:10px; font-weight:600;"><i class="fas fa-trash-alt"></i> Auto-Prune Logs:</label>
                         <select name="delete_days" class="form-control input-sm" style="margin-right:10px;">
                             <option value="7">Older than 7 days</option>
                             <option value="15">Older than 15 days</option>
@@ -5343,7 +4036,7 @@ class AdminController
             <?php endif; ?>
             
             <table class="table table-bordered table-striped" style="font-size:12px; table-layout: fixed;">
-                <thead style="background:#f8f9fa;">
+                <thead style="background: var(--sdv-bg-nested, #f8f9fa);">
                     <tr>
                         <th width="80" class="text-center">ID / Date</th>
                         <th width="120" class="text-center">Context</th>
@@ -5376,12 +4069,12 @@ class AdminController
                                     <pre class="audit-code-block"><?php echo htmlspecialchars($log->prompt_text ?? ''); ?></pre>
                                 </td>
                                 <td>
-                                    <pre class="audit-code-block" style="background:#1e3a2e;"><?php echo htmlspecialchars($log->response_text ?? ''); ?></pre>
+                                    <pre class="audit-code-block" style="background: #1e3a2e;"><?php echo htmlspecialchars($log->response_text ?? ''); ?></pre>
                                 </td>
                                 <td class="text-center">
                                     <span class="label label-primary" style="display:block; margin-bottom:4px;"><?php echo strtoupper($log->action_type); ?></span>
                                     <span class="label label-info" style="display:block; margin-bottom:4px;"><?php echo htmlspecialchars($log->provider_used ?? 'Unknown'); ?></span>
-                                    <div style="font-size:10px; margin-top:6px; color:#555;">
+                                    <div style="font-size:10px; margin-top:6px; color: var(--sdv-text-muted, #555);">
                                         Tokens: <?php echo number_format($log->tokens_used); ?><br>
                                         Time: <?php echo number_format($log->execution_time_ms); ?>ms
                                     </div>
@@ -5458,7 +4151,7 @@ class AdminController
                         Warnings, errors, and live chat AI payloads (when Debug mode is enabled in Settings).
                     </p>
                 </div>
-                <div style="background:#fff3cd; padding:10px 15px; border-radius:6px; border:1px solid #ffc107;">
+                <div style="background: #fff3cd; padding:10px 15px; border-radius:6px; border: 1px solid #ffc107;">
                     <form method="post" action="<?php echo $actionUrl; ?>" class="form-inline" style="margin:0;" onsubmit="return confirm('Permanently delete old module log rows?');">
                         <?php echo $csrfToken; ?>
                         <input type="hidden" name="module_log_action" value="delete_range">
@@ -5480,7 +4173,7 @@ class AdminController
             <?php if (!Capsule::schema()->hasTable('tblsahdev_module_logs')): ?>
                 <div class="alert alert-info">Table <code>tblsahdev_module_logs</code> is not present yet. Save module settings or re-run module activation to create it.</div>
             <?php else: ?>
-            <table class="table table-striped table-bordered" style="background:#fff;">
+            <table class="table table-striped table-bordered" style="background: var(--sdv-bg-surface, #fff);">
                 <thead>
                     <tr>
                         <th width="70">ID</th>
@@ -5504,7 +4197,7 @@ class AdminController
                             ?>
                             <tr>
                                 <td><?php echo (int) $log->id; ?></td>
-                                <td><span class="label <?php echo $levelClass; ?>" <?php echo $isPayload ? 'style="background:#6366f1;color:#fff;"' : ''; ?>><?php echo htmlspecialchars($levelLabel); ?></span></td>
+                                <td><span class="label <?php echo $levelClass; ?>" <?php echo $isPayload ? 'style="background: #6366f1;color: #fff;"' : ''; ?>><?php echo htmlspecialchars($levelLabel); ?></span></td>
                                 <td style="word-break:break-all;"><?php echo htmlspecialchars($log->source ?? ''); ?></td>
                                 <td>
                                     <?php if (!empty($log->ticket_id)): ?>
@@ -5516,10 +4209,10 @@ class AdminController
                                 <td style="word-break:break-word; white-space:pre-wrap; font-family:monospace; font-size:11px;">
                                     <?php if ($isPayload): ?>
                                         <div style="margin-bottom:6px; display:flex; justify-content:space-between; align-items:center;">
-                                            <span style="font-weight:600; color:#4f46e5; font-size:11.5px;"><i class="fas fa-microchip"></i> Full LLM Dispatched Payload</span>
+                                            <span style="font-weight:600; color: #4f46e5; font-size:11.5px;"><i class="fas fa-microchip"></i> Full LLM Dispatched Payload</span>
                                             <button type="button" class="btn btn-xs btn-default" onclick="navigator.clipboard.writeText(this.parentNode.nextElementSibling.textContent).then(function(){alert('Payload JSON copied to clipboard!');});"><i class="fas fa-copy"></i> Copy JSON</button>
                                         </div>
-                                        <div style="max-height:300px; overflow-y:auto; background:#f8fafc; border:1px solid #e2e8f0; border-radius:4px; padding:8px;"><?php echo htmlspecialchars($log->message ?? ''); ?></div>
+                                        <div style="max-height:300px; overflow-y:auto; background: var(--sdv-bg-nested, #f8fafc); border: 1px solid var(--sdv-border, #e2e8f0); border-radius:4px; padding:8px;"><?php echo htmlspecialchars($log->message ?? ''); ?></div>
                                     <?php else: ?>
                                         <?php echo htmlspecialchars($log->message ?? ''); ?>
                                     <?php endif; ?>
@@ -5606,8 +4299,8 @@ class AdminController
         ob_start();
         ?>
         <style>
-            .canned-card { border: 1px solid #ddd; border-radius: 6px; padding: 15px; margin-bottom: 15px; background: #fafafa; }
-            .canned-header { margin-bottom: 15px; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+            .canned-card { border: 1px solid var(--sdv-border, #ddd); border-radius: 6px; padding: 15px; margin-bottom: 15px; background: var(--sdv-bg-nested, #fafafa); }
+            .canned-header { margin-bottom: 15px; border-bottom: 1px solid var(--sdv-border, #eee); padding-bottom: 10px; }
         </style>
         <?php echo $this->getNavigationMarkup('canned_responses'); ?>
         <div class="sahdev-page-container">
@@ -5906,50 +4599,50 @@ class AdminController
         <?php echo $this->getNavigationMarkup('analytics'); ?>
         <div class="sahdev-page-container">
         <style>
-        .sad-card{background:#fff;border-radius:12px;box-shadow:0 2px 14px rgba(0,0,0,.07);padding:24px 28px;margin-bottom:22px;border:1px solid #f0f2f7}
-        .sad-section{font-size:1rem;font-weight:700;color:#1a2035;margin-bottom:16px;display:flex;align-items:center;gap:10px}
+        .sad-card{background: var(--sdv-bg-surface, #fff);border-radius:12px;box-shadow:0 2px 14px rgba(0,0,0,.07);padding:24px 28px;margin-bottom:22px;border: 1px solid #f0f2f7}
+        .sad-section{font-size:1rem;font-weight:700;color: #1a2035;margin-bottom:16px;display:flex;align-items:center;gap:10px}
         .sad-kpi-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(185px,1fr));gap:16px;margin-bottom:24px}
-        .sad-kpi{border-radius:12px;padding:20px 18px;position:relative;overflow:hidden;border:1px solid transparent}
+        .sad-kpi{border-radius:12px;padding:20px 18px;position:relative;overflow:hidden;border: 1px solid transparent}
         .sad-kpi .kpi-val{font-size:2rem;font-weight:800;line-height:1;margin:6px 0 2px}
         .sad-kpi .kpi-lbl{font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.06em;opacity:.75}
         .sad-kpi .kpi-sub{font-size:.7rem;opacity:.55;margin-top:2px}
         .sad-kpi .kpi-icon{position:absolute;right:14px;top:14px;font-size:1.6rem;opacity:.13}
         /* Color themes */
-        .kpi-blue{background:linear-gradient(135deg,#e8f0fe,#fff);border-color:#c5d8ff}.kpi-blue .kpi-val{color:#1a56db}
-        .kpi-purple{background:linear-gradient(135deg,#f5f0ff,#fff);border-color:#d4c5ff}.kpi-purple .kpi-val{color:#7c3aed}
-        .kpi-green{background:linear-gradient(135deg,#e9fdf4,#fff);border-color:#b6f0cf}.kpi-green .kpi-val{color:#059669}
-        .kpi-teal{background:linear-gradient(135deg,#e0fafb,#fff);border-color:#9aeaef}.kpi-teal .kpi-val{color:#0891b2}
-        .kpi-amber{background:linear-gradient(135deg,#fffbeb,#fff);border-color:#fde68a}.kpi-amber .kpi-val{color:#d97706}
-        .kpi-red{background:linear-gradient(135deg,#fef2f2,#fff);border-color:#fecaca}.kpi-red .kpi-val{color:#dc2626}
-        .kpi-indigo{background:linear-gradient(135deg,#eef2ff,#fff);border-color:#c7d2fe}.kpi-indigo .kpi-val{color:#4f46e5}
-        .kpi-slate{background:linear-gradient(135deg,#f8fafc,#fff);border-color:#e2e8f0}.kpi-slate .kpi-val{color:#475569}
+        .kpi-blue{background: linear-gradient(135deg,#e8f0fe,var(--sdv-bg-surface, #fff));border-color: #c5d8ff}.kpi-blue .kpi-val{color: #1a56db}
+        .kpi-purple{background: linear-gradient(135deg,#f5f0ff,var(--sdv-bg-surface, #fff));border-color: #d4c5ff}.kpi-purple .kpi-val{color: #7c3aed}
+        .kpi-green{background: linear-gradient(135deg,#e9fdf4,var(--sdv-bg-surface, #fff));border-color: #b6f0cf}.kpi-green .kpi-val{color: #059669}
+        .kpi-teal{background: linear-gradient(135deg,#e0fafb,var(--sdv-bg-surface, #fff));border-color: #9aeaef}.kpi-teal .kpi-val{color: #0891b2}
+        .kpi-amber{background: linear-gradient(135deg,#fffbeb,var(--sdv-bg-surface, #fff));border-color: #fde68a}.kpi-amber .kpi-val{color: #d97706}
+        .kpi-red{background: linear-gradient(135deg,#fef2f2,var(--sdv-bg-surface, #fff));border-color: #fecaca}.kpi-red .kpi-val{color: #dc2626}
+        .kpi-indigo{background: linear-gradient(135deg,#eef2ff,var(--sdv-bg-surface, #fff));border-color: #c7d2fe}.kpi-indigo .kpi-val{color: #4f46e5}
+        .kpi-slate{background: linear-gradient(135deg,var(--sdv-bg-nested, #f8fafc),var(--sdv-bg-surface, #fff));border-color: var(--sdv-border, #e2e8f0)}.kpi-slate .kpi-val{color: var(--sdv-text-muted, #475569)}
         /* bar chart */
         .sad-bar-chart{display:flex;align-items:flex-end;gap:3px;height:100px;margin-top:10px;padding:0 4px}
         .sad-bar-wrap{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;min-width:0}
-        .sad-bar{width:100%;background:linear-gradient(180deg,#3b82f6,#93c5fd);border-radius:3px 3px 0 0;min-height:2px;transition:height .3s}
-        .sad-bar-lbl{font-size:.55rem;color:#94a3b8;white-space:nowrap}
+        .sad-bar{width:100%;background: linear-gradient(180deg,#3b82f6,#93c5fd);border-radius:3px 3px 0 0;min-height:2px;transition:height .3s}
+        .sad-bar-lbl{font-size:.55rem;color: var(--sdv-text-muted, #94a3b8);white-space:nowrap}
         /* pills */
         .sad-pill{display:inline-block;padding:5px 12px;border-radius:999px;font-size:.8rem;font-weight:600}
         /* progress bar */
         .sad-prog-row{margin-bottom:12px}
         .sad-prog-header{display:flex;justify-content:space-between;font-size:.82rem;font-weight:600;margin-bottom:4px}
-        .sad-prog-track{background:#e2e8f0;height:10px;border-radius:5px;overflow:hidden}
+        .sad-prog-track{background: var(--sdv-bg-nested, #e2e8f0);height:10px;border-radius:5px;overflow:hidden}
         .sad-prog-fill{height:100%;border-radius:5px}
         /* tag grid */
         .sad-tag-grid{display:flex;gap:10px;flex-wrap:wrap}
         /* table */
-        .sad-table th{font-size:.75rem;color:#64748b;border:none;background:#f8fafc;font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+        .sad-table th{font-size:.75rem;color: var(--sdv-text-muted, #64748b);border: none;background: var(--sdv-bg-nested, #f8fafc);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
         .sad-table td{font-size:.85rem;vertical-align:middle}
         /* tabs */
         .sad-tabs{display:flex;gap:6px;margin-bottom:20px;flex-wrap:wrap}
-        .sad-tab{padding:6px 16px;border-radius:99px;font-size:.82rem;font-weight:600;cursor:pointer;border:1.5px solid #e2e8f0;background:#f8fafc;color:#475569;transition:all .15s}
-        .sad-tab.active{background:#3b82f6;color:#fff;border-color:#3b82f6}
+        .sad-tab{padding:6px 16px;border-radius:99px;font-size:.82rem;font-weight:600;cursor:pointer;border: 1.5px solid var(--sdv-border, #e2e8f0);background: var(--sdv-bg-nested, #f8fafc);color: var(--sdv-text-muted, #475569);transition:all .15s}
+        .sad-tab.active{background: #3b82f6;color: #fff;border-color: #3b82f6}
         /* settings form */
         .sad-settings-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
         .sad-badge{display:inline-block;padding:2px 8px;border-radius:99px;font-size:.68rem;font-weight:700;letter-spacing:.04em}
-        .badge-live{background:#dcfce7;color:#16a34a}
-        .badge-draft{background:#fef9c3;color:#ca8a04}
-        .badge-skip{background:#f1f5f9;color:#64748b}
+        .badge-live{background: #dcfce7;color: #16a34a}
+        .badge-draft{background: #fef9c3;color: #ca8a04}
+        .badge-skip{background: var(--sdv-bg-nested, #f1f5f9);color: var(--sdv-text-muted, #64748b)}
         @media(max-width:700px){.sad-kpi-grid{grid-template-columns:1fr 1fr}}
         </style>
 
@@ -5962,17 +4655,17 @@ class AdminController
         $ajaxUrl = htmlspecialchars($this->moduleVars['modulelink']) . '&sahdev_act=ajax_handler&action=get_analytics_period';
         ?>
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:20px">
-            <span style="font-size:.8rem;color:#64748b;font-weight:600;margin-right:4px">Period:</span>
+            <span style="font-size:.8rem;color: var(--sdv-text-muted, #64748b);font-weight:600;margin-right:4px">Period:</span>
             <?php
             $validPeriods = ['day' => '1 Day', 'week' => '1 Week', 'month' => '1 Month', 'year' => '1 Year', 'lifetime' => 'Lifetime'];
             foreach ($validPeriods as $pk => $pl):
             ?>
             <button class="sad-period-btn" data-period="<?= $pk ?>"
-               style="padding:5px 16px;border-radius:99px;font-size:.8rem;font-weight:600;cursor:pointer;border:1.5px solid #e2e8f0;background:#f8fafc;color:#475569;transition:all .15s" id="sadbtn-<?= $pk ?>">
+               style="padding:5px 16px;border-radius:99px;font-size:.8rem;font-weight:600;cursor:pointer;border: 1.5px solid var(--sdv-border, #e2e8f0);background: var(--sdv-bg-nested, #f8fafc);color: var(--sdv-text-muted, #475569);transition:all .15s" id="sadbtn-<?= $pk ?>">
                 <?= $pl ?>
             </button>
             <?php endforeach; ?>
-            <span id="sad-period-loading" style="display:none;font-size:.8rem;color:#3b82f6"><i class="fas fa-circle-notch fa-spin"></i></span>
+            <span id="sad-period-loading" style="display:none;font-size:.8rem;color: #3b82f6"><i class="fas fa-circle-notch fa-spin"></i></span>
         </div>
 
         <!-- ── KPI Stat Grid ── -->
@@ -6090,7 +4783,7 @@ class AdminController
 
         <!-- ── 30-Day Token Trend (SVG area chart) ── -->
         <div class="sad-card">
-            <div class="sad-section"><i class="fas fa-chart-area" style="color:#3b82f6"></i> 30-Day Token Usage Trend</div>
+            <div class="sad-section"><i class="fas fa-chart-area" style="color: #3b82f6"></i> 30-Day Token Usage Trend</div>
             <?php
             $svgW = 900; $svgH = 130; $padL = 8; $padR = 8; $padT = 10; $padB = 26;
             $iW   = $svgW - $padL - $padR;
@@ -6138,12 +4831,12 @@ class AdminController
                 <?php endforeach; ?>
             </svg>
             </div>
-            <div style="font-size:.72rem;color:#94a3b8;margin-top:4px;text-align:right">Last 30 days &middot; Hover dots for daily totals</div>
+            <div style="font-size:.72rem;color: var(--sdv-text-muted, #94a3b8);margin-top:4px;text-align:right">Last 30 days &middot; Hover dots for daily totals</div>
         </div>
 
         <!-- ── AI Action Breakdown ── -->
         <div class="sad-card">
-            <div class="sad-section"><i class="fas fa-layer-group" style="color:#7c3aed"></i> AI Action Breakdown</div>
+            <div class="sad-section"><i class="fas fa-layer-group" style="color: #7c3aed"></i> AI Action Breakdown</div>
             <div class="sad-tag-grid">
                 <?php if (empty($actionsByType)): ?>
                     <span class="text-muted" style="font-size:.88rem">No actions recorded yet.<br>Generate an AI response to see data here.</span>
@@ -6154,7 +4847,7 @@ class AdminController
                     foreach ($actionsByType as $type => $count):
                         $col = $palette[$i++ % count($palette)];
                     ?>
-                    <span class="sad-pill" style="background:<?= $col ?>18;color:<?= $col ?>;border:1px solid <?= $col ?>44">
+                    <span class="sad-pill" style="background:<?= $col ?>18;color:<?= $col ?>;border: 1px solid <?= $col ?>44">
                         <?= ucwords(str_replace('_', ' ', $type)) ?>: <strong><?= number_format($count) ?></strong>
                     </span>
                     <?php endforeach; ?>
@@ -6165,7 +4858,7 @@ class AdminController
         <!-- ── Quality Metrics + Tool Evidence Side-by-Side ── -->
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;" class="sad-two-col">
             <div class="sad-card" style="margin-bottom:0">
-                <div class="sad-section"><i class="fas fa-star-half-alt" style="color:#d97706"></i> Quality Scores</div>
+                <div class="sad-section"><i class="fas fa-star-half-alt" style="color: #d97706"></i> Quality Scores</div>
                 <?php
                 $metricsToGraph = ['overall','clarity','tone','completeness','ai_avg','manual_avg'];
                 $labels = ['overall'=>'Overall','clarity'=>'Clarity','tone'=>'Tone','completeness'=>'Completeness','ai_avg'=>'AI Replies Avg','manual_avg'=>'Human Replies Avg'];
@@ -6193,7 +4886,7 @@ class AdminController
             </div>
 
             <div class="sad-card" style="margin-bottom:0">
-                <div class="sad-section"><i class="fas fa-tools" style="color:#0891b2"></i> Tools Evidence Quality</div>
+                <div class="sad-section"><i class="fas fa-tools" style="color: #0891b2"></i> Tools Evidence Quality</div>
                 <div class="sad-tag-grid">
                     <?php
                     $toolPills = [
@@ -6203,14 +4896,14 @@ class AdminController
                         ['Extraction Errors', $toolsNorm['normalization_errors'] ?? 0, '#fef2f2', '#dc2626'],
                     ];
                     foreach ($toolPills as [$label, $val, $bg, $col]): ?>
-                    <span class="sad-pill" style="background:<?= $bg ?>;color:<?= $col ?>;border:1px solid <?= $col ?>30">
+                    <span class="sad-pill" style="background:<?= $bg ?>;color:<?= $col ?>;border: 1px solid <?= $col ?>30">
                         <?= $label ?>: <strong><?= number_format((int) $val) ?></strong>
                     </span>
                     <?php endforeach; ?>
                 </div>
 
                 <hr style="margin:16px 0">
-                <div class="sad-section" style="margin-bottom:12px"><i class="fas fa-robot" style="color:#7c3aed"></i> Autopilot Outcome Split</div>
+                <div class="sad-section" style="margin-bottom:12px"><i class="fas fa-robot" style="color: #7c3aed"></i> Autopilot Outcome Split</div>
                 <?php
                 $apSplit = Capsule::table('tblsahdev_autopilot_log')
                     ->selectRaw('ai_decision, COUNT(*) as cnt')
@@ -6244,9 +4937,9 @@ class AdminController
 
         <!-- ── Per-Provider Cost Breakdown ── -->
         <div class="sad-card">
-            <div class="sad-section"><i class="fas fa-microchip" style="color:#7c3aed"></i> Per-Provider Cost Breakdown</div>
+            <div class="sad-section"><i class="fas fa-microchip" style="color: #7c3aed"></i> Per-Provider Cost Breakdown</div>
             <?php if (empty($providerRows)): ?>
-                <p style="color:#aaa;font-size:.88rem">No token data yet. Costs appear once AI calls are made and providers have <code>cost_input_1m</code>/<code>cost_output_1m</code> configured.</p>
+                <p style="color: #aaa;font-size:.88rem">No token data yet. Costs appear once AI calls are made and providers have <code>cost_input_1m</code>/<code>cost_output_1m</code> configured.</p>
             <?php else: ?>
             <table class="table table-sm sad-table">
                 <thead><tr>
@@ -6257,30 +4950,30 @@ class AdminController
                 <tbody>
                     <?php foreach ($providerRows as $r): ?>
                     <tr>
-                        <td><i class="fas fa-circle" style="color:#3b82f6;font-size:.4em;vertical-align:middle;margin-right:6px"></i><?= $r['name'] ?></td>
+                        <td><i class="fas fa-circle" style="color: #3b82f6;font-size:.4em;vertical-align:middle;margin-right:6px"></i><?= $r['name'] ?></td>
                         <td><code style="font-size:.75rem"><?= htmlspecialchars($r['type']) ?></code></td>
-                        <td><?= $r['rate'] > 0 ? '$'.number_format($r['rate'],4) : '<span style="color:#aaa">—</span>' ?></td>
+                        <td><?= $r['rate'] > 0 ? '$'.number_format($r['rate'],4) : '<span style="color: #aaa">—</span>' ?></td>
                         <td><?= number_format($r['tokens']) ?></td>
                         <td><?= number_format($r['calls']) ?></td>
-                        <td><?= $r['cost'] > 0 ? '<strong>$'.number_format($r['cost'],6).'</strong>' : '<span style="color:#aaa">$0.000000</span>' ?></td>
+                        <td><?= $r['cost'] > 0 ? '<strong>$'.number_format($r['cost'],6).'</strong>' : '<span style="color: #aaa">$0.000000</span>' ?></td>
                     </tr>
                     <?php endforeach; ?>
                 </tbody>
-                <tfoot><tr style="font-weight:700;background:#f8fafc">
+                <tfoot><tr style="font-weight:700;background: var(--sdv-bg-nested, #f8fafc)">
                     <td colspan="3">Total</td>
                     <td><?= number_format($totalTokensAll) ?></td>
                     <td><?= number_format($totalCallsAll) ?></td>
                     <td>$<?= number_format($totalCostAll, 6) ?></td>
                 </tr></tfoot>
             </table>
-            <p style="color:#94a3b8;font-size:.75rem;margin-top:8px">Rate matched via provider type keyword. Configure costs in <strong>AI Providers</strong> settings.</p>
+            <p style="color: var(--sdv-text-muted, #94a3b8);font-size:.75rem;margin-top:8px">Rate matched via provider type keyword. Configure costs in <strong>AI Providers</strong> settings.</p>
             <?php endif; ?>
         </div>
 
         <!-- ── ROI Settings ── -->
         <div class="sad-card">
-            <div class="sad-section"><i class="fas fa-sliders-h" style="color:#059669"></i> ROI Calculation Settings</div>
-            <p style="color:#64748b;font-size:.85rem;margin-bottom:16px">Configure how Sahdev estimates the human time saved per autopilot reply. Adjust to your team's real average handle time.</p>
+            <div class="sad-section"><i class="fas fa-sliders-h" style="color: #059669"></i> ROI Calculation Settings</div>
+            <p style="color: var(--sdv-text-muted, #64748b);font-size:.85rem;margin-bottom:16px">Configure how Sahdev estimates the human time saved per autopilot reply. Adjust to your team's real average handle time.</p>
             <form method="post" action="<?= $actionUrl ?>">
                 <?php echo function_exists('generate_token') ? generate_token() : ''; ?>
                 <input type="hidden" name="roi_save" value="1">
@@ -6288,10 +4981,10 @@ class AdminController
                     <label style="font-weight:600;font-size:.88rem;margin:0">Avg. Handle Time per Ticket</label>
                     <div style="display:flex;align-items:center;gap:8px">
                         <input type="number" name="avg_handle_minutes" class="form-control" style="width:90px" value="<?= (int) $avgHandleMin ?>" min="1" max="120">
-                        <span style="font-size:.85rem;color:#64748b">minutes</span>
+                        <span style="font-size:.85rem;color: var(--sdv-text-muted, #64748b)">minutes</span>
                     </div>
                     <button type="submit" class="btn btn-sm btn-success"><i class="fas fa-save"></i> Save</button>
-                    <span style="font-size:.78rem;color:#94a3b8">Used to compute <em>time saved = autopilot replies × avg handle time</em></span>
+                    <span style="font-size:.78rem;color: var(--sdv-text-muted, #94a3b8)">Used to compute <em>time saved = autopilot replies × avg handle time</em></span>
                 </div>
             </form>
         </div>
@@ -6642,9 +5335,9 @@ class AdminController
 
         <div class="sahdev-page-container">
 
-            <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #eee; padding-bottom: 15px; margin-bottom: 25px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--sdv-border, #eee); padding-bottom: 15px; margin-bottom: 25px;">
                 <div>
-                    <h2 style="margin: 0 0 4px 0;"><i class="fas fa-brain" style="color:#0d6efd;"></i> Ticket Insights</h2>
+                    <h2 style="margin: 0 0 4px 0;"><i class="fas fa-brain" style="color: #0d6efd;"></i> Ticket Insights</h2>
                     <p class="text-muted" style="margin:0; font-size:13px;">AI-powered sentiment, urgency, and tone analysis for configured ticket statuses.</p>
                 </div>
             </div>
@@ -6654,10 +5347,10 @@ class AdminController
             </div>
 
             <!-- Insights Table -->
-            <div style="background:#fff; border:1px solid #e9ecef; border-radius:8px; padding:24px; box-shadow:0 1px 4px rgba(0,0,0,0.05);">
+            <div style="background: var(--sdv-bg-surface, #fff); border: 1px solid #e9ecef; border-radius:8px; padding:24px; box-shadow:0 1px 4px rgba(0,0,0,0.05);">
                 <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:18px;">
-                    <h4 style="margin:0; font-size:16px;"><i class="fas fa-table" style="color:#6c757d;"></i> Analyzed Tickets
-                        <span style="font-size:13px; font-weight:400; color:#6c757d; margin-left:8px;"><?php echo number_format($total); ?> total</span>
+                    <h4 style="margin:0; font-size:16px;"><i class="fas fa-table" style="color: #6c757d;"></i> Analyzed Tickets
+                        <span style="font-size:13px; font-weight:400; color: #6c757d; margin-left:8px;"><?php echo number_format($total); ?> total</span>
                     </h4>
                     <?php if ($total > 0): ?>
                         <a href="<?php echo $actionUrl; ?>&clear_insights=1" class="btn btn-outline-danger btn-sm"
@@ -6668,7 +5361,7 @@ class AdminController
                 </div>
 
                 <?php if (empty($enriched)): ?>
-                    <div style="text-align:center; padding:40px; color:#6c757d;">
+                    <div style="text-align:center; padding:40px; color: #6c757d;">
                         <i class="fas fa-inbox" style="font-size:36px; margin-bottom:12px; display:block; opacity:0.4;"></i>
                         <p style="margin:0;">No tickets have been analyzed yet.</p>
                         <p style="font-size:13px; margin-top:6px;">Run cron from the <strong>Separate Cron</strong> section, or wait for your scheduled server cron run.</p>
@@ -6676,7 +5369,7 @@ class AdminController
                 <?php else: ?>
                     <div style="overflow-x:auto;">
                         <table class="table table-hover" style="font-size:13px; margin-bottom:0;">
-                            <thead style="background:#f8f9fa;">
+                            <thead style="background: var(--sdv-bg-nested, #f8f9fa);">
                                 <tr>
                                     <th style="width:70px;">Ticket</th>
                                     <th>Client</th>
@@ -6769,8 +5462,8 @@ class AdminController
                                         <td>
                                             <?php if (!empty($row->ticket_summary)): ?>
                                                 <details>
-                                                    <summary style="cursor:pointer; font-size:12px; color:#0d6efd; user-select:none;">View summary</summary>
-                                                    <p style="margin:6px 0 0; font-size:12px; line-height:1.6; color:#495057; max-width:380px; white-space:pre-wrap;"><?php echo htmlspecialchars($row->ticket_summary); ?></p>
+                                                    <summary style="cursor:pointer; font-size:12px; color: #0d6efd; user-select:none;">View summary</summary>
+                                                    <p style="margin:6px 0 0; font-size:12px; line-height:1.6; color: #495057; max-width:380px; white-space:pre-wrap;"><?php echo htmlspecialchars($row->ticket_summary); ?></p>
                                                 </details>
                                             <?php else: ?>
                                                 <span class="text-muted" style="font-size:11px;">—</span>
@@ -6787,7 +5480,7 @@ class AdminController
                         <div style="display:flex; justify-content:center; margin-top:20px; gap:4px;">
                             <?php for ($p = 1; $p <= $pages; $p++): ?>
                                 <a href="<?php echo $actionUrl . '&ipage=' . $p; ?>"
-                                    style="padding:5px 12px; border-radius:4px; border:1px solid <?php echo ($p == $page) ? '#0d6efd' : '#dee2e6'; ?>;
+                                    style="padding:5px 12px; border-radius:4px; border: 1px solid <?php echo ($p == $page) ? '#0d6efd' : '#dee2e6'; ?>;
                                         background:<?php echo ($p == $page) ? '#0d6efd' : '#fff'; ?>;
                                         color:<?php echo ($p == $page) ? '#fff' : '#0d6efd'; ?>;
                                         text-decoration:none; font-size:13px;">
@@ -6908,8 +5601,8 @@ class AdminController
                 btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> ' + index + '/' + total;
                 showMsg(
                     '<i class="fas fa-spinner fa-spin"></i> Analyzing ticket <strong>#' + tid + '</strong> &nbsp;(' + (index + 1) + ' of ' + total + ')' +
-                    '<div style="background:#dee2e6;border-radius:4px;height:6px;margin-top:8px;">' +
-                    '<div style="background:#0d6efd;height:6px;border-radius:4px;width:' + pct + '%;transition:width .3s;"></div></div>',
+                    '<div style="background: #dee2e6;border-radius:4px;height:6px;margin-top:8px;">' +
+                    '<div style="background: #0d6efd;height:6px;border-radius:4px;width:' + pct + '%;transition:width .3s;"></div></div>',
                     'info'
                 );
 
@@ -7052,7 +5745,7 @@ class AdminController
         echo $this->getNavigationMarkup('tools');
         ?>
         <div class="sahdev-page-container">
-            <h2 style="margin-top:0;"><i class="fas fa-tools" style="color:#0d6efd;"></i> Tools Execution</h2>
+            <h2 style="margin-top:0;"><i class="fas fa-tools" style="color: #0d6efd;"></i> Tools Execution</h2>
             <p class="text-muted">Configure automatic AI-selected tool execution. You can edit both API base URL and OpenAPI spec URL.</p>
             <div class="alert alert-info" style="margin-bottom:14px;">
                 <strong><i class="fas fa-clock"></i> Separate Sahdev Cron (recommended)</strong><br>
@@ -7212,7 +5905,7 @@ class AdminController
         echo $this->getNavigationMarkup('cron_center');
         ?>
         <div class="sahdev-page-container">
-            <h2 style="margin-top:0;"><i class="fas fa-clock" style="color:#0d6efd;"></i> Separate Cron</h2>
+            <h2 style="margin-top:0;"><i class="fas fa-clock" style="color: #0d6efd;"></i> Separate Cron</h2>
             <p class="text-muted">Configure, test, and monitor Sahdev cron execution from one place.</p>
 
             <div id="sahdev-cron-msg" class="alert" style="display:none; margin-bottom:16px;"></div>
@@ -7234,9 +5927,9 @@ class AdminController
                     <i class="fas fa-vial"></i> Test HTTP Cron URL
                 </button>
             </div>
-            <pre id="sahdev-cron-debug-out" style="display:none; max-height:280px; overflow:auto; font-size:11px; padding:12px; background:#212529; color:#f8f9fa; border-radius:6px; white-space:pre-wrap;"></pre>
+            <pre id="sahdev-cron-debug-out" style="display:none; max-height:280px; overflow:auto; font-size:11px; padding:12px; background: #212529; color: #f8f9fa; border-radius:6px; white-space:pre-wrap;"></pre>
 
-            <div style="background:#fff; border:1px solid #e9ecef; border-radius:8px; padding:18px; margin-top:14px;">
+            <div style="background: var(--sdv-bg-surface, #fff); border: 1px solid #e9ecef; border-radius:8px; padding:18px; margin-top:14px;">
                 <table class="table table-condensed" style="margin-bottom:0;">
                     <tbody>
                         <tr><td style="width:240px;"><strong>Last run</strong></td><td><?php echo $insightsCronLastAt !== '' ? htmlspecialchars($insightsCronLastAt) : '—'; ?></td></tr>
@@ -7248,7 +5941,7 @@ class AdminController
                 </table>
             </div>
 
-            <div style="background:#fff; border:1px solid #e9ecef; border-radius:8px; padding:24px; margin-top:16px;">
+            <div style="background: var(--sdv-bg-surface, #fff); border: 1px solid #e9ecef; border-radius:8px; padding:24px; margin-top:16px;">
                 <h4 style="margin-top:0;">Cron Settings</h4>
                 <form method="post" action="<?php echo $actionUrl; ?>">
                     <?php echo $csrfToken; ?>
@@ -7453,18 +6146,18 @@ class AdminController
         <?php echo $this->getNavigationMarkup('autopilot'); ?>
 
         <style>
-            .autopilot-card { background:#fff; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,.06); padding:22px 28px; margin-bottom:22px; }
-            .autopilot-card h4 { margin-top:0; margin-bottom:16px; color:#333; font-size:15px; font-weight:700; border-bottom:1px solid #f0f0f0; padding-bottom:10px; }
+            .autopilot-card { background: var(--sdv-bg-surface, #fff); border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,.06); padding:22px 28px; margin-bottom:22px; }
+            .autopilot-card h4 { margin-top:0; margin-bottom:16px; color: var(--sdv-text-primary, #333); font-size:15px; font-weight:700; border-bottom: 1px solid #f0f0f0; padding-bottom:10px; }
             .autopilot-card h4 i { margin-right:7px; }
-            .ap-master-switch { display:flex; align-items:center; gap:14px; padding:18px 22px; background:linear-gradient(90deg,#0d6efd10,#0d6efd05); border-radius:8px; margin-bottom:22px; border:1px solid #0d6efd30; }
-            .ap-master-switch .ap-toggle-label { font-size:17px; font-weight:700; color:#0d6efd; }
-            .ap-badge-on  { background:#198754; color:#fff; padding:3px 10px; border-radius:12px; font-size:12px; }
-            .ap-badge-off { background:#6c757d; color:#fff; padding:3px 10px; border-radius:12px; font-size:12px; }
-            .ap-dept-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:8px; max-height:220px; overflow-y:auto; padding:8px; background:#f8f9fa; border-radius:6px; border:1px solid #dee2e6; }
+            .ap-master-switch { display:flex; align-items:center; gap:14px; padding:18px 22px; background: linear-gradient(90deg,#0d6efd10,#0d6efd05); border-radius:8px; margin-bottom:22px; border: 1px solid #0d6efd30; }
+            .ap-master-switch .ap-toggle-label { font-size:17px; font-weight:700; color: #0d6efd; }
+            .ap-badge-on  { background: #198754; color: #fff; padding:3px 10px; border-radius:12px; font-size:12px; }
+            .ap-badge-off { background: #6c757d; color: #fff; padding:3px 10px; border-radius:12px; font-size:12px; }
+            .ap-dept-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:8px; max-height:220px; overflow-y:auto; padding:8px; background: var(--sdv-bg-nested, #f8f9fa); border-radius:6px; border: 1px solid #dee2e6; }
             .ap-dept-check { display:flex; align-items:center; gap:6px; font-size:13px; padding:4px 0; }
             .ap-log-table { font-size:12px; }
-            .ap-log-replied { color:#198754; font-weight:600; }
-            .ap-log-skipped { color:#6c757d; }
+            .ap-log-replied { color: #198754; font-weight:600; }
+            .ap-log-skipped { color: #6c757d; }
         </style>
 
         <div class="sahdev-page-container">
@@ -7647,11 +6340,11 @@ class AdminController
                     </div>
 
                     <!-- Draft Mode -->
-                    <div class="form-group" style="background:<?php echo !empty($settings['autopilot_draft_mode']) ? '#fff8e1' : '#f8f9fa'; ?>;border:1px solid <?php echo !empty($settings['autopilot_draft_mode']) ? '#f39c12' : '#dee2e6'; ?>;border-radius:8px;padding:14px 18px;">
+                    <div class="form-group" style="background:<?php echo !empty($settings['autopilot_draft_mode']) ? '#fff8e1' : '#f8f9fa'; ?>;border: 1px solid <?php echo !empty($settings['autopilot_draft_mode']) ? '#f39c12' : '#dee2e6'; ?>;border-radius:8px;padding:14px 18px;">
                         <label style="margin:0;display:flex;align-items:flex-start;gap:10px;cursor:pointer;">
                             <input type="checkbox" name="autopilot_draft_mode" value="1" <?php echo !empty($settings['autopilot_draft_mode']) ? 'checked' : ''; ?> style="margin-top:3px">
                             <div>
-                                <strong><i class="fas fa-edit" style="color:#f39c12"></i> Draft Mode — Post Internal Notes Instead of Public Replies</strong><br>
+                                <strong><i class="fas fa-edit" style="color: #f39c12"></i> Draft Mode — Post Internal Notes Instead of Public Replies</strong><br>
                                 <small class="text-muted">When enabled, Autopilot will create a private admin note prefixed with <code>🤖 Sahdev Autopilot Draft</code> instead of sending a live reply to the client. Use this to review AI responses before publishing.</small>
                             </div>
                         </label>
@@ -7664,7 +6357,7 @@ class AdminController
             <hr style="margin:40px 0;">
 
             <!-- Manual Test Runner -->
-            <div class="autopilot-card" style="border-left:4px solid #f39c12;">
+            <div class="autopilot-card" style="border-left: 4px solid #f39c12;">
                 <h4><i class="fas fa-vial"></i> Manual Autopilot Test Runner</h4>
                 <p class="text-muted" style="margin-bottom:15px;">Force Autopilot to attempt a reply on a specific ticket right now. This skips the cron job and replies immediately if eligible.</p>
                 <div class="form-inline" style="display:flex; gap:10px; align-items:center;">
@@ -7676,7 +6369,7 @@ class AdminController
                     </div>
                     <button type="button" class="btn btn-warning" id="btn_run_ap_test"><i class="fas fa-play"></i> Run Test</button>
                 </div>
-                <div id="ap_test_result" style="display:none; margin-top:15px; padding:12px; border-radius:6px; font-size:13px; background:#f8f9fa; border:1px solid #ddd;"></div>
+                <div id="ap_test_result" style="display:none; margin-top:15px; padding:12px; border-radius:6px; font-size:13px; background: var(--sdv-bg-nested, #f8f9fa); border: 1px solid var(--sdv-border, #ddd);"></div>
             </div>
 
             <!-- Status & Run Log -->
@@ -7757,19 +6450,19 @@ class AdminController
                 let html = '';
                 if (res.status === 'success') {
                     out.style.borderLeft = '4px solid #198754';
-                    html = '<strong style="color:#198754;"><i class="fas fa-check-circle"></i> Success:</strong> ' + res.message;
+                    html = '<strong style="color: #198754;"><i class="fas fa-check-circle"></i> Success:</strong> ' + res.message;
                     if (res.preview) {
-                        html += '<hr style="margin:10px 0;"><pre style="margin:0; background:transparent; border:none; padding:0; white-space:pre-wrap; font-family:inherit;">' + res.preview + '</pre>';
+                        html += '<hr style="margin:10px 0;"><pre style="margin:0; background: transparent; border: none; padding:0; white-space:pre-wrap; font-family:inherit;">' + res.preview + '</pre>';
                     }
                 } else {
                     out.style.borderLeft = '4px solid #dc3545';
-                    html = '<strong style="color:#dc3545;"><i class="fas fa-times-circle"></i> Error/Skipped:</strong> ' + (res.message || 'Unknown error');
+                    html = '<strong style="color: #dc3545;"><i class="fas fa-times-circle"></i> Error/Skipped:</strong> ' + (res.message || 'Unknown error');
                 }
                 out.innerHTML = html;
             })
             .catch(err => {
                 out.style.borderLeft = '4px solid #dc3545';
-                out.innerHTML = '<strong style="color:#dc3545;"><i class="fas fa-times-circle"></i> Exception:</strong> ' + err;
+                out.innerHTML = '<strong style="color: #dc3545;"><i class="fas fa-times-circle"></i> Exception:</strong> ' + err;
             })
             .finally(() => {
                 this.disabled = false;
@@ -7909,9 +6602,9 @@ class AdminController
         ob_start();
         ?>
         <style>
-            .log-table-wrapper { width: 100%; overflow-x: auto; background: #fff; border: 1px solid #ddd; padding: 15px; border-radius: 6px; }
-            .log-table th { background: #f8f9fa; border-bottom: 2px solid #ddd; padding: 10px; white-space: nowrap; }
-            .log-table td { padding: 8px 10px; border-bottom: 1px solid #eee; vertical-align: top; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+            .log-table-wrapper { width: 100%; overflow-x: auto; background: var(--sdv-bg-surface, #fff); border: 1px solid var(--sdv-border, #ddd); padding: 15px; border-radius: 6px; }
+            .log-table th { background: var(--sdv-bg-nested, #f8f9fa); border-bottom: 2px solid var(--sdv-border, #ddd); padding: 10px; white-space: nowrap; }
+            .log-table td { padding: 8px 10px; border-bottom: 1px solid var(--sdv-border, #eee); vertical-align: top; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
             .log-table-row:hover td { background-color: #f1f8ff; }
             .log-td-expandable { cursor: pointer; color: #0d6efd; text-decoration: underline; font-family: monospace; font-size: 12px; }
             .modal-content-pre { background: #1e1e1e; color: #d4d4d4; padding: 15px; border-radius: 4px; overflow-x: auto; max-height: 500px; }
@@ -7935,7 +6628,7 @@ class AdminController
             <?php endif; ?>
 
             <!-- Table Selector & Actions -->
-            <div style="background: #f8f9fa; padding: 15px; border-radius: 6px; border: 1px solid #e9ecef; margin-bottom: 20px;">
+            <div style="background: var(--sdv-bg-nested, #f8f9fa); padding: 15px; border-radius: 6px; border: 1px solid #e9ecef; margin-bottom: 20px;">
                 <div class="row">
                     <!-- Left: Selector -->
                     <div class="col-md-4">
@@ -7954,7 +6647,7 @@ class AdminController
                     </div>
 
                     <!-- Right: Maintenance Actions -->
-                    <div class="col-md-8 text-right" style="border-left: 1px solid #ddd;">
+                    <div class="col-md-8 text-right" style="border-left: 1px solid var(--sdv-border, #ddd);">
                         <form method="post" action="<?php echo $actionUrl; ?>&log_table=<?php echo $selectedTable; ?>" class="form-inline" style="display:inline-block; margin-right: 15px;">
                             <?php echo $csrfToken; ?>
                             <label><strong>Export Data:</strong></label><br>
@@ -8041,8 +6734,8 @@ class AdminController
                         </tbody>
                     </table>
                 <?php else: ?>
-                    <div style="padding: 30px; text-align: center; color: #777;">
-                        <i class="fas fa-inbox fa-3x" style="color:#ddd; margin-bottom:15px; display:block;"></i>
+                    <div style="padding: 30px; text-align: center; color: var(--sdv-text-muted, #777);">
+                        <i class="fas fa-inbox fa-3x" style="color: #ddd; margin-bottom:15px; display:block;"></i>
                         No records found in <?php echo htmlspecialchars($selectedTable); ?>.
                     </div>
                 <?php endif; ?>
@@ -8058,7 +6751,7 @@ class AdminController
                         <button type="button" class="close" data-dismiss="modal" aria-hidden="true">&times;</button>
                         <h4 class="modal-title">Raw Log Data Viewer</h4>
                     </div>
-                    <div class="modal-body" style="background:#f8f9fa;">
+                    <div class="modal-body" style="background: var(--sdv-bg-nested, #f8f9fa);">
                         <pre class="modal-content-pre" id="logViewRawOutput"></pre>
                     </div>
                 </div>
@@ -8269,7 +6962,7 @@ class AdminController
 
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
                 <div>
-                    <h2 style="margin: 0; font-size: 22px; color: #1a202c; font-weight: 700;">
+                    <h2 style="margin: 0; font-size: 22px; color: var(--sdv-text-primary, #1a202c); font-weight: 700;">
                         <i class="fas fa-satellite-dish" style="color: #20c997;"></i> Incident & Server Monitoring Center
                     </h2>
                     <p class="text-muted" style="margin: 5px 0 0 0; font-size: 13px;">
@@ -8316,34 +7009,34 @@ class AdminController
             <!-- Metrics Overview -->
             <div class="row" style="margin-bottom: 20px;">
                 <div class="col-md-4">
-                    <div style="background: #fff; border: 1px solid #e2e8f0; border-left: 4px solid #e53e3e; border-radius: 6px; padding: 15px;">
-                        <div style="font-size: 11px; text-transform: uppercase; color: #718096; font-weight: 700;">Active Incidents</div>
-                        <div style="font-size: 24px; font-weight: 800; color: #1a202c; margin: 4px 0;">
+                    <div style="background: var(--sdv-bg-surface, #fff); border: 1px solid var(--sdv-border, #e2e8f0); border-left: 4px solid #e53e3e; border-radius: 6px; padding: 15px;">
+                        <div style="font-size: 11px; text-transform: uppercase; color: var(--sdv-text-muted, #718096); font-weight: 700;">Active Incidents</div>
+                        <div style="font-size: 24px; font-weight: 800; color: var(--sdv-text-primary, #1a202c); margin: 4px 0;">
                             <?php echo $totalIncidentsCount; ?>
                         </div>
-                        <div style="font-size: 12px; color: #718096;">
+                        <div style="font-size: 12px; color: var(--sdv-text-muted, #718096);">
                             <?php echo $totalIncidentsCount === 0 ? 'All systems operating normally' : "{$totalIncidentsCount} active event(s) detected"; ?>
                         </div>
                     </div>
                 </div>
                 <div class="col-md-4">
-                    <div style="background: #fff; border: 1px solid #e2e8f0; border-left: 4px solid #3182ce; border-radius: 6px; padding: 15px;">
-                        <div style="font-size: 11px; text-transform: uppercase; color: #718096; font-weight: 700;">Monitored Servers</div>
-                        <div style="font-size: 24px; font-weight: 800; color: #1a202c; margin: 4px 0;">
-                            <?php echo $reachableServers; ?> / <?php echo $monitoredServersCount; ?> <span style="font-size: 13px; font-weight: normal; color: #718096;">(Total: <?php echo $totalServers; ?>)</span>
+                    <div style="background: var(--sdv-bg-surface, #fff); border: 1px solid var(--sdv-border, #e2e8f0); border-left: 4px solid #3182ce; border-radius: 6px; padding: 15px;">
+                        <div style="font-size: 11px; text-transform: uppercase; color: var(--sdv-text-muted, #718096); font-weight: 700;">Monitored Servers</div>
+                        <div style="font-size: 24px; font-weight: 800; color: var(--sdv-text-primary, #1a202c); margin: 4px 0;">
+                            <?php echo $reachableServers; ?> / <?php echo $monitoredServersCount; ?> <span style="font-size: 13px; font-weight: normal; color: var(--sdv-text-muted, #718096);">(Total: <?php echo $totalServers; ?>)</span>
                         </div>
-                        <div style="font-size: 12px; color: #718096;">
+                        <div style="font-size: 12px; color: var(--sdv-text-muted, #718096);">
                             Reachable & responsive
                         </div>
                     </div>
                 </div>
                 <div class="col-md-4">
-                    <div style="background: #fff; border: 1px solid #e2e8f0; border-left: 4px solid #805ad5; border-radius: 6px; padding: 15px;">
-                        <div style="font-size: 11px; text-transform: uppercase; color: #718096; font-weight: 700;">Multi-Panel Telemetry</div>
-                        <div style="font-size: 16px; font-weight: 700; color: #2d3748; margin: 8px 0;">
+                    <div style="background: var(--sdv-bg-surface, #fff); border: 1px solid var(--sdv-border, #e2e8f0); border-left: 4px solid #805ad5; border-radius: 6px; padding: 15px;">
+                        <div style="font-size: 11px; text-transform: uppercase; color: var(--sdv-text-muted, #718096); font-weight: 700;">Multi-Panel Telemetry</div>
+                        <div style="font-size: 16px; font-weight: 700; color: var(--sdv-text-primary, #2d3748); margin: 8px 0;">
                             cPanel • Virtualizor • Plesk
                         </div>
-                        <div style="font-size: 12px; color: #718096;">
+                        <div style="font-size: 12px; color: var(--sdv-text-muted, #718096);">
                             Real-time service daemons & mount points
                         </div>
                     </div>
@@ -8351,13 +7044,13 @@ class AdminController
             </div>
 
             <!-- Active Incidents Section -->
-            <div class="panel panel-default" style="border-radius: 6px; border: 1px solid #e2e8f0; margin-bottom: 25px;">
-                <div class="panel-heading" style="background: #fff; border-bottom: 2px solid #e53e3e; font-weight: 700; color: #e53e3e;">
+            <div class="panel panel-default" style="border-radius: 6px; border: 1px solid var(--sdv-border, #e2e8f0); margin-bottom: 25px;">
+                <div class="panel-heading" style="background: var(--sdv-bg-surface, #fff); border-bottom: 2px solid #e53e3e; font-weight: 700; color: #e53e3e;">
                     <i class="fas fa-exclamation-circle"></i> Active Outages & Surges (<?php echo $totalIncidentsCount; ?>)
                 </div>
                 <div class="panel-body">
                     <?php if ($activeIncidents->isEmpty()): ?>
-                        <div style="text-align: center; padding: 30px 15px; color: #718096;">
+                        <div style="text-align: center; padding: 30px 15px; color: var(--sdv-text-muted, #718096);">
                             <i class="fas fa-shield-alt" style="font-size: 40px; color: #48bb78; margin-bottom: 10px; display: block;"></i>
                             <strong>No active incidents detected.</strong> All ticket flows and server health baselines are normal.
                         </div>
@@ -8372,10 +7065,10 @@ class AdminController
                                     <div>
                                         <span class="label label-danger" style="font-size: 11px;"><?php echo htmlspecialchars($inc->severity); ?></span>
                                         <span class="label label-warning" style="font-size: 11px;"><?php echo htmlspecialchars($inc->status); ?></span>
-                                        <strong style="font-size: 16px; margin-left: 8px; color: #2d3748;">
+                                        <strong style="font-size: 16px; margin-left: 8px; color: var(--sdv-text-primary, #2d3748);">
                                             [<?php echo htmlspecialchars($inc->incident_num); ?>] <?php echo htmlspecialchars($inc->title); ?>
                                         </strong>
-                                        <div style="font-size: 12px; color: #718096; margin-top: 4px;">
+                                        <div style="font-size: 12px; color: var(--sdv-text-muted, #718096); margin-top: 4px;">
                                             Detected: <?php echo htmlspecialchars(substr($inc->detected_at, 0, 16)); ?> | 
                                             Target: <strong><?php echo htmlspecialchars($inc->server_name ?: 'General Infrastructure'); ?></strong> | 
                                             Clustered Tickets: <strong><?php echo $ticketCount; ?> ticket(s)</strong>
@@ -8391,17 +7084,17 @@ class AdminController
                                 </div>
 
                                 <?php if (!empty($inc->root_cause_summary)): ?>
-                                    <div style="margin-top: 10px; font-size: 13px; color: #4a5568;">
+                                    <div style="margin-top: 10px; font-size: 13px; color: var(--sdv-text-secondary, #4a5568);">
                                         <strong>AI Diagnosis:</strong> <?php echo nl2br(htmlspecialchars($inc->root_cause_summary)); ?>
                                     </div>
                                 <?php endif; ?>
 
                                         <?php if (!empty($inc->broadcast_template)): ?>
-                                            <div style="margin-top: 12px; background: #fff; border: 1px solid #edf2f7; border-radius: 5px; padding: 10px;">
+                                            <div style="margin-top: 12px; background: var(--sdv-bg-surface, #fff); border: 1px solid var(--sdv-border, #edf2f7); border-radius: 5px; padding: 10px;">
                                                 <div style="font-size: 12px; font-weight: 700; color: #2b6cb0; margin-bottom: 5px;">
                                                     <i class="fas fa-bullhorn"></i> Proposed Broadcast / Mass Reply:
                                                 </div>
-                                                <pre style="font-size: 12px; background: #f7fafc; padding: 8px; border-radius: 4px; margin-bottom: 8px; white-space: pre-wrap;"><?php echo htmlspecialchars($inc->broadcast_template); ?></pre>
+                                                <pre style="font-size: 12px; background: var(--sdv-bg-nested, #f7fafc); padding: 8px; border-radius: 4px; margin-bottom: 8px; white-space: pre-wrap;"><?php echo htmlspecialchars($inc->broadcast_template); ?></pre>
                                                 
                                                 <?php if ($canManageIncidents): ?>
                                                     <form method="post" action="<?php echo $actionUrl; ?>" onsubmit="return confirm('Broadcast this reply to all <?php echo $ticketCount; ?> affected tickets?');">
@@ -8421,8 +7114,8 @@ class AdminController
                     </div>
 
                     <!-- Monitored Servers Grid -->
-                    <div class="panel panel-default" style="border-radius: 6px; border: 1px solid #e2e8f0;">
-                        <div class="panel-heading" style="background: #fff; border-bottom: 2px solid #3182ce; font-weight: 700; color: #2b6cb0;">
+                    <div class="panel panel-default" style="border-radius: 6px; border: 1px solid var(--sdv-border, #e2e8f0);">
+                        <div class="panel-heading" style="background: var(--sdv-bg-surface, #fff); border-bottom: 2px solid #3182ce; font-weight: 700; color: #2b6cb0;">
                             <i class="fas fa-server"></i> Monitored Hosting Servers & Control Panels (<?php echo $totalServers; ?>)
                         </div>
                         <div class="panel-body">
@@ -8537,15 +7230,15 @@ class AdminController
                                             $cardBorder = !$isReachable ? '#feb2b2' : ($hasOutages ? '#feb2b2' : ($hasWarnings ? '#fbd38d' : '#e2e8f0'));
                                             $cardTopBorder = !$isReachable ? '#e53e3e' : ($hasOutages ? '#e53e3e' : ($hasWarnings ? '#dd6b20' : '#38a169'));
                                         ?>
-                                        <div style="flex: 1; min-width: 320px; max-width: 460px; background: #fff; border: 1px solid <?php echo $cardBorder; ?>; border-top: 3px solid <?php echo $cardTopBorder; ?>; border-radius: 6px; padding: 14px; display: flex; flex-direction: column; justify-content: space-between;">
+                                        <div style="flex: 1; min-width: 320px; max-width: 460px; background: var(--sdv-bg-surface, #fff); border: 1px solid <?php echo $cardBorder; ?>; border-top: 3px solid <?php echo $cardTopBorder; ?>; border-radius: 6px; padding: 14px; display: flex; flex-direction: column; justify-content: space-between;">
                                             <div>
                                                 <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
                                                     <div>
                                                         <div style="display: flex; align-items: center; gap: 6px;">
-                                                            <strong style="font-size: 15px; color: #2d3748;"><?php echo htmlspecialchars($srv->server_name); ?></strong>
+                                                            <strong style="font-size: 15px; color: var(--sdv-text-primary, #2d3748);"><?php echo htmlspecialchars($srv->server_name); ?></strong>
                                                             <?php echo $roleBadgeHtml; ?>
                                                         </div>
-                                                        <div style="font-size: 12px; color: #718096;"><?php echo htmlspecialchars($srv->hostname ?: $srv->ipaddress); ?></div>
+                                                        <div style="font-size: 12px; color: var(--sdv-text-muted, #718096);"><?php echo htmlspecialchars($srv->hostname ?: $srv->ipaddress); ?></div>
                                                     </div>
                                                     <div style="display: flex; align-items: center; gap: 6px;">
                                                         <?php if ($canAccessServer): ?>
@@ -8554,7 +7247,7 @@ class AdminController
                                                             </a>
                                                         <?php endif; ?>
                                                         <?php if (!$isMonitored): ?>
-                                                            <span class="label label-default" style="background: #edf2f7; color: #718096;" title="Polling Paused in Cron"><i class="fas fa-pause"></i> Paused</span>
+                                                            <span class="label label-default" style="background: var(--sdv-bg-nested, #edf2f7); color: var(--sdv-text-muted, #718096);" title="Polling Paused in Cron"><i class="fas fa-pause"></i> Paused</span>
                                                         <?php elseif ($isReachable && !$hasOutages): ?>
                                                             <span class="label label-success"><i class="fas fa-check"></i> Online</span>
                                                         <?php elseif ($isReachable && $hasOutages): ?>
@@ -8565,7 +7258,7 @@ class AdminController
                                                     </div>
                                                 </div>
 
-                                                <div style="font-size: 12px; margin: 8px 0; display: flex; justify-content: space-between; background: #f7fafc; padding: 6px 10px; border-radius: 4px;">
+                                                <div style="font-size: 12px; margin: 8px 0; display: flex; justify-content: space-between; background: var(--sdv-bg-nested, #f7fafc); padding: 6px 10px; border-radius: 4px;">
                                                     <div><strong>Load:</strong> <?php echo htmlspecialchars($load); ?></div>
                                                     <div><strong>Type:</strong> <?php echo strtoupper(htmlspecialchars($srv->server_type ?: 'cPanel')); ?></div>
                                                     <div><strong>Accounts/VPS:</strong> <?php echo $acctCount; ?></div>
@@ -8602,10 +7295,10 @@ class AdminController
                                                 <!-- Tier 3: Client Account Quota Notices (Low Priority - Collapsible) -->
                                                 <?php if (!empty($accountNotices)): ?>
                                                     <div style="margin: 6px 0;">
-                                                        <span class="label label-default" style="font-size: 11px; background: #edf2f7; color: #4a5568; border: 1px solid #cbd5e0; cursor: pointer; display: inline-block;" data-toggle="collapse" data-target="#acctNotice<?php echo $srv->server_id; ?>">
+                                                        <span class="label label-default" style="font-size: 11px; background: var(--sdv-bg-nested, #edf2f7); color: var(--sdv-text-secondary, #4a5568); border: 1px solid var(--sdv-border, #cbd5e0); cursor: pointer; display: inline-block;" data-toggle="collapse" data-target="#acctNotice<?php echo $srv->server_id; ?>">
                                                             <i class="fas fa-user-clock"></i> <?php echo count($accountNotices); ?> Account Quota Notices <i class="fas fa-caret-down"></i>
                                                         </span>
-                                                        <div class="collapse" id="acctNotice<?php echo $srv->server_id; ?>" style="margin-top: 4px; font-size: 11px; color: #718096; background: #f7fafc; padding: 6px 8px; border-radius: 4px; max-height: 110px; overflow-y: auto; border: 1px solid #e2e8f0;">
+                                                        <div class="collapse" id="acctNotice<?php echo $srv->server_id; ?>" style="margin-top: 4px; font-size: 11px; color: var(--sdv-text-muted, #718096); background: var(--sdv-bg-nested, #f7fafc); padding: 6px 8px; border-radius: 4px; max-height: 110px; overflow-y: auto; border: 1px solid var(--sdv-border, #e2e8f0);">
                                                             <?php foreach ($accountNotices as $notice): ?>
                                                                 <div style="margin-bottom: 2px;">• <?php echo htmlspecialchars($notice); ?></div>
                                                             <?php endforeach; ?>
@@ -8626,15 +7319,15 @@ class AdminController
                                                 <!-- Collapsible Service Information Table -->
                                                 <?php if ($totalItemsCount > 0): ?>
                                                     <div style="margin-top: 8px;">
-                                                        <button class="btn btn-default btn-xs" type="button" data-toggle="collapse" data-target="#srvCollapse<?php echo $srv->server_id; ?>" style="width: 100%; text-align: left; display: flex; justify-content: space-between; align-items: center; background: #f8fafc; font-size: 11px; font-weight: 600; color: #4a5568;">
+                                                        <button class="btn btn-default btn-xs" type="button" data-toggle="collapse" data-target="#srvCollapse<?php echo $srv->server_id; ?>" style="width: 100%; text-align: left; display: flex; justify-content: space-between; align-items: center; background: var(--sdv-bg-nested, #f8fafc); font-size: 11px; font-weight: 600; color: var(--sdv-text-secondary, #4a5568);">
                                                             <span><i class="fas fa-list-ul"></i> Service Information (<?php echo $totalItemsCount; ?>)</span>
                                                             <i class="fas fa-chevron-down"></i>
                                                         </button>
 
-                                                        <div class="collapse" id="srvCollapse<?php echo $srv->server_id; ?>" style="margin-top: 6px; max-height: 280px; overflow-y: auto; border: 1px solid #edf2f7; border-radius: 4px;">
+                                                        <div class="collapse" id="srvCollapse<?php echo $srv->server_id; ?>" style="margin-top: 6px; max-height: 280px; overflow-y: auto; border: 1px solid var(--sdv-border, #edf2f7); border-radius: 4px;">
                                                             <table class="table table-condensed table-striped" style="font-size: 11px; margin-bottom: 0;">
                                                                 <thead>
-                                                                    <tr style="background: #edf2f7; color: #4a5568;">
+                                                                    <tr style="background: var(--sdv-bg-nested, #edf2f7); color: var(--sdv-text-secondary, #4a5568);">
                                                                         <th>Service / Resource</th>
                                                                         <th>Details</th>
                                                                         <th>Status</th>
@@ -8650,7 +7343,7 @@ class AdminController
                                                                         <tr>
                                                                             <td><strong><?php echo htmlspecialchars($row['name']); ?></strong></td>
                                                                             <td><?php echo htmlspecialchars($row['details']); ?></td>
-                                                                            <td style="color: <?php echo $stColor; ?>; font-weight: <?php echo $st !== 'ok' ? '600' : 'normal'; ?>;">
+                                                                            <td style="color:  <?php echo $stColor; ?>; font-weight: <?php echo $st !== 'ok' ? '600' : 'normal'; ?>;">
                                                                                 <i class="fas <?php echo $stIcon; ?>"></i> <?php echo htmlspecialchars($row['message']); ?>
                                                                             </td>
                                                                         </tr>
@@ -8662,7 +7355,7 @@ class AdminController
                                                 <?php endif; ?>
                                             </div>
 
-                                            <div style="font-size: 11px; color: #a0aec0; margin-top: 10px; border-top: 1px solid #f0f4f8; padding-top: 6px;">
+                                            <div style="font-size: 11px; color: var(--sdv-text-muted, #a0aec0); margin-top: 10px; border-top: 1px solid #f0f4f8; padding-top: 6px;">
                                                 Last Polled: <?php echo htmlspecialchars($lastPolled); ?>
                                             </div>
                                         </div>
@@ -8680,9 +7373,9 @@ class AdminController
                                     <?php echo $csrfToken; ?>
                                     <input type="hidden" name="save_server_monitoring" value="1" />
                                     
-                                    <div class="modal-header" style="background: #f8fafc; border-bottom: 1px solid #e2e8f0;">
+                                    <div class="modal-header" style="background: var(--sdv-bg-nested, #f8fafc); border-bottom: 1px solid var(--sdv-border, #e2e8f0);">
                                         <button type="button" class="close" data-dismiss="modal">&times;</button>
-                                        <h4 class="modal-title" style="font-weight: 700; color: #2d3748;">
+                                        <h4 class="modal-title" style="font-weight: 700; color: var(--sdv-text-primary, #2d3748);">
                                             <i class="fas fa-sliders-h" style="color: #3182ce;"></i> Manage Server Telemetry & Roles
                                         </h4>
                                     </div>
@@ -8703,7 +7396,7 @@ class AdminController
 
                                         <table class="table table-striped table-bordered" style="font-size: 12px;">
                                             <thead>
-                                                <tr style="background: #edf2f7; color: #4a5568;">
+                                                <tr style="background: var(--sdv-bg-nested, #edf2f7); color: var(--sdv-text-secondary, #4a5568);">
                                                     <th style="width: 40px; text-align: center;">Poll</th>
                                                     <th>Server Name & Host</th>
                                                     <th>Type</th>
@@ -8723,7 +7416,7 @@ class AdminController
                                                         </td>
                                                         <td>
                                                             <strong><?php echo htmlspecialchars($sObj->server_name); ?></strong>
-                                                            <div style="font-size: 11px; color: #718096;"><?php echo htmlspecialchars($sObj->hostname ?: $sObj->ipaddress); ?></div>
+                                                            <div style="font-size: 11px; color: var(--sdv-text-muted, #718096);"><?php echo htmlspecialchars($sObj->hostname ?: $sObj->ipaddress); ?></div>
                                                         </td>
                                                         <td style="vertical-align: middle;">
                                                             <span class="label label-default"><?php echo strtoupper(htmlspecialchars($sObj->server_type ?: 'cpanel')); ?></span>
@@ -8744,7 +7437,7 @@ class AdminController
                                         </table>
                                     </div>
                                     
-                                    <div class="modal-footer" style="background: #f8fafc; border-top: 1px solid #e2e8f0;">
+                                    <div class="modal-footer" style="background: var(--sdv-bg-nested, #f8fafc); border-top: 1px solid var(--sdv-border, #e2e8f0);">
                                         <button type="button" class="btn btn-default" data-dismiss="modal">Cancel</button>
                                         <button type="submit" class="btn btn-primary">
                                             <i class="fas fa-save"></i> Save Preferences
@@ -8852,13 +7545,13 @@ class AdminController
             <?php endif; ?>
 
             <!-- Header Card -->
-            <div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 24px; margin-bottom: 25px; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
+            <div style="background: var(--sdv-bg-surface, #fff); border: 1px solid var(--sdv-border, #e2e8f0); border-radius: 8px; padding: 24px; margin-bottom: 25px; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
                 <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
                     <div>
-                        <h3 style="margin: 0 0 6px 0; font-size: 20px; font-weight: 700; color: #1a202c;">
+                        <h3 style="margin: 0 0 6px 0; font-size: 20px; font-weight: 700; color: var(--sdv-text-primary, #1a202c);">
                             <i class="fas fa-user-shield" style="color: #3182ce;"></i> Role-Based Access Control (RBAC) & Feature Permissions
                         </h3>
-                        <p style="margin: 0; font-size: 13px; color: #718096; max-width: 850px;">
+                        <p style="margin: 0; font-size: 13px; color: var(--sdv-text-muted, #718096); max-width: 850px;">
                             Configure granular feature access for each WHMCS Admin Role group. Restrict server health metrics, WHM single-sign-on access, diagnostics tools, and intelligence data from sales or billing operators to prevent data leaks and unauthorized access.
                         </p>
                     </div>
@@ -8874,15 +7567,15 @@ class AdminController
             <form method="post" action="<?php echo $actionUrl; ?>">
                 <?php echo $csrfToken; ?>
 
-                <div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.03); margin-bottom: 25px;">
+                <div style="background: var(--sdv-bg-surface, #fff); border: 1px solid var(--sdv-border, #e2e8f0); border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.03); margin-bottom: 25px;">
                     <div style="overflow-x: auto;">
                         <table class="table table-hover" style="margin-bottom: 0; vertical-align: middle;">
                             <thead>
-                                <tr style="background: #f8fafc; border-bottom: 2px solid #e2e8f0;">
-                                    <th style="min-width: 320px; padding: 14px 18px; font-size: 13px; color: #2d3748;">
+                                <tr style="background: var(--sdv-bg-nested, #f8fafc); border-bottom: 2px solid var(--sdv-border, #e2e8f0);">
+                                    <th style="min-width: 320px; padding: 14px 18px; font-size: 13px; color: var(--sdv-text-primary, #2d3748);">
                                         Feature / Permission Capability
                                     </th>
-                                    <th style="width: 90px; text-align: center; padding: 14px 10px; font-size: 12px; color: #718096;">
+                                    <th style="width: 90px; text-align: center; padding: 14px 10px; font-size: 12px; color: var(--sdv-text-muted, #718096);">
                                         Risk
                                     </th>
                                     <?php foreach ($allRoles as $role): ?>
@@ -8890,12 +7583,12 @@ class AdminController
                                             $isSuper = ((int)$role['id'] === 1 || stripos($role['name'], 'admin') !== false);
                                             $headerBg = $isSuper ? '#edf2f7' : '#f8fafc';
                                         ?>
-                                        <th style="min-width: 140px; text-align: center; padding: 14px 10px; background: <?php echo $headerBg; ?>;">
-                                            <div style="font-size: 13px; font-weight: 700; color: #2d3748;">
+                                        <th style="min-width: 140px; text-align: center; padding: 14px 10px; background:  <?php echo $headerBg; ?>;">
+                                            <div style="font-size: 13px; font-weight: 700; color: var(--sdv-text-primary, #2d3748);">
                                                 <?php if ($isSuper): ?><i class="fas fa-crown" style="color: #d69e2e;"></i> <?php endif; ?>
                                                 <?php echo htmlspecialchars($role['name']); ?>
                                             </div>
-                                            <div style="font-size: 11px; font-weight: 400; color: #718096; margin-top: 2px;">
+                                            <div style="font-size: 11px; font-weight: 400; color: var(--sdv-text-muted, #718096); margin-top: 2px;">
                                                 <?php echo $role['admin_count']; ?> operator<?php echo $role['admin_count'] === 1 ? '' : 's'; ?>
                                             </div>
                                         </th>
@@ -8905,8 +7598,8 @@ class AdminController
                             <tbody>
                                 <?php foreach ($definitions as $catKey => $category): ?>
                                     <!-- Category Header Row -->
-                                    <tr style="background: #edf2f7; border-top: 2px solid #e2e8f0;">
-                                        <td colspan="<?php echo count($allRoles) + 2; ?>" style="padding: 10px 18px; font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: #4a5568;">
+                                    <tr style="background: var(--sdv-bg-nested, #edf2f7); border-top: 2px solid var(--sdv-border, #e2e8f0);">
+                                        <td colspan="<?php echo count($allRoles) + 2; ?>" style="padding: 10px 18px; font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--sdv-text-secondary, #4a5568);">
                                             <i class="fas <?php echo htmlspecialchars($category['category_icon']); ?>" style="color: #3182ce; margin-right: 6px;"></i>
                                             <?php echo htmlspecialchars($category['category_label']); ?>
                                         </td>
@@ -8923,15 +7616,15 @@ class AdminController
                                             } elseif ($risk === 'medium') {
                                                 $riskBadge = '<span class="label label-info" style="font-size: 10px; background: #3182ce;">Medium</span>';
                                             } else {
-                                                $riskBadge = '<span class="label label-default" style="font-size: 10px; background: #e2e8f0; color: #4a5568;">Low</span>';
+                                                $riskBadge = '<span class="label label-default" style="font-size: 10px; background: var(--sdv-bg-nested, #e2e8f0); color: var(--sdv-text-secondary, #4a5568);">Low</span>';
                                             }
                                         ?>
-                                        <tr style="border-bottom: 1px solid #edf2f7;">
+                                        <tr style="border-bottom: 1px solid var(--sdv-border, #edf2f7);">
                                             <td style="padding: 12px 18px;">
-                                                <strong style="font-size: 13px; color: #2d3748; display: block; margin-bottom: 2px;">
+                                                <strong style="font-size: 13px; color: var(--sdv-text-primary, #2d3748); display: block; margin-bottom: 2px;">
                                                     <?php echo htmlspecialchars($pDef['label']); ?>
                                                 </strong>
-                                                <span style="font-size: 12px; color: #718096; line-height: 1.4; display: block;">
+                                                <span style="font-size: 12px; color: var(--sdv-text-muted, #718096); line-height: 1.4; display: block;">
                                                     <?php echo htmlspecialchars($pDef['description']); ?>
                                                 </span>
                                             </td>
@@ -8968,7 +7661,7 @@ class AdminController
                 </div>
 
                 <!-- Footer Action Bar -->
-                <div style="display: flex; justify-content: space-between; align-items: center; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
+                <div style="display: flex; justify-content: space-between; align-items: center; background: var(--sdv-bg-surface, #fff); border: 1px solid var(--sdv-border, #e2e8f0); border-radius: 8px; padding: 16px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
                     <div>
                         <button type="submit" name="reset_role_defaults" value="1" class="btn btn-default" onclick="return confirm('Reset all permissions to recommended defaults for each role?');">
                             <i class="fas fa-undo"></i> Reset to Recommended Defaults
@@ -9051,16 +7744,16 @@ class AdminController
                 display: flex;
                 gap: 20px;
                 min-height: 650px;
-                background: #fff;
-                border: 1px solid #e2e8f0;
+                background: var(--sdv-bg-surface, #fff);
+                border: 1px solid var(--sdv-border, #e2e8f0);
                 border-radius: 10px;
                 overflow: hidden;
                 box-shadow: 0 4px 12px rgba(0,0,0,0.03);
             }
             .copilot-sidebar {
                 width: 260px;
-                background: #f8fafc;
-                border-right: 1px solid #e2e8f0;
+                background: var(--sdv-bg-nested, #f8fafc);
+                border-right: 1px solid var(--sdv-border, #e2e8f0);
                 padding: 16px;
                 display: flex;
                 flex-direction: column;
@@ -9069,15 +7762,15 @@ class AdminController
                 flex: 1;
                 display: flex;
                 flex-direction: column;
-                background: #fff;
+                background: var(--sdv-bg-surface, #fff);
             }
             .copilot-header {
                 padding: 14px 20px;
-                border-bottom: 1px solid #edf2f7;
+                border-bottom: 1px solid var(--sdv-border, #edf2f7);
                 display: flex;
                 justify-content: space-between;
                 align-items: center;
-                background: #fff;
+                background: var(--sdv-bg-surface, #fff);
             }
             .copilot-messages {
                 flex: 1;
@@ -9087,7 +7780,7 @@ class AdminController
                 display: flex;
                 flex-direction: column;
                 gap: 15px;
-                background: #fcfdfe;
+                background: var(--sdv-bg-surface, #fcfdfe);
             }
             .copilot-bubble {
                 max-width: 80%;
@@ -9104,13 +7797,13 @@ class AdminController
             }
             .bubble-assistant {
                 align-self: flex-start;
-                background: #f1f5f9;
-                color: #1e293b;
+                background: var(--sdv-bg-nested, #f1f5f9);
+                color: var(--sdv-text-primary, #1e293b);
                 border-bottom-left-radius: 2px;
-                border: 1px solid #e2e8f0;
+                border: 1px solid var(--sdv-border, #e2e8f0);
             }
             .action-card {
-                background: #fff;
+                background: var(--sdv-bg-surface, #fff);
                 border: 2px solid #0d6efd;
                 border-radius: 8px;
                 padding: 16px;
@@ -9134,22 +7827,22 @@ class AdminController
             }
             .diff-table th, .diff-table td {
                 padding: 6px 10px;
-                border: 1px solid #e2e8f0;
+                border: 1px solid var(--sdv-border, #e2e8f0);
             }
             .diff-before { color: #dc3545; background: #fff5f5; }
             .diff-after { color: #198754; background: #f0fdf4; font-weight: 600; }
             .copilot-input-area {
                 padding: 14px 20px;
-                border-top: 1px solid #edf2f7;
-                background: #fff;
+                border-top: 1px solid var(--sdv-border, #edf2f7);
+                background: var(--sdv-bg-surface, #fff);
             }
             .shortcut-chip {
                 display: inline-block;
                 padding: 3px 10px;
                 font-size: 11px;
-                background: #edf2f7;
+                background: var(--sdv-bg-nested, #edf2f7);
                 border-radius: 12px;
-                color: #4a5568;
+                color: var(--sdv-text-secondary, #4a5568);
                 cursor: pointer;
                 margin-right: 6px;
                 margin-bottom: 6px;
@@ -9202,13 +7895,13 @@ class AdminController
                         <a href="<?php echo $actionUrl; ?>&subtab=console&new_session=1" class="btn btn-primary btn-block btn-sm" style="margin-bottom: 15px;">
                             <i class="fas fa-plus"></i> New Ops Thread
                         </a>
-                        <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #a0aec0; margin-bottom: 8px;">
+                        <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--sdv-text-muted, #a0aec0); margin-bottom: 8px;">
                             Recent Threads
                         </div>
                         <div style="flex: 1; overflow-y: auto;">
                             <?php foreach ($recentSessions as $s): ?>
                                 <a href="<?php echo $actionUrl; ?>&subtab=console&session=<?php echo $s->session_uuid; ?>" 
-                                   style="display: block; padding: 8px 10px; border-radius: 6px; margin-bottom: 4px; font-size: 12px; text-decoration: none; color: <?php echo ($s->session_uuid === $activeSessionUuid) ? '#0d6efd' : '#4a5568'; ?>; background: <?php echo ($s->session_uuid === $activeSessionUuid) ? '#e0edff' : 'transparent'; ?>;">
+                                   style="display: block; padding: 8px 10px; border-radius: 6px; margin-bottom: 4px; font-size: 12px; text-decoration: none; color:  <?php echo ($s->session_uuid === $activeSessionUuid) ? '#0d6efd' : '#4a5568'; ?>; background:  <?php echo ($s->session_uuid === $activeSessionUuid) ? '#e0edff' : 'transparent'; ?>;">
                                     <i class="fas fa-comment-dots"></i> <?php echo htmlspecialchars(mb_substr($s->title ?: 'Session #' . $s->id, 0, 24)); ?>
                                 </a>
                             <?php endforeach; ?>
@@ -9255,13 +7948,13 @@ class AdminController
                                                         <i class="fas fa-shield-alt"></i> Action Proposal: <?php echo htmlspecialchars($card['title']); ?>
                                                         <span class="label label-warning pull-right">Tier <?php echo $card['risk_tier']; ?> Reversible</span>
                                                     </div>
-                                                    <div style="font-size: 12px; color: #4a5568;">
+                                                    <div style="font-size: 12px; color: var(--sdv-text-secondary, #4a5568);">
                                                         Target: <strong><?php echo htmlspecialchars($card['target'] ?? 'Record'); ?></strong>
                                                     </div>
                                                     <?php if (!empty($card['diff'])): ?>
                                                         <table class="diff-table">
                                                             <thead>
-                                                                <tr style="background: #f8fafc;">
+                                                                <tr style="background: var(--sdv-bg-nested, #f8fafc);">
                                                                     <th>Property</th>
                                                                     <th>Current Value</th>
                                                                     <th>Proposed Value</th>
@@ -9412,9 +8105,9 @@ class AdminController
                             <i class="fas fa-shield-alt"></i> Action Proposal: ${card.title}
                             <span class="label label-warning pull-right">Tier ${card.risk_tier} Reversible</span>
                         </div>
-                        <div style="font-size: 12px; color: #4a5568;">Target: <strong>${card.target || 'Record'}</strong></div>
+                        <div style="font-size: 12px; color: var(--sdv-text-secondary, #4a5568);">Target: <strong>${card.target || 'Record'}</strong></div>
                         <table class="diff-table">
-                            <thead><tr style="background:#f8fafc;"><th>Property</th><th>Current</th><th>Proposed</th></tr></thead>
+                            <thead><tr style="background: var(--sdv-bg-nested, #f8fafc);"><th>Property</th><th>Current</th><th>Proposed</th></tr></thead>
                             <tbody>${diffRows}</tbody>
                         </table>
                         <div style="margin-top: 12px; display: flex; justify-content: flex-end; gap: 10px;">
@@ -9463,14 +8156,14 @@ class AdminController
             <?php elseif ($activeSubTab === 'journal'): ?>
                 <!-- OPS ROLLBACK JOURNAL -->
                 <div class="panel panel-default" style="border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
-                    <div class="panel-heading" style="background: #fff; padding: 15px 20px;">
+                    <div class="panel-heading" style="background: var(--sdv-bg-surface, #fff); padding: 15px 20px;">
                         <strong style="font-size: 15px;"><i class="fas fa-history text-primary"></i> 90-Day Immutable Ops Journal</strong>
                         <p class="text-muted" style="margin: 3px 0 0; font-size: 12px;">Complete audit trail of every mutating WHMCS operation triggered via Copilot with state diffs and 1-click compensation rollback.</p>
                     </div>
                     <div class="table-responsive">
                         <table class="table table-striped table-hover" style="margin-bottom: 0;">
                             <thead>
-                                <tr style="background: #f8fafc;">
+                                <tr style="background: var(--sdv-bg-nested, #f8fafc);">
                                     <th>ID</th>
                                     <th>Timestamp</th>
                                     <th>Operator</th>
@@ -9558,14 +8251,14 @@ class AdminController
             <?php elseif ($activeSubTab === 'takeover'): ?>
                 <!-- LIVE VISITOR CHATS & TAKEOVER DESK -->
                 <div class="panel panel-default" style="border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
-                    <div class="panel-heading" style="background: #fff; padding: 15px 20px;">
+                    <div class="panel-heading" style="background: var(--sdv-bg-surface, #fff); padding: 15px 20px;">
                         <strong style="font-size: 15px;"><i class="fas fa-headset text-success"></i> Live Visitor Chats & Staff Takeover Desk</strong>
                         <p class="text-muted" style="margin: 3px 0 0; font-size: 12px;">Active customer live chats in progress. Join any conversation to assist the customer directly.</p>
                     </div>
                     <div class="table-responsive">
                         <table class="table table-striped table-hover" style="margin-bottom: 0;">
                             <thead>
-                                <tr style="background: #f8fafc;">
+                                <tr style="background: var(--sdv-bg-nested, #f8fafc);">
                                     <th>Session</th>
                                     <th>Visitor / Client</th>
                                     <th>Current Page</th>
@@ -10315,7 +9008,7 @@ class AdminController
                             <div class="panel panel-default" style="border-radius: 8px; border-left: 4px solid #3b82f6; transition: transform 0.15s ease;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='translateY(0)'">
                                 <div class="panel-body" style="padding: 15px;">
                                     <div class="text-muted" style="font-size: 11px; text-transform: uppercase; font-weight: 700;">Total Sessions</div>
-                                    <div style="font-size: 22px; font-weight: 700; color: #1e293b;"><?php echo number_format($totalSessions); ?></div>
+                                    <div style="font-size: 22px; font-weight: 700; color: var(--sdv-text-primary, #1e293b);"><?php echo number_format($totalSessions); ?></div>
                                     <small class="text-muted" style="font-size: 10.5px;">All channels</small>
                                 </div>
                             </div>
@@ -10361,9 +9054,9 @@ class AdminController
                                     <div class="text-muted" style="font-size: 11px; text-transform: uppercase; font-weight: 700;">AI CSAT Quality</div>
                                     <div style="font-size: 22px; font-weight: 700; color: #be185d;">
                                         <?php if (!empty($csatStats['total_ratings'])): ?>
-                                            <?php echo $csatStats['csat_percent']; ?>% <span style="font-size: 12px; font-weight: normal; color: #64748b;">(<?php echo $csatStats['positive_ratings']; ?> 👍 / <?php echo $csatStats['negative_ratings']; ?> 👎)</span>
+                                            <?php echo $csatStats['csat_percent']; ?>% <span style="font-size: 12px; font-weight: normal; color: var(--sdv-text-muted, #64748b);">(<?php echo $csatStats['positive_ratings']; ?> 👍 / <?php echo $csatStats['negative_ratings']; ?> 👎)</span>
                                         <?php else: ?>
-                                            <span style="font-size: 14px; font-weight: 500; color: #94a3b8;">No ratings yet</span>
+                                            <span style="font-size: 14px; font-weight: 500; color: var(--sdv-text-muted, #94a3b8);">No ratings yet</span>
                                         <?php endif; ?>
                                     </div>
                                     <small class="text-muted" style="font-size: 10.5px;">Click to filter positive</small>
@@ -10384,7 +9077,7 @@ class AdminController
                             <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center; flex: 1;">
                                 <!-- Search Input -->
                                 <div class="input-group" style="min-width: 260px;">
-                                    <span class="input-group-addon" style="background: #fff;"><i class="fas fa-search text-muted"></i></span>
+                                    <span class="input-group-addon" style="background: var(--sdv-bg-surface, #fff);"><i class="fas fa-search text-muted"></i></span>
                                     <input type="text" name="q" class="form-control" placeholder="Search name, email, IP, UUID, message..." value="<?php echo htmlspecialchars($searchQ); ?>">
                                 </div>
 
@@ -10455,7 +9148,7 @@ class AdminController
 
                 <!-- Sessions Table Panel -->
                 <div class="panel panel-default" style="border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
-                    <div class="panel-heading" style="background: #fff; padding: 14px 20px; display: flex; justify-content: space-between; align-items: center;">
+                    <div class="panel-heading" style="background: var(--sdv-bg-surface, #fff); padding: 14px 20px; display: flex; justify-content: space-between; align-items: center;">
                         <div>
                             <strong style="font-size: 15px;"><i class="fas fa-list"></i> Customer Live Chat Conversations</strong>
                             <span class="text-muted" style="font-size: 12px; margin-left: 8px;">
@@ -10477,7 +9170,7 @@ class AdminController
                         <div class="table-responsive" style="margin-bottom: 0;">
                             <table class="table table-hover" style="margin-bottom: 0; vertical-align: middle;">
                                 <thead>
-                                    <tr style="background: #f8fafc; font-size: 12px; color: #475569;">
+                                    <tr style="background: var(--sdv-bg-nested, #f8fafc); font-size: 12px; color: var(--sdv-text-muted, #475569);">
                                         <th style="width: 140px;">ID & Channel</th>
                                         <th style="min-width: 180px;">Customer / Visitor</th>
                                         <th style="width: 130px;">Status</th>
@@ -10490,7 +9183,7 @@ class AdminController
                                 <tbody>
                                     <?php if (count($sessionsList) === 0): ?>
                                         <tr>
-                                            <td colspan="7" class="text-center" style="padding: 45px; color: #94a3b8;">
+                                            <td colspan="7" class="text-center" style="padding: 45px; color: var(--sdv-text-muted, #94a3b8);">
                                                 <i class="fas fa-comments" style="font-size: 28px; margin-bottom: 10px; display: block;"></i>
                                                 No customer chat conversations matched your filter criteria.<br>
                                                 <a href="<?php echo $baseActionUrl; ?>&tab=sessions" class="btn btn-default btn-xs" style="margin-top: 10px;">Clear Filters</a>
@@ -10554,10 +9247,10 @@ class AdminController
                                             ?>
                                             <tr style="<?php echo $isRecent ? 'background-color: #f0fdf4;' : ''; ?>">
                                                 <td>
-                                                    <div style="font-weight: 700; color: #1e293b; font-size: 13px;">
+                                                    <div style="font-weight: 700; color: var(--sdv-text-primary, #1e293b); font-size: 13px;">
                                                         #<?php echo (int)$s->id; ?>
                                                         <?php if ($isRecent): ?>
-                                                            <span class="badge" style="background:#10b981; font-size: 9px; padding: 2px 5px;">LIVE</span>
+                                                            <span class="badge" style="background: #10b981; font-size: 9px; padding: 2px 5px;">LIVE</span>
                                                         <?php endif; ?>
                                                     </div>
                                                     <small class="text-muted" style="font-family: monospace; font-size: 10px;"><?php echo htmlspecialchars(substr($s->session_uuid, 0, 14)); ?>...</small>
@@ -10565,13 +9258,13 @@ class AdminController
                                                 <td><?php echo $clientInfo; ?></td>
                                                 <td><?php echo $statusBadge; ?></td>
                                                 <td>
-                                                    <span class="badge" style="background: #e2e8f0; color: #334155; font-size: 11px;"><?php echo $msgCount; ?> msgs</span>
+                                                    <span class="badge" style="background: var(--sdv-bg-nested, #e2e8f0); color: var(--sdv-text-secondary, #334155); font-size: 11px;"><?php echo $msgCount; ?> msgs</span>
                                                     <?php if (!empty($lastPreview)): ?>
-                                                        <div style="font-size: 11.5px; color: #64748b; margin-top: 3px; font-style: italic;">
+                                                        <div style="font-size: 11.5px; color: var(--sdv-text-muted, #64748b); margin-top: 3px; font-style: italic;">
                                                             "<?php echo htmlspecialchars($lastPreview); ?>"
                                                         </div>
                                                     <?php else: ?>
-                                                        <div style="font-size: 11px; color: #94a3b8; margin-top: 3px;">No messages sent yet</div>
+                                                        <div style="font-size: 11px; color: var(--sdv-text-muted, #94a3b8); margin-top: 3px;">No messages sent yet</div>
                                                     <?php endif; ?>
                                                 </td>
                                                 <td><?php echo $ratingHtml; ?></td>
@@ -10620,7 +9313,7 @@ class AdminController
 
                     <!-- Server-Side Pagination Bar -->
                     <?php if ($totalPages > 1): ?>
-                        <div class="panel-footer" style="background: #fff; padding: 12px 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                        <div class="panel-footer" style="background: var(--sdv-bg-surface, #fff); padding: 12px 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
                             <div class="text-muted" style="font-size: 12px;">
                                 Showing Page <strong><?php echo $page; ?></strong> of <strong><?php echo $totalPages; ?></strong> (<?php echo number_format($totalFilteredSessions); ?> total conversations)
                             </div>
@@ -10687,18 +9380,18 @@ class AdminController
                     <div id="sahdevDrawerBackdrop" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15, 23, 42, 0.5); z-index: 99998;" onclick="window.location.href='<?php echo $drawerReturnUrl; ?>';"></div>
 
                     <!-- Slide-out Drawer Panel -->
-                    <div id="sahdevTranscriptDrawer" style="position: fixed; top: 0; right: 0; width: 620px; max-width: 95vw; height: 100vh; background: #ffffff; box-shadow: -10px 0 35px rgba(0,0,0,0.25); z-index: 99999; display: flex; flex-direction: column; animation: sdvDrawerSlide 0.2s ease-out; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+                    <div id="sahdevTranscriptDrawer" style="position: fixed; top: 0; right: 0; width: 620px; max-width: 95vw; height: 100vh; background: var(--sdv-bg-surface, #ffffff); box-shadow: -10px 0 35px rgba(0,0,0,0.25); z-index: 99999; display: flex; flex-direction: column; animation: sdvDrawerSlide 0.2s ease-out; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
                         <style>
                             @keyframes sdvDrawerSlide { from { transform: translateX(100%); } to { transform: translateX(0); } }
                         </style>
 
                         <!-- Drawer Header -->
-                        <div style="background: #0f172a; color: #ffffff; padding: 16px 22px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1e293b;">
+                        <div style="background: var(--sdv-bg-nested, #0f172a); color: #ffffff; padding: 16px 22px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1e293b;">
                             <div>
                                 <div style="display: flex; align-items: center; gap: 8px;">
                                     <strong style="font-size: 16px;">Chat #<?php echo (int)$viewSession->id; ?></strong>
                                     <?php if ($viewSession->status === 'taken_over'): ?>
-                                        <span class="label label-info" style="background:#7c3aed; font-size: 10px;">STAFF TAKEN OVER</span>
+                                        <span class="label label-info" style="background: #7c3aed; font-size: 10px;">STAFF TAKEN OVER</span>
                                     <?php elseif ($viewSession->status === 'active'): ?>
                                         <span class="label label-success" style="font-size: 10px;">AI ACTIVE</span>
                                     <?php elseif ($viewSession->status === 'escalated_ticket'): ?>
@@ -10707,7 +9400,7 @@ class AdminController
                                         <span class="label label-default" style="font-size: 10px;">CLOSED</span>
                                     <?php endif; ?>
                                 </div>
-                                <div style="font-size: 11.5px; color: #94a3b8; font-family: monospace; margin-top: 2px;">UUID: <?php echo htmlspecialchars($viewSession->session_uuid); ?></div>
+                                <div style="font-size: 11.5px; color: var(--sdv-text-muted, #94a3b8); font-family: monospace; margin-top: 2px;">UUID: <?php echo htmlspecialchars($viewSession->session_uuid); ?></div>
                             </div>
                             <div style="display: flex; align-items: center; gap: 8px;">
                                 <button type="button" class="btn btn-default btn-xs" onclick="copyTranscriptToClipboard();" title="Copy full transcript formatted to clipboard">
@@ -10716,16 +9409,16 @@ class AdminController
                                 <a href="<?php echo $baseActionUrl; ?>&export_session=<?php echo (int)$viewSession->id; ?>" class="btn btn-default btn-xs" title="Download .txt transcript">
                                     <i class="fas fa-download"></i> .txt
                                 </a>
-                                <a href="<?php echo $drawerReturnUrl; ?>" style="color: #94a3b8; font-size: 24px; text-decoration: none; margin-left: 8px; line-height: 1;" title="Close Drawer (Esc)">&times;</a>
+                                <a href="<?php echo $drawerReturnUrl; ?>" style="color: var(--sdv-text-muted, #94a3b8); font-size: 24px; text-decoration: none; margin-left: 8px; line-height: 1;" title="Close Drawer (Esc)">&times;</a>
                             </div>
                         </div>
 
                         <!-- Customer Overview Card -->
-                        <div style="padding: 12px 20px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; font-size: 12px;">
+                        <div style="padding: 12px 20px; background: var(--sdv-bg-nested, #f8fafc); border-bottom: 1px solid var(--sdv-border, #e2e8f0); font-size: 12px;">
                             <?php if ($viewClient): ?>
                                 <div style="display: flex; justify-content: space-between; align-items: center;">
                                     <div>
-                                        <div style="font-weight: 700; color: #0f172a; font-size: 13.5px;">
+                                        <div style="font-weight: 700; color: var(--sdv-text-primary, #0f172a); font-size: 13.5px;">
                                             <i class="fas fa-user-circle text-primary"></i> <?php echo htmlspecialchars($viewClient->firstname . ' ' . $viewClient->lastname); ?>
                                             <?php if (!empty($viewClient->companyname)): ?>
                                                 <span class="text-muted">(<?php echo htmlspecialchars($viewClient->companyname); ?>)</span>
@@ -10746,7 +9439,7 @@ class AdminController
                             <?php else: ?>
                                 <div style="display: flex; justify-content: space-between; align-items: center;">
                                     <div>
-                                        <strong style="color: #334155;"><i class="fas fa-globe text-muted"></i> Guest Visitor</strong>
+                                        <strong style="color: var(--sdv-text-secondary, #334155);"><i class="fas fa-globe text-muted"></i> Guest Visitor</strong>
                                         <div class="text-muted" style="font-size: 11.5px;">
                                             IP: <code><?php echo htmlspecialchars($vMeta['ip'] ?? 'Unknown'); ?></code>
                                             <?php if (!empty($vMeta['browser'])): ?>
@@ -10774,10 +9467,10 @@ class AdminController
                         </div>
 
                         <!-- Chat Messages Transcript Stream -->
-                        <div id="sdvTranscriptContainer" style="flex: 1; overflow-y: auto; padding: 20px; background: #f1f5f9; display: flex; flex-direction: column; gap: 14px;">
+                        <div id="sdvTranscriptContainer" style="flex: 1; overflow-y: auto; padding: 20px; background: var(--sdv-bg-nested, #f1f5f9); display: flex; flex-direction: column; gap: 14px;">
                             <?php if (count($viewMessages) === 0): ?>
                                 <div class="text-center text-muted" style="padding: 50px 20px;">
-                                    <i class="far fa-comment-dots" style="font-size: 32px; color: #cbd5e1; margin-bottom: 8px; display: block;"></i>
+                                    <i class="far fa-comment-dots" style="font-size: 32px; color: var(--sdv-text-secondary, #cbd5e1); margin-bottom: 8px; display: block;"></i>
                                     No messages recorded in this chat session yet.
                                 </div>
                             <?php else: ?>
@@ -10788,7 +9481,7 @@ class AdminController
                                     $isSystem = ($vm->sender_type === 'system');
 
                                     if ($isSystem): ?>
-                                        <div style="align-self: center; background: #e2e8f0; color: #475569; padding: 4px 12px; border-radius: 9999px; font-size: 11px; font-style: italic;">
+                                        <div style="align-self: center; background: var(--sdv-bg-nested, #e2e8f0); color: var(--sdv-text-muted, #475569); padding: 4px 12px; border-radius: 9999px; font-size: 11px; font-style: italic;">
                                             <i class="fas fa-info-circle"></i> <?php echo htmlspecialchars($vm->message_text); ?>
                                         </div>
                                         <?php continue;
@@ -10814,10 +9507,10 @@ class AdminController
                                     }
                                     ?>
                                     <div class="sdv-transcript-msg" data-sender="<?php echo htmlspecialchars($senderLabel); ?>" data-time="<?php echo htmlspecialchars(\Carbon\Carbon::parse($vm->created_at)->format('Y-m-d H:i')); ?>" data-text="<?php echo htmlspecialchars($vm->message_text); ?>" style="align-self: <?php echo $align; ?>; max-width: 82%;">
-                                        <div style="font-size: 11px; color: #64748b; margin-bottom: 4px; text-align: <?php echo $isUser ? 'right' : 'left'; ?>;">
+                                        <div style="font-size: 11px; color: var(--sdv-text-muted, #64748b); margin-bottom: 4px; text-align: <?php echo $isUser ? 'right' : 'left'; ?>;">
                                             <strong><?php echo htmlspecialchars($senderLabel); ?></strong> &bull; <?php echo htmlspecialchars(\Carbon\Carbon::parse($vm->created_at)->format('g:i A')); ?>
                                         </div>
-                                        <div style="background: <?php echo $bubbleBg; ?>; color: <?php echo $bubbleColor; ?>; padding: 11px 15px; border-radius: 12px; border: 1px solid <?php echo $bubbleBorder; ?>; font-size: 13.5px; line-height: 1.5; word-break: break-word; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
+                                        <div style="background:  <?php echo $bubbleBg; ?>; color:  <?php echo $bubbleColor; ?>; padding: 11px 15px; border-radius: 12px; border: 1px solid <?php echo $bubbleBorder; ?>; font-size: 13.5px; line-height: 1.5; word-break: break-word; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
                                             <?php echo nl2br(htmlspecialchars($vm->message_text)); ?>
                                         </div>
                                         <?php if (!empty($vm->rating)): ?>
@@ -10838,7 +9531,7 @@ class AdminController
                         </div>
 
                         <!-- Live Staff Reply Bar & Actions Footer -->
-                        <div style="background: #ffffff; border-top: 1px solid #e2e8f0; padding: 14px 20px;">
+                        <div style="background: var(--sdv-bg-surface, #ffffff); border-top: 1px solid var(--sdv-border, #e2e8f0); padding: 14px 20px;">
                             <?php if ($viewSession->status !== 'closed'): ?>
                                 <form method="post" action="<?php echo $drawerReturnUrl; ?>&view_session=<?php echo (int)$viewSession->id; ?>" style="margin-bottom: 10px;">
                                     <?php echo $csrfToken; ?>
@@ -11030,7 +9723,7 @@ class AdminController
 
                     <?php foreach ($prompts as $idx => $p): ?>
                         <div class="panel panel-default" style="border-radius: 8px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
-                            <div class="panel-heading" style="background: #fff; padding: 14px 20px; display: flex; justify-content: space-between; align-items: center;">
+                            <div class="panel-heading" style="background: var(--sdv-bg-surface, #fff); padding: 14px 20px; display: flex; justify-content: space-between; align-items: center;">
                                 <div>
                                     <span class="label label-primary" style="font-family: monospace; font-size: 11px;"><?php echo htmlspecialchars($p->prompt_key); ?></span>
                                     <strong style="font-size: 14px; margin-left: 8px;"><?php echo htmlspecialchars($p->label); ?></strong>
@@ -11045,7 +9738,7 @@ class AdminController
                                 <p class="text-muted" style="font-size: 12px; margin-bottom: 10px;">
                                     <?php echo htmlspecialchars($p->description); ?>
                                 </p>
-                                <textarea name="prompt_<?php echo htmlspecialchars($p->prompt_key); ?>" id="prompt_field_<?php echo htmlspecialchars($p->prompt_key); ?>" rows="7" class="form-control" style="font-family: Consolas, Monaco, monospace; font-size: 12.5px; line-height: 1.45; background: #fafafa;"><?php echo htmlspecialchars($p->content); ?></textarea>
+                                <textarea name="prompt_<?php echo htmlspecialchars($p->prompt_key); ?>" id="prompt_field_<?php echo htmlspecialchars($p->prompt_key); ?>" rows="7" class="form-control" style="font-family: Consolas, Monaco, monospace; font-size: 12.5px; line-height: 1.45; background: var(--sdv-bg-nested, #fafafa);"><?php echo htmlspecialchars($p->content); ?></textarea>
                             </div>
                         </div>
                     <?php endforeach; ?>
@@ -11096,10 +9789,10 @@ class AdminController
 
                     <!-- CARD 1: AUTHENTICATED CLIENT-ISOLATED DATA SOURCES -->
                     <div class="panel panel-default" style="border-radius: 8px; margin-bottom: 25px; box-shadow: 0 1px 4px rgba(0,0,0,0.04); overflow: hidden;">
-                        <div class="panel-heading" style="background: linear-gradient(to right, #f8fafc, #ffffff); padding: 16px 20px; border-bottom: 1px solid #e2e8f0;">
+                        <div class="panel-heading" style="background: linear-gradient(to right, var(--sdv-bg-nested, #f8fafc), var(--sdv-bg-surface, #ffffff)); padding: 16px 20px; border-bottom: 1px solid var(--sdv-border, #e2e8f0);">
                             <div class="row" style="display: flex; align-items: center;">
                                 <div class="col-xs-8">
-                                    <strong style="font-size: 15px; color: #0f172a;">
+                                    <strong style="font-size: 15px; color: var(--sdv-text-primary, #0f172a);">
                                         <i class="fas fa-user-lock text-success" style="margin-right: 6px;"></i> Authenticated Customer-Isolated Data Scope
                                     </strong>
                                     <span class="badge" style="background: #10b981; color: #fff; font-size: 11px; margin-left: 8px; padding: 4px 8px;">client_id &gt; 0 Only</span>
@@ -11116,7 +9809,7 @@ class AdminController
                                 <div class="list-group-item" style="padding: 16px 20px; border-left: none; border-right: none;">
                                     <div class="row" style="display: flex; align-items: center;">
                                         <div class="col-sm-10 col-xs-9">
-                                            <div style="font-weight: 700; font-size: 14px; color: #1e293b; margin-bottom: 4px;">
+                                            <div style="font-weight: 700; font-size: 14px; color: var(--sdv-text-primary, #1e293b); margin-bottom: 4px;">
                                                 <i class="fas fa-server text-primary" style="width: 20px;"></i> Active Hosting &amp; Cloud Services
                                                 <span class="label label-success" style="margin-left: 6px; font-weight: 500; font-size: 10px;">Client Isolated</span>
                                             </div>
@@ -11127,8 +9820,8 @@ class AdminController
                                         <div class="col-sm-2 col-xs-3 text-right">
                                             <label style="position: relative; display: inline-block; width: 46px; height: 24px; margin: 0; cursor: pointer; vertical-align: middle;">
                                                 <input type="checkbox" name="client_chat_ds_services" value="1" <?php echo !empty($settings->client_chat_ds_services ?? 1) ? 'checked' : ''; ?> style="position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer; z-index: 2;" onchange="var s=this.nextElementSibling; var k=s.firstElementChild; if(this.checked){ s.style.backgroundColor='#10b981'; k.style.left='24px'; }else{ s.style.backgroundColor='#cbd5e1'; k.style.left='3px'; }">
-                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: <?php echo !empty($settings->client_chat_ds_services ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
-                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_services ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: #fff; transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
+                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color:  <?php echo !empty($settings->client_chat_ds_services ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
+                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_services ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: var(--sdv-bg-surface, #fff); transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
                                                 </span>
                                             </label>
                                         </div>
@@ -11139,7 +9832,7 @@ class AdminController
                                 <div class="list-group-item" style="padding: 16px 20px; border-left: none; border-right: none;">
                                     <div class="row" style="display: flex; align-items: center;">
                                         <div class="col-sm-10 col-xs-9">
-                                            <div style="font-weight: 700; font-size: 14px; color: #1e293b; margin-bottom: 4px;">
+                                            <div style="font-weight: 700; font-size: 14px; color: var(--sdv-text-primary, #1e293b); margin-bottom: 4px;">
                                                 <i class="fas fa-network-wired text-info" style="width: 20px;"></i> Assigned Server Nameservers &amp; Hostname
                                                 <span class="label label-success" style="margin-left: 6px; font-weight: 500; font-size: 10px;">Service Level</span>
                                             </div>
@@ -11150,8 +9843,8 @@ class AdminController
                                         <div class="col-sm-2 col-xs-3 text-right">
                                             <label style="position: relative; display: inline-block; width: 46px; height: 24px; margin: 0; cursor: pointer; vertical-align: middle;">
                                                 <input type="checkbox" name="client_chat_ds_server_nameservers" value="1" <?php echo !empty($settings->client_chat_ds_server_nameservers ?? 1) ? 'checked' : ''; ?> style="position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer; z-index: 2;" onchange="var s=this.nextElementSibling; var k=s.firstElementChild; if(this.checked){ s.style.backgroundColor='#10b981'; k.style.left='24px'; }else{ s.style.backgroundColor='#cbd5e1'; k.style.left='3px'; }">
-                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: <?php echo !empty($settings->client_chat_ds_server_nameservers ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
-                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_server_nameservers ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: #fff; transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
+                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color:  <?php echo !empty($settings->client_chat_ds_server_nameservers ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
+                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_server_nameservers ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: var(--sdv-bg-surface, #fff); transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
                                                 </span>
                                             </label>
                                         </div>
@@ -11162,7 +9855,7 @@ class AdminController
                                 <div class="list-group-item" style="padding: 16px 20px; border-left: none; border-right: none;">
                                     <div class="row" style="display: flex; align-items: center;">
                                         <div class="col-sm-10 col-xs-9">
-                                            <div style="font-weight: 700; font-size: 14px; color: #1e293b; margin-bottom: 4px;">
+                                            <div style="font-weight: 700; font-size: 14px; color: var(--sdv-text-primary, #1e293b); margin-bottom: 4px;">
                                                 <i class="fas fa-puzzle-piece text-warning" style="width: 20px;"></i> Hosting Addons &amp; Extra Subscriptions
                                                 <span class="label label-success" style="margin-left: 6px; font-weight: 500; font-size: 10px;">Service Level</span>
                                             </div>
@@ -11173,8 +9866,8 @@ class AdminController
                                         <div class="col-sm-2 col-xs-3 text-right">
                                             <label style="position: relative; display: inline-block; width: 46px; height: 24px; margin: 0; cursor: pointer; vertical-align: middle;">
                                                 <input type="checkbox" name="client_chat_ds_hosting_addons" value="1" <?php echo !empty($settings->client_chat_ds_hosting_addons ?? 1) ? 'checked' : ''; ?> style="position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer; z-index: 2;" onchange="var s=this.nextElementSibling; var k=s.firstElementChild; if(this.checked){ s.style.backgroundColor='#10b981'; k.style.left='24px'; }else{ s.style.backgroundColor='#cbd5e1'; k.style.left='3px'; }">
-                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: <?php echo !empty($settings->client_chat_ds_hosting_addons ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
-                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_hosting_addons ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: #fff; transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
+                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color:  <?php echo !empty($settings->client_chat_ds_hosting_addons ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
+                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_hosting_addons ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: var(--sdv-bg-surface, #fff); transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
                                                 </span>
                                             </label>
                                         </div>
@@ -11185,7 +9878,7 @@ class AdminController
                                 <div class="list-group-item" style="padding: 16px 20px; border-left: none; border-right: none;">
                                     <div class="row" style="display: flex; align-items: center;">
                                         <div class="col-sm-10 col-xs-9">
-                                            <div style="font-weight: 700; font-size: 14px; color: #1e293b; margin-bottom: 4px;">
+                                            <div style="font-weight: 700; font-size: 14px; color: var(--sdv-text-primary, #1e293b); margin-bottom: 4px;">
                                                 <i class="fas fa-microchip text-primary" style="width: 20px;"></i> Configurable Options &amp; Resource Upgrades
                                                 <span class="label label-success" style="margin-left: 6px; font-weight: 500; font-size: 10px;">Service Level</span>
                                             </div>
@@ -11196,8 +9889,8 @@ class AdminController
                                         <div class="col-sm-2 col-xs-3 text-right">
                                             <label style="position: relative; display: inline-block; width: 46px; height: 24px; margin: 0; cursor: pointer; vertical-align: middle;">
                                                 <input type="checkbox" name="client_chat_ds_config_options" value="1" <?php echo !empty($settings->client_chat_ds_config_options ?? 1) ? 'checked' : ''; ?> style="position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer; z-index: 2;" onchange="var s=this.nextElementSibling; var k=s.firstElementChild; if(this.checked){ s.style.backgroundColor='#10b981'; k.style.left='24px'; }else{ s.style.backgroundColor='#cbd5e1'; k.style.left='3px'; }">
-                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: <?php echo !empty($settings->client_chat_ds_config_options ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
-                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_config_options ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: #fff; transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
+                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color:  <?php echo !empty($settings->client_chat_ds_config_options ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
+                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_config_options ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: var(--sdv-bg-surface, #fff); transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
                                                 </span>
                                             </label>
                                         </div>
@@ -11208,7 +9901,7 @@ class AdminController
                                 <div class="list-group-item" style="padding: 16px 20px; border-left: none; border-right: none;">
                                     <div class="row" style="display: flex; align-items: center;">
                                         <div class="col-sm-10 col-xs-9">
-                                            <div style="font-weight: 700; font-size: 14px; color: #1e293b; margin-bottom: 4px;">
+                                            <div style="font-weight: 700; font-size: 14px; color: var(--sdv-text-primary, #1e293b); margin-bottom: 4px;">
                                                 <i class="fas fa-lock text-success" style="width: 20px;"></i> SSL Certificate Orders &amp; Validation Status
                                                 <span class="label label-success" style="margin-left: 6px; font-weight: 500; font-size: 10px;">Client Isolated</span>
                                             </div>
@@ -11219,8 +9912,8 @@ class AdminController
                                         <div class="col-sm-2 col-xs-3 text-right">
                                             <label style="position: relative; display: inline-block; width: 46px; height: 24px; margin: 0; cursor: pointer; vertical-align: middle;">
                                                 <input type="checkbox" name="client_chat_ds_ssl_orders" value="1" <?php echo !empty($settings->client_chat_ds_ssl_orders ?? 1) ? 'checked' : ''; ?> style="position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer; z-index: 2;" onchange="var s=this.nextElementSibling; var k=s.firstElementChild; if(this.checked){ s.style.backgroundColor='#10b981'; k.style.left='24px'; }else{ s.style.backgroundColor='#cbd5e1'; k.style.left='3px'; }">
-                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: <?php echo !empty($settings->client_chat_ds_ssl_orders ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
-                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_ssl_orders ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: #fff; transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
+                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color:  <?php echo !empty($settings->client_chat_ds_ssl_orders ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
+                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_ssl_orders ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: var(--sdv-bg-surface, #fff); transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
                                                 </span>
                                             </label>
                                         </div>
@@ -11231,7 +9924,7 @@ class AdminController
                                 <div class="list-group-item" style="padding: 16px 20px; border-left: none; border-right: none;">
                                     <div class="row" style="display: flex; align-items: center;">
                                         <div class="col-sm-10 col-xs-9">
-                                            <div style="font-weight: 700; font-size: 14px; color: #1e293b; margin-bottom: 4px;">
+                                            <div style="font-weight: 700; font-size: 14px; color: var(--sdv-text-primary, #1e293b); margin-bottom: 4px;">
                                                 <i class="fas fa-globe text-info" style="width: 20px;"></i> Registered Domains &amp; Renewal Status
                                                 <span class="label label-success" style="margin-left: 6px; font-weight: 500; font-size: 10px;">Client Isolated</span>
                                             </div>
@@ -11242,8 +9935,8 @@ class AdminController
                                         <div class="col-sm-2 col-xs-3 text-right">
                                             <label style="position: relative; display: inline-block; width: 46px; height: 24px; margin: 0; cursor: pointer; vertical-align: middle;">
                                                 <input type="checkbox" name="client_chat_ds_domains" value="1" <?php echo !empty($settings->client_chat_ds_domains ?? 1) ? 'checked' : ''; ?> style="position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer; z-index: 2;" onchange="var s=this.nextElementSibling; var k=s.firstElementChild; if(this.checked){ s.style.backgroundColor='#10b981'; k.style.left='24px'; }else{ s.style.backgroundColor='#cbd5e1'; k.style.left='3px'; }">
-                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: <?php echo !empty($settings->client_chat_ds_domains ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
-                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_domains ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: #fff; transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
+                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color:  <?php echo !empty($settings->client_chat_ds_domains ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
+                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_domains ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: var(--sdv-bg-surface, #fff); transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
                                                 </span>
                                             </label>
                                         </div>
@@ -11254,7 +9947,7 @@ class AdminController
                                 <div class="list-group-item" style="padding: 16px 20px; border-left: none; border-right: none;">
                                     <div class="row" style="display: flex; align-items: center;">
                                         <div class="col-sm-10 col-xs-9">
-                                            <div style="font-weight: 700; font-size: 14px; color: #1e293b; margin-bottom: 4px;">
+                                            <div style="font-weight: 700; font-size: 14px; color: var(--sdv-text-primary, #1e293b); margin-bottom: 4px;">
                                                 <i class="fas fa-shield-virus text-info" style="width: 20px;"></i> Domain Privacy &amp; DNS Addons
                                                 <span class="label label-success" style="margin-left: 6px; font-weight: 500; font-size: 10px;">Service Level</span>
                                             </div>
@@ -11265,8 +9958,8 @@ class AdminController
                                         <div class="col-sm-2 col-xs-3 text-right">
                                             <label style="position: relative; display: inline-block; width: 46px; height: 24px; margin: 0; cursor: pointer; vertical-align: middle;">
                                                 <input type="checkbox" name="client_chat_ds_domain_addons" value="1" <?php echo !empty($settings->client_chat_ds_domain_addons ?? 1) ? 'checked' : ''; ?> style="position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer; z-index: 2;" onchange="var s=this.nextElementSibling; var k=s.firstElementChild; if(this.checked){ s.style.backgroundColor='#10b981'; k.style.left='24px'; }else{ s.style.backgroundColor='#cbd5e1'; k.style.left='3px'; }">
-                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: <?php echo !empty($settings->client_chat_ds_domain_addons ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
-                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_domain_addons ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: #fff; transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
+                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color:  <?php echo !empty($settings->client_chat_ds_domain_addons ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
+                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_domain_addons ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: var(--sdv-bg-surface, #fff); transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
                                                 </span>
                                             </label>
                                         </div>
@@ -11277,7 +9970,7 @@ class AdminController
                                 <div class="list-group-item" style="padding: 16px 20px; border-left: none; border-right: none;">
                                     <div class="row" style="display: flex; align-items: center;">
                                         <div class="col-sm-10 col-xs-9">
-                                            <div style="font-weight: 700; font-size: 14px; color: #1e293b; margin-bottom: 4px;">
+                                            <div style="font-weight: 700; font-size: 14px; color: var(--sdv-text-primary, #1e293b); margin-bottom: 4px;">
                                                 <i class="fas fa-file-invoice-dollar text-warning" style="width: 20px;"></i> Recent Invoices &amp; Billing Due Status
                                                 <span class="label label-success" style="margin-left: 6px; font-weight: 500; font-size: 10px;">Client Isolated</span>
                                             </div>
@@ -11288,8 +9981,8 @@ class AdminController
                                         <div class="col-sm-2 col-xs-3 text-right">
                                             <label style="position: relative; display: inline-block; width: 46px; height: 24px; margin: 0; cursor: pointer; vertical-align: middle;">
                                                 <input type="checkbox" name="client_chat_ds_invoices" value="1" <?php echo !empty($settings->client_chat_ds_invoices ?? 1) ? 'checked' : ''; ?> style="position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer; z-index: 2;" onchange="var s=this.nextElementSibling; var k=s.firstElementChild; if(this.checked){ s.style.backgroundColor='#10b981'; k.style.left='24px'; }else{ s.style.backgroundColor='#cbd5e1'; k.style.left='3px'; }">
-                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: <?php echo !empty($settings->client_chat_ds_invoices ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
-                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_invoices ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: #fff; transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
+                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color:  <?php echo !empty($settings->client_chat_ds_invoices ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
+                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_invoices ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: var(--sdv-bg-surface, #fff); transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
                                                 </span>
                                             </label>
                                         </div>
@@ -11300,7 +9993,7 @@ class AdminController
                                 <div class="list-group-item" style="padding: 16px 20px; border-left: none; border-right: none;">
                                     <div class="row" style="display: flex; align-items: center;">
                                         <div class="col-sm-10 col-xs-9">
-                                            <div style="font-weight: 700; font-size: 14px; color: #1e293b; margin-bottom: 4px;">
+                                            <div style="font-weight: 700; font-size: 14px; color: var(--sdv-text-primary, #1e293b); margin-bottom: 4px;">
                                                 <i class="fas fa-coins text-warning" style="width: 20px;"></i> Account Store Credit Balance
                                                 <span class="label label-success" style="margin-left: 6px; font-weight: 500; font-size: 10px;">Client Isolated</span>
                                             </div>
@@ -11311,8 +10004,8 @@ class AdminController
                                         <div class="col-sm-2 col-xs-3 text-right">
                                             <label style="position: relative; display: inline-block; width: 46px; height: 24px; margin: 0; cursor: pointer; vertical-align: middle;">
                                                 <input type="checkbox" name="client_chat_ds_credit_balance" value="1" <?php echo !empty($settings->client_chat_ds_credit_balance ?? 1) ? 'checked' : ''; ?> style="position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer; z-index: 2;" onchange="var s=this.nextElementSibling; var k=s.firstElementChild; if(this.checked){ s.style.backgroundColor='#10b981'; k.style.left='24px'; }else{ s.style.backgroundColor='#cbd5e1'; k.style.left='3px'; }">
-                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: <?php echo !empty($settings->client_chat_ds_credit_balance ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
-                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_credit_balance ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: #fff; transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
+                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color:  <?php echo !empty($settings->client_chat_ds_credit_balance ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
+                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_credit_balance ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: var(--sdv-bg-surface, #fff); transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
                                                 </span>
                                             </label>
                                         </div>
@@ -11323,7 +10016,7 @@ class AdminController
                                 <div class="list-group-item" style="padding: 16px 20px; border-left: none; border-right: none;">
                                     <div class="row" style="display: flex; align-items: center;">
                                         <div class="col-sm-10 col-xs-9">
-                                            <div style="font-weight: 700; font-size: 14px; color: #1e293b; margin-bottom: 4px;">
+                                            <div style="font-weight: 700; font-size: 14px; color: var(--sdv-text-primary, #1e293b); margin-bottom: 4px;">
                                                 <i class="fas fa-ticket-alt text-danger" style="width: 20px;"></i> Recent Support Tickets
                                                 <span class="label label-success" style="margin-left: 6px; font-weight: 500; font-size: 10px;">Client Isolated</span>
                                             </div>
@@ -11334,8 +10027,8 @@ class AdminController
                                         <div class="col-sm-2 col-xs-3 text-right">
                                             <label style="position: relative; display: inline-block; width: 46px; height: 24px; margin: 0; cursor: pointer; vertical-align: middle;">
                                                 <input type="checkbox" name="client_chat_ds_tickets" value="1" <?php echo !empty($settings->client_chat_ds_tickets ?? 1) ? 'checked' : ''; ?> style="position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer; z-index: 2;" onchange="var s=this.nextElementSibling; var k=s.firstElementChild; if(this.checked){ s.style.backgroundColor='#10b981'; k.style.left='24px'; }else{ s.style.backgroundColor='#cbd5e1'; k.style.left='3px'; }">
-                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: <?php echo !empty($settings->client_chat_ds_tickets ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
-                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_tickets ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: #fff; transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
+                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color:  <?php echo !empty($settings->client_chat_ds_tickets ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
+                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_tickets ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: var(--sdv-bg-surface, #fff); transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
                                                 </span>
                                             </label>
                                         </div>
@@ -11346,7 +10039,7 @@ class AdminController
                                 <div class="list-group-item" style="padding: 16px 20px; border-left: none; border-right: none;">
                                     <div class="row" style="display: flex; align-items: center;">
                                         <div class="col-sm-10 col-xs-9">
-                                            <div style="font-weight: 700; font-size: 14px; color: #1e293b; margin-bottom: 4px;">
+                                            <div style="font-weight: 700; font-size: 14px; color: var(--sdv-text-primary, #1e293b); margin-bottom: 4px;">
                                                 <i class="fas fa-file-contract text-primary" style="width: 20px;"></i> Formal Sales Quotes &amp; Proformas
                                                 <span class="label label-success" style="margin-left: 6px; font-weight: 500; font-size: 10px;">Client Isolated</span>
                                             </div>
@@ -11357,8 +10050,8 @@ class AdminController
                                         <div class="col-sm-2 col-xs-3 text-right">
                                             <label style="position: relative; display: inline-block; width: 46px; height: 24px; margin: 0; cursor: pointer; vertical-align: middle;">
                                                 <input type="checkbox" name="client_chat_ds_quotes" value="1" <?php echo !empty($settings->client_chat_ds_quotes ?? 1) ? 'checked' : ''; ?> style="position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer; z-index: 2;" onchange="var s=this.nextElementSibling; var k=s.firstElementChild; if(this.checked){ s.style.backgroundColor='#10b981'; k.style.left='24px'; }else{ s.style.backgroundColor='#cbd5e1'; k.style.left='3px'; }">
-                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: <?php echo !empty($settings->client_chat_ds_quotes ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
-                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_quotes ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: #fff; transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
+                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color:  <?php echo !empty($settings->client_chat_ds_quotes ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
+                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_quotes ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: var(--sdv-bg-surface, #fff); transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
                                                 </span>
                                             </label>
                                         </div>
@@ -11371,10 +10064,10 @@ class AdminController
 
                     <!-- CARD 2: PUBLIC GROUNDING & PRESALES DATA SOURCES -->
                     <div class="panel panel-default" style="border-radius: 8px; margin-bottom: 25px; box-shadow: 0 1px 4px rgba(0,0,0,0.04); overflow: hidden;">
-                        <div class="panel-heading" style="background: linear-gradient(to right, #f8fafc, #ffffff); padding: 16px 20px; border-bottom: 1px solid #e2e8f0;">
+                        <div class="panel-heading" style="background: linear-gradient(to right, var(--sdv-bg-nested, #f8fafc), var(--sdv-bg-surface, #ffffff)); padding: 16px 20px; border-bottom: 1px solid var(--sdv-border, #e2e8f0);">
                             <div class="row" style="display: flex; align-items: center;">
                                 <div class="col-xs-8">
-                                    <strong style="font-size: 15px; color: #0f172a;">
+                                    <strong style="font-size: 15px; color: var(--sdv-text-primary, #0f172a);">
                                         <i class="fas fa-globe text-info" style="margin-right: 6px;"></i> Public Knowledge &amp; Presales Grounding Scope
                                     </strong>
                                     <span class="badge" style="background: #0284c7; color: #fff; font-size: 11px; margin-left: 8px; padding: 4px 8px;">Presales &amp; Guests Safe</span>
@@ -11391,7 +10084,7 @@ class AdminController
                                 <div class="list-group-item" style="padding: 16px 20px; border-left: none; border-right: none;">
                                     <div class="row" style="display: flex; align-items: center;">
                                         <div class="col-sm-10 col-xs-9">
-                                            <div style="font-weight: 700; font-size: 14px; color: #1e293b; margin-bottom: 4px;">
+                                            <div style="font-weight: 700; font-size: 14px; color: var(--sdv-text-primary, #1e293b); margin-bottom: 4px;">
                                                 <i class="fas fa-book text-success" style="width: 20px;"></i> Public Knowledge Base Grounding
                                                 <span class="label label-info" style="margin-left: 6px; font-weight: 500; font-size: 10px;">Public Grounding</span>
                                             </div>
@@ -11402,8 +10095,8 @@ class AdminController
                                         <div class="col-sm-2 col-xs-3 text-right">
                                             <label style="position: relative; display: inline-block; width: 46px; height: 24px; margin: 0; cursor: pointer; vertical-align: middle;">
                                                 <input type="checkbox" name="client_chat_ds_kb" value="1" <?php echo !empty($settings->client_chat_ds_kb ?? 1) ? 'checked' : ''; ?> style="position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer; z-index: 2;" onchange="var s=this.nextElementSibling; var k=s.firstElementChild; if(this.checked){ s.style.backgroundColor='#10b981'; k.style.left='24px'; }else{ s.style.backgroundColor='#cbd5e1'; k.style.left='3px'; }">
-                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: <?php echo !empty($settings->client_chat_ds_kb ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
-                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_kb ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: #fff; transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
+                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color:  <?php echo !empty($settings->client_chat_ds_kb ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
+                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_kb ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: var(--sdv-bg-surface, #fff); transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
                                                 </span>
                                             </label>
                                         </div>
@@ -11414,7 +10107,7 @@ class AdminController
                                 <div class="list-group-item" style="padding: 16px 20px; border-left: none; border-right: none;">
                                     <div class="row" style="display: flex; align-items: center;">
                                         <div class="col-sm-10 col-xs-9">
-                                            <div style="font-weight: 700; font-size: 14px; color: #1e293b; margin-bottom: 4px;">
+                                            <div style="font-weight: 700; font-size: 14px; color: var(--sdv-text-primary, #1e293b); margin-bottom: 4px;">
                                                 <i class="fas fa-cubes text-primary" style="width: 20px;"></i> Active Products &amp; Services Catalog (Presales &amp; Tech Sales)
                                                 <span class="label label-info" style="margin-left: 6px; font-weight: 500; font-size: 10px;">Public Grounding</span>
                                             </div>
@@ -11425,8 +10118,8 @@ class AdminController
                                         <div class="col-sm-2 col-xs-3 text-right">
                                             <label style="position: relative; display: inline-block; width: 46px; height: 24px; margin: 0; cursor: pointer; vertical-align: middle;">
                                                 <input type="checkbox" name="client_chat_ds_catalog" value="1" <?php echo !empty($settings->client_chat_ds_catalog ?? 1) ? 'checked' : ''; ?> style="position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer; z-index: 2;" onchange="var s=this.nextElementSibling; var k=s.firstElementChild; if(this.checked){ s.style.backgroundColor='#10b981'; k.style.left='24px'; }else{ s.style.backgroundColor='#cbd5e1'; k.style.left='3px'; }">
-                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: <?php echo !empty($settings->client_chat_ds_catalog ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
-                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_catalog ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: #fff; transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
+                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color:  <?php echo !empty($settings->client_chat_ds_catalog ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
+                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_catalog ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: var(--sdv-bg-surface, #fff); transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
                                                 </span>
                                             </label>
                                         </div>
@@ -11437,7 +10130,7 @@ class AdminController
                                 <div class="list-group-item" style="padding: 16px 20px; border-left: none; border-right: none;">
                                     <div class="row" style="display: flex; align-items: center;">
                                         <div class="col-sm-10 col-xs-9">
-                                            <div style="font-weight: 700; font-size: 14px; color: #1e293b; margin-bottom: 4px;">
+                                            <div style="font-weight: 700; font-size: 14px; color: var(--sdv-text-primary, #1e293b); margin-bottom: 4px;">
                                                 <i class="fas fa-search-dollar text-success" style="width: 20px;"></i> Domain Pricing, TLD Extensions &amp; Registration
                                                 <span class="label label-info" style="margin-left: 6px; font-weight: 500; font-size: 10px;">Public Grounding</span>
                                             </div>
@@ -11448,8 +10141,8 @@ class AdminController
                                         <div class="col-sm-2 col-xs-3 text-right">
                                             <label style="position: relative; display: inline-block; width: 46px; height: 24px; margin: 0; cursor: pointer; vertical-align: middle;">
                                                 <input type="checkbox" name="client_chat_ds_domain_pricing" value="1" <?php echo !empty($settings->client_chat_ds_domain_pricing ?? 1) ? 'checked' : ''; ?> style="position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer; z-index: 2;" onchange="var s=this.nextElementSibling; var k=s.firstElementChild; if(this.checked){ s.style.backgroundColor='#10b981'; k.style.left='24px'; }else{ s.style.backgroundColor='#cbd5e1'; k.style.left='3px'; }">
-                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: <?php echo !empty($settings->client_chat_ds_domain_pricing ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
-                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_domain_pricing ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: #fff; transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
+                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color:  <?php echo !empty($settings->client_chat_ds_domain_pricing ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
+                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_domain_pricing ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: var(--sdv-bg-surface, #fff); transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
                                                 </span>
                                             </label>
                                         </div>
@@ -11460,7 +10153,7 @@ class AdminController
                                 <div class="list-group-item" style="padding: 16px 20px; border-left: none; border-right: none;">
                                     <div class="row" style="display: flex; align-items: center;">
                                         <div class="col-sm-10 col-xs-9">
-                                            <div style="font-weight: 700; font-size: 14px; color: #1e293b; margin-bottom: 4px;">
+                                            <div style="font-weight: 700; font-size: 14px; color: var(--sdv-text-primary, #1e293b); margin-bottom: 4px;">
                                                 <i class="fas fa-satellite-dish text-info" style="width: 20px;"></i> Active Network &amp; Server Incident Broadcasts
                                                 <span class="label label-info" style="margin-left: 6px; font-weight: 500; font-size: 10px;">Public Grounding</span>
                                             </div>
@@ -11471,8 +10164,8 @@ class AdminController
                                         <div class="col-sm-2 col-xs-3 text-right">
                                             <label style="position: relative; display: inline-block; width: 46px; height: 24px; margin: 0; cursor: pointer; vertical-align: middle;">
                                                 <input type="checkbox" name="client_chat_ds_network_issues" value="1" <?php echo !empty($settings->client_chat_ds_network_issues ?? 1) ? 'checked' : ''; ?> style="position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer; z-index: 2;" onchange="var s=this.nextElementSibling; var k=s.firstElementChild; if(this.checked){ s.style.backgroundColor='#10b981'; k.style.left='24px'; }else{ s.style.backgroundColor='#cbd5e1'; k.style.left='3px'; }">
-                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: <?php echo !empty($settings->client_chat_ds_network_issues ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
-                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_network_issues ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: #fff; transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
+                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color:  <?php echo !empty($settings->client_chat_ds_network_issues ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
+                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_network_issues ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: var(--sdv-bg-surface, #fff); transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
                                                 </span>
                                             </label>
                                         </div>
@@ -11483,7 +10176,7 @@ class AdminController
                                 <div class="list-group-item" style="padding: 16px 20px; border-left: none; border-right: none;">
                                     <div class="row" style="display: flex; align-items: center;">
                                         <div class="col-sm-10 col-xs-9">
-                                            <div style="font-weight: 700; font-size: 14px; color: #1e293b; margin-bottom: 4px;">
+                                            <div style="font-weight: 700; font-size: 14px; color: var(--sdv-text-primary, #1e293b); margin-bottom: 4px;">
                                                 <i class="fas fa-bullhorn text-warning" style="width: 20px;"></i> Official Company Announcements &amp; News Updates
                                                 <span class="label label-info" style="margin-left: 6px; font-weight: 500; font-size: 10px;">Public Grounding</span>
                                             </div>
@@ -11494,8 +10187,8 @@ class AdminController
                                         <div class="col-sm-2 col-xs-3 text-right">
                                             <label style="position: relative; display: inline-block; width: 46px; height: 24px; margin: 0; cursor: pointer; vertical-align: middle;">
                                                 <input type="checkbox" name="client_chat_ds_announcements" value="1" <?php echo !empty($settings->client_chat_ds_announcements ?? 1) ? 'checked' : ''; ?> style="position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer; z-index: 2;" onchange="var s=this.nextElementSibling; var k=s.firstElementChild; if(this.checked){ s.style.backgroundColor='#10b981'; k.style.left='24px'; }else{ s.style.backgroundColor='#cbd5e1'; k.style.left='3px'; }">
-                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: <?php echo !empty($settings->client_chat_ds_announcements ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
-                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_announcements ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: #fff; transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
+                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color:  <?php echo !empty($settings->client_chat_ds_announcements ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
+                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_announcements ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: var(--sdv-bg-surface, #fff); transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
                                                 </span>
                                             </label>
                                         </div>
@@ -11506,7 +10199,7 @@ class AdminController
                                 <div class="list-group-item" style="padding: 16px 20px; border-left: none; border-right: none;">
                                     <div class="row" style="display: flex; align-items: center;">
                                         <div class="col-sm-10 col-xs-9">
-                                            <div style="font-weight: 700; font-size: 14px; color: #1e293b; margin-bottom: 4px;">
+                                            <div style="font-weight: 700; font-size: 14px; color: var(--sdv-text-primary, #1e293b); margin-bottom: 4px;">
                                                 <i class="fas fa-tag text-success" style="width: 20px;"></i> Active Public Promotional Coupons
                                                 <span class="label label-info" style="margin-left: 6px; font-weight: 500; font-size: 10px;">Public Grounding</span>
                                             </div>
@@ -11517,8 +10210,8 @@ class AdminController
                                         <div class="col-sm-2 col-xs-3 text-right">
                                             <label style="position: relative; display: inline-block; width: 46px; height: 24px; margin: 0; cursor: pointer; vertical-align: middle;">
                                                 <input type="checkbox" name="client_chat_ds_promotions" value="1" <?php echo !empty($settings->client_chat_ds_promotions ?? 1) ? 'checked' : ''; ?> style="position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer; z-index: 2;" onchange="var s=this.nextElementSibling; var k=s.firstElementChild; if(this.checked){ s.style.backgroundColor='#10b981'; k.style.left='24px'; }else{ s.style.backgroundColor='#cbd5e1'; k.style.left='3px'; }">
-                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: <?php echo !empty($settings->client_chat_ds_promotions ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
-                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_promotions ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: #fff; transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
+                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color:  <?php echo !empty($settings->client_chat_ds_promotions ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
+                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_promotions ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: var(--sdv-bg-surface, #fff); transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
                                                 </span>
                                             </label>
                                         </div>
@@ -11529,7 +10222,7 @@ class AdminController
                                 <div class="list-group-item" style="padding: 16px 20px; border-left: none; border-right: none;">
                                     <div class="row" style="display: flex; align-items: center;">
                                         <div class="col-sm-10 col-xs-9">
-                                            <div style="font-weight: 700; font-size: 14px; color: #1e293b; margin-bottom: 4px;">
+                                            <div style="font-weight: 700; font-size: 14px; color: var(--sdv-text-primary, #1e293b); margin-bottom: 4px;">
                                                 <i class="fas fa-credit-card text-primary" style="width: 20px;"></i> Accepted Payment Gateways
                                                 <span class="label label-info" style="margin-left: 6px; font-weight: 500; font-size: 10px;">Public Grounding</span>
                                             </div>
@@ -11540,8 +10233,8 @@ class AdminController
                                         <div class="col-sm-2 col-xs-3 text-right">
                                             <label style="position: relative; display: inline-block; width: 46px; height: 24px; margin: 0; cursor: pointer; vertical-align: middle;">
                                                 <input type="checkbox" name="client_chat_ds_payment_gateways" value="1" <?php echo !empty($settings->client_chat_ds_payment_gateways ?? 1) ? 'checked' : ''; ?> style="position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer; z-index: 2;" onchange="var s=this.nextElementSibling; var k=s.firstElementChild; if(this.checked){ s.style.backgroundColor='#10b981'; k.style.left='24px'; }else{ s.style.backgroundColor='#cbd5e1'; k.style.left='3px'; }">
-                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: <?php echo !empty($settings->client_chat_ds_payment_gateways ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
-                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_payment_gateways ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: #fff; transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
+                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color:  <?php echo !empty($settings->client_chat_ds_payment_gateways ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
+                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_payment_gateways ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: var(--sdv-bg-surface, #fff); transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
                                                 </span>
                                             </label>
                                         </div>
@@ -11552,7 +10245,7 @@ class AdminController
                                 <div class="list-group-item" style="padding: 16px 20px; border-left: none; border-right: none;">
                                     <div class="row" style="display: flex; align-items: center;">
                                         <div class="col-sm-10 col-xs-9">
-                                            <div style="font-weight: 700; font-size: 14px; color: #1e293b; margin-bottom: 4px;">
+                                            <div style="font-weight: 700; font-size: 14px; color: var(--sdv-text-primary, #1e293b); margin-bottom: 4px;">
                                                 <i class="fas fa-sitemap text-info" style="width: 20px;"></i> Support Department Routing &amp; SLAs
                                                 <span class="label label-info" style="margin-left: 6px; font-weight: 500; font-size: 10px;">Public Grounding</span>
                                             </div>
@@ -11563,8 +10256,8 @@ class AdminController
                                         <div class="col-sm-2 col-xs-3 text-right">
                                             <label style="position: relative; display: inline-block; width: 46px; height: 24px; margin: 0; cursor: pointer; vertical-align: middle;">
                                                 <input type="checkbox" name="client_chat_ds_departments" value="1" <?php echo !empty($settings->client_chat_ds_departments ?? 1) ? 'checked' : ''; ?> style="position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer; z-index: 2;" onchange="var s=this.nextElementSibling; var k=s.firstElementChild; if(this.checked){ s.style.backgroundColor='#10b981'; k.style.left='24px'; }else{ s.style.backgroundColor='#cbd5e1'; k.style.left='3px'; }">
-                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: <?php echo !empty($settings->client_chat_ds_departments ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
-                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_departments ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: #fff; transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
+                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color:  <?php echo !empty($settings->client_chat_ds_departments ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
+                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_departments ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: var(--sdv-bg-surface, #fff); transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
                                                 </span>
                                             </label>
                                         </div>
@@ -11575,7 +10268,7 @@ class AdminController
                                 <div class="list-group-item" style="padding: 16px 20px; border-left: none; border-right: none;">
                                     <div class="row" style="display: flex; align-items: center;">
                                         <div class="col-sm-10 col-xs-9">
-                                            <div style="font-weight: 700; font-size: 14px; color: #1e293b; margin-bottom: 4px;">
+                                            <div style="font-weight: 700; font-size: 14px; color: var(--sdv-text-primary, #1e293b); margin-bottom: 4px;">
                                                 <i class="fas fa-globe text-primary" style="width: 20px;"></i> Website AI Summaries &amp; External Knowledge Grounding
                                                 <span class="label label-info" style="margin-left: 6px; font-weight: 500; font-size: 10px;">Public Grounding</span>
                                                 <span class="badge" style="background: #3b82f6; color: #fff; margin-left: 6px; font-size: 10px; font-weight: 600;"><?php echo count($websiteDataSources); ?> Source<?php echo count($websiteDataSources) === 1 ? '' : 's'; ?></span>
@@ -11588,8 +10281,8 @@ class AdminController
                                         <div class="col-sm-2 col-xs-3 text-right">
                                             <label style="position: relative; display: inline-block; width: 46px; height: 24px; margin: 0; cursor: pointer; vertical-align: middle;">
                                                 <input type="checkbox" name="client_chat_ds_websites" value="1" <?php echo !empty($settings->client_chat_ds_websites ?? 1) ? 'checked' : ''; ?> style="position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer; z-index: 2;" onchange="var s=this.nextElementSibling; var k=s.firstElementChild; if(this.checked){ s.style.backgroundColor='#10b981'; k.style.left='24px'; }else{ s.style.backgroundColor='#cbd5e1'; k.style.left='3px'; }">
-                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: <?php echo !empty($settings->client_chat_ds_websites ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
-                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_websites ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: #fff; transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
+                                                <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color:  <?php echo !empty($settings->client_chat_ds_websites ?? 1) ? '#10b981' : '#cbd5e1'; ?>; transition: .25s ease; border-radius: 24px; z-index: 1;">
+                                                    <span style="position: absolute; content: ''; height: 18px; width: 18px; left: <?php echo !empty($settings->client_chat_ds_websites ?? 1) ? '24px' : '3px'; ?>; bottom: 3px; background-color: var(--sdv-bg-surface, #fff); transition: .25s ease; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
                                                 </span>
                                             </label>
                                         </div>
@@ -11615,9 +10308,9 @@ class AdminController
 
                 <!-- ── CARD 3: WEBSITE DATA SOURCES & AI SUMMARIES MANAGEMENT ── -->
                 <div id="sectionWebsiteDataSources" class="panel panel-default" style="border-radius: 8px; margin-bottom: 25px; box-shadow: 0 1px 4px rgba(0,0,0,0.04); overflow: hidden;">
-                    <div class="panel-heading" style="background: linear-gradient(to right, #f8fafc, #ffffff); padding: 16px 20px; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; justify-content: space-between;">
+                    <div class="panel-heading" style="background: linear-gradient(to right, var(--sdv-bg-nested, #f8fafc), var(--sdv-bg-surface, #ffffff)); padding: 16px 20px; border-bottom: 1px solid var(--sdv-border, #e2e8f0); display: flex; align-items: center; justify-content: space-between;">
                         <div>
-                            <strong style="font-size: 15px; color: #0f172a;">
+                            <strong style="font-size: 15px; color: var(--sdv-text-primary, #0f172a);">
                                 <i class="fas fa-network-wired text-primary" style="margin-right: 6px;"></i> Website AI-Summary Data Sources (Public Grounding)
                             </strong>
                             <span class="badge" style="background: #10b981; color: #fff; font-size: 11px; margin-left: 8px; padding: 4px 8px;">Presales &amp; Guests Safe</span>
@@ -11630,11 +10323,11 @@ class AdminController
                     </div>
                     <div class="panel-body" style="padding: 20px;">
                         <?php if (empty($websiteDataSources)): ?>
-                            <div style="text-align: center; padding: 40px 20px; background: #f8fafc; border: 2px dashed #cbd5e1; border-radius: 8px;">
+                            <div style="text-align: center; padding: 40px 20px; background: var(--sdv-bg-nested, #f8fafc); border: 2px dashed var(--sdv-border, #cbd5e1); border-radius: 8px;">
                                 <div style="width: 54px; height: 54px; line-height: 54px; border-radius: 50%; background: #e0f2fe; color: #0284c7; font-size: 24px; margin: 0 auto 15px auto;">
                                     <i class="fas fa-globe"></i>
                                 </div>
-                                <h4 style="font-weight: 700; color: #1e293b; margin-bottom: 8px;">No Website Data Sources Configured Yet</h4>
+                                <h4 style="font-weight: 700; color: var(--sdv-text-primary, #1e293b); margin-bottom: 8px;">No Website Data Sources Configured Yet</h4>
                                 <p class="text-muted" style="max-width: 560px; margin: 0 auto 18px auto; font-size: 13.5px; line-height: 1.6;">
                                     Link external website JSON summaries (such as <code>https://hostingspell.com/ai-summary</code>) or paste custom JSON/text. Client Live Chat will automatically ingest this knowledge to answer presales, specs, pricing, and FAQ queries for both guests and logged-in clients.
                                 </p>
@@ -11646,7 +10339,7 @@ class AdminController
                             <div class="table-responsive">
                                 <table class="table table-hover" style="margin-bottom: 0; vertical-align: middle;">
                                     <thead>
-                                        <tr style="background: #f8fafc; font-size: 12px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">
+                                        <tr style="background: var(--sdv-bg-nested, #f8fafc); font-size: 12px; color: var(--sdv-text-muted, #64748b); text-transform: uppercase; letter-spacing: 0.5px;">
                                             <th style="padding: 12px 14px;">Website / Source</th>
                                             <th style="padding: 12px 14px;">Type</th>
                                             <th style="padding: 12px 14px;">Sync Status &amp; Cache</th>
@@ -11663,18 +10356,18 @@ class AdminController
                                             ?>
                                             <tr>
                                                 <td style="padding: 14px;">
-                                                    <div style="font-weight: 700; color: #1e293b; font-size: 14px;">
+                                                    <div style="font-weight: 700; color: var(--sdv-text-primary, #1e293b); font-size: 14px;">
                                                         <i class="fas <?php echo $ws->source_type === 'url' ? 'fa-globe text-primary' : 'fa-code text-info'; ?>" style="margin-right: 6px;"></i>
                                                         <?php echo htmlspecialchars($ws->name); ?>
                                                     </div>
                                                     <?php if ($ws->source_type === 'url' && !empty($ws->source_url)): ?>
-                                                        <div style="font-size: 12px; color: #64748b; margin-top: 3px;">
+                                                        <div style="font-size: 12px; color: var(--sdv-text-muted, #64748b); margin-top: 3px;">
                                                             <a href="<?php echo htmlspecialchars($ws->source_url); ?>" target="_blank" rel="noopener noreferrer" style="color: #0284c7; text-decoration: none;">
                                                                 <?php echo htmlspecialchars($ws->source_url); ?> <i class="fas fa-external-link-alt" style="font-size: 10px;"></i>
                                                             </a>
                                                         </div>
                                                     <?php elseif ($ws->source_type === 'custom'): ?>
-                                                        <div style="font-size: 11.5px; color: #64748b; margin-top: 3px;">
+                                                        <div style="font-size: 11.5px; color: var(--sdv-text-muted, #64748b); margin-top: 3px;">
                                                             <span class="text-muted"><i class="fas fa-file-alt"></i> Custom Input (<?php echo number_format($cacheBytes); ?> bytes)</span>
                                                         </div>
                                                     <?php endif; ?>
@@ -11689,7 +10382,7 @@ class AdminController
                                                 <td style="padding: 14px; vertical-align: middle;">
                                                     <?php if ($ws->sync_status === 'success'): ?>
                                                         <span class="label label-success" style="font-size: 11px;"><i class="fas fa-check-circle"></i> Synced</span>
-                                                        <div style="font-size: 11px; color: #64748b; margin-top: 3px;">
+                                                        <div style="font-size: 11px; color: var(--sdv-text-muted, #64748b); margin-top: 3px;">
                                                             <?php echo $cacheKb; ?> KB cached <?php echo !empty($ws->last_synced_at) ? '• ' . \Carbon\Carbon::parse($ws->last_synced_at)->diffForHumans() : ''; ?>
                                                         </div>
                                                     <?php elseif ($ws->sync_status === 'error'): ?>
@@ -11779,21 +10472,21 @@ class AdminController
                                 <?php echo $csrfToken; ?>
                                 <input type="hidden" name="add_website_datasource" value="1">
                                 
-                                <div class="modal-header" style="background: #f8fafc; border-bottom: 1px solid #e2e8f0;">
+                                <div class="modal-header" style="background: var(--sdv-bg-nested, #f8fafc); border-bottom: 1px solid var(--sdv-border, #e2e8f0);">
                                     <button type="button" class="close" data-dismiss="modal">&times;</button>
-                                    <h4 class="modal-title" style="font-weight: 700; color: #1e293b;">
+                                    <h4 class="modal-title" style="font-weight: 700; color: var(--sdv-text-primary, #1e293b);">
                                         <i class="fas fa-globe text-primary" style="margin-right: 6px;"></i> Add Website AI-Summary Data Source
                                     </h4>
                                 </div>
                                 <div class="modal-body" style="padding: 24px;">
                                     <div class="form-group">
-                                        <label style="font-weight: 600; color: #1e293b;">Website / Source Label <span class="text-danger">*</span></label>
+                                        <label style="font-weight: 600; color: var(--sdv-text-primary, #1e293b);">Website / Source Label <span class="text-danger">*</span></label>
                                         <input type="text" name="website_name" class="form-control" placeholder="e.g. HostingSpell Main Website" required style="border-radius: 6px;">
                                         <span class="help-block" style="font-size: 11.5px;">A human-readable label identifying this website source.</span>
                                     </div>
 
                                     <div class="form-group">
-                                        <label style="font-weight: 600; color: #1e293b;">Source Type</label>
+                                        <label style="font-weight: 600; color: var(--sdv-text-primary, #1e293b);">Source Type</label>
                                         <div style="display: flex; gap: 20px; margin-top: 4px;">
                                             <label style="font-weight: 500; cursor: pointer;">
                                                 <input type="radio" name="source_type" value="url" checked onchange="toggleAddWsType('url')">
@@ -11807,7 +10500,7 @@ class AdminController
                                     </div>
 
                                     <div id="addWsUrlGroup" class="form-group">
-                                        <label style="font-weight: 600; color: #1e293b;">JSON Summary URL <span class="text-danger">*</span></label>
+                                        <label style="font-weight: 600; color: var(--sdv-text-primary, #1e293b);">JSON Summary URL <span class="text-danger">*</span></label>
                                         <div class="input-group">
                                             <input type="url" name="source_url" id="add_ws_url" class="form-control" placeholder="https://hostingspell.com/ai-summary" style="border-radius: 6px 0 0 6px;">
                                             <span class="input-group-btn">
@@ -11823,7 +10516,7 @@ class AdminController
                                     </div>
 
                                     <div id="addWsCustomGroup" class="form-group" style="display: none;">
-                                        <label style="font-weight: 600; color: #1e293b;">Custom JSON / Markdown Content</label>
+                                        <label style="font-weight: 600; color: var(--sdv-text-primary, #1e293b);">Custom JSON / Markdown Content</label>
                                         <textarea name="custom_content" class="form-control" rows="10" placeholder='{"name": "My Hosting", "company": {...}, "hosting_products": {...}}' style="font-family: monospace; font-size: 12px; border-radius: 6px;"></textarea>
                                         <span class="help-block" style="font-size: 11.5px;">
                                             Paste any structured JSON summary or plain markdown describing your website, plans, and policies.
@@ -11831,12 +10524,12 @@ class AdminController
                                     </div>
 
                                     <div class="checkbox" style="margin-top: 15px;">
-                                        <label style="font-weight: 600; color: #1e293b;">
+                                        <label style="font-weight: 600; color: var(--sdv-text-primary, #1e293b);">
                                             <input type="checkbox" name="is_enabled" value="1" checked> Enable immediately in Client Live Chat
                                         </label>
                                     </div>
                                 </div>
-                                <div class="modal-footer" style="background: #f8fafc; border-top: 1px solid #e2e8f0;">
+                                <div class="modal-footer" style="background: var(--sdv-bg-nested, #f8fafc); border-top: 1px solid var(--sdv-border, #e2e8f0);">
                                     <button type="button" class="btn btn-default" data-dismiss="modal">Cancel</button>
                                     <button type="submit" class="btn btn-primary" style="font-weight: 600;">
                                         <i class="fas fa-save" style="margin-right: 4px;"></i> Save &amp; Synchronize Source
@@ -11856,20 +10549,20 @@ class AdminController
                                 <input type="hidden" name="edit_website_datasource" value="1">
                                 <input type="hidden" name="website_id" id="edit_ws_id" value="">
                                 
-                                <div class="modal-header" style="background: #f8fafc; border-bottom: 1px solid #e2e8f0;">
+                                <div class="modal-header" style="background: var(--sdv-bg-nested, #f8fafc); border-bottom: 1px solid var(--sdv-border, #e2e8f0);">
                                     <button type="button" class="close" data-dismiss="modal">&times;</button>
-                                    <h4 class="modal-title" style="font-weight: 700; color: #1e293b;">
+                                    <h4 class="modal-title" style="font-weight: 700; color: var(--sdv-text-primary, #1e293b);">
                                         <i class="fas fa-edit text-warning" style="margin-right: 6px;"></i> Edit Website AI-Summary Data Source
                                     </h4>
                                 </div>
                                 <div class="modal-body" style="padding: 24px;">
                                     <div class="form-group">
-                                        <label style="font-weight: 600; color: #1e293b;">Website / Source Label <span class="text-danger">*</span></label>
+                                        <label style="font-weight: 600; color: var(--sdv-text-primary, #1e293b);">Website / Source Label <span class="text-danger">*</span></label>
                                         <input type="text" name="website_name" id="edit_ws_name" class="form-control" required style="border-radius: 6px;">
                                     </div>
 
                                     <div class="form-group">
-                                        <label style="font-weight: 600; color: #1e293b;">Source Type</label>
+                                        <label style="font-weight: 600; color: var(--sdv-text-primary, #1e293b);">Source Type</label>
                                         <div style="display: flex; gap: 20px; margin-top: 4px;">
                                             <label style="font-weight: 500; cursor: pointer;">
                                                 <input type="radio" name="source_type" id="edit_ws_type_url" value="url" onchange="toggleEditWsType('url')">
@@ -11883,7 +10576,7 @@ class AdminController
                                     </div>
 
                                     <div id="editWsUrlGroup" class="form-group">
-                                        <label style="font-weight: 600; color: #1e293b;">JSON Summary URL</label>
+                                        <label style="font-weight: 600; color: var(--sdv-text-primary, #1e293b);">JSON Summary URL</label>
                                         <div class="input-group">
                                             <input type="url" name="source_url" id="edit_ws_url" class="form-control" style="border-radius: 6px 0 0 6px;">
                                             <span class="input-group-btn">
@@ -11897,17 +10590,17 @@ class AdminController
                                     </div>
 
                                     <div id="editWsCustomGroup" class="form-group" style="display: none;">
-                                        <label style="font-weight: 600; color: #1e293b;">Custom JSON / Markdown Content</label>
+                                        <label style="font-weight: 600; color: var(--sdv-text-primary, #1e293b);">Custom JSON / Markdown Content</label>
                                         <textarea name="custom_content" id="edit_ws_custom" class="form-control" rows="10" style="font-family: monospace; font-size: 12px; border-radius: 6px;"></textarea>
                                     </div>
 
                                     <div class="checkbox" style="margin-top: 15px;">
-                                        <label style="font-weight: 600; color: #1e293b;">
+                                        <label style="font-weight: 600; color: var(--sdv-text-primary, #1e293b);">
                                             <input type="checkbox" name="is_enabled" id="edit_ws_enabled" value="1"> Enable in Client Live Chat
                                         </label>
                                     </div>
                                 </div>
-                                <div class="modal-footer" style="background: #f8fafc; border-top: 1px solid #e2e8f0;">
+                                <div class="modal-footer" style="background: var(--sdv-bg-nested, #f8fafc); border-top: 1px solid var(--sdv-border, #e2e8f0);">
                                     <button type="button" class="btn btn-default" data-dismiss="modal">Cancel</button>
                                     <button type="submit" class="btn btn-primary" style="font-weight: 600;">
                                         <i class="fas fa-save" style="margin-right: 4px;"></i> Save Changes
@@ -11922,9 +10615,9 @@ class AdminController
                 <div class="modal fade" id="modalPreviewWebsiteSource" tabindex="-1" role="dialog">
                     <div class="modal-dialog modal-lg" role="document">
                         <div class="modal-content" style="border-radius: 8px;">
-                            <div class="modal-header" style="background: #f8fafc; border-bottom: 1px solid #e2e8f0;">
+                            <div class="modal-header" style="background: var(--sdv-bg-nested, #f8fafc); border-bottom: 1px solid var(--sdv-border, #e2e8f0);">
                                 <button type="button" class="close" data-dismiss="modal">&times;</button>
-                                <h4 class="modal-title" style="font-weight: 700; color: #1e293b;">
+                                <h4 class="modal-title" style="font-weight: 700; color: var(--sdv-text-primary, #1e293b);">
                                     <i class="fas fa-eye text-info" style="margin-right: 6px;"></i> AI Grounding Digest Preview: <span id="previewWsTitle"></span>
                                 </h4>
                             </div>
@@ -11932,9 +10625,9 @@ class AdminController
                                 <p class="text-muted" style="font-size: 12.5px; margin-bottom: 12px;">
                                     Below is the exact token-efficient knowledge digest compiled from this data source that is injected into the AI's system prompt during Client Live Chat conversations.
                                 </p>
-                                <pre id="previewWsContent" style="background: #0f172a; color: #e2e8f0; padding: 16px; border-radius: 6px; max-height: 480px; overflow-y: auto; font-family: monospace; font-size: 12px; line-height: 1.6; white-space: pre-wrap; word-break: break-word;"></pre>
+                                <pre id="previewWsContent" style="background: var(--sdv-bg-nested, #0f172a); color: var(--sdv-text-secondary, #e2e8f0); padding: 16px; border-radius: 6px; max-height: 480px; overflow-y: auto; font-family: monospace; font-size: 12px; line-height: 1.6; white-space: pre-wrap; word-break: break-word;"></pre>
                             </div>
-                            <div class="modal-footer" style="background: #f8fafc; border-top: 1px solid #e2e8f0;">
+                            <div class="modal-footer" style="background: var(--sdv-bg-nested, #f8fafc); border-top: 1px solid var(--sdv-border, #e2e8f0);">
                                 <button type="button" class="btn btn-default" data-dismiss="modal">Close Preview</button>
                             </div>
                         </div>
@@ -12072,7 +10765,7 @@ class AdminController
                     <!-- Left Column: Customization Controls -->
                     <div class="col-md-7">
                         <div class="panel panel-default" style="border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
-                            <div class="panel-heading" style="background: #fff; padding: 16px 20px;">
+                            <div class="panel-heading" style="background: var(--sdv-bg-surface, #fff); padding: 16px 20px;">
                                 <strong style="font-size: 15px;"><i class="fas fa-sliders-h"></i> Live Chat Widget UI/UX Customizer</strong>
                             </div>
                             <div class="panel-body" style="padding: 20px;">
@@ -12133,8 +10826,8 @@ class AdminController
                                     </div>
 
                                     <!-- Sizing Controls -->
-                                    <div class="panel panel-default" style="border-radius: 8px; margin-bottom: 20px; background: #f8fafc;">
-                                        <div class="panel-heading" style="background: #f1f5f9; padding: 10px 15px; font-weight: 700; font-size: 13px;">
+                                    <div class="panel panel-default" style="border-radius: 8px; margin-bottom: 20px; background: var(--sdv-bg-nested, #f8fafc);">
+                                        <div class="panel-heading" style="background: var(--sdv-bg-nested, #f1f5f9); padding: 10px 15px; font-weight: 700; font-size: 13px;">
                                             <i class="fas fa-arrows-alt"></i> Responsive Window Dimensions (Normal & Expanded)
                                         </div>
                                         <div class="panel-body" style="padding: 15px;">
@@ -12166,8 +10859,8 @@ class AdminController
                                     </div>
 
                                     <!-- Launcher Styling -->
-                                    <div class="panel panel-default" style="border-radius: 8px; margin-bottom: 20px; background: #f8fafc;">
-                                        <div class="panel-heading" style="background: #f1f5f9; padding: 10px 15px; font-weight: 700; font-size: 13px;">
+                                    <div class="panel panel-default" style="border-radius: 8px; margin-bottom: 20px; background: var(--sdv-bg-nested, #f8fafc);">
+                                        <div class="panel-heading" style="background: var(--sdv-bg-nested, #f1f5f9); padding: 10px 15px; font-weight: 700; font-size: 13px;">
                                             <i class="fas fa-bullseye"></i> Launcher Button Variant
                                         </div>
                                         <div class="panel-body" style="padding: 15px;">
@@ -12206,20 +10899,20 @@ class AdminController
                                     </div>
 
                                     <!-- Branding, White-Label & AI Compliance -->
-                                    <div class="panel panel-default" style="border-radius: 8px; margin-bottom: 20px; background: #f8fafc; border: 1px solid #e2e8f0;">
-                                        <div class="panel-heading" style="background: #f1f5f9; padding: 10px 15px; font-weight: 700; font-size: 13px;">
+                                    <div class="panel panel-default" style="border-radius: 8px; margin-bottom: 20px; background: var(--sdv-bg-nested, #f8fafc); border: 1px solid var(--sdv-border, #e2e8f0);">
+                                        <div class="panel-heading" style="background: var(--sdv-bg-nested, #f1f5f9); padding: 10px 15px; font-weight: 700; font-size: 13px;">
                                             <i class="fas fa-shield-alt text-primary"></i> Branding, White-Label &amp; AI Compliance
                                         </div>
                                         <div class="panel-body" style="padding: 15px;">
                                             <!-- Powered By Customization -->
-                                            <div style="margin-bottom: 18px; padding-bottom: 15px; border-bottom: 1px solid #e2e8f0;">
+                                            <div style="margin-bottom: 18px; padding-bottom: 15px; border-bottom: 1px solid var(--sdv-border, #e2e8f0);">
                                                 <div class="checkbox" style="margin-top: 0; margin-bottom: 8px;">
                                                     <label style="font-weight: 700;">
                                                         <input type="checkbox" name="client_chat_powered_by_show" value="1" <?php echo (!isset($settings->client_chat_powered_by_show) || !empty($settings->client_chat_powered_by_show)) ? 'checked' : ''; ?>>
                                                         Display "Powered by" Footer Branding
                                                     </label>
                                                 </div>
-                                                <span class="help-block" style="font-size: 11.5px; margin-bottom: 10px; color: #64748b;">Uncheck this box to completely whitelabel the widget footer with zero branding.</span>
+                                                <span class="help-block" style="font-size: 11.5px; margin-bottom: 10px; color: var(--sdv-text-muted, #64748b);">Uncheck this box to completely whitelabel the widget footer with zero branding.</span>
                                                 <div class="row">
                                                     <div class="col-md-6 form-group" style="margin-bottom: 0;">
                                                         <label style="font-size: 12px; font-weight: 600;">Custom Branding Text</label>
@@ -12240,7 +10933,7 @@ class AdminController
                                                         Display AI Usage Disclaimer Notice
                                                     </label>
                                                 </div>
-                                                <span class="help-block" style="font-size: 11.5px; margin-bottom: 8px; color: #64748b;">
+                                                <span class="help-block" style="font-size: 11.5px; margin-bottom: 8px; color: var(--sdv-text-muted, #64748b);">
                                                     Shows a subtle, dismissible compliance banner informing users that responses may be AI-assisted (helps fulfill EU AI Act &amp; FTC transparency guidelines).
                                                 </span>
                                                 <div class="form-group" style="margin-bottom: 0;">
@@ -12252,13 +10945,13 @@ class AdminController
                                     </div>
 
                                     <!-- Escalation & Convert Ticket Identity Card -->
-                                    <div class="panel panel-default" style="border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
-                                        <div class="panel-heading" style="background: #f8fafc; font-weight: 700; padding: 12px 16px; font-size: 13.5px; border-bottom: 1px solid #e2e8f0;">
+                                    <div class="panel panel-default" style="border: 1px solid var(--sdv-border, #e2e8f0); border-radius: 8px; margin-bottom: 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
+                                        <div class="panel-heading" style="background: var(--sdv-bg-nested, #f8fafc); font-weight: 700; padding: 12px 16px; font-size: 13.5px; border-bottom: 1px solid var(--sdv-border, #e2e8f0);">
                                             <i class="fas fa-ticket-alt text-primary"></i> Convert Ticket &amp; Escalation Staff Identity
                                         </div>
                                         <div class="panel-body" style="padding: 18px;">
                                             <div class="form-group" style="margin-bottom: 16px;">
-                                                <label style="font-weight: 700; color: #1e293b;">Designated Admin Account (Convert Ticket in Widget) <span class="text-danger">*</span></label>
+                                                <label style="font-weight: 700; color: var(--sdv-text-primary, #1e293b);">Designated Admin Account (Convert Ticket in Widget) <span class="text-danger">*</span></label>
                                                 <select name="client_chat_admin_id" id="client_chat_admin_id" class="form-control" style="font-weight: 600;">
                                                     <option value="0">— Select an Admin Account (Auto System) —</option>
                                                     <?php foreach ($allAdmins as $adm): 
@@ -12274,13 +10967,13 @@ class AdminController
                                                         </option>
                                                     <?php endforeach; ?>
                                                 </select>
-                                                <p class="help-block" style="font-size: 12px; margin-top: 6px; color: #64748b; line-height: 1.45;">
+                                                <p class="help-block" style="font-size: 12px; margin-top: 6px; color: var(--sdv-text-muted, #64748b); line-height: 1.45;">
                                                     <i class="fas fa-info-circle text-info"></i> Designates which staff administrator account is credited as creator and assigned operator when live chat conversations are converted to support tickets in the widget. In the admin area and WHMCS API, their admin username is securely linked in the background, but <strong>clients in the portal strictly only see this administrator's Full Name</strong>.
                                                 </p>
                                             </div>
 
                                             <div class="form-group" style="margin-bottom: 0;">
-                                                <label style="font-weight: 700; color: #1e293b;">Default Escalation Department</label>
+                                                <label style="font-weight: 700; color: var(--sdv-text-primary, #1e293b);">Default Escalation Department</label>
                                                 <select name="client_chat_department_id" class="form-control" style="font-weight: 600;">
                                                     <option value="0">— Auto-Detect General/Technical Support —</option>
                                                     <?php foreach ($allDepartments as $dept): ?>
@@ -12289,7 +10982,7 @@ class AdminController
                                                         </option>
                                                     <?php endforeach; ?>
                                                 </select>
-                                                <p class="help-block" style="font-size: 12px; margin-top: 6px; color: #64748b; line-height: 1.45;">
+                                                <p class="help-block" style="font-size: 12px; margin-top: 6px; color: var(--sdv-text-muted, #64748b); line-height: 1.45;">
                                                     Target WHMCS department where escalated live chat tickets are opened. If auto-detect is selected, customer inquiries automatically route to Technical/General Support instead of compliance or abuse.
                                                 </p>
                                             </div>
@@ -12492,8 +11185,8 @@ class AdminController
                                     </div>
 
                                     <!-- Real-Time Diagnostic Tools (ToolsAPI) Panel -->
-                                    <div class="panel panel-default" style="border-radius: 8px; margin-bottom: 22px; background: #f8fafc; border: 1px solid #cbd5e1;">
-                                        <div class="panel-heading" style="background: #e2e8f0; padding: 10px 15px; font-weight: 700; font-size: 13px; color: #1e293b; display: flex; justify-content: space-between; align-items: center;">
+                                    <div class="panel panel-default" style="border-radius: 8px; margin-bottom: 22px; background: var(--sdv-bg-nested, #f8fafc); border: 1px solid var(--sdv-border, #cbd5e1);">
+                                        <div class="panel-heading" style="background: var(--sdv-bg-nested, #e2e8f0); padding: 10px 15px; font-weight: 700; font-size: 13px; color: var(--sdv-text-primary, #1e293b); display: flex; justify-content: space-between; align-items: center;">
                                             <span><i class="fas fa-tools text-primary"></i> Real-Time Diagnostic Tool Calling (ToolsAPI)</span>
                                             <span class="label <?php echo !empty($settings->client_chat_tools_enabled) ? 'label-success' : 'label-default'; ?>">
                                                 <?php echo !empty($settings->client_chat_tools_enabled) ? 'Enabled' : 'Disabled (Default)'; ?>
@@ -12501,20 +11194,20 @@ class AdminController
                                         </div>
                                         <div class="panel-body" style="padding: 15px;">
                                             <div class="checkbox" style="margin-top: 0; margin-bottom: 12px;">
-                                                <label style="font-weight: 700; color: #1e293b;">
+                                                <label style="font-weight: 700; color: var(--sdv-text-primary, #1e293b);">
                                                     <input type="checkbox" name="client_chat_tools_enabled" value="1" <?php echo !empty($settings->client_chat_tools_enabled) ? 'checked' : ''; ?>>
                                                     Enable Diagnostic Tool Calling in Live Chat
                                                 </label>
-                                                <span class="help-block" style="font-size: 11.5px; margin-top: 4px; color: #64748b;">
+                                                <span class="help-block" style="font-size: 11.5px; margin-top: 4px; color: var(--sdv-text-muted, #64748b);">
                                                     When <strong>disabled (recommended / default)</strong>, the AI replies instantly using conversational knowledge without making external network calls, ensuring lowest latency.
                                                     When <strong>enabled</strong>, the AI model can automatically trigger diagnostic tools (DNS lookup, WHOIS expiration, SSL certificate inspection, Ping) to diagnose client domains in real time.
                                                     <em>Note: Tool execution queries live external endpoints, which may introduce latency before the response is returned.</em>
                                                 </span>
                                             </div>
 
-                                            <div class="row" style="margin-top: 15px; border-top: 1px dashed #cbd5e1; padding-top: 12px;">
+                                            <div class="row" style="margin-top: 15px; border-top: 1px dashed var(--sdv-border, #cbd5e1); padding-top: 12px;">
                                                 <div class="col-md-6 form-group" style="margin-bottom: 0;">
-                                                    <label style="font-size: 12px; font-weight: 600; color: #334155;">Max Tool Executions Per Turn</label>
+                                                    <label style="font-size: 12px; font-weight: 600; color: var(--sdv-text-secondary, #334155);">Max Tool Executions Per Turn</label>
                                                     <select name="client_chat_tool_max_executions" class="form-control input-sm">
                                                         <?php $curMaxExec = (int)($settings->client_chat_tool_max_executions ?? 2); ?>
                                                         <option value="1" <?php echo ($curMaxExec === 1) ? 'selected' : ''; ?>>1 tool call (fastest)</option>
@@ -12525,7 +11218,7 @@ class AdminController
                                                     <span class="help-block" style="font-size: 11px; margin-top: 2px;">Limits how many external diagnostic calls the AI can perform in a single message turn.</span>
                                                 </div>
                                                 <div class="col-md-6 form-group" style="margin-bottom: 0;">
-                                                    <label style="font-size: 12px; font-weight: 600; color: #334155;">Tool Result Cache Duration (TTL)</label>
+                                                    <label style="font-size: 12px; font-weight: 600; color: var(--sdv-text-secondary, #334155);">Tool Result Cache Duration (TTL)</label>
                                                     <select name="client_chat_tool_cache_ttl" class="form-control input-sm">
                                                         <?php $curTtl = (int)($settings->client_chat_tool_cache_ttl ?? 900); ?>
                                                         <option value="300" <?php echo ($curTtl === 300) ? 'selected' : ''; ?>>5 minutes</option>
@@ -12540,8 +11233,8 @@ class AdminController
                                     </div>
 
                                     <!-- Live Operator Console & Audio Alerts Panel -->
-                                    <div class="panel panel-default" style="border-radius: 8px; margin-bottom: 22px; background: #f8fafc; border: 1px solid #cbd5e1;">
-                                        <div class="panel-heading" style="background: #e2e8f0; padding: 10px 15px; font-weight: 700; font-size: 13px; color: #1e293b; display: flex; justify-content: space-between; align-items: center;">
+                                    <div class="panel panel-default" style="border-radius: 8px; margin-bottom: 22px; background: var(--sdv-bg-nested, #f8fafc); border: 1px solid var(--sdv-border, #cbd5e1);">
+                                        <div class="panel-heading" style="background: var(--sdv-bg-nested, #e2e8f0); padding: 10px 15px; font-weight: 700; font-size: 13px; color: var(--sdv-text-primary, #1e293b); display: flex; justify-content: space-between; align-items: center;">
                                             <span><i class="fas fa-satellite-dish text-primary"></i> Live Operator Console &amp; Audio Alerts</span>
                                             <a href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=live_console" target="_blank" class="btn btn-xs btn-primary" style="font-weight: 600;">
                                                 <i class="fas fa-external-link-alt"></i> Open Live Console
@@ -12549,7 +11242,7 @@ class AdminController
                                         </div>
                                         <div class="panel-body" style="padding: 15px;">
                                             <div class="checkbox" style="margin-top: 0; margin-bottom: 12px;">
-                                                <label style="font-weight: 700; color: #1e293b;">
+                                                <label style="font-weight: 700; color: var(--sdv-text-primary, #1e293b);">
                                                     <input type="checkbox" name="client_chat_human_takeover_enabled" value="1" <?php echo !empty($settings->client_chat_human_takeover_enabled ?? 1) ? 'checked' : ''; ?>>
                                                     Enable Live Human Agent Participation &amp; Summoning
                                                 </label>
@@ -12559,7 +11252,7 @@ class AdminController
                                             </div>
 
                                             <div class="checkbox" style="margin-bottom: 14px;">
-                                                <label style="font-weight: 700; color: #1e293b;">
+                                                <label style="font-weight: 700; color: var(--sdv-text-primary, #1e293b);">
                                                     <input type="checkbox" name="client_chat_sound_admin_alert" id="client_chat_sound_admin_alert" value="1" <?php echo !empty($settings->client_chat_sound_admin_alert ?? 1) ? 'checked' : ''; ?>>
                                                     Play Audio Notification Chime on Live Chat Summon
                                                 </label>
@@ -12632,7 +11325,7 @@ class AdminController
                                             <div class="form-group" style="margin-bottom: 14px;">
                                                 <label style="font-size: 12px; font-weight: 600; color: #1e40af;">1-Click Website Embed Code</label>
                                                 <div style="position: relative;">
-                                                    <textarea id="embedSnippetText" class="form-control" rows="2" readonly style="font-family: monospace; font-size: 12px; background: #fff; color: #0f172a; padding-right: 80px;"><?php echo $embedSnippet; ?></textarea>
+                                                    <textarea id="embedSnippetText" class="form-control" rows="2" readonly style="font-family: monospace; font-size: 12px; background: var(--sdv-bg-surface, #fff); color: var(--sdv-text-primary, #0f172a); padding-right: 80px;"><?php echo $embedSnippet; ?></textarea>
                                                     <button type="button" id="copyEmbedBtn" class="btn btn-xs btn-primary" style="position: absolute; right: 8px; top: 8px; font-weight: 600;">
                                                         <i class="fas fa-copy"></i> Copy
                                                     </button>
@@ -12661,21 +11354,21 @@ class AdminController
                     <!-- Right Column: Interactive Live Preview Mockup -->
                     <div class="col-md-5">
                         <div class="panel panel-default" style="border-radius: 8px; position: sticky; top: 20px;">
-                            <div class="panel-heading" style="background: #fff; padding: 14px 20px; display: flex; justify-content: space-between; align-items: center;">
+                            <div class="panel-heading" style="background: var(--sdv-bg-surface, #fff); padding: 14px 20px; display: flex; justify-content: space-between; align-items: center;">
                                 <strong><i class="fas fa-eye"></i> Live Interactive Preview</strong>
                                 <span class="badge" id="previewModeBadge">Collapsed (380x560)</span>
                             </div>
-                            <div class="panel-body" style="background: #e2e8f0; padding: 30px; display: flex; flex-direction: column; align-items: center; gap: 20px; overflow-x: auto;">
+                            <div class="panel-body" style="background: var(--sdv-bg-nested, #e2e8f0); padding: 30px; display: flex; flex-direction: column; align-items: center; gap: 20px; overflow-x: auto;">
                                 <!-- Mockup Frame -->
-                                <div id="previewFrame" style="width: 330px; height: 500px; background: #fff; border-radius: 14px; box-shadow: 0 20px 40px -10px rgba(0,0,0,0.25); display: flex; flex-direction: column; overflow: hidden; transition: all 0.25s ease; border: 1px solid #e5e7eb;">
+                                <div id="previewFrame" style="width: 330px; height: 500px; background: var(--sdv-bg-surface, #fff); border-radius: 14px; box-shadow: 0 20px 40px -10px rgba(0,0,0,0.25); display: flex; flex-direction: column; overflow: hidden; transition: all 0.25s ease; border: 1px solid var(--sdv-border, #e5e7eb);">
                                     <!-- Header -->
-                                    <div id="previewHeader" style="background: <?php echo htmlspecialchars($settings->client_chat_brand_color ?? '#0d6efd'); ?>; color: #fff; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(0,0,0,0.06);">
+                                    <div id="previewHeader" style="background:  <?php echo htmlspecialchars($settings->client_chat_brand_color ?? '#0d6efd'); ?>; color: #fff; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(0,0,0,0.06);">
                                         <div style="display: flex; align-items: center; gap: 10px;">
                                             <div id="previewAvatarContainer" style="width: 36px; height: 36px; border-radius: 50%; background: rgba(255,255,255,0.25); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 12px; overflow: hidden; flex-shrink: 0;">
                                                 <?php if (!empty($settings->client_chat_logo)): ?>
                                                     <img id="previewAvatarImg" src="<?php echo htmlspecialchars($settings->client_chat_logo); ?>" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">
                                                 <?php elseif (!empty($settings->client_chat_siri_orb_enabled) || ($settings->client_chat_theme ?? '') === 'apple_siri'): ?>
-                                                    <div class="sdv-siri-orb" style="width:32px;height:32px;border-radius:50%;background:radial-gradient(circle at 35% 30%, #ff5e7e 0%, #f97316 28%, #a855f7 65%, #38bdf8 100%);box-shadow:inset 0 2px 4px rgba(255,255,255,0.8), 0 0 10px rgba(244,63,94,0.4);"></div>
+                                                    <div class="sdv-siri-orb" style="width:32px;height:32px;border-radius:50%;background: radial-gradient(circle at 35% 30%, #ff5e7e 0%, #f97316 28%, #a855f7 65%, #38bdf8 100%);box-shadow:inset 0 2px 4px rgba(255,255,255,0.8), 0 0 10px rgba(244,63,94,0.4);"></div>
                                                 <?php else: ?>
                                                     <span id="previewAvatarText"><i class="fas fa-globe"></i></span>
                                                 <?php endif; ?>
@@ -12686,55 +11379,55 @@ class AdminController
                                                     <i class="fas fa-globe-americas" style="font-size: 11px; opacity: 0.85; color: inherit;"></i>
                                                 </div>
                                                 <div id="previewStatus" style="font-size: 10.5px; opacity: 0.9; display: flex; align-items: center; gap: 4px; margin-top: 1px;">
-                                                    <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#10b981;"></span> Online &bull; Self-Help AI
+                                                    <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background: #10b981;"></span> Online &bull; Self-Help AI
                                                 </div>
                                             </div>
                                         </div>
                                         <div style="display: flex; gap: 5px; align-items: center;">
-                                            <button type="button" id="previewExpandBtn" style="background:none;border:none;color:inherit;cursor:pointer;font-size:12px;opacity:0.85;">⛶</button>
-                                            <button type="button" style="background:none;border:none;color:inherit;cursor:pointer;font-size:16px;line-height:1;opacity:0.85;">&minus;</button>
+                                            <button type="button" id="previewExpandBtn" style="background: none;border: none;color: inherit;cursor:pointer;font-size:12px;opacity:0.85;">⛶</button>
+                                            <button type="button" style="background: none;border: none;color: inherit;cursor:pointer;font-size:16px;line-height:1;opacity:0.85;">&minus;</button>
                                         </div>
                                     </div>
 
                                     <!-- Navigation Tabs Preview -->
-                                    <div id="previewTabs" style="display: flex; gap: 6px; padding: 7px 14px; background: #fff; border-bottom: 1px solid #f1f3f5; font-size: 11px;">
-                                        <span id="previewTabChat" style="padding: 3px 10px; border-radius: 14px; background: #111827; color: #fff; font-weight: 600; display: inline-flex; align-items: center; gap: 4px;">
+                                    <div id="previewTabs" style="display: flex; gap: 6px; padding: 7px 14px; background: var(--sdv-bg-surface, #fff); border-bottom: 1px solid #f1f3f5; font-size: 11px;">
+                                        <span id="previewTabChat" style="padding: 3px 10px; border-radius: 14px; background: var(--sdv-bg-nested, #111827); color: #fff; font-weight: 600; display: inline-flex; align-items: center; gap: 4px;">
                                             <i class="fas fa-comment-alt" style="font-size: 9.5px;"></i> AI Chat
                                         </span>
-                                        <span id="previewTabKb" style="padding: 3px 10px; border-radius: 14px; background: #f3f4f6; color: #6b7280; font-weight: 500; display: inline-flex; align-items: center; gap: 4px;">
+                                        <span id="previewTabKb" style="padding: 3px 10px; border-radius: 14px; background: var(--sdv-bg-nested, #f3f4f6); color: var(--sdv-text-muted, #6b7280); font-weight: 500; display: inline-flex; align-items: center; gap: 4px;">
                                             <i class="fas fa-book-open" style="font-size: 9.5px;"></i> Help &amp; KB
                                         </span>
-                                        <span id="previewTabWa" style="padding: 3px 10px; border-radius: 14px; background: #f3f4f6; color: #6b7280; font-weight: 500; display: inline-flex; align-items: center; gap: 4px;">
+                                        <span id="previewTabWa" style="padding: 3px 10px; border-radius: 14px; background: var(--sdv-bg-nested, #f3f4f6); color: var(--sdv-text-muted, #6b7280); font-weight: 500; display: inline-flex; align-items: center; gap: 4px;">
                                             <i class="fab fa-whatsapp text-success" style="font-size: 10.5px;"></i> WhatsApp
                                         </span>
                                     </div>
 
                                     <!-- Escalation Bar -->
-                                    <div id="previewEscalateBar" style="padding: 6px 14px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; font-size: 10.5px; color: #64748b; display: none; justify-content: space-between; align-items: center;">
+                                    <div id="previewEscalateBar" style="padding: 6px 14px; background: var(--sdv-bg-nested, #f8fafc); border-bottom: 1px solid var(--sdv-border, #e2e8f0); font-size: 10.5px; color: var(--sdv-text-muted, #64748b); display: none; justify-content: space-between; align-items: center;">
                                         <span>Need official staff?</span>
-                                        <span id="previewEscalateLink" style="color: <?php echo htmlspecialchars($settings->client_chat_brand_color ?? '#0d6efd'); ?>; font-weight: 600; cursor: pointer;">Convert to Ticket &rarr;</span>
+                                        <span id="previewEscalateLink" style="color:  <?php echo htmlspecialchars($settings->client_chat_brand_color ?? '#0d6efd'); ?>; font-weight: 600; cursor: pointer;">Convert to Ticket &rarr;</span>
                                     </div>
 
                                     <!-- Messages Area -->
-                                    <div id="previewMessages" style="flex: 1; padding: 12px 14px; background: #ffffff; display: flex; flex-direction: column; gap: 10px; overflow-y: auto;">
-                                        <div id="previewWelcome" style="align-self: flex-start; background: #ffffff; color: #111827; padding: 10px 14px; border-radius: 14px; border: 1px solid #e5e7eb; font-size: 12px; max-width: 88%; box-shadow: 0 1px 2px rgba(0,0,0,0.02);">
+                                    <div id="previewMessages" style="flex: 1; padding: 12px 14px; background: var(--sdv-bg-surface, #ffffff); display: flex; flex-direction: column; gap: 10px; overflow-y: auto;">
+                                        <div id="previewWelcome" style="align-self: flex-start; background: var(--sdv-bg-surface, #ffffff); color: var(--sdv-text-primary, #111827); padding: 10px 14px; border-radius: 14px; border: 1px solid var(--sdv-border, #e5e7eb); font-size: 12px; max-width: 88%; box-shadow: 0 1px 2px rgba(0,0,0,0.02);">
                                             <?php echo htmlspecialchars($settings->client_chat_welcome_message ?? 'Hi there! Need help with your hosting, domains, or billing?'); ?>
                                         </div>
-                                        <div id="previewUserBubble" style="align-self: flex-end; background: #f3f4f6; color: #111827; padding: 10px 14px; border-radius: 14px; font-size: 12px; max-width: 85%;">
+                                        <div id="previewUserBubble" style="align-self: flex-end; background: var(--sdv-bg-nested, #f3f4f6); color: var(--sdv-text-primary, #111827); padding: 10px 14px; border-radius: 14px; font-size: 12px; max-width: 85%;">
                                             When is my next hosting invoice due?
                                         </div>
-                                        <div id="previewBotReply" style="align-self: flex-start; background: #ffffff; color: #111827; padding: 10px 14px; border-radius: 14px; border: 1px solid #e5e7eb; font-size: 12px; max-width: 88%; box-shadow: 0 1px 2px rgba(0,0,0,0.02);">
+                                        <div id="previewBotReply" style="align-self: flex-start; background: var(--sdv-bg-surface, #ffffff); color: var(--sdv-text-primary, #111827); padding: 10px 14px; border-radius: 14px; border: 1px solid var(--sdv-border, #e5e7eb); font-size: 12px; max-width: 88%; box-shadow: 0 1px 2px rgba(0,0,0,0.02);">
                                             Your hosting service <strong>cPanel Premium (example.com)</strong> has an invoice of <strong>$14.99</strong> due on <strong>Oct 1st, 2026</strong>.
                                         </div>
                                     </div>
 
                                     <!-- Input Row & Compact Branding -->
-                                    <div id="previewFooter" style="padding: 8px 12px 6px 12px; background: #ffffff; border-top: none; display: flex; flex-direction: column; gap: 4px;">
-                                        <div style="display: flex; gap: 8px; align-items: center; background: #ffffff; border: 1px solid #e5e7eb; border-radius: 20px; padding: 4px 6px 4px 12px;">
-                                            <input type="text" id="previewInput" placeholder="Type your question here..." disabled style="border: none; background: transparent; font-size: 12px; outline: none; flex: 1; color: #111827;">
-                                            <button type="button" id="previewSend" style="background: #111827; color: #fff; border: none; border-radius: 50%; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0;"><i class="fas fa-paper-plane" style="font-size: 10px;"></i></button>
+                                    <div id="previewFooter" style="padding: 8px 12px 6px 12px; background: var(--sdv-bg-surface, #ffffff); border-top: none; display: flex; flex-direction: column; gap: 4px;">
+                                        <div style="display: flex; gap: 8px; align-items: center; background: var(--sdv-bg-surface, #ffffff); border: 1px solid var(--sdv-border, #e5e7eb); border-radius: 20px; padding: 4px 6px 4px 12px;">
+                                            <input type="text" id="previewInput" placeholder="Type your question here..." disabled style="border: none; background: transparent; font-size: 12px; outline: none; flex: 1; color: var(--sdv-text-primary, #111827);">
+                                            <button type="button" id="previewSend" style="background: var(--sdv-bg-nested, #111827); color: #fff; border: none; border-radius: 50%; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0;"><i class="fas fa-paper-plane" style="font-size: 10px;"></i></button>
                                         </div>
-                                        <div id="previewBranding" style="text-align: center; font-size: 9.5px; color: #9ca3af; padding: 1px 0 0; line-height: 1;">
+                                        <div id="previewBranding" style="text-align: center; font-size: 9.5px; color: var(--sdv-text-muted, #9ca3af); padding: 1px 0 0; line-height: 1;">
                                             Powered by Sahdev AI
                                         </div>
                                     </div>
@@ -12742,8 +11435,8 @@ class AdminController
 
                                 <!-- Launcher Preview -->
                                 <div style="display: flex; flex-direction: column; align-items: center; gap: 8px;">
-                                    <span style="font-size: 11px; color: #64748b; font-weight: 600;">Launcher Preview:</span>
-                                    <div id="previewLauncher" style="background: <?php echo htmlspecialchars($settings->client_chat_brand_color ?? '#0d6efd'); ?>; color: #fff; display: flex; align-items: center; justify-content: center; box-shadow: 0 10px 25px rgba(0,0,0,0.25); cursor: pointer; transition: all 0.2s;">
+                                    <span style="font-size: 11px; color: var(--sdv-text-muted, #64748b); font-weight: 600;">Launcher Preview:</span>
+                                    <div id="previewLauncher" style="background:  <?php echo htmlspecialchars($settings->client_chat_brand_color ?? '#0d6efd'); ?>; color: #fff; display: flex; align-items: center; justify-content: center; box-shadow: 0 10px 25px rgba(0,0,0,0.25); cursor: pointer; transition: all 0.2s;">
                                         <i class="fas fa-comment-dots" style="font-size: 20px;"></i>
                                         <span id="previewLauncherText" style="display: none; font-weight: 600; font-size: 13px; margin-left: 8px;">Chat with Us</span>
                                     </div>
@@ -12825,7 +11518,7 @@ class AdminController
                             header.style.color = '#111827';
                             header.style.borderBottom = '1px solid #f3f4f6';
                             if (avatarCont && !avatarCont.querySelector('img')) {
-                                avatarCont.innerHTML = '<div style="width:32px;height:32px;border-radius:50%;background:radial-gradient(circle at 35% 30%, #ff5e7e 0%, #f97316 28%, #a855f7 65%, #38bdf8 100%);box-shadow:inset 0 2px 4px rgba(255,255,255,0.8), 0 0 10px rgba(244,63,94,0.4);"></div>';
+                                avatarCont.innerHTML = '<div style="width:32px;height:32px;border-radius:50%;background: radial-gradient(circle at 35% 30%, #ff5e7e 0%, #f97316 28%, #a855f7 65%, #38bdf8 100%);box-shadow:inset 0 2px 4px rgba(255,255,255,0.8), 0 0 10px rgba(244,63,94,0.4);"></div>';
                             }
                             if (escalateBar) { escalateBar.style.display = 'none'; }
                             messages.style.background = '#ffffff';
@@ -13140,7 +11833,7 @@ class AdminController
             <!-- ── TAB 5: QUOTAS & ABUSE PROTECTION ────────────────────────── -->
             <?php if ($currentTab === 'limits'): ?>
                 <div class="panel panel-default" style="border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
-                    <div class="panel-heading" style="background: #fff; padding: 16px 20px; border-bottom: 1px solid #edf2f7;">
+                    <div class="panel-heading" style="background: var(--sdv-bg-surface, #fff); padding: 16px 20px; border-bottom: 1px solid var(--sdv-border, #edf2f7);">
                         <strong style="font-size: 16px;"><i class="fas fa-shield-alt text-primary"></i> AI Quotas, Rate Limits &amp; Token Drain Protection</strong>
                         <p class="text-muted" style="margin: 4px 0 0; font-size: 12.5px;">
                             Protect your OpenAI, Anthropic, and Google Gemini API token budgets from runaway costs or malicious visitors. When a user reaches their configured threshold, Sahdev gracefully stops calling the AI API, informs the user, and guides them to convert their inquiry into an official support ticket.
@@ -13152,8 +11845,8 @@ class AdminController
                             <input type="hidden" name="save_client_chat_limits" value="1">
 
                             <!-- Authenticated Clients Section -->
-                            <div style="border-bottom: 1px solid #edf2f7; padding-bottom: 22px; margin-bottom: 22px;">
-                                <h4 style="margin: 0 0 8px; font-weight: 700; color: #1e293b; display: flex; align-items: center; gap: 8px;">
+                            <div style="border-bottom: 1px solid var(--sdv-border, #edf2f7); padding-bottom: 22px; margin-bottom: 22px;">
+                                <h4 style="margin: 0 0 8px; font-weight: 700; color: var(--sdv-text-primary, #1e293b); display: flex; align-items: center; gap: 8px;">
                                     <i class="fas fa-user-check text-success"></i> Authenticated Client Account Limits
                                 </h4>
                                 <p class="text-muted" style="font-size: 12.5px; margin-bottom: 16px;">
@@ -13190,8 +11883,8 @@ class AdminController
                             </div>
 
                             <!-- Guest Visitors Section -->
-                            <div style="border-bottom: 1px solid #edf2f7; padding-bottom: 22px; margin-bottom: 22px;">
-                                <h4 style="margin: 0 0 8px; font-weight: 700; color: #1e293b; display: flex; align-items: center; gap: 8px;">
+                            <div style="border-bottom: 1px solid var(--sdv-border, #edf2f7); padding-bottom: 22px; margin-bottom: 22px;">
+                                <h4 style="margin: 0 0 8px; font-weight: 700; color: var(--sdv-text-primary, #1e293b); display: flex; align-items: center; gap: 8px;">
                                     <i class="fas fa-user-secret text-warning"></i> Unauthenticated Guest Visitors Abuse Defense
                                 </h4>
                                 <p class="text-muted" style="font-size: 12.5px; margin-bottom: 16px;">
@@ -13219,8 +11912,8 @@ class AdminController
                             </div>
 
                             <!-- Character Constraints Section -->
-                            <div style="border-bottom: 1px solid #edf2f7; padding-bottom: 22px; margin-bottom: 22px;">
-                                <h4 style="margin: 0 0 8px; font-weight: 700; color: #1e293b; display: flex; align-items: center; gap: 8px;">
+                            <div style="border-bottom: 1px solid var(--sdv-border, #edf2f7); padding-bottom: 22px; margin-bottom: 22px;">
+                                <h4 style="margin: 0 0 8px; font-weight: 700; color: var(--sdv-text-primary, #1e293b); display: flex; align-items: center; gap: 8px;">
                                     <i class="fas fa-text-width text-info"></i> Message &amp; Session Character Limits (Model Safeguards)
                                 </h4>
                                 <p class="text-muted" style="font-size: 12.5px; margin-bottom: 16px;">
@@ -13251,15 +11944,15 @@ class AdminController
                             </div>
 
                             <!-- Sensitive Data & PII Redaction Section -->
-                            <div style="border-bottom: 1px solid #edf2f7; padding-bottom: 22px; margin-bottom: 22px;">
-                                <h4 style="margin: 0 0 8px; font-weight: 700; color: #1e293b; display: flex; align-items: center; gap: 8px;">
+                            <div style="border-bottom: 1px solid var(--sdv-border, #edf2f7); padding-bottom: 22px; margin-bottom: 22px;">
+                                <h4 style="margin: 0 0 8px; font-weight: 700; color: var(--sdv-text-primary, #1e293b); display: flex; align-items: center; gap: 8px;">
                                     <i class="fas fa-user-shield text-danger"></i> Sensitive Data, PII &amp; PCI Redaction (OWASP LLM06)
                                 </h4>
                                 <p class="text-muted" style="font-size: 12.5px; margin-bottom: 14px;">
                                     Automatically detect and redact customer credit card numbers (with Luhn checksum validation), CVVs, passwords, private keys, and API tokens before passing them to the external AI model or saving them into chat transcripts.
                                 </p>
                                 <div class="checkbox" style="margin: 0;">
-                                    <label style="font-weight: 700; color: #1e293b; font-size: 13.5px;">
+                                    <label style="font-weight: 700; color: var(--sdv-text-primary, #1e293b); font-size: 13.5px;">
                                         <input type="checkbox" name="client_chat_pii_masking" value="1" <?php echo !empty($settings->client_chat_pii_masking ?? 1) ? 'checked' : ''; ?>>
                                         Enable Real-Time Sensitive Credential &amp; PII Redaction
                                     </label>
@@ -13328,39 +12021,39 @@ class AdminController
 
         <div class="sahdev-page-container sdv-live-console-wrapper" style="<?php echo $isStandalone ? 'margin:0;padding:12px;height:100vh;box-sizing:border-box;' : 'margin-top:15px;'; ?>">
             <!-- Top Control Bar -->
-            <div class="sdv-console-topbar" style="display:flex;align-items:center;justify-content:space-between;background:#0f172a;color:#f8fafc;padding:12px 20px;border-radius:10px 10px 0 0;box-shadow:0 4px 12px rgba(0,0,0,0.15);">
+            <div class="sdv-console-topbar" style="display:flex;align-items:center;justify-content:space-between;background: var(--sdv-bg-nested, #0f172a);color: var(--sdv-text-primary, #f8fafc);padding:12px 20px;border-radius:10px 10px 0 0;box-shadow:0 4px 12px rgba(0,0,0,0.15);">
                 <div class="sdv-topbar-left" style="display:flex;align-items:center;gap:14px;">
-                    <div style="width:36px;height:36px;border-radius:8px;background:linear-gradient(135deg, #0284c7, #6366f1);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">
+                    <div style="width:36px;height:36px;border-radius:8px;background: linear-gradient(135deg, #0284c7, #6366f1);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">
                         <i class="fas fa-satellite-dish"></i>
                     </div>
                     <div>
                         <div style="font-weight:700;font-size:16px;letter-spacing:-0.2px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
                             Sahdev Live Support Console
-                            <span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:12px;background:#10b981;color:#fff;">
-                                <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#fff;margin-right:4px;animation:pulseDot 1.5s infinite;"></span> LIVE
+                            <span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:12px;background: #10b981;color: #fff;">
+                                <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background: var(--sdv-bg-surface, #fff);margin-right:4px;animation:pulseDot 1.5s infinite;"></span> LIVE
                             </span>
                         </div>
-                        <div class="sdv-topbar-subtext" style="font-size:12px;color:#94a3b8;">
-                            Operator: <strong style="color:#e2e8f0;"><?php echo htmlspecialchars($adminName); ?></strong> <span class="sdv-poll-info">&bull; Adaptive micro-polling: <strong><?php echo $pollInterval; ?>s</strong></span>
+                        <div class="sdv-topbar-subtext" style="font-size:12px;color: var(--sdv-text-muted, #94a3b8);">
+                            Operator: <strong style="color: var(--sdv-text-secondary, #e2e8f0);"><?php echo htmlspecialchars($adminName); ?></strong> <span class="sdv-poll-info">&bull; Adaptive micro-polling: <strong><?php echo $pollInterval; ?>s</strong></span>
                         </div>
                     </div>
                 </div>
 
                 <div class="sdv-topbar-tools" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-                    <button type="button" id="toggleSoundBtn" class="btn btn-sm" style="background:#1e293b;border:1px solid #334155;color:#e2e8f0;font-weight:600;border-radius:6px;" title="Toggle audio alert chime">
+                    <button type="button" id="toggleSoundBtn" class="btn btn-sm" style="background: var(--sdv-bg-surface, #1e293b);border: 1px solid var(--sdv-border, #334155);color: var(--sdv-text-secondary, #e2e8f0);font-weight:600;border-radius:6px;" title="Toggle audio alert chime">
                         <i class="fas fa-volume-up text-success" id="soundIcon"></i> <span id="soundText">Sound On</span>
                     </button>
 
-                    <button type="button" id="triggerSoundTestBtn" class="btn btn-sm" style="background:#1e293b;border:1px solid #334155;color:#94a3b8;border-radius:6px;" title="Test audio notification">
+                    <button type="button" id="triggerSoundTestBtn" class="btn btn-sm" style="background: var(--sdv-bg-surface, #1e293b);border: 1px solid var(--sdv-border, #334155);color: var(--sdv-text-muted, #94a3b8);border-radius:6px;" title="Test audio notification">
                         <i class="fas fa-play"></i> <span class="sdv-btn-label">Test Chime</span>
                     </button>
 
-                    <button type="button" id="linkMobileAppBtn" class="btn btn-sm" style="background:#0284c7;border:none;color:#fff;font-weight:600;border-radius:6px;" title="Link Sahdev Mobile App (Android/Flutter) via QR Code">
+                    <button type="button" id="linkMobileAppBtn" class="btn btn-sm" style="background: #0284c7;border: none;color: #fff;font-weight:600;border-radius:6px;" title="Link Sahdev Mobile App (Android/Flutter) via QR Code">
                         <i class="fas fa-mobile-alt"></i> <span class="sdv-btn-label">Pair Mobile App</span>
                     </button>
 
                     <?php if (!$isStandalone): ?>
-                        <button type="button" id="popOutConsoleBtn" class="btn btn-sm" style="background:#3b82f6;border:none;color:#fff;font-weight:600;border-radius:6px;" title="Pop-out to dedicated full-screen window for multi-monitor setups">
+                        <button type="button" id="popOutConsoleBtn" class="btn btn-sm" style="background: #3b82f6;border: none;color: #fff;font-weight:600;border-radius:6px;" title="Pop-out to dedicated full-screen window for multi-monitor setups">
                             <i class="fas fa-external-link-alt"></i> <span class="sdv-btn-label">Pop Out Window</span>
                         </button>
                     <?php else: ?>
@@ -13372,24 +12065,24 @@ class AdminController
             </div>
 
             <!-- Main 3-Column Layout Workspace -->
-            <div id="liveConsoleApp" class="sdv-live-console-app view-queue<?php echo $isStandalone ? ' is-standalone' : ''; ?>" style="display:grid;grid-template-columns:330px 1fr 340px;height:calc(100vh - <?php echo $isStandalone ? '95px' : '230px'; ?>);min-height:600px;background:#f8fafc;border:1px solid #cbd5e1;border-top:none;border-radius:0 0 10px 10px;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,0.06);position:relative;">
+            <div id="liveConsoleApp" class="sdv-live-console-app view-queue<?php echo $isStandalone ? ' is-standalone' : ''; ?>" style="display:grid;grid-template-columns:330px 1fr 340px;height:calc(100vh - <?php echo $isStandalone ? '95px' : '230px'; ?>);min-height:600px;background: var(--sdv-bg-nested, #f8fafc);border: 1px solid var(--sdv-border, #cbd5e1);border-top: none;border-radius:0 0 10px 10px;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,0.06);position:relative;">
                 
                 <!-- Backdrop for mobile/tablet slide-over drawer -->
                 <div id="sideWatcherBackdrop" class="sdv-watcher-backdrop"></div>
 
                 <!-- ── COLUMN 1: SESSIONS QUEUE & FILTERS ────────────────────────── -->
-                <div class="sdv-console-col-queue" style="border-right:1px solid #e2e8f0;background:#ffffff;display:flex;flex-direction:column;overflow:hidden;">
+                <div class="sdv-console-col-queue" style="border-right: 1px solid var(--sdv-border, #e2e8f0);background: var(--sdv-bg-surface, #ffffff);display:flex;flex-direction:column;overflow:hidden;">
                     <!-- Filter Tabs -->
-                    <div style="padding:12px;border-bottom:1px solid #e2e8f0;background:#f8fafc;">
+                    <div style="padding:12px;border-bottom: 1px solid var(--sdv-border, #e2e8f0);background: var(--sdv-bg-nested, #f8fafc);">
                         <div style="position:relative;margin-bottom:10px;">
-                            <i class="fas fa-search" style="position:absolute;left:10px;top:10px;color:#94a3b8;font-size:12px;"></i>
-                            <input type="text" id="queueSearch" placeholder="Search visitor name, email, UUID..." style="width:100%;padding:7px 10px 7px 30px;font-size:12px;border:1px solid #cbd5e1;border-radius:6px;box-sizing:border-box;">
+                            <i class="fas fa-search" style="position:absolute;left:10px;top:10px;color: var(--sdv-text-muted, #94a3b8);font-size:12px;"></i>
+                            <input type="text" id="queueSearch" placeholder="Search visitor name, email, UUID..." style="width:100%;padding:7px 10px 7px 30px;font-size:12px;border: 1px solid var(--sdv-border, #cbd5e1);border-radius:6px;box-sizing:border-box;">
                         </div>
                         <div style="display:flex;gap:4px;overflow-x:auto;" id="queueFilterTabs">
                             <button type="button" class="q-tab active" data-filter="all">All</button>
                             <button type="button" class="q-tab" data-filter="active">Active</button>
                             <button type="button" class="q-tab" data-filter="summoned">
-                                <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#ef4444;margin-right:3px;"></span>Summoned
+                                <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background: #ef4444;margin-right:3px;"></span>Summoned
                             </button>
                             <button type="button" class="q-tab" data-filter="taken_over">Takeovers</button>
                             <button type="button" class="q-tab" data-filter="closed">History</button>
@@ -13398,7 +12091,7 @@ class AdminController
 
                     <!-- Session Cards List -->
                     <div id="queueListContainer" style="flex:1;overflow-y:auto;padding:8px;">
-                        <div style="text-align:center;padding:40px 15px;color:#94a3b8;font-size:13px;">
+                        <div style="text-align:center;padding:40px 15px;color: var(--sdv-text-muted, #94a3b8);font-size:13px;">
                             <i class="fas fa-spinner fa-spin" style="font-size:20px;margin-bottom:8px;"></i>
                             <div>Connecting to live stream...</div>
                         </div>
@@ -13406,15 +12099,15 @@ class AdminController
                 </div>
 
                 <!-- ── COLUMN 2: LIVE CONVERSATION & SNEAK-PEEK COMPOSER ────────── -->
-                <div class="sdv-console-col-chat" style="display:flex;flex-direction:column;background:#ffffff;overflow:hidden;position:relative;">
+                <div class="sdv-console-col-chat" style="display:flex;flex-direction:column;background: var(--sdv-bg-surface, #ffffff);overflow:hidden;position:relative;">
                     <!-- Chat Header -->
-                    <div id="chatViewHeader" class="sdv-chat-view-header" style="padding:12px 18px;border-bottom:1px solid #e2e8f0;background:#ffffff;display:flex;align-items:center;justify-content:space-between;min-height:55px;">
+                    <div id="chatViewHeader" class="sdv-chat-view-header" style="padding:12px 18px;border-bottom: 1px solid var(--sdv-border, #e2e8f0);background: var(--sdv-bg-surface, #ffffff);display:flex;align-items:center;justify-content:space-between;min-height:55px;">
                         <div class="sdv-chat-header-main" style="display:flex;align-items:center;gap:10px;flex:1;min-width:0;">
                             <button type="button" id="btnBackToQueue" class="btn btn-sm btn-default sdv-mobile-back-btn" title="Back to visitor queue" aria-label="Back to visitor queue" style="display:none;border-radius:6px;height:34px;width:34px;padding:0;align-items:center;justify-content:center;flex-shrink:0;">
                                 <i class="fas fa-arrow-left"></i>
                             </button>
                             <div id="chatHeaderDetails" style="display:flex;flex-direction:column;gap:2px;min-width:0;">
-                                <div style="font-size:13px;color:#64748b;">Select a conversation from the left queue to begin live monitoring or takeover.</div>
+                                <div style="font-size:13px;color: var(--sdv-text-muted, #64748b);">Select a conversation from the left queue to begin live monitoring or takeover.</div>
                             </div>
                         </div>
                         <div id="chatHeaderActions" style="display:none;align-items:center;gap:8px;flex-wrap:wrap;">
@@ -13423,42 +12116,42 @@ class AdminController
                     </div>
 
                     <!-- Messages Thread Scroll Area -->
-                    <div id="chatMessagesScroll" style="flex:1;overflow-y:auto;padding:20px;background:#f8fafc;display:flex;flex-direction:column;gap:12px;">
-                        <div style="margin:auto;text-align:center;color:#94a3b8;font-size:13px;padding:30px;">
-                            <i class="fas fa-comments" style="font-size:36px;color:#cbd5e1;margin-bottom:10px;"></i>
+                    <div id="chatMessagesScroll" style="flex:1;overflow-y:auto;padding:20px;background: var(--sdv-bg-nested, #f8fafc);display:flex;flex-direction:column;gap:12px;">
+                        <div style="margin:auto;text-align:center;color: var(--sdv-text-muted, #94a3b8);font-size:13px;padding:30px;">
+                            <i class="fas fa-comments" style="font-size:36px;color: var(--sdv-text-secondary, #cbd5e1);margin-bottom:10px;"></i>
                             <div>No conversation selected</div>
                         </div>
                     </div>
 
                     <!-- Staff Reply Composer -->
-                    <div id="chatComposerContainer" style="border-top:1px solid #e2e8f0;background:#ffffff;padding:12px 16px;display:none;flex-direction:column;gap:8px;position:relative;">
+                    <div id="chatComposerContainer" style="border-top: 1px solid var(--sdv-border, #e2e8f0);background: var(--sdv-bg-surface, #ffffff);padding:12px 16px;display:none;flex-direction:column;gap:8px;position:relative;">
                         <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;">
-                            <div style="font-size:11.5px;color:#64748b;font-weight:600;">
+                            <div style="font-size:11.5px;color: var(--sdv-text-muted, #64748b);font-weight:600;">
                                 <i class="fas fa-user-shield text-success"></i> Replying as Staff: <strong><?php echo htmlspecialchars($adminName); ?></strong>
                             </div>
                             <div style="display:flex;align-items:center;gap:6px;">
-                                <button type="button" id="btnOpenCannedModal" class="btn btn-xs" style="background:#f8fafc;color:#0284c7;font-weight:600;border:1px solid #bae6fd;border-radius:4px;" title="Browse and manage canned responses (/ shortcuts)">
+                                <button type="button" id="btnOpenCannedModal" class="btn btn-xs" style="background: var(--sdv-bg-nested, #f8fafc);color: #0284c7;font-weight:600;border: 1px solid #bae6fd;border-radius:4px;" title="Browse and manage canned responses (/ shortcuts)">
                                     <i class="fas fa-bolt"></i> Canned Responses
                                 </button>
-                                <button type="button" id="btnAiSuggestReply" class="btn btn-xs" style="background:#f1f5f9;color:#4f46e5;font-weight:600;border:1px solid #c7d2fe;border-radius:4px;" title="AI Co-Pilot generates contextual draft suggestion">
+                                <button type="button" id="btnAiSuggestReply" class="btn btn-xs" style="background: var(--sdv-bg-nested, #f1f5f9);color: #4f46e5;font-weight:600;border: 1px solid #c7d2fe;border-radius:4px;" title="AI Co-Pilot generates contextual draft suggestion">
                                     <i class="fas fa-magic"></i> <span class="sdv-ai-suggest-text">AI Co-Pilot Suggest Reply</span>
                                 </button>
                             </div>
                         </div>
                         <div style="position:relative;display:flex;gap:10px;align-items:flex-end;">
-                            <textarea id="staffReplyInput" rows="2" placeholder="Type message as human staff agent... (Type / for shortcuts, Enter to send)" style="flex:1;padding:10px 12px;font-size:14px;border:1px solid #cbd5e1;border-radius:6px;resize:none;outline:none;line-height:1.4;box-sizing:border-box;"></textarea>
+                            <textarea id="staffReplyInput" rows="2" placeholder="Type message as human staff agent... (Type / for shortcuts, Enter to send)" style="flex:1;padding:10px 12px;font-size:14px;border: 1px solid var(--sdv-border, #cbd5e1);border-radius:6px;resize:none;outline:none;line-height:1.4;box-sizing:border-box;"></textarea>
                             <button type="button" id="btnSendStaffReply" class="btn btn-primary" style="height:44px;padding:0 20px;font-weight:700;border-radius:6px;display:flex;align-items:center;gap:6px;">
                                 <i class="fas fa-paper-plane"></i> <span class="sdv-send-btn-text">Send</span>
                             </button>
                             <!-- Autocomplete popup for / shortcut -->
-                            <div id="cannedAutocompletePopup" style="display:none;position:absolute;bottom:52px;left:0;width:340px;max-height:220px;background:#ffffff;border:1px solid #cbd5e1;border-radius:8px;box-shadow:0 10px 25px rgba(0,0,0,0.18);overflow-y:auto;z-index:100;"></div>
+                            <div id="cannedAutocompletePopup" style="display:none;position:absolute;bottom:52px;left:0;width:340px;max-height:220px;background: var(--sdv-bg-surface, #ffffff);border: 1px solid var(--sdv-border, #cbd5e1);border-radius:8px;box-shadow:0 10px 25px rgba(0,0,0,0.18);overflow-y:auto;z-index:100;"></div>
                         </div>
                     </div>
                 </div>
 
                 <!-- ── COLUMN 3: CLIENT ACCOUNT WATCHER & TICKET CONVERT ────────── -->
-                <div id="sideWatcherContainer" class="sdv-console-col-watcher" style="border-left:1px solid #e2e8f0;background:#ffffff;display:flex;flex-direction:column;overflow-y:auto;">
-                    <div style="padding:14px 16px;border-bottom:1px solid #e2e8f0;background:#f8fafc;font-weight:700;font-size:13px;color:#1e293b;display:flex;align-items:center;justify-content:space-between;">
+                <div id="sideWatcherContainer" class="sdv-console-col-watcher" style="border-left: 1px solid var(--sdv-border, #e2e8f0);background: var(--sdv-bg-surface, #ffffff);display:flex;flex-direction:column;overflow-y:auto;">
+                    <div style="padding:14px 16px;border-bottom: 1px solid var(--sdv-border, #e2e8f0);background: var(--sdv-bg-nested, #f8fafc);font-weight:700;font-size:13px;color: var(--sdv-text-primary, #1e293b);display:flex;align-items:center;justify-content:space-between;">
                         <div style="display:flex;align-items:center;gap:8px;">
                             <i class="fas fa-id-card text-primary"></i> Client Profile &amp; Account Watcher
                         </div>
@@ -13467,7 +12160,7 @@ class AdminController
                         </button>
                     </div>
                     <div id="sideWatcherContent" style="padding:16px;">
-                        <div style="text-align:center;padding:40px 10px;color:#94a3b8;font-size:12.5px;">
+                        <div style="text-align:center;padding:40px 10px;color: var(--sdv-text-muted, #94a3b8);font-size:12.5px;">
                             Select a chat to inspect live client billing, services, and support history.
                         </div>
                     </div>
@@ -13480,8 +12173,8 @@ class AdminController
         <div class="modal fade" id="ticketConvertModal" tabindex="-1" role="dialog" aria-labelledby="ticketConvertModalLabel">
             <div class="modal-dialog modal-lg" role="document">
                 <div class="modal-content" style="border-radius:10px;overflow:hidden;">
-                    <div class="modal-header" style="background:#0f172a;color:#fff;padding:14px 20px;">
-                        <button type="button" class="close" data-dismiss="modal" aria-label="Close" style="color:#fff;opacity:0.8;"><span aria-hidden="true">&times;</span></button>
+                    <div class="modal-header" style="background: var(--sdv-bg-nested, #0f172a);color: #fff;padding:14px 20px;">
+                        <button type="button" class="close" data-dismiss="modal" aria-label="Close" style="color: #fff;opacity:0.8;"><span aria-hidden="true">&times;</span></button>
                         <h4 class="modal-title" id="ticketConvertModalLabel" style="font-weight:700;font-size:16px;">
                             <i class="fas fa-ticket-alt text-warning"></i> Convert Live Chat to WHMCS Support Ticket
                         </h4>
@@ -13545,11 +12238,11 @@ class AdminController
 
                             <div class="form-group" style="margin-bottom:0;">
                                 <label style="font-weight:700;font-size:13px;">Full Chat Transcript (Pre-formatted)</label>
-                                <textarea id="convertTranscriptPreview" class="form-control" rows="8" readonly style="font-family:monospace;font-size:11.5px;background:#f8fafc;"></textarea>
+                                <textarea id="convertTranscriptPreview" class="form-control" rows="8" readonly style="font-family:monospace;font-size:11.5px;background: var(--sdv-bg-nested, #f8fafc);"></textarea>
                             </div>
                         </form>
                     </div>
-                    <div class="modal-footer" style="background:#f8fafc;border-top:1px solid #e2e8f0;padding:12px 20px;">
+                    <div class="modal-footer" style="background: var(--sdv-bg-nested, #f8fafc);border-top: 1px solid var(--sdv-border, #e2e8f0);padding:12px 20px;">
                         <button type="button" class="btn btn-default" data-dismiss="modal">Cancel</button>
                         <button type="button" id="btnSubmitConvertTicket" class="btn btn-primary" style="font-weight:700;">
                             <i class="fas fa-check"></i> Create Ticket in WHMCS
@@ -13562,30 +12255,30 @@ class AdminController
         <!-- Modal: Link Mobile App (QR Code) -->
         <div class="modal fade" id="modalLinkMobileApp" tabindex="-1" role="dialog" aria-labelledby="modalLinkMobileAppTitle">
             <div class="modal-dialog" role="document" style="max-width:480px;">
-                <div class="modal-content" style="border-radius:12px;overflow:hidden;border:none;box-shadow:0 20px 40px rgba(0,0,0,0.25);">
-                    <div class="modal-header" style="background:#0f172a;color:#fff;padding:16px 20px;display:flex;align-items:center;justify-content:space-between;">
+                <div class="modal-content" style="border-radius:12px;overflow:hidden;border: none;box-shadow:0 20px 40px rgba(0,0,0,0.25);">
+                    <div class="modal-header" style="background: var(--sdv-bg-nested, #0f172a);color: #fff;padding:16px 20px;display:flex;align-items:center;justify-content:space-between;">
                         <h4 class="modal-title" id="modalLinkMobileAppTitle" style="font-weight:700;font-size:16px;display:flex;align-items:center;gap:8px;margin:0;">
                             <i class="fas fa-mobile-alt text-primary"></i> Pair Sahdev Mobile Support App
                         </h4>
-                        <button type="button" class="close" data-dismiss="modal" aria-label="Close" style="color:#fff;opacity:0.8;"><span aria-hidden="true">&times;</span></button>
+                        <button type="button" class="close" data-dismiss="modal" aria-label="Close" style="color: #fff;opacity:0.8;"><span aria-hidden="true">&times;</span></button>
                     </div>
                     <div class="modal-body" style="padding:24px;text-align:center;">
-                        <p style="color:#64748b;font-size:13px;margin-bottom:18px;">
+                        <p style="color: var(--sdv-text-muted, #64748b);font-size:13px;margin-bottom:18px;">
                             Scan this QR code from the <strong>Sahdev Mobile App</strong> on your Android phone to connect instantly.
                         </p>
                         
-                        <div id="qrCodeContainer" style="display:inline-flex;padding:16px;background:#ffffff;border:2px dashed #cbd5e1;border-radius:12px;margin-bottom:18px;min-width:230px;min-height:230px;align-items:center;justify-content:center;">
-                            <div id="qrLoadingSpinner" style="color:#64748b;font-size:13px;">
+                        <div id="qrCodeContainer" style="display:inline-flex;padding:16px;background: var(--sdv-bg-surface, #ffffff);border: 2px dashed var(--sdv-border, #cbd5e1);border-radius:12px;margin-bottom:18px;min-width:230px;min-height:230px;align-items:center;justify-content:center;">
+                            <div id="qrLoadingSpinner" style="color: var(--sdv-text-muted, #64748b);font-size:13px;">
                                 <i class="fas fa-spinner fa-spin fa-2x text-primary" style="margin-bottom:8px;display:block;"></i>
                                 Generating secure pairing token...
                             </div>
                             <img id="qrCodeImage" src="" alt="Pairing QR Code" style="display:none;width:200px;height:200px;border-radius:8px;" />
                         </div>
 
-                        <div id="manualPairBox" style="display:none;background:#f1f5f9;padding:12px;border-radius:8px;text-align:left;font-size:12px;color:#334155;">
-                            <div style="font-weight:700;margin-bottom:4px;color:#0f172a;">Manual Connection Code:</div>
+                        <div id="manualPairBox" style="display:none;background: var(--sdv-bg-nested, #f1f5f9);padding:12px;border-radius:8px;text-align:left;font-size:12px;color: var(--sdv-text-secondary, #334155);">
+                            <div style="font-weight:700;margin-bottom:4px;color: var(--sdv-text-primary, #0f172a);">Manual Connection Code:</div>
                             <div style="display:flex;align-items:center;gap:8px;">
-                                <input type="text" id="manualPairInput" readonly class="form-control input-sm" style="font-family:monospace;font-weight:700;background:#fff;" />
+                                <input type="text" id="manualPairInput" readonly class="form-control input-sm" style="font-family:monospace;font-weight:700;background: var(--sdv-bg-surface, #fff);" />
                                 <button type="button" id="copyPairCodeBtn" class="btn btn-default btn-sm" title="Copy code"><i class="far fa-copy"></i></button>
                             </div>
                         </div>
@@ -13596,7 +12289,7 @@ class AdminController
                             </button>
                         </div>
                     </div>
-                    <div class="modal-footer" style="background:#f8fafc;border-top:1px solid #e2e8f0;padding:12px 20px;">
+                    <div class="modal-footer" style="background: var(--sdv-bg-nested, #f8fafc);border-top: 1px solid var(--sdv-border, #e2e8f0);padding:12px 20px;">
                         <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
                     </div>
                 </div>
@@ -13606,18 +12299,18 @@ class AdminController
         <!-- Modal: Canned Responses & Shortcuts -->
         <div class="modal fade" id="cannedResponsesModal" tabindex="-1" role="dialog" aria-labelledby="cannedResponsesModalTitle">
             <div class="modal-dialog modal-lg" role="document">
-                <div class="modal-content" style="border-radius:12px;overflow:hidden;border:none;box-shadow:0 20px 40px rgba(0,0,0,0.25);">
-                    <div class="modal-header" style="background:#0f172a;color:#fff;padding:16px 20px;display:flex;align-items:center;justify-content:space-between;">
+                <div class="modal-content" style="border-radius:12px;overflow:hidden;border: none;box-shadow:0 20px 40px rgba(0,0,0,0.25);">
+                    <div class="modal-header" style="background: var(--sdv-bg-nested, #0f172a);color: #fff;padding:16px 20px;display:flex;align-items:center;justify-content:space-between;">
                         <h4 class="modal-title" id="cannedResponsesModalTitle" style="font-weight:700;font-size:16px;display:flex;align-items:center;gap:8px;margin:0;">
                             <i class="fas fa-bolt text-warning"></i> Canned Responses &amp; / Shortcuts
                         </h4>
-                        <button type="button" class="close" data-dismiss="modal" aria-label="Close" style="color:#fff;opacity:0.8;"><span aria-hidden="true">&times;</span></button>
+                        <button type="button" class="close" data-dismiss="modal" aria-label="Close" style="color: #fff;opacity:0.8;"><span aria-hidden="true">&times;</span></button>
                     </div>
                     <div class="modal-body" style="padding:20px;">
                         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;gap:10px;flex-wrap:wrap;">
                             <div style="position:relative;flex:1;min-width:240px;">
-                                <i class="fas fa-search" style="position:absolute;left:10px;top:10px;color:#94a3b8;font-size:12px;"></i>
-                                <input type="text" id="cannedSearchInput" placeholder="Filter by title, shortcut, or content..." style="width:100%;padding:7px 10px 7px 30px;font-size:13px;border:1px solid #cbd5e1;border-radius:6px;box-sizing:border-box;">
+                                <i class="fas fa-search" style="position:absolute;left:10px;top:10px;color: var(--sdv-text-muted, #94a3b8);font-size:12px;"></i>
+                                <input type="text" id="cannedSearchInput" placeholder="Filter by title, shortcut, or content..." style="width:100%;padding:7px 10px 7px 30px;font-size:13px;border: 1px solid var(--sdv-border, #cbd5e1);border-radius:6px;box-sizing:border-box;">
                             </div>
                             <button type="button" id="btnShowAddCannedForm" class="btn btn-sm btn-success" style="font-weight:600;">
                                 <i class="fas fa-plus"></i> Add New Response
@@ -13625,8 +12318,8 @@ class AdminController
                         </div>
 
                         <!-- Inline Add/Edit Form -->
-                        <div id="cannedEditFormBox" style="display:none;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:16px;margin-bottom:16px;">
-                            <h5 id="cannedFormTitle" style="font-weight:700;margin-top:0;margin-bottom:12px;color:#0f172a;">Add Canned Response</h5>
+                        <div id="cannedEditFormBox" style="display:none;background: var(--sdv-bg-nested, #f8fafc);border: 1px solid var(--sdv-border, #e2e8f0);border-radius:8px;padding:16px;margin-bottom:16px;">
+                            <h5 id="cannedFormTitle" style="font-weight:700;margin-top:0;margin-bottom:12px;color: var(--sdv-text-primary, #0f172a);">Add Canned Response</h5>
                             <input type="hidden" id="cannedFormId" value="0">
                             <div class="row">
                                 <div class="col-md-5">
@@ -13659,13 +12352,13 @@ class AdminController
                         </div>
 
                         <!-- Canned Responses Table/List -->
-                        <div id="cannedResponsesList" style="max-height:380px;overflow-y:auto;border:1px solid #e2e8f0;border-radius:8px;">
-                            <div style="text-align:center;padding:30px;color:#94a3b8;">
+                        <div id="cannedResponsesList" style="max-height:380px;overflow-y:auto;border: 1px solid var(--sdv-border, #e2e8f0);border-radius:8px;">
+                            <div style="text-align:center;padding:30px;color: var(--sdv-text-muted, #94a3b8);">
                                 <i class="fas fa-spinner fa-spin"></i> Loading canned responses...
                             </div>
                         </div>
                     </div>
-                    <div class="modal-footer" style="background:#f8fafc;border-top:1px solid #e2e8f0;padding:12px 20px;">
+                    <div class="modal-footer" style="background: var(--sdv-bg-nested, #f8fafc);border-top: 1px solid var(--sdv-border, #e2e8f0);padding:12px 20px;">
                         <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
                     </div>
                 </div>
@@ -13676,8 +12369,8 @@ class AdminController
         <div class="modal fade" id="editMessageModal" tabindex="-1" role="dialog">
             <div class="modal-dialog" role="document">
                 <div class="modal-content" style="border-radius:10px;overflow:hidden;">
-                    <div class="modal-header" style="background:#0f172a;color:#fff;padding:14px 18px;">
-                        <button type="button" class="close" data-dismiss="modal" style="color:#fff;opacity:0.8;">&times;</button>
+                    <div class="modal-header" style="background: var(--sdv-bg-nested, #0f172a);color: #fff;padding:14px 18px;">
+                        <button type="button" class="close" data-dismiss="modal" style="color: #fff;opacity:0.8;">&times;</button>
                         <h4 class="modal-title" style="font-weight:700;font-size:15px;"><i class="fas fa-pencil-alt text-warning"></i> Edit Staff Message</h4>
                     </div>
                     <div class="modal-body" style="padding:18px;">
@@ -13687,12 +12380,12 @@ class AdminController
                             <textarea id="editModalMsgText" class="form-control" rows="4"></textarea>
                         </div>
                         <div class="checkbox" style="margin-bottom:0;">
-                            <label style="font-size:12.5px;color:#475569;">
+                            <label style="font-size:12.5px;color: var(--sdv-text-muted, #475569);">
                                 <input type="checkbox" id="editModalNotifyClient"> Notify client that this message was edited (adds <em>(edited)</em> badge)
                             </label>
                         </div>
                     </div>
-                    <div class="modal-footer" style="background:#f8fafc;padding:10px 18px;">
+                    <div class="modal-footer" style="background: var(--sdv-bg-nested, #f8fafc);padding:10px 18px;">
                         <button type="button" class="btn btn-default" data-dismiss="modal">Cancel</button>
                         <button type="button" id="btnSubmitEditMsg" class="btn btn-primary" style="font-weight:700;">Save Changes</button>
                     </div>
@@ -13704,27 +12397,27 @@ class AdminController
         <div class="modal fade" id="deleteMessageModal" tabindex="-1" role="dialog">
             <div class="modal-dialog" role="document" style="max-width:440px;">
                 <div class="modal-content" style="border-radius:10px;overflow:hidden;">
-                    <div class="modal-header" style="background:#dc2626;color:#fff;padding:14px 18px;">
-                        <button type="button" class="close" data-dismiss="modal" style="color:#fff;opacity:0.8;">&times;</button>
+                    <div class="modal-header" style="background: #dc2626;color: #fff;padding:14px 18px;">
+                        <button type="button" class="close" data-dismiss="modal" style="color: #fff;opacity:0.8;">&times;</button>
                         <h4 class="modal-title" style="font-weight:700;font-size:15px;"><i class="fas fa-trash-alt"></i> Delete Message</h4>
                     </div>
                     <div class="modal-body" style="padding:18px;">
                         <input type="hidden" id="deleteModalMsgId" value="0">
-                        <p style="font-size:13px;color:#334155;margin-bottom:14px;">Are you sure you want to delete this staff message?</p>
+                        <p style="font-size:13px;color: var(--sdv-text-secondary, #334155);margin-bottom:14px;">Are you sure you want to delete this staff message?</p>
                         <div class="radio" style="margin-bottom:8px;">
-                            <label style="font-weight:600;font-size:13px;color:#0f172a;">
+                            <label style="font-weight:600;font-size:13px;color: var(--sdv-text-primary, #0f172a);">
                                 <input type="radio" name="deleteModalMode" value="silent" checked> Silent deletion (Default)
-                                <div style="font-weight:400;font-size:11.5px;color:#64748b;margin-left:20px;">Removes the message bubble from the client's screen seamlessly without any notice.</div>
+                                <div style="font-weight:400;font-size:11.5px;color: var(--sdv-text-muted, #64748b);margin-left:20px;">Removes the message bubble from the client's screen seamlessly without any notice.</div>
                             </label>
                         </div>
                         <div class="radio" style="margin-bottom:0;">
-                            <label style="font-weight:600;font-size:13px;color:#0f172a;">
+                            <label style="font-weight:600;font-size:13px;color: var(--sdv-text-primary, #0f172a);">
                                 <input type="radio" name="deleteModalMode" value="notify"> Notify client
-                                <div style="font-weight:400;font-size:11.5px;color:#64748b;margin-left:20px;">Replaces the message on the client widget with <em>"This message was deleted by staff."</em></div>
+                                <div style="font-weight:400;font-size:11.5px;color: var(--sdv-text-muted, #64748b);margin-left:20px;">Replaces the message on the client widget with <em>"This message was deleted by staff."</em></div>
                             </label>
                         </div>
                     </div>
-                    <div class="modal-footer" style="background:#f8fafc;padding:10px 18px;">
+                    <div class="modal-footer" style="background: var(--sdv-bg-nested, #f8fafc);padding:10px 18px;">
                         <button type="button" class="btn btn-default" data-dismiss="modal">Cancel</button>
                         <button type="button" id="btnSubmitDeleteMsg" class="btn btn-danger" style="font-weight:700;">Delete Message</button>
                     </div>
@@ -13742,8 +12435,8 @@ class AdminController
                 grid-template-columns: 330px 1fr 340px;
                 height: calc(100vh - <?php echo $isStandalone ? '95px' : '230px'; ?>);
                 min-height: 600px;
-                background: #f8fafc;
-                border: 1px solid #cbd5e1;
+                background: var(--sdv-bg-nested, #f8fafc);
+                border: 1px solid var(--sdv-border, #cbd5e1);
                 border-top: none;
                 border-radius: 0 0 10px 10px;
                 overflow: hidden;
@@ -13752,8 +12445,8 @@ class AdminController
             }
 
             .sdv-console-col-queue {
-                border-right: 1px solid #e2e8f0;
-                background: #ffffff;
+                border-right: 1px solid var(--sdv-border, #e2e8f0);
+                background: var(--sdv-bg-surface, #ffffff);
                 display: flex;
                 flex-direction: column;
                 overflow: hidden;
@@ -13763,15 +12456,15 @@ class AdminController
             .sdv-console-col-chat {
                 display: flex;
                 flex-direction: column;
-                background: #ffffff;
+                background: var(--sdv-bg-surface, #ffffff);
                 overflow: hidden;
                 position: relative;
                 min-width: 0;
             }
 
             .sdv-console-col-watcher {
-                border-left: 1px solid #e2e8f0;
-                background: #ffffff;
+                border-left: 1px solid var(--sdv-border, #e2e8f0);
+                background: var(--sdv-bg-surface, #ffffff);
                 display: flex;
                 flex-direction: column;
                 overflow-y: auto;
@@ -13792,17 +12485,17 @@ class AdminController
                 transition: opacity 0.2s ease;
             }
 
-            .q-tab { background:#ffffff;border:1px solid #cbd5e1;padding:4px 10px;font-size:11.5px;font-weight:600;border-radius:4px;cursor:pointer;color:#475569;white-space:nowrap; }
-            .q-tab.active { background:#0f172a;color:#ffffff;border-color:#0f172a; }
-            .session-card { padding:10px 12px;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:8px;cursor:pointer;transition:all 0.15s ease;background:#ffffff; }
-            .session-card:hover { border-color:#94a3b8;background:#f8fafc; }
-            .session-card.selected { border-color:#3b82f6;background:#eff6ff;box-shadow:0 0 0 1px #3b82f6; }
-            .session-card.is-summoned { border-left:4px solid #ef4444;background:#fff1f2; }
+            .q-tab { background: var(--sdv-bg-surface, #ffffff);border: 1px solid var(--sdv-border, #cbd5e1);padding:4px 10px;font-size:11.5px;font-weight:600;border-radius:4px;cursor:pointer;color: var(--sdv-text-muted, #475569);white-space:nowrap; }
+            .q-tab.active { background: var(--sdv-bg-nested, #0f172a);color: #ffffff;border-color: #0f172a; }
+            .session-card { padding:10px 12px;border: 1px solid var(--sdv-border, #e2e8f0);border-radius:8px;margin-bottom:8px;cursor:pointer;transition:all 0.15s ease;background: var(--sdv-bg-surface, #ffffff); }
+            .session-card:hover { border-color: #94a3b8;background: var(--sdv-bg-nested, #f8fafc); }
+            .session-card.selected { border-color: #3b82f6;background: #eff6ff;box-shadow:0 0 0 1px #3b82f6; }
+            .session-card.is-summoned { border-left: 4px solid #ef4444;background: #fff1f2; }
             .msg-bubble { max-width:75%;padding:10px 14px;border-radius:12px;font-size:13px;line-height:1.45;word-break:break-word;position:relative; }
-            .msg-user { align-self:flex-start;background:#ffffff;border:1px solid #cbd5e1;color:#0f172a;border-bottom-left-radius:3px;box-shadow:0 1px 2px rgba(0,0,0,0.04); }
-            .msg-assistant { align-self:flex-start;background:#f3e8ff;border:1px solid #e9d5ff;color:#581c87;border-bottom-left-radius:3px; }
-            .msg-staff { align-self:flex-end;background:#0284c7;color:#ffffff;border-bottom-right-radius:3px;box-shadow:0 2px 4px rgba(2,132,199,0.25); }
-            .msg-system { align-self:center;background:#f1f5f9;color:#64748b;font-size:11.5px;font-style:italic;padding:4px 12px;border-radius:20px;border:1px solid #e2e8f0;max-width:90%;text-align:center; }
+            .msg-user { align-self:flex-start;background: var(--sdv-bg-surface, #ffffff);border: 1px solid var(--sdv-border, #cbd5e1);color: var(--sdv-text-primary, #0f172a);border-bottom-left-radius:3px;box-shadow:0 1px 2px rgba(0,0,0,0.04); }
+            .msg-assistant { align-self:flex-start;background: #f3e8ff;border: 1px solid #e9d5ff;color: #581c87;border-bottom-left-radius:3px; }
+            .msg-staff { align-self:flex-end;background: #0284c7;color: #ffffff;border-bottom-right-radius:3px;box-shadow:0 2px 4px rgba(2,132,199,0.25); }
+            .msg-system { align-self:center;background: var(--sdv-bg-nested, #f1f5f9);color: var(--sdv-text-muted, #64748b);font-size:11.5px;font-style:italic;padding:4px 12px;border-radius:20px;border: 1px solid var(--sdv-border, #e2e8f0);max-width:90%;text-align:center; }
 
             .sdv-mobile-back-btn,
             .sdv-watcher-close-btn,
@@ -13918,7 +12611,7 @@ class AdminController
                     width: 90% !important;
                     max-width: 360px !important;
                     z-index: 50 !important;
-                    background: #ffffff !important;
+                    background: var(--sdv-bg-surface, #ffffff) !important;
                     box-shadow: -8px 0 28px rgba(0,0,0,0.2) !important;
                     transition: right 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
                     display: flex !important;
@@ -14363,7 +13056,7 @@ class AdminController
                 if (!container) return;
 
                 if (!sessions || sessions.length === 0) {
-                    container.innerHTML = '<div style="text-align:center;padding:30px 15px;color:#94a3b8;font-size:12.5px;">No conversations found in this filter.</div>';
+                    container.innerHTML = '<div style="text-align:center;padding:30px 15px;color: var(--sdv-text-muted, #94a3b8);font-size:12.5px;">No conversations found in this filter.</div>';
                     return;
                 }
 
@@ -14411,15 +13104,15 @@ class AdminController
 
                     html += '<div class="session-card ' + (isSelected ? 'selected ' : '') + (isSummoned ? 'is-summoned' : '') + '" data-uuid="' + s.uuid + '" data-id="' + s.id + '" data-client-id="' + s.client_id + '">';
                     html += '  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">';
-                    html += '    <div style="font-weight:700;font-size:13px;color:#0f172a;display:flex;align-items:center;gap:6px;">';
-                    html += '      <span style="width:22px;height:22px;border-radius:50%;background:#e2e8f0;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;">' + initials + '</span>';
+                    html += '    <div style="font-weight:700;font-size:13px;color: var(--sdv-text-primary, #0f172a);display:flex;align-items:center;gap:6px;">';
+                    html += '      <span style="width:22px;height:22px;border-radius:50%;background: var(--sdv-bg-nested, #e2e8f0);display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;">' + initials + '</span>';
                     html += '      ' + escapeHtml(s.client_name);
                     html += '    </div>';
-                    html += '    <span style="font-size:10px;padding:1px 6px;border-radius:10px;background:' + badgeColor + ';color:#fff;font-weight:700;">' + badgeLabel + '</span>';
+                    html += '    <span style="font-size:10px;padding:1px 6px;border-radius:10px;background: ' + badgeColor + ';color: #fff;font-weight:700;">' + badgeLabel + '</span>';
                     html += '  </div>';
 
-                    html += '  <div style="font-size:11.5px;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + (s.last_message ? escapeHtml(s.last_message) : '<em>No messages yet</em>') + '</div>';
-                    html += '  <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;font-size:10.5px;color:#94a3b8;">';
+                    html += '  <div style="font-size:11.5px;color: var(--sdv-text-muted, #64748b);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + (s.last_message ? escapeHtml(s.last_message) : '<em>No messages yet</em>') + '</div>';
+                    html += '  <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;font-size:10.5px;color: var(--sdv-text-muted, #94a3b8);">';
                     html += '    <span><i class="fas fa-globe" style="font-size:10px;"></i> ' + escapeHtml(s.source_domain || 'WHMCS') + '</span>';
                     html += '    <span>' + escapeHtml(s.last_message_at) + '</span>';
                     html += '  </div>';
@@ -14505,7 +13198,7 @@ class AdminController
                 // Clear message thread & show loading
                 var msgBox = document.getElementById('chatMessagesScroll');
                 if (msgBox) {
-                    msgBox.innerHTML = '<div style="margin:auto;text-align:center;color:#94a3b8;font-size:13px;"><i class="fas fa-spinner fa-spin"></i> Loading conversation...</div>';
+                    msgBox.innerHTML = '<div style="margin:auto;text-align:center;color: var(--sdv-text-muted, #94a3b8);font-size:13px;"><i class="fas fa-spinner fa-spin"></i> Loading conversation...</div>';
                 }
 
                 document.getElementById('chatComposerContainer').style.display = 'flex';
@@ -14532,8 +13225,8 @@ class AdminController
                         statusPill = '<span class="label label-default">AI Active (Dismissed)</span>';
                     }
 
-                    headerDetails.innerHTML = '<div style="font-weight:700;font-size:14px;color:#0f172a;">Session #' + session.id + ' (' + session.uuid.substring(0, 8) + '...) ' + statusPill + '</div>'
-                        + '<div style="font-size:11.5px;color:#64748b;"><i class="fas fa-link"></i> <a href="' + (session.source_page || '#') + '" target="_blank" style="color:#0284c7;">' + escapeHtml(session.source_domain || 'WHMCS') + '</a></div>';
+                    headerDetails.innerHTML = '<div style="font-weight:700;font-size:14px;color: var(--sdv-text-primary, #0f172a);">Session #' + session.id + ' (' + session.uuid.substring(0, 8) + '...) ' + statusPill + '</div>'
+                        + '<div style="font-size:11.5px;color: var(--sdv-text-muted, #64748b);"><i class="fas fa-link"></i> <a href="' + (session.source_page || '#') + '" target="_blank" style="color: #0284c7;">' + escapeHtml(session.source_domain || 'WHMCS') + '</a></div>';
                 }
 
                 if (headerActions) {
@@ -14550,12 +13243,12 @@ class AdminController
                         actHtml += '</select>';
                         actHtml += '<button type="button" id="btnClaimTakeover" class="btn btn-sm btn-success" style="font-weight:700;"><i class="fas fa-hand-paper"></i> Takeover Chat</button>';
                         if (session.summon_status === 'requested') {
-                            actHtml += '<button type="button" id="btnDismissSummon" class="btn btn-sm btn-default" style="color:#ef4444;border-color:#fca5a5;font-weight:600;"><i class="fas fa-times-circle"></i> Dismiss Summon</button>';
+                            actHtml += '<button type="button" id="btnDismissSummon" class="btn btn-sm btn-default" style="color: #ef4444;border-color: #fca5a5;font-weight:600;"><i class="fas fa-times-circle"></i> Dismiss Summon</button>';
                         }
                     } else if (isAssignedToMe) {
                         actHtml += '<button type="button" id="btnReleaseTakeover" class="btn btn-sm btn-warning" style="font-weight:700;"><i class="fas fa-robot"></i> Release to AI</button>';
                     } else {
-                        actHtml += '<span class="badge" style="background:#0284c7;margin-right:6px;padding:6px 10px;">Taken by Admin #' + session.assigned_admin_id + '</span>';
+                        actHtml += '<span class="badge" style="background: #0284c7;margin-right:6px;padding:6px 10px;">Taken by Admin #' + session.assigned_admin_id + '</span>';
                         actHtml += '<button type="button" id="btnJoinCoAgent" class="btn btn-sm btn-info" style="font-weight:700;"><i class="fas fa-user-plus"></i> Join as Co-Agent</button>';
                     }
 
@@ -14672,12 +13365,12 @@ class AdminController
                             return;
                         } else {
                             if (ex) {
-                                ex.innerHTML = '<div style="font-style:italic;color:#94a3b8;font-size:12px;"><i class="fas fa-ban" style="margin-right:4px;"></i> [Message deleted by staff]</div>';
+                                ex.innerHTML = '<div style="font-style:italic;color: var(--sdv-text-muted, #94a3b8);font-size:12px;"><i class="fas fa-ban" style="margin-right:4px;"></i> [Message deleted by staff]</div>';
                             } else {
                                 var divDel = document.createElement('div');
                                 divDel.className = 'msg-bubble msg-staff';
                                 divDel.id = 'admin-msg-' + m.id;
-                                divDel.innerHTML = '<div style="font-style:italic;color:#94a3b8;font-size:12px;"><i class="fas fa-ban" style="margin-right:4px;"></i> [Message deleted by staff]</div>';
+                                divDel.innerHTML = '<div style="font-style:italic;color: var(--sdv-text-muted, #94a3b8);font-size:12px;"><i class="fas fa-ban" style="margin-right:4px;"></i> [Message deleted by staff]</div>';
                                 container.appendChild(divDel);
                                 shouldScroll = true;
                             }
@@ -14692,16 +13385,16 @@ class AdminController
                             if (m.is_edited) {
                                 var roleBadge = '';
                                 if (m.sender_type === 'assistant') {
-                                    roleBadge = '<div style="font-size:10px;font-weight:700;color:#7e22ce;margin-bottom:3px;"><i class="fas fa-sparkles"></i> Sahdev AI</div>';
+                                    roleBadge = '<div style="font-size:10px;font-weight:700;color: #7e22ce;margin-bottom:3px;"><i class="fas fa-sparkles"></i> Sahdev AI</div>';
                                 } else if (m.sender_type === 'staff') {
-                                    roleBadge = '<div style="font-size:10px;font-weight:700;color:#bae6fd;margin-bottom:3px;"><i class="fas fa-user-shield"></i> ' + escapeHtml(m.sender_name) + '</div>';
+                                    roleBadge = '<div style="font-size:10px;font-weight:700;color: #bae6fd;margin-bottom:3px;"><i class="fas fa-user-shield"></i> ' + escapeHtml(m.sender_name) + '</div>';
                                 } else if (m.sender_type !== 'system') {
-                                    roleBadge = '<div style="font-size:10px;font-weight:700;color:#0369a1;margin-bottom:3px;"><i class="fas fa-user"></i> ' + escapeHtml(m.sender_name) + '</div>';
+                                    roleBadge = '<div style="font-size:10px;font-weight:700;color: #0369a1;margin-bottom:3px;"><i class="fas fa-user"></i> ' + escapeHtml(m.sender_name) + '</div>';
                                 }
                                 var actionBtns = (m.sender_type === 'staff')
                                     ? '<span style="margin-left:8px;opacity:0.8;">'
-                                    + '<button type="button" class="btn-edit-staff-msg" data-msg-id="' + m.id + '" style="background:transparent;border:none;color:#93c5fd;cursor:pointer;padding:0 3px;font-size:11px;" title="Edit message"><i class="fas fa-pencil-alt"></i></button>'
-                                    + '<button type="button" class="btn-delete-staff-msg" data-msg-id="' + m.id + '" style="background:transparent;border:none;color:#fca5a5;cursor:pointer;padding:0 3px;font-size:11px;" title="Delete message"><i class="fas fa-trash-alt"></i></button>'
+                                    + '<button type="button" class="btn-edit-staff-msg" data-msg-id="' + m.id + '" style="background: transparent;border: none;color: #93c5fd;cursor:pointer;padding:0 3px;font-size:11px;" title="Edit message"><i class="fas fa-pencil-alt"></i></button>'
+                                    + '<button type="button" class="btn-delete-staff-msg" data-msg-id="' + m.id + '" style="background: transparent;border: none;color: #fca5a5;cursor:pointer;padding:0 3px;font-size:11px;" title="Delete message"><i class="fas fa-trash-alt"></i></button>'
                                     + '</span>' : '';
                                 existingBubble.setAttribute('data-msg-text', (m.text || '').trim());
                                 existingBubble.innerHTML = roleBadge + '<div>' + escapeHtml(m.text).replace(/\n/g, '<br>') + '<span class="label label-default" style="font-size:9px;opacity:0.8;margin-left:4px;">(edited)</span></div>'
@@ -14746,21 +13439,21 @@ class AdminController
                     var roleBadge = '';
                     if (m.sender_type === 'assistant') {
                         bubbleClass = 'msg-assistant';
-                        roleBadge = '<div style="font-size:10px;font-weight:700;color:#7e22ce;margin-bottom:3px;"><i class="fas fa-sparkles"></i> Sahdev AI</div>';
+                        roleBadge = '<div style="font-size:10px;font-weight:700;color: #7e22ce;margin-bottom:3px;"><i class="fas fa-sparkles"></i> Sahdev AI</div>';
                     } else if (m.sender_type === 'staff') {
                         bubbleClass = 'msg-staff';
-                        roleBadge = '<div style="font-size:10px;font-weight:700;color:#bae6fd;margin-bottom:3px;"><i class="fas fa-user-shield"></i> ' + escapeHtml(m.sender_name) + '</div>';
+                        roleBadge = '<div style="font-size:10px;font-weight:700;color: #bae6fd;margin-bottom:3px;"><i class="fas fa-user-shield"></i> ' + escapeHtml(m.sender_name) + '</div>';
                     } else if (m.sender_type === 'system') {
                         bubbleClass = 'msg-system';
                     } else {
-                        roleBadge = '<div style="font-size:10px;font-weight:700;color:#0369a1;margin-bottom:3px;"><i class="fas fa-user"></i> ' + escapeHtml(m.sender_name) + '</div>';
+                        roleBadge = '<div style="font-size:10px;font-weight:700;color: #0369a1;margin-bottom:3px;"><i class="fas fa-user"></i> ' + escapeHtml(m.sender_name) + '</div>';
                     }
 
                     var actionBtns = '';
                     if (m.sender_type === 'staff') {
                         actionBtns = '<span style="margin-left:8px;opacity:0.8;">'
-                            + '<button type="button" class="btn-edit-staff-msg" data-msg-id="' + m.id + '" style="background:transparent;border:none;color:#93c5fd;cursor:pointer;padding:0 3px;font-size:11px;" title="Edit message"><i class="fas fa-pencil-alt"></i></button>'
-                            + '<button type="button" class="btn-delete-staff-msg" data-msg-id="' + m.id + '" style="background:transparent;border:none;color:#fca5a5;cursor:pointer;padding:0 3px;font-size:11px;" title="Delete message"><i class="fas fa-trash-alt"></i></button>'
+                            + '<button type="button" class="btn-edit-staff-msg" data-msg-id="' + m.id + '" style="background: transparent;border: none;color: #93c5fd;cursor:pointer;padding:0 3px;font-size:11px;" title="Edit message"><i class="fas fa-pencil-alt"></i></button>'
+                            + '<button type="button" class="btn-delete-staff-msg" data-msg-id="' + m.id + '" style="background: transparent;border: none;color: #fca5a5;cursor:pointer;padding:0 3px;font-size:11px;" title="Delete message"><i class="fas fa-trash-alt"></i></button>'
                             + '</span>';
                     }
 
@@ -14898,15 +13591,15 @@ class AdminController
                 var el = document.getElementById('cannedResponsesList');
                 if (!el) return;
                 if (!list || list.length === 0) {
-                    el.innerHTML = '<div style="text-align:center;padding:30px;color:#94a3b8;">No canned responses found.</div>';
+                    el.innerHTML = '<div style="text-align:center;padding:30px;color: var(--sdv-text-muted, #94a3b8);">No canned responses found.</div>';
                     return;
                 }
-                var html = '<table class="table table-hover" style="margin-bottom:0;font-size:12.5px;"><thead><tr style="background:#f8fafc;"><th>Shortcut</th><th>Title</th><th>Content</th><th style="width:130px;text-align:right;">Actions</th></tr></thead><tbody>';
+                var html = '<table class="table table-hover" style="margin-bottom:0;font-size:12.5px;"><thead><tr style="background: var(--sdv-bg-nested, #f8fafc);"><th>Shortcut</th><th>Title</th><th>Content</th><th style="width:130px;text-align:right;">Actions</th></tr></thead><tbody>';
                 list.forEach(function(item) {
                     html += '<tr>'
                         + '<td><span class="label label-primary" style="font-family:monospace;font-size:11px;">' + escapeHtml(item.shortcut || '—') + '</span></td>'
                         + '<td><strong>' + escapeHtml(item.title) + '</strong></td>'
-                        + '<td style="color:#475569;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(item.content) + '</td>'
+                        + '<td style="color: var(--sdv-text-muted, #475569);max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(item.content) + '</td>'
                         + '<td style="text-align:right;">'
                         + '<button type="button" class="btn btn-xs btn-default btn-insert-canned" data-content="' + escapeHtml(item.content) + '" title="Insert into reply"><i class="fas fa-arrow-left"></i> Insert</button> '
                         + '<button type="button" class="btn btn-xs btn-default btn-edit-canned" data-id="' + item.id + '" data-title="' + escapeHtml(item.title) + '" data-shortcut="' + escapeHtml(item.shortcut || '') + '" data-category="' + escapeHtml(item.category || '') + '" data-content="' + escapeHtml(item.content) + '" title="Edit"><i class="fas fa-edit"></i></button> '
@@ -15100,8 +13793,8 @@ class AdminController
                 if (!popupEl) return;
                 var html = '';
                 matches.forEach(function(m) {
-                    html += '<div class="sdv-auto-item" data-content="' + escapeHtml(m.content) + '" data-slash-idx="' + slashIdx + '" style="padding:8px 12px;border-bottom:1px solid #f1f5f9;cursor:pointer;display:flex;align-items:center;justify-content:space-between;font-size:12px;">'
-                        + '<div><strong style="color:#0f172a;">' + escapeHtml(m.title) + '</strong> <span style="color:#64748b;font-size:11px;margin-left:6px;">' + escapeHtml(m.content).substring(0, 40) + '...</span></div>'
+                    html += '<div class="sdv-auto-item" data-content="' + escapeHtml(m.content) + '" data-slash-idx="' + slashIdx + '" style="padding:8px 12px;border-bottom: 1px solid #f1f5f9;cursor:pointer;display:flex;align-items:center;justify-content:space-between;font-size:12px;">'
+                        + '<div><strong style="color: var(--sdv-text-primary, #0f172a);">' + escapeHtml(m.title) + '</strong> <span style="color: var(--sdv-text-muted, #64748b);font-size:11px;margin-left:6px;">' + escapeHtml(m.content).substring(0, 40) + '...</span></div>'
                         + '<span class="label label-primary" style="font-family:monospace;font-size:10px;">' + escapeHtml(m.shortcut || '') + '</span>'
                         + '</div>';
                 });
@@ -15226,7 +13919,7 @@ class AdminController
             function fetchAccountInfo(sessionId, clientId) {
                 var sideContainer = document.getElementById('sideWatcherContent');
                 if (!sideContainer) return;
-                sideContainer.innerHTML = '<div style="text-align:center;padding:30px;color:#94a3b8;"><i class="fas fa-spinner fa-spin"></i> Loading account telemetry...</div>';
+                sideContainer.innerHTML = '<div style="text-align:center;padding:30px;color: var(--sdv-text-muted, #94a3b8);"><i class="fas fa-spinner fa-spin"></i> Loading account telemetry...</div>';
 
                 var url = AJAX_URL + '&action=admin_live_console_account_info&session_id=' + sessionId;
                 if (clientId) url += '&client_id=' + clientId;
@@ -15248,8 +13941,8 @@ class AdminController
 
                 // Visitor telemetry card
                 if (d.session_info) {
-                    html += '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin-bottom:14px;font-size:12px;">';
-                    html += '  <div style="font-weight:700;color:#334155;margin-bottom:6px;"><i class="fas fa-globe-americas text-info"></i> Visitor Telemetry</div>';
+                    html += '<div style="background: var(--sdv-bg-nested, #f8fafc);border: 1px solid var(--sdv-border, #e2e8f0);border-radius:8px;padding:12px;margin-bottom:14px;font-size:12px;">';
+                    html += '  <div style="font-weight:700;color: var(--sdv-text-secondary, #334155);margin-bottom:6px;"><i class="fas fa-globe-americas text-info"></i> Visitor Telemetry</div>';
                     html += '  <div><strong>Origin:</strong> ' + escapeHtml(d.session_info.source_domain) + '</div>';
                     html += '  <div style="margin-top:2px;"><strong>IP Address:</strong> ' + escapeHtml(d.session_info.ip_address) + '</div>';
                     html += '  <div style="margin-top:2px;"><strong>Started:</strong> ' + escapeHtml(d.session_info.started_at) + '</div>';
@@ -15258,15 +13951,15 @@ class AdminController
 
                 // If Client is authenticated/linked
                 if (d.is_client && d.client) {
-                    html += '<div style="background:#ffffff;border:1px solid #cbd5e1;border-radius:8px;padding:14px;margin-bottom:14px;box-shadow:0 1px 3px rgba(0,0,0,0.03);">';
+                    html += '<div style="background: var(--sdv-bg-surface, #ffffff);border: 1px solid var(--sdv-border, #cbd5e1);border-radius:8px;padding:14px;margin-bottom:14px;box-shadow:0 1px 3px rgba(0,0,0,0.03);">';
                     html += '  <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">';
-                    html += '    <div style="width:40px;height:40px;border-radius:50%;background:#0284c7;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;">' + d.client.name.substring(0, 2).toUpperCase() + '</div>';
+                    html += '    <div style="width:40px;height:40px;border-radius:50%;background: #0284c7;color: #fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;">' + d.client.name.substring(0, 2).toUpperCase() + '</div>';
                     html += '    <div>';
-                    html += '      <div style="font-weight:700;font-size:13.5px;color:#0f172a;"><a href="clientssummary.php?userid=' + d.client.id + '" target="_blank" style="color:#0284c7;">' + escapeHtml(d.client.name) + '</a></div>';
-                    html += '      <div style="font-size:11.5px;color:#64748b;">' + escapeHtml(d.client.email) + '</div>';
+                    html += '      <div style="font-weight:700;font-size:13.5px;color: var(--sdv-text-primary, #0f172a);"><a href="clientssummary.php?userid=' + d.client.id + '" target="_blank" style="color: #0284c7;">' + escapeHtml(d.client.name) + '</a></div>';
+                    html += '      <div style="font-size:11.5px;color: var(--sdv-text-muted, #64748b);">' + escapeHtml(d.client.email) + '</div>';
                     html += '    </div>';
                     html += '  </div>';
-                    html += '  <div style="font-size:11.5px;border-top:1px solid #f1f5f9;padding-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:6px;">';
+                    html += '  <div style="font-size:11.5px;border-top: 1px solid #f1f5f9;padding-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:6px;">';
                     html += '    <div><strong>Status:</strong> <span class="label label-success">' + escapeHtml(d.client.status) + '</span></div>';
                     html += '    <div><strong>Credit:</strong> $' + escapeHtml(d.client.credit) + '</div>';
                     html += '    <div><strong>Phone:</strong> ' + escapeHtml(d.client.phone) + '</div>';
@@ -15276,39 +13969,39 @@ class AdminController
 
                     // Active Services
                     html += '<div style="margin-bottom:14px;">';
-                    html += '  <div style="font-weight:700;font-size:12px;color:#334155;margin-bottom:6px;"><i class="fas fa-server text-primary"></i> Hosting Services (' + (d.services ? d.services.length : 0) + ')</div>';
+                    html += '  <div style="font-weight:700;font-size:12px;color: var(--sdv-text-secondary, #334155);margin-bottom:6px;"><i class="fas fa-server text-primary"></i> Hosting Services (' + (d.services ? d.services.length : 0) + ')</div>';
                     if (d.services && d.services.length > 0) {
                         d.services.forEach(function(s) {
-                            html += '<div style="border:1px solid #e2e8f0;border-radius:6px;padding:8px 10px;margin-bottom:6px;font-size:11.5px;background:#f8fafc;">';
-                            html += '  <div style="font-weight:700;color:#0f172a;">' + escapeHtml(s.product) + '</div>';
-                            html += '  <div style="color:#0284c7;">' + escapeHtml(s.domain) + '</div>';
-                            html += '  <div style="display:flex;justify-content:space-between;color:#64748b;margin-top:2px;"><span>$' + s.amount + ' / ' + s.cycle + '</span><span class="label label-xs label-info">' + s.status + '</span></div>';
+                            html += '<div style="border: 1px solid var(--sdv-border, #e2e8f0);border-radius:6px;padding:8px 10px;margin-bottom:6px;font-size:11.5px;background: var(--sdv-bg-nested, #f8fafc);">';
+                            html += '  <div style="font-weight:700;color: var(--sdv-text-primary, #0f172a);">' + escapeHtml(s.product) + '</div>';
+                            html += '  <div style="color: #0284c7;">' + escapeHtml(s.domain) + '</div>';
+                            html += '  <div style="display:flex;justify-content:space-between;color: var(--sdv-text-muted, #64748b);margin-top:2px;"><span>$' + s.amount + ' / ' + s.cycle + '</span><span class="label label-xs label-info">' + s.status + '</span></div>';
                             html += '</div>';
                         });
                     } else {
-                        html += '<div style="font-size:11.5px;color:#94a3b8;">No active hosting products.</div>';
+                        html += '<div style="font-size:11.5px;color: var(--sdv-text-muted, #94a3b8);">No active hosting products.</div>';
                     }
                     html += '</div>';
 
                     // Recent Tickets
                     html += '<div style="margin-bottom:14px;">';
-                    html += '  <div style="font-weight:700;font-size:12px;color:#334155;margin-bottom:6px;"><i class="fas fa-ticket-alt text-warning"></i> Recent Tickets (' + (d.tickets ? d.tickets.length : 0) + ')</div>';
+                    html += '  <div style="font-weight:700;font-size:12px;color: var(--sdv-text-secondary, #334155);margin-bottom:6px;"><i class="fas fa-ticket-alt text-warning"></i> Recent Tickets (' + (d.tickets ? d.tickets.length : 0) + ')</div>';
                     if (d.tickets && d.tickets.length > 0) {
                         d.tickets.forEach(function(t) {
-                            html += '<div style="border:1px solid #e2e8f0;border-radius:6px;padding:6px 10px;margin-bottom:6px;font-size:11.5px;background:#f8fafc;">';
-                            html += '  <div style="font-weight:600;"><a href="supporttickets.php?action=view&id=' + t.id + '" target="_blank" style="color:#0284c7;">#' + t.tid + ' ' + escapeHtml(t.title) + '</a></div>';
-                            html += '  <div style="font-size:10.5px;color:#64748b;">Status: ' + t.status + ' &bull; ' + t.lastreply + '</div>';
+                            html += '<div style="border: 1px solid var(--sdv-border, #e2e8f0);border-radius:6px;padding:6px 10px;margin-bottom:6px;font-size:11.5px;background: var(--sdv-bg-nested, #f8fafc);">';
+                            html += '  <div style="font-weight:600;"><a href="supporttickets.php?action=view&id=' + t.id + '" target="_blank" style="color: #0284c7;">#' + t.tid + ' ' + escapeHtml(t.title) + '</a></div>';
+                            html += '  <div style="font-size:10.5px;color: var(--sdv-text-muted, #64748b);">Status: ' + t.status + ' &bull; ' + t.lastreply + '</div>';
                             html += '</div>';
                         });
                     } else {
-                        html += '<div style="font-size:11.5px;color:#94a3b8;">No recent support tickets.</div>';
+                        html += '<div style="font-size:11.5px;color: var(--sdv-text-muted, #94a3b8);">No recent support tickets.</div>';
                     }
                     html += '</div>';
                 } else {
                     // Guest visitor link account form
-                    html += '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:14px;margin-bottom:14px;">';
-                    html += '  <div style="font-weight:700;font-size:13px;color:#1e40af;margin-bottom:6px;"><i class="fas fa-link"></i> Link WHMCS Client Account</div>';
-                    html += '  <p style="font-size:11.5px;color:#2563eb;margin-bottom:10px;">Visitor is currently chatting as a Guest. Enter their WHMCS account email to link their services &amp; billing profile:</p>';
+                    html += '<div style="background: #eff6ff;border: 1px solid #bfdbfe;border-radius:8px;padding:14px;margin-bottom:14px;">';
+                    html += '  <div style="font-weight:700;font-size:13px;color: #1e40af;margin-bottom:6px;"><i class="fas fa-link"></i> Link WHMCS Client Account</div>';
+                    html += '  <p style="font-size:11.5px;color: #2563eb;margin-bottom:10px;">Visitor is currently chatting as a Guest. Enter their WHMCS account email to link their services &amp; billing profile:</p>';
                     html += '  <div class="input-group input-group-sm">';
                     html += '    <input type="email" id="linkClientEmailInput" placeholder="client@domain.com" class="form-control">';
                     html += '    <span class="input-group-btn"><button type="button" id="btnLinkClientEmail" class="btn btn-primary"><i class="fas fa-search"></i> Link</button></span>';
@@ -15570,10 +14263,10 @@ class AdminController
         <style>
             .sdv-mobile-wrap {
                 font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-                color: #1e293b;
+                color: var(--sdv-text-primary, #1e293b);
             }
             .sdv-hero-banner {
-                background: linear-gradient(135deg, #0f172a 0%, #1e293b 60%, #312e81 100%);
+                background: linear-gradient(135deg, var(--sdv-bg-nested, #0f172a) 0%, var(--sdv-bg-surface, #1e293b) 60%, #312e81 100%);
                 color: #ffffff;
                 border-radius: 14px;
                 padding: 24px 28px;
@@ -15610,7 +14303,7 @@ class AdminController
             .sdv-hero-desc {
                 margin: 0;
                 font-size: 13.5px;
-                color: #94a3b8;
+                color: var(--sdv-text-muted, #94a3b8);
                 max-width: 650px;
                 line-height: 1.5;
             }
@@ -15627,7 +14320,7 @@ class AdminController
             }
             .sdv-badge-emerald { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16,185,129,0.3); }
             .sdv-badge-indigo { background: rgba(99, 102, 241, 0.15); color: #a5b4fc; border: 1px solid rgba(99,102,241,0.3); }
-            .sdv-badge-slate { background: rgba(148, 163, 184, 0.15); color: #94a3b8; border: 1px solid rgba(148,163,184,0.3); }
+            .sdv-badge-slate { background: rgba(148, 163, 184, 0.15); color: var(--sdv-text-muted, #94a3b8); border: 1px solid rgba(148,163,184,0.3); }
 
             /* Two Column Grid */
             .sdv-mobile-grid {
@@ -15642,10 +14335,10 @@ class AdminController
 
             /* Terminal Card */
             .sdv-terminal-card {
-                background: #0f172a;
-                color: #f8fafc;
+                background: var(--sdv-bg-nested, #0f172a);
+                color: var(--sdv-text-primary, #f8fafc);
                 border-radius: 14px;
-                border: 1px solid #334155;
+                border: 1px solid var(--sdv-border, #334155);
                 padding: 24px;
                 box-shadow: 0 15px 35px -10px rgba(15,23,42,0.4);
                 position: relative;
@@ -15661,13 +14354,13 @@ class AdminController
             .sdv-tab-group {
                 display: flex;
                 gap: 8px;
-                background: #1e293b;
+                background: var(--sdv-bg-surface, #1e293b);
                 padding: 4px;
                 border-radius: 8px;
             }
             .sdv-tab-btn {
                 background: transparent;
-                color: #94a3b8;
+                color: var(--sdv-text-muted, #94a3b8);
                 border: none;
                 padding: 6px 12px;
                 border-radius: 6px;
@@ -15684,7 +14377,7 @@ class AdminController
 
             /* QR Viewport */
             .sdv-qr-box {
-                background: #ffffff;
+                background: var(--sdv-bg-surface, #ffffff);
                 border-radius: 14px;
                 padding: 16px;
                 display: flex;
@@ -15699,7 +14392,7 @@ class AdminController
             .sdv-qr-target {
                 position: relative;
                 padding: 12px;
-                background: #ffffff;
+                background: var(--sdv-bg-surface, #ffffff);
                 border-radius: 10px;
                 display: inline-block;
             }
@@ -15765,7 +14458,7 @@ class AdminController
             .sdv-timer-track {
                 width: 100%;
                 height: 4px;
-                background: #1e293b;
+                background: var(--sdv-bg-surface, #1e293b);
                 border-radius: 2px;
                 overflow: hidden;
                 margin-top: 14px;
@@ -15779,8 +14472,8 @@ class AdminController
 
             /* Info Card Panels */
             .sdv-panel-card {
-                background: #ffffff;
-                border: 1px solid #e2e8f0;
+                background: var(--sdv-bg-surface, #ffffff);
+                border: 1px solid var(--sdv-border, #e2e8f0);
                 border-radius: 14px;
                 padding: 22px;
                 box-shadow: 0 4px 12px rgba(0,0,0,0.03);
@@ -15789,7 +14482,7 @@ class AdminController
             .sdv-panel-title {
                 font-size: 16px;
                 font-weight: 700;
-                color: #0f172a;
+                color: var(--sdv-text-primary, #0f172a);
                 margin: 0 0 16px 0;
                 display: flex;
                 align-items: center;
@@ -15807,8 +14500,8 @@ class AdminController
                 .sdv-steps-row { grid-template-columns: 1fr; }
             }
             .sdv-step-box {
-                background: #f8fafc;
-                border: 1px solid #e2e8f0;
+                background: var(--sdv-bg-nested, #f8fafc);
+                border: 1px solid var(--sdv-border, #e2e8f0);
                 border-radius: 10px;
                 padding: 16px;
                 position: relative;
@@ -15816,13 +14509,13 @@ class AdminController
             }
             .sdv-step-box:hover {
                 transform: translateY(-2px);
-                border-color: #cbd5e1;
+                border-color: var(--sdv-border, #cbd5e1);
             }
             .sdv-step-num {
                 width: 26px;
                 height: 26px;
                 border-radius: 50%;
-                background: #0f172a;
+                background: var(--sdv-bg-nested, #0f172a);
                 color: #fff;
                 font-size: 12px;
                 font-weight: 700;
@@ -15834,12 +14527,12 @@ class AdminController
             .sdv-step-title {
                 font-size: 13.5px;
                 font-weight: 700;
-                color: #0f172a;
+                color: var(--sdv-text-primary, #0f172a);
                 margin-bottom: 4px;
             }
             .sdv-step-desc {
                 font-size: 12px;
-                color: #64748b;
+                color: var(--sdv-text-muted, #64748b);
                 line-height: 1.45;
                 margin: 0;
             }
@@ -15852,13 +14545,13 @@ class AdminController
                 margin-top: 14px;
             }
             .sdv-feature-chip {
-                background: #f1f5f9;
-                border: 1px solid #e2e8f0;
+                background: var(--sdv-bg-nested, #f1f5f9);
+                border: 1px solid var(--sdv-border, #e2e8f0);
                 border-radius: 20px;
                 padding: 5px 12px;
                 font-size: 11.5px;
                 font-weight: 600;
-                color: #334155;
+                color: var(--sdv-text-secondary, #334155);
                 display: inline-flex;
                 align-items: center;
                 gap: 6px;
@@ -15871,12 +14564,12 @@ class AdminController
                 font-size: 13px;
             }
             .sdv-table th {
-                background: #f8fafc;
-                border-bottom: 2px solid #e2e8f0;
+                background: var(--sdv-bg-nested, #f8fafc);
+                border-bottom: 2px solid var(--sdv-border, #e2e8f0);
                 padding: 10px 14px;
                 text-align: left;
                 font-weight: 700;
-                color: #475569;
+                color: var(--sdv-text-muted, #475569);
                 font-size: 11.5px;
                 text-transform: uppercase;
                 letter-spacing: 0.4px;
@@ -15887,7 +14580,7 @@ class AdminController
                 vertical-align: middle;
             }
             .sdv-table tr:hover td {
-                background: #f8fafc;
+                background: var(--sdv-bg-nested, #f8fafc);
             }
         </style>
 
@@ -15924,10 +14617,10 @@ class AdminController
                     </p>
                 </div>
                 <div style="display:flex;gap:10px;align-items:center;">
-                    <a href="<?php echo $moduleDownloadUrl; ?>" class="btn btn-success btn-lg" style="font-weight:700;box-shadow:0 4px 14px rgba(16,185,129,0.35);border:none;">
+                    <a href="<?php echo $moduleDownloadUrl; ?>" class="btn btn-success btn-lg" style="font-weight:700;box-shadow:0 4px 14px rgba(16,185,129,0.35);border: none;">
                         <i class="fas fa-download"></i> Download APK <span style="font-size:12px;opacity:0.85;font-weight:400;">(<?php echo $apkSizeMb; ?>)</span>
                     </a>
-                    <a href="<?php echo $liveConsoleUrl; ?>" class="btn btn-default btn-lg" style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.2);">
+                    <a href="<?php echo $liveConsoleUrl; ?>" class="btn btn-default btn-lg" style="background: rgba(255,255,255,0.1);color: #fff;border: 1px solid rgba(255,255,255,0.2);">
                         <i class="fas fa-satellite-dish"></i> Open Desktop Console
                     </a>
                 </div>
@@ -15955,7 +14648,7 @@ class AdminController
 
                     <!-- VIEW 1: DEVICE PAIRING QR -->
                     <div id="viewPairSection">
-                        <p style="color:#94a3b8;font-size:12.5px;margin-bottom:14px;line-height:1.45;">
+                        <p style="color: var(--sdv-text-muted, #94a3b8);font-size:12.5px;margin-bottom:14px;line-height:1.45;">
                             Open the <strong>Sahdev Live Support</strong> app on your Android phone, tap <strong>Scan Desktop QR Code</strong> on the login screen, and aim your camera here:
                         </p>
 
@@ -15970,8 +14663,8 @@ class AdminController
                                 <span id="sdvPairingStatusBadge" class="sdv-badge-pill sdv-badge-slate" style="text-transform:none;font-size:11px;">
                                     <i class="fas fa-circle-notch fa-spin text-primary"></i> Listening for scan...
                                 </span>
-                                <span style="font-size:11.5px;color:#64748b;font-weight:600;">
-                                    Expires in <span id="sdvTimerText" style="color:#f59e0b;font-weight:700;">10:00</span>
+                                <span style="font-size:11.5px;color: var(--sdv-text-muted, #64748b);font-weight:600;">
+                                    Expires in <span id="sdvTimerText" style="color: #f59e0b;font-weight:700;">10:00</span>
                                 </span>
                             </div>
 
@@ -15986,7 +14679,7 @@ class AdminController
                                 <i class="fas fa-check"></i>
                             </div>
                             <h4 style="margin:0 0 6px 0;font-weight:800;font-size:18px;">Device Paired!</h4>
-                            <p id="sdvPairedDetails" style="margin:0 0 14px 0;font-size:13px;color:#a7f3d0;">
+                            <p id="sdvPairedDetails" style="margin:0 0 14px 0;font-size:13px;color: #a7f3d0;">
                                 Connected to Android staff phone.
                             </p>
                             <div style="display:flex;gap:8px;">
@@ -16000,30 +14693,30 @@ class AdminController
                         </div>
 
                         <!-- Manual Code Drawer -->
-                        <div style="margin-top:16px;background:#1e293b;border-radius:10px;padding:12px 14px;border:1px solid #334155;">
-                            <div style="font-size:11.5px;font-weight:700;color:#94a3b8;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;">
+                        <div style="margin-top:16px;background: var(--sdv-bg-surface, #1e293b);border-radius:10px;padding:12px 14px;border: 1px solid var(--sdv-border, #334155);">
+                            <div style="font-size:11.5px;font-weight:700;color: var(--sdv-text-muted, #94a3b8);margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;">
                                 <span><i class="fas fa-key text-primary"></i> MANUAL CONNECTION CODE</span>
-                                <span style="font-size:10px;color:#64748b;">(No Camera)</span>
+                                <span style="font-size:10px;color: var(--sdv-text-muted, #64748b);">(No Camera)</span>
                             </div>
                             <div style="display:flex;gap:6px;align-items:center;">
                                 <input type="text" id="sdvManualCodeInput" readonly
                                        value="<?php echo htmlspecialchars($initialPairingCode); ?>"
-                                       style="background:#0f172a;border:1px solid #334155;color:#38bdf8;font-family:monospace;font-weight:700;font-size:13px;border-radius:6px;padding:6px 10px;flex:1;" />
-                                <button type="button" class="btn btn-default btn-sm" onclick="copyToClipboard('sdvManualCodeInput', this)" title="Copy pairing code" style="background:#334155;color:#fff;border:none;">
+                                       style="background: var(--sdv-bg-nested, #0f172a);border: 1px solid var(--sdv-border, #334155);color: #38bdf8;font-family:monospace;font-weight:700;font-size:13px;border-radius:6px;padding:6px 10px;flex:1;" />
+                                <button type="button" class="btn btn-default btn-sm" onclick="copyToClipboard('sdvManualCodeInput', this)" title="Copy pairing code" style="background: #334155;color: #fff;border: none;">
                                     <i class="far fa-copy"></i> Copy
                                 </button>
                             </div>
 
-                            <div style="font-size:11px;color:#64748b;margin-top:8px;">
-                                WHMCS URL: <strong style="color:#cbd5e1;"><?php echo htmlspecialchars($whmcsUrl); ?></strong>
+                            <div style="font-size:11px;color: var(--sdv-text-muted, #64748b);margin-top:8px;">
+                                WHMCS URL: <strong style="color: var(--sdv-text-secondary, #cbd5e1);"><?php echo htmlspecialchars($whmcsUrl); ?></strong>
                             </div>
                         </div>
 
                         <div style="margin-top:14px;display:flex;justify-content:space-between;align-items:center;">
-                            <button type="button" id="sdvRefreshQrBtn" class="btn btn-default btn-sm" onclick="refreshQrCode()" style="background:#1e293b;color:#e2e8f0;border:1px solid #334155;">
+                            <button type="button" id="sdvRefreshQrBtn" class="btn btn-default btn-sm" onclick="refreshQrCode()" style="background: var(--sdv-bg-surface, #1e293b);color: var(--sdv-text-secondary, #e2e8f0);border: 1px solid var(--sdv-border, #334155);">
                                 <i class="fas fa-sync-alt"></i> Refresh QR Code
                             </button>
-                            <span style="font-size:11px;color:#64748b;">
+                            <span style="font-size:11px;color: var(--sdv-text-muted, #64748b);">
                                 <i class="fas fa-lock"></i> Encrypted HMAC Token
                             </span>
                         </div>
@@ -16031,7 +14724,7 @@ class AdminController
 
                     <!-- VIEW 2: PHONE APK DOWNLOAD QR -->
                     <div id="viewDownloadSection" style="display:none;">
-                        <p style="color:#94a3b8;font-size:12.5px;margin-bottom:14px;line-height:1.45;">
+                        <p style="color: var(--sdv-text-muted, #94a3b8);font-size:12.5px;margin-bottom:14px;line-height:1.45;">
                             Point your Android phone's standard <strong>Camera app</strong> at this QR code to download the <strong>Sahdev Live Support APK</strong> directly to your phone:
                         </p>
 
@@ -16048,13 +14741,13 @@ class AdminController
                             </div>
                         </div>
 
-                        <div style="margin-top:16px;background:#1e293b;border-radius:10px;padding:12px 14px;border:1px solid #334155;">
-                            <div style="font-size:11.5px;font-weight:700;color:#94a3b8;margin-bottom:6px;">DIRECT DOWNLOAD LINK:</div>
+                        <div style="margin-top:16px;background: var(--sdv-bg-surface, #1e293b);border-radius:10px;padding:12px 14px;border: 1px solid var(--sdv-border, #334155);">
+                            <div style="font-size:11.5px;font-weight:700;color: var(--sdv-text-muted, #94a3b8);margin-bottom:6px;">DIRECT DOWNLOAD LINK:</div>
                             <div style="display:flex;gap:6px;align-items:center;">
                                 <input type="text" id="sdvDirectApkLinkInput" readonly
                                        value="<?php echo htmlspecialchars($directApkDownloadUrl); ?>"
-                                       style="background:#0f172a;border:1px solid #334155;color:#a5b4fc;font-family:monospace;font-size:11.5px;border-radius:6px;padding:6px 10px;flex:1;" />
-                                <button type="button" class="btn btn-default btn-sm" onclick="copyToClipboard('sdvDirectApkLinkInput', this)" style="background:#334155;color:#fff;border:none;">
+                                       style="background: var(--sdv-bg-nested, #0f172a);border: 1px solid var(--sdv-border, #334155);color: #a5b4fc;font-family:monospace;font-size:11.5px;border-radius:6px;padding:6px 10px;flex:1;" />
+                                <button type="button" class="btn btn-default btn-sm" onclick="copyToClipboard('sdvDirectApkLinkInput', this)" style="background: #334155;color: #fff;border: none;">
                                     <i class="far fa-copy"></i> Copy
                                 </button>
                             </div>
@@ -16081,7 +14774,7 @@ class AdminController
                                 <div class="sdv-step-num">1</div>
                                 <div class="sdv-step-title">Install APK</div>
                                 <p class="sdv-step-desc">
-                                    Download <a href="<?php echo $moduleDownloadUrl; ?>" style="font-weight:700;color:#0284c7;">app-release.apk</a>. If Android prompts, tap <em>Settings &rarr; Allow from this source</em> to complete installation.
+                                    Download <a href="<?php echo $moduleDownloadUrl; ?>" style="font-weight:700;color: #0284c7;">app-release.apk</a>. If Android prompts, tap <em>Settings &rarr; Allow from this source</em> to complete installation.
                                 </p>
                             </div>
 
@@ -16103,8 +14796,8 @@ class AdminController
                         </div>
 
                         <!-- Highlights -->
-                        <div style="border-top:1px solid #f1f5f9;padding-top:14px;">
-                            <div style="font-size:12px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.3px;margin-bottom:8px;">
+                        <div style="border-top: 1px solid #f1f5f9;padding-top:14px;">
+                            <div style="font-size:12px;font-weight:700;color: var(--sdv-text-muted, #64748b);text-transform:uppercase;letter-spacing:0.3px;margin-bottom:8px;">
                                 Key Mobile Features:
                             </div>
                             <div class="sdv-feature-chips">
@@ -16125,17 +14818,17 @@ class AdminController
                                 <i class="fas fa-shield-alt text-primary"></i>
                                 <span>Authorized Mobile Devices</span>
                             </div>
-                            <span class="badge" style="background:#f1f5f9;color:#475569;font-weight:700;font-size:12px;">
+                            <span class="badge" style="background: var(--sdv-bg-nested, #f1f5f9);color: var(--sdv-text-muted, #475569);font-weight:700;font-size:12px;">
                                 <?php echo count($pairedDevices); ?> Registered
                             </span>
                         </div>
 
                         <?php if (empty($pairedDevices)): ?>
-                            <div style="text-align:center;padding:36px 20px;color:#94a3b8;">
-                                <div style="width:64px;height:64px;border-radius:50%;background:#f1f5f9;display:inline-flex;align-items:center;justify-content:center;font-size:28px;color:#cbd5e1;margin-bottom:12px;">
+                            <div style="text-align:center;padding:36px 20px;color: var(--sdv-text-muted, #94a3b8);">
+                                <div style="width:64px;height:64px;border-radius:50%;background: var(--sdv-bg-nested, #f1f5f9);display:inline-flex;align-items:center;justify-content:center;font-size:28px;color: var(--sdv-text-secondary, #cbd5e1);margin-bottom:12px;">
                                     <i class="fas fa-mobile-alt"></i>
                                 </div>
-                                <h4 style="margin:0 0 6px 0;font-weight:700;color:#334155;">No Mobile Devices Connected Yet</h4>
+                                <h4 style="margin:0 0 6px 0;font-weight:700;color: var(--sdv-text-secondary, #334155);">No Mobile Devices Connected Yet</h4>
                                 <p style="margin:0;font-size:13px;max-width:400px;margin:0 auto;line-height:1.45;">
                                     Scan the QR code on the left from your Android smartphone to pair your first support device.
                                 </p>
@@ -16174,18 +14867,18 @@ class AdminController
                                                             <i class="fas fa-mobile-alt"></i>
                                                         </div>
                                                         <div>
-                                                            <div style="font-weight:700;color:#0f172a;"><?php echo htmlspecialchars($d['device_name']); ?></div>
-                                                            <div style="font-size:11px;color:#64748b;">Last active: <?php echo htmlspecialchars($lastActive); ?></div>
+                                                            <div style="font-weight:700;color: var(--sdv-text-primary, #0f172a);"><?php echo htmlspecialchars($d['device_name']); ?></div>
+                                                            <div style="font-size:11px;color: var(--sdv-text-muted, #64748b);">Last active: <?php echo htmlspecialchars($lastActive); ?></div>
                                                         </div>
                                                     </div>
                                                 </td>
                                                 <td>
-                                                    <span style="font-weight:600;color:#334155;"><?php echo htmlspecialchars($d['admin_name']); ?></span>
+                                                    <span style="font-weight:600;color: var(--sdv-text-secondary, #334155);"><?php echo htmlspecialchars($d['admin_name']); ?></span>
                                                 </td>
                                                 <td>
-                                                    <code style="font-size:11.5px;color:#475569;background:#f8fafc;padding:2px 6px;border-radius:4px;border:1px solid #e2e8f0;"><?php echo htmlspecialchars($d['last_ip']); ?></code>
+                                                    <code style="font-size:11.5px;color: var(--sdv-text-muted, #475569);background: var(--sdv-bg-nested, #f8fafc);padding:2px 6px;border-radius:4px;border: 1px solid var(--sdv-border, #e2e8f0);"><?php echo htmlspecialchars($d['last_ip']); ?></code>
                                                 </td>
-                                                <td style="color:#64748b;font-size:12px;">
+                                                <td style="color: var(--sdv-text-muted, #64748b);font-size:12px;">
                                                     <?php echo htmlspecialchars($createdDate); ?>
                                                 </td>
                                                 <td>
@@ -16205,7 +14898,7 @@ class AdminController
                                                             <?php echo $csrfToken; ?>
                                                             <input type="hidden" name="action" value="revoke_device" />
                                                             <input type="hidden" name="token_id" value="<?php echo $d['id']; ?>" />
-                                                            <button type="submit" class="btn btn-default btn-xs" title="Revoke Device Access" style="color:#dc2626;border-color:#fca5a5;">
+                                                            <button type="submit" class="btn btn-default btn-xs" title="Revoke Device Access" style="color: #dc2626;border-color: #fca5a5;">
                                                                 <i class="fas fa-unlink"></i> Disconnect
                                                             </button>
                                                         </form>
@@ -16493,8 +15186,8 @@ class AdminController
         <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
         <style>
             .metric-stat-card {
-                background: #fff;
-                border: 1px solid #e2e8f0;
+                background: var(--sdv-bg-surface, #fff);
+                border: 1px solid var(--sdv-border, #e2e8f0);
                 border-radius: 10px;
                 padding: 18px 20px;
                 box-shadow: 0 2px 5px rgba(0,0,0,0.02);
@@ -16510,23 +15203,23 @@ class AdminController
                 font-size: 11.5px;
                 text-transform: uppercase;
                 letter-spacing: 0.5px;
-                color: #718096;
+                color: var(--sdv-text-muted, #718096);
                 font-weight: 700;
                 margin-bottom: 6px;
             }
             .metric-val {
                 font-size: 26px;
                 font-weight: 800;
-                color: #1a202c;
+                color: var(--sdv-text-primary, #1a202c);
                 line-height: 1.1;
             }
             .metric-sub {
                 font-size: 12px;
-                color: #a0aec0;
+                color: var(--sdv-text-muted, #a0aec0);
                 margin-top: 6px;
             }
             .anomaly-card {
-                background: #fff;
+                background: var(--sdv-bg-surface, #fff);
                 border-radius: 8px;
                 padding: 16px;
                 margin-bottom: 12px;
@@ -16632,7 +15325,7 @@ class AdminController
 
             <!-- AI EXECUTIVE BRIEFING & ANOMALY CARDS -->
             <div class="panel panel-default" style="border-radius: 8px; margin-bottom: 25px; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
-                <div class="panel-heading" style="background: #fff; padding: 16px 20px; display: flex; justify-content: space-between; align-items: center;">
+                <div class="panel-heading" style="background: var(--sdv-bg-surface, #fff); padding: 16px 20px; display: flex; justify-content: space-between; align-items: center;">
                     <div>
                         <strong style="font-size: 15px;"><i class="fas fa-brain text-primary"></i> AI Executive Briefing: Patterns & Bottlenecks</strong>
                         <p class="text-muted" style="margin: 2px 0 0; font-size: 12px;">Autonomous detection of revenue leaks, gateway failures, and customer pain points.</p>
@@ -16657,10 +15350,10 @@ class AdminController
                                     <?php endif; ?>
                                 </div>
                                 <div style="flex: 1;">
-                                    <strong style="font-size: 14px; color: #2d3748; display: block; margin-bottom: 3px;">
+                                    <strong style="font-size: 14px; color: var(--sdv-text-primary, #2d3748); display: block; margin-bottom: 3px;">
                                         <?php echo htmlspecialchars($ano->title); ?>
                                     </strong>
-                                    <p style="font-size: 13px; color: #718096; margin-bottom: 8px;">
+                                    <p style="font-size: 13px; color: var(--sdv-text-muted, #718096); margin-bottom: 8px;">
                                         <?php echo htmlspecialchars($ano->description); ?>
                                     </p>
                                     <a href="addonmodules.php?module=sahdev&action=admin_copilot" class="btn btn-xs btn-default">
@@ -16678,7 +15371,7 @@ class AdminController
                 <!-- MRR 6-Month Trend -->
                 <div class="col-md-6">
                     <div class="panel panel-default" style="border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
-                        <div class="panel-heading" style="background: #fff; padding: 14px 20px;">
+                        <div class="panel-heading" style="background: var(--sdv-bg-surface, #fff); padding: 14px 20px;">
                             <strong><i class="fas fa-chart-line text-primary"></i> 6-Month MRR Growth Trend</strong>
                         </div>
                         <div class="panel-body" style="padding: 20px;">
@@ -16690,7 +15383,7 @@ class AdminController
                 <!-- Aging Debt Buckets -->
                 <div class="col-md-6">
                     <div class="panel panel-default" style="border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
-                        <div class="panel-heading" style="background: #fff; padding: 14px 20px;">
+                        <div class="panel-heading" style="background: var(--sdv-bg-surface, #fff); padding: 14px 20px;">
                             <strong><i class="fas fa-hourglass-half text-danger"></i> Aging Overdue Debt Breakdown ($)</strong>
                         </div>
                         <div class="panel-body" style="padding: 20px;">
@@ -16704,7 +15397,7 @@ class AdminController
             <div class="row">
                 <div class="col-md-6">
                     <div class="panel panel-default" style="border-radius: 8px;">
-                        <div class="panel-heading" style="background: #fff; padding: 14px 20px;">
+                        <div class="panel-heading" style="background: var(--sdv-bg-surface, #fff); padding: 14px 20px;">
                             <strong><i class="fas fa-server text-info"></i> Top Hosting Products by Revenue</strong>
                         </div>
                         <table class="table table-striped" style="margin-bottom: 0;">
@@ -16734,7 +15427,7 @@ class AdminController
 
                 <div class="col-md-6">
                     <div class="panel panel-default" style="border-radius: 8px;">
-                        <div class="panel-heading" style="background: #fff; padding: 14px 20px;">
+                        <div class="panel-heading" style="background: var(--sdv-bg-surface, #fff); padding: 14px 20px;">
                             <strong><i class="fas fa-credit-card text-success"></i> Payment Gateway Health (30 Days)</strong>
                         </div>
                         <table class="table table-striped" style="margin-bottom: 0;">
@@ -16958,11 +15651,11 @@ class AdminController
                 font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", sans-serif;
             }
             .sahdev-help-hero {
-                background: linear-gradient(135deg, #090d16 0%, #0f172a 100%);
+                background: linear-gradient(135deg, #090d16 0%, var(--sdv-bg-nested, #0f172a) 100%);
                 border: 1px solid #1e293b;
                 border-radius: 16px;
                 padding: 32px 28px;
-                color: #f8fafc;
+                color: var(--sdv-text-primary, #f8fafc);
                 margin-bottom: 24px;
                 display: flex;
                 align-items: center;
@@ -16992,7 +15685,7 @@ class AdminController
             }
             .sahdev-help-hero p {
                 font-size: 14px;
-                color: #94a3b8;
+                color: var(--sdv-text-muted, #94a3b8);
                 margin: 0;
                 max-width: 650px;
                 line-height: 1.5;
@@ -17013,7 +15706,7 @@ class AdminController
                 letter-spacing: 0.5px;
             }
             .sahdev-help-tabs {
-                border-bottom: 2px solid #e2e8f0;
+                border-bottom: 2px solid var(--sdv-border, #e2e8f0);
                 margin-bottom: 24px;
                 display: flex;
                 gap: 8px;
@@ -17024,7 +15717,7 @@ class AdminController
                 padding: 10px 18px;
                 font-size: 13px;
                 font-weight: 700;
-                color: #64748b;
+                color: var(--sdv-text-muted, #64748b);
                 text-decoration: none !important;
                 border-bottom: 3px solid transparent;
                 margin-bottom: -2px;
@@ -17036,8 +15729,8 @@ class AdminController
                 cursor: pointer;
             }
             .sahdev-help-tab-btn:hover {
-                color: #0f172a;
-                background: #f8fafc;
+                color: var(--sdv-text-primary, #0f172a);
+                background: var(--sdv-bg-nested, #f8fafc);
             }
             .sahdev-help-tab-btn.active {
                 color: #0d9488;
@@ -17045,8 +15738,8 @@ class AdminController
                 background: #f0fdfa;
             }
             .sahdev-help-card {
-                background: #ffffff;
-                border: 1px solid #e2e8f0;
+                background: var(--sdv-bg-surface, #ffffff);
+                border: 1px solid var(--sdv-border, #e2e8f0);
                 border-radius: 12px;
                 padding: 24px;
                 margin-bottom: 20px;
@@ -17055,41 +15748,41 @@ class AdminController
             .sahdev-help-card h3 {
                 font-size: 17px;
                 font-weight: 800;
-                color: #0f172a;
+                color: var(--sdv-text-primary, #0f172a);
                 margin: 0 0 14px 0;
                 display: flex;
                 align-items: center;
                 gap: 8px;
             }
             .sahdev-spec-table th {
-                background: #f8fafc;
+                background: var(--sdv-bg-nested, #f8fafc);
                 font-size: 12px;
                 text-transform: uppercase;
                 letter-spacing: 0.5px;
-                color: #475569;
+                color: var(--sdv-text-muted, #475569);
                 font-weight: 700;
                 padding: 10px 14px;
-                border-bottom: 2px solid #e2e8f0;
+                border-bottom: 2px solid var(--sdv-border, #e2e8f0);
             }
             .sahdev-spec-table td {
                 padding: 10px 14px;
                 font-size: 13px;
-                color: #1e293b;
+                color: var(--sdv-text-primary, #1e293b);
                 border-bottom: 1px solid #f1f5f9;
                 vertical-align: middle;
             }
             .sahdev-faq-item {
-                border: 1px solid #e2e8f0;
+                border: 1px solid var(--sdv-border, #e2e8f0);
                 border-radius: 8px;
                 margin-bottom: 12px;
                 overflow: hidden;
             }
             .sahdev-faq-question {
                 padding: 14px 18px;
-                background: #f8fafc;
+                background: var(--sdv-bg-nested, #f8fafc);
                 font-weight: 700;
                 font-size: 14px;
-                color: #0f172a;
+                color: var(--sdv-text-primary, #0f172a);
                 cursor: pointer;
                 display: flex;
                 justify-content: space-between;
@@ -17097,15 +15790,15 @@ class AdminController
                 user-select: none;
             }
             .sahdev-faq-question:hover {
-                background: #f1f5f9;
+                background: var(--sdv-bg-nested, #f1f5f9);
             }
             .sahdev-faq-answer {
                 padding: 16px 18px;
-                background: #ffffff;
+                background: var(--sdv-bg-surface, #ffffff);
                 font-size: 13px;
                 line-height: 1.6;
-                color: #475569;
-                border-top: 1px solid #e2e8f0;
+                color: var(--sdv-text-muted, #475569);
+                border-top: 1px solid var(--sdv-border, #e2e8f0);
             }
             .sahdev-glossary-grid {
                 display: grid;
@@ -17113,10 +15806,10 @@ class AdminController
                 gap: 16px;
             }
             .sahdev-glossary-card {
-                border: 1px solid #e2e8f0;
+                border: 1px solid var(--sdv-border, #e2e8f0);
                 border-radius: 8px;
                 padding: 16px;
-                background: #ffffff;
+                background: var(--sdv-bg-surface, #ffffff);
                 transition: transform 0.15s ease, border-color 0.15s ease;
             }
             .sahdev-glossary-card:hover {
@@ -17144,7 +15837,7 @@ class AdminController
             }
             .sahdev-glossary-desc {
                 font-size: 12.5px;
-                color: #475569;
+                color: var(--sdv-text-muted, #475569);
                 line-height: 1.5;
             }
             .sahdev-section-anchor {
@@ -17153,12 +15846,12 @@ class AdminController
                 gap: 8px;
                 padding: 12px 16px;
                 margin: 28px 0 16px 0;
-                background: #f1f5f9;
+                background: var(--sdv-bg-nested, #f1f5f9);
                 border-left: 4px solid #0d9488;
                 border-radius: 6px;
                 font-weight: 800;
                 font-size: 16px;
-                color: #0f172a;
+                color: var(--sdv-text-primary, #0f172a);
             }
         </style>
 
@@ -17277,11 +15970,11 @@ class AdminController
 
                 <div class="sahdev-help-card">
                     <h3><i class="fas fa-shield-alt text-success"></i> Data Privacy &amp; PII Scrubbing Guarantee</h3>
-                    <p style="font-size: 13.5px; color: #475569; line-height: 1.6;">
+                    <p style="font-size: 13.5px; color: var(--sdv-text-muted, #475569); line-height: 1.6;">
                         Sahdev is engineered strictly for web hosting and enterprise infrastructure providers.
                         All customer communications, support logs, and server outputs pass through the <strong>Sahdev PII Scrubber</strong> before transmission to any LLM endpoint:
                     </p>
-                    <ul style="font-size: 13px; color: #475569; line-height: 1.8; margin-left: 20px;">
+                    <ul style="font-size: 13px; color: var(--sdv-text-muted, #475569); line-height: 1.8; margin-left: 20px;">
                         <li><strong>Credit Card Numbers:</strong> Redacted via Luhn-verified pattern matching.</li>
                         <li><strong>Passwords &amp; Auth Tokens:</strong> Password fields, API secrets, and cPanel tokens are stripped.</li>
                         <li><strong>IP Addresses &amp; Phone Numbers:</strong> Anonymized or obfuscated when compliance mode is active.</li>
@@ -17300,7 +15993,7 @@ class AdminController
                         <h3 style="margin: 0;"><i class="fas fa-code-branch text-primary"></i> Version 4.0.0</h3>
                         <span class="label label-success">LATEST RELEASE</span>
                     </div>
-                    <ul style="font-size: 13px; line-height: 1.8; color: #334155;">
+                    <ul style="font-size: 13px; line-height: 1.8; color: var(--sdv-text-secondary, #334155);">
                         <li><strong>The Cognitive Cortex Matrix:</strong> Complete brand identity overhaul with pixel-perfect vector SVGs, horizontal lockups, and favicon.</li>
                         <li><strong>Client Name in Push Notifications:</strong> Automatically queries <code>tblclients</code> / <code>tbltickets</code> to pass real client and company names in mobile alerts, eliminating generic "Client:" prefixes.</li>
                         <li><strong>Integrated Help &amp; Knowledge Hub:</strong> Comprehensive in-app documentation, searchable FAQ, and AI glossary across both WHMCS and Flutter Mobile.</li>
@@ -17313,7 +16006,7 @@ class AdminController
                         <h3 style="margin: 0;"><i class="fas fa-code-branch text-info"></i> Version 3.5.0</h3>
                         <span class="label label-info">MAJOR UPDATE</span>
                     </div>
-                    <ul style="font-size: 13px; line-height: 1.8; color: #334155;">
+                    <ul style="font-size: 13px; line-height: 1.8; color: var(--sdv-text-secondary, #334155);">
                         <li><strong>Mobile Live Support Console:</strong> Full-featured Flutter mobile application for staff with real-time visitor chat (Tawk.to style).</li>
                         <li><strong>FCM HTTP v1 Phone Wake:</strong> High-priority push dispatch waking staff phones from deep sleep with loud ringing alarms.</li>
                         <li><strong>Visitor Sneak-Peek:</strong> Live keystroke visibility allowing agents to read customer inquiries as they are typed.</li>
@@ -17326,7 +16019,7 @@ class AdminController
                         <h3 style="margin: 0;"><i class="fas fa-code-branch text-warning"></i> Version 3.0.0</h3>
                         <span class="label label-warning">AUTOMATION</span>
                     </div>
-                    <ul style="font-size: 13px; line-height: 1.8; color: #334155;">
+                    <ul style="font-size: 13px; line-height: 1.8; color: var(--sdv-text-secondary, #334155);">
                         <li><strong>Tools API Integration:</strong> Diagnostic commands (ping, traceroute, DNS resolve, curl) via <code>toolsapi.2hs.in</code>.</li>
                         <li><strong>Server Incident Watch:</strong> Outage detection, server node telemetry, and automated client alerts.</li>
                         <li><strong>Automated Cron Insights:</strong> Background queue triage with WHMCS Tag Cloud auto-tagging.</li>
@@ -17338,7 +16031,7 @@ class AdminController
                         <h3 style="margin: 0;"><i class="fas fa-code-branch text-muted"></i> Version 2.0.0</h3>
                         <span class="label label-default">CORE ENGINE</span>
                     </div>
-                    <ul style="font-size: 13px; line-height: 1.8; color: #334155;">
+                    <ul style="font-size: 13px; line-height: 1.8; color: var(--sdv-text-secondary, #334155);">
                         <li><strong>Account Context Enrichment:</strong> Automatically extracts client active services, billing status, domains, and past tickets.</li>
                         <li><strong>PII Scrubber:</strong> Automatic redaction of sensitive credentials.</li>
                         <li><strong>Sentiment &amp; Urgency Scoring:</strong> 1-10 customer emotion index and priority matrix.</li>
@@ -17356,7 +16049,7 @@ class AdminController
                         <h3 style="margin: 0;"><i class="fas fa-bullseye text-danger"></i> Reply Intents &amp; Directives</h3>
                         <a href="<?php echo $moduleLink; ?>&amp;action=intents" class="btn btn-xs btn-default"><i class="fas fa-sliders-h"></i> Manage Intents</a>
                     </div>
-                    <p style="font-size: 13px; color: #475569;">
+                    <p style="font-size: 13px; color: var(--sdv-text-muted, #475569);">
                         Clicking an <strong>Intent Button</strong> injects a targeted behavioral directive into the AI prompt, drastically improving reply accuracy:
                     </p>
                     <table class="table sahdev-spec-table">
@@ -17404,10 +16097,10 @@ class AdminController
 
                 <div class="sahdev-help-card">
                     <h3><i class="fas fa-tachometer-alt text-primary"></i> Dive Intensity Guide (1 to 5)</h3>
-                    <p style="font-size: 13px; color: #475569;">
+                    <p style="font-size: 13px; color: var(--sdv-text-muted, #475569);">
                         Dive Intensity controls the depth of log parsing, context loading, and analytical rigor:
                     </p>
-                    <ul style="font-size: 13px; line-height: 1.8; color: #334155;">
+                    <ul style="font-size: 13px; line-height: 1.8; color: var(--sdv-text-secondary, #334155);">
                         <li><strong>Level 1-2 (Quick Triage):</strong> Reads only the latest message and service name. Fast (1-2s response), ideal for simple questions.</li>
                         <li><strong>Level 3 (Standard):</strong> Reads the last 5 messages, active packages, and invoice status. Balanced performance.</li>
                         <li><strong>Level 4-5 (Deep Forensic):</strong> Parses full message history, scans attached text/log files, loads server node metrics, and runs diagnostic tool evaluation.</li>
@@ -17419,25 +16112,25 @@ class AdminController
                         <h3 style="margin: 0;"><i class="fas fa-tools text-warning"></i> Diagnostic Tools &amp; Server Commands</h3>
                         <a href="<?php echo $moduleLink; ?>&amp;action=tools" class="btn btn-xs btn-default"><i class="fas fa-terminal"></i> Open Tools Center</a>
                     </div>
-                    <p style="font-size: 13px; color: #475569;">
+                    <p style="font-size: 13px; color: var(--sdv-text-muted, #475569);">
                         Sahdev integrates directly with server network inspection utilities to diagnose issues automatically:
                     </p>
                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px;">
-                        <div style="padding: 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">
+                        <div style="padding: 12px; background: var(--sdv-bg-nested, #f8fafc); border: 1px solid var(--sdv-border, #e2e8f0); border-radius: 8px;">
                             <strong><i class="fas fa-network-wired text-primary"></i> Ping &amp; Latency</strong>
-                            <p style="font-size: 12px; color: #64748b; margin: 4px 0 0 0;">Tests reachability and packet loss to customer domain/IP.</p>
+                            <p style="font-size: 12px; color: var(--sdv-text-muted, #64748b); margin: 4px 0 0 0;">Tests reachability and packet loss to customer domain/IP.</p>
                         </div>
-                        <div style="padding: 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">
+                        <div style="padding: 12px; background: var(--sdv-bg-nested, #f8fafc); border: 1px solid var(--sdv-border, #e2e8f0); border-radius: 8px;">
                             <strong><i class="fas fa-route text-info"></i> Traceroute</strong>
-                            <p style="font-size: 12px; color: #64748b; margin: 4px 0 0 0;">Identifies network routing hops and transit bottlenecks.</p>
+                            <p style="font-size: 12px; color: var(--sdv-text-muted, #64748b); margin: 4px 0 0 0;">Identifies network routing hops and transit bottlenecks.</p>
                         </div>
-                        <div style="padding: 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">
+                        <div style="padding: 12px; background: var(--sdv-bg-nested, #f8fafc); border: 1px solid var(--sdv-border, #e2e8f0); border-radius: 8px;">
                             <strong><i class="fas fa-globe text-success"></i> DNS Lookup</strong>
-                            <p style="font-size: 12px; color: #64748b; margin: 4px 0 0 0;">Verifies A, MX, NS, and CNAME propagation status.</p>
+                            <p style="font-size: 12px; color: var(--sdv-text-muted, #64748b); margin: 4px 0 0 0;">Verifies A, MX, NS, and CNAME propagation status.</p>
                         </div>
-                        <div style="padding: 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">
+                        <div style="padding: 12px; background: var(--sdv-bg-nested, #f8fafc); border: 1px solid var(--sdv-border, #e2e8f0); border-radius: 8px;">
                             <strong><i class="fas fa-lock text-warning"></i> SSL &amp; HTTPS Handshake</strong>
-                            <p style="font-size: 12px; color: #64748b; margin: 4px 0 0 0;">Inspects certificate validity, expiry date, and cipher suites.</p>
+                            <p style="font-size: 12px; color: var(--sdv-text-muted, #64748b); margin: 4px 0 0 0;">Inspects certificate validity, expiry date, and cipher suites.</p>
                         </div>
                     </div>
                 </div>
@@ -17447,7 +16140,7 @@ class AdminController
                         <h3 style="margin: 0;"><i class="fas fa-mobile-alt text-primary"></i> Mobile Staff App Pairing &amp; Push</h3>
                         <a href="<?php echo $moduleLink; ?>&amp;action=mobile_app" class="btn btn-xs btn-primary"><i class="fas fa-qrcode"></i> Pair Mobile Device</a>
                     </div>
-                    <p style="font-size: 13px; color: #475569; line-height: 1.6;">
+                    <p style="font-size: 13px; color: var(--sdv-text-muted, #475569); line-height: 1.6;">
                         Staff operators can receive real-time ticket alerts, live chat summons, and visitor alerts directly on Android and iOS devices.
                         Pairing takes 10 seconds: navigate to <strong>Live Support &gt; Mobile Staff App</strong>, scan the pairing QR code with the Sahdev mobile app, and notifications are instantly active.
                     </p>

@@ -78,6 +78,7 @@ class SchemaManager
             }
 
             $columns = [
+                'ui_theme_mode'                => ['type' => 'string', 'length' => 32, 'default' => 'black'],
                 // Admin Ops Copilot
                 'copilot_enabled'              => ['type' => 'boolean', 'default' => 1],
                 'copilot_primary_provider_id'  => ['type' => 'integer', 'default' => 0],

@@ -1678,17 +1678,22 @@ try {
         ];
         if (!in_array($mode, $allowed, true)) {
             $response = ['status' => 'error', 'message' => 'Invalid theme mode. Allowed: white, dark, black'];
+        } elseif (!empty($_POST['save_global']) && !\Sahdev\Lib\PermissionService::hasPermission((int) $adminId, \Sahdev\Lib\PermissionService::PERM_SETTINGS_MANAGE)) {
+            $response = ['status' => 'error', 'message' => 'You do not have permission to change workspace settings.'];
         } else {
-            $prefs = \Sahdev\Lib\AdminPreferences::load((int) $adminId);
-            $prefs['theme_mode'] = $mode;
-            \Sahdev\Lib\AdminPreferences::save((int) $adminId, $prefs);
-
-            // If global save is requested (e.g. from general settings):
             if (!empty($_POST['save_global'])) {
-                try {
-                    \WHMCS\Database\Capsule::table('tblsahdev_settings')->update(['ui_theme_mode' => $mode]);
-                } catch (\Throwable $e) {}
+                // DDL must run before the transaction (MySQL may implicitly commit it).
+                \Sahdev\Lib\SchemaManager::ensureSettingsColumns();
             }
+            Capsule::connection()->transaction(function () use ($adminId, $mode) {
+                $prefs = \Sahdev\Lib\AdminPreferences::load((int) $adminId);
+                $prefs['theme_mode'] = $mode;
+                \Sahdev\Lib\AdminPreferences::save((int) $adminId, $prefs);
+                if (!empty($_POST['save_global'])) {
+                    $settings = Capsule::table('tblsahdev_settings')->first();
+                    Capsule::table('tblsahdev_settings')->updateOrInsert(['id' => $settings ? $settings->id : 1], ['ui_theme_mode' => $mode]);
+                }
+            });
             $response = ['status' => 'success', 'theme_mode' => $mode];
         }
     } elseif ($action === 'get_header_server_widget') {

@@ -11,19 +11,19 @@
 /* --- Main Panel Shell --- */
 .sahdev-remastered.panel { border: none !important; border-radius: 10px !important; overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,0.08) !important; margin-top: 14px !important; }
 
-.sahdev-remastered > .panel-heading { background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%) !important; color: #e2e8f0 !important; padding: 10px 16px !important; border: none !important; border-radius: 0 !important; }
+.sahdev-remastered > .panel-heading { background: linear-gradient(135deg, var(--sdv-bg-nested, #0f172a) 0%, var(--sdv-bg-surface, #1e293b) 100%) !important; color: var(--sdv-text-secondary, #e2e8f0) !important; padding: 10px 16px !important; border: none !important; border-radius: 0 !important; }
 .sahdev-remastered > .panel-heading .panel-title { font-size: 14px !important; font-weight: 700 !important; letter-spacing: 0.3px; }
 .sahdev-remastered > .panel-heading .panel-title i.fa-robot { color: #818cf8; }
-.sahdev-remastered > .panel-heading a { color: #94a3b8 !important; font-size: 11px !important; }
+.sahdev-remastered > .panel-heading a { color: var(--sdv-text-muted, #94a3b8) !important; font-size: 11px !important; }
 
 /* --- Panel Body --- */
 .sahdev-remastered > #sahdev-ai-body,
-.sahdev-remastered > .panel-body { background: #ffffff !important; padding: 0 !important; }
+.sahdev-remastered > .panel-body { background: var(--sdv-bg-surface, #ffffff) !important; padding: 0 !important; }
 
 /* --- Tab Bar --- */
-.sahdev-rm-tabs { display: flex; gap: 0; border-bottom: 2px solid #e2e8f0; background: #f8fafc; padding: 0 12px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
-.sahdev-rm-tab { padding: 9px 14px; font-size: 12px; font-weight: 600; color: #64748b; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -2px; white-space: nowrap; transition: all 0.15s ease; display: flex; align-items: center; gap: 5px; user-select: none; }
-.sahdev-rm-tab:hover { color: #334155; background: #f1f5f9; }
+.sahdev-rm-tabs { display: flex; gap: 0; border-bottom: 2px solid var(--sdv-border, #e2e8f0); background: var(--sdv-bg-nested, #f8fafc); padding: 0 12px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.sahdev-rm-tab { padding: 9px 14px; font-size: 12px; font-weight: 600; color: var(--sdv-text-muted, #64748b); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -2px; white-space: nowrap; transition: all 0.15s ease; display: flex; align-items: center; gap: 5px; user-select: none; }
+.sahdev-rm-tab:hover { color: var(--sdv-text-secondary, #334155); background: var(--sdv-bg-nested, #f1f5f9); }
 .sahdev-rm-tab.active { color: #4f46e5; border-bottom-color: #4f46e5; background: transparent; }
 .sahdev-rm-tab .rm-tab-icon { font-size: 13px; }
 
@@ -56,7 +56,7 @@
     margin-bottom: 10px !important;
     font-size: 12px !important;
     border-radius: 8px !important;
-    background: #ffffff !important;
+    background: var(--sdv-bg-surface, #ffffff) !important;
     box-shadow: 0 1px 4px rgba(0,0,0,0.04) !important;
     transition: all 0.2s ease;
 }
@@ -76,7 +76,7 @@
     font-size: 13px !important;
     line-height: 1.5 !important;
     margin-top: 4px !important;
-    color: #1e293b;
+    color: var(--sdv-text-primary, #1e293b);
 }
 
 /* Root Cause */
@@ -121,7 +121,7 @@
 .sahdev-remastered #sahdev-results #sahdev-out-plan {
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     font-size: 12px !important;
-    background: #ffffff;
+    background: var(--sdv-bg-surface, #ffffff);
     padding: 8px 10px;
     border-radius: 6px;
     border: 1px solid #bbf7d0;
@@ -130,27 +130,27 @@
 
 /* Proposed Client Reply Card */
 .sahdev-remastered #sahdev-results .panel {
-    border: 1px solid #e2e8f0 !important;
+    border: 1px solid var(--sdv-border, #e2e8f0) !important;
     border-radius: 8px !important;
     overflow: hidden;
     box-shadow: 0 2px 10px rgba(0,0,0,0.04) !important;
     margin-bottom: 10px !important;
 }
 .sahdev-remastered #sahdev-results .panel-heading {
-    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%) !important;
-    border-bottom: 1px solid #e2e8f0 !important;
+    background: linear-gradient(135deg, var(--sdv-bg-nested, #f8fafc) 0%, var(--sdv-bg-nested, #f1f5f9) 100%) !important;
+    border-bottom: 1px solid var(--sdv-border, #e2e8f0) !important;
     padding: 8px 14px !important;
     font-size: 13px !important;
     font-weight: 700;
-    color: #0f172a;
+    color: var(--sdv-text-primary, #0f172a);
 }
 .sahdev-remastered #sahdev-results .panel-body {
     padding: 12px 14px !important;
     font-size: 13px !important;
     line-height: 1.6 !important;
-    color: #1e293b;
+    color: var(--sdv-text-primary, #1e293b);
     max-height: 250px !important;
-    background: #ffffff !important;
+    background: var(--sdv-bg-surface, #ffffff) !important;
 }
 .sahdev-remastered #sahdev-results .panel-heading .btn-xs {
     font-size: 11px !important;
@@ -168,8 +168,8 @@
 .sahdev-remastered .sahdev-rm-actions .btn { font-size: 12px !important; padding: 5px 12px !important; }
 
 /* --- Rewrite Bar --- */
-.sahdev-remastered .sahdev-rm-rewrite { border-top: 1px solid #e2e8f0; padding: 10px 16px; background: #fafbfc; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.sahdev-remastered .sahdev-rm-rewrite label { font-size: 12px !important; font-weight: 600; margin: 0; color: #334155; }
+.sahdev-remastered .sahdev-rm-rewrite { border-top: 1px solid var(--sdv-border, #e2e8f0); padding: 10px 16px; background: var(--sdv-bg-nested, #fafbfc); display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.sahdev-remastered .sahdev-rm-rewrite label { font-size: 12px !important; font-weight: 600; margin: 0; color: var(--sdv-text-secondary, #334155); }
 .sahdev-remastered .sahdev-rm-rewrite .btn { font-size: 11px !important; padding: 4px 10px !important; }
 
 /* --- Sub-panels (Summary, Canned, History) as tab panes --- */
@@ -252,174 +252,3 @@
     .sahdev-rm-tab .rm-tab-icon { display: none; }
     .sahdev-remastered > .panel-heading .panel-title a { display: none; }
 }
-
-/* ================================================================
-   Sahdev AI — Color Scheme Modes (White / Dark / Charcoal Black)
-   Charcoal Black: Combines #222222 and #000000 with subtle #333333 borders
-   ================================================================ */
-
-/* --- Charcoal Black Theme (#222222 & #000000) --- */
-#sahdev-ai-panel[data-sahdev-theme="black"],
-.sahdev-theme-black #sahdev-ai-panel,
-[data-sahdev-theme="black"] .sahdev-remastered.panel {
-    background: #222222 !important;
-    border: 1px solid #333333 !important;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.9) !important;
-    color: #f3f4f6 !important;
-}
-
-#sahdev-ai-panel[data-sahdev-theme="black"] > .panel-heading,
-[data-sahdev-theme="black"] .sahdev-remastered > .panel-heading {
-    background: linear-gradient(135deg, #181818 0%, #222222 100%) !important;
-    color: #ffffff !important;
-    border-bottom: 1px solid #333333 !important;
-}
-
-#sahdev-ai-panel[data-sahdev-theme="black"] > #sahdev-ai-body,
-#sahdev-ai-panel[data-sahdev-theme="black"] > .panel-body,
-[data-sahdev-theme="black"] .sahdev-remastered > .panel-body {
-    background: #222222 !important;
-    color: #e4e4e7 !important;
-}
-
-#sahdev-ai-panel[data-sahdev-theme="black"] .sahdev-rm-tabs {
-    background: #181818 !important;
-    border-bottom: 1px solid #333333 !important;
-}
-
-#sahdev-ai-panel[data-sahdev-theme="black"] .sahdev-rm-tab {
-    color: #a1a1aa !important;
-    background: transparent !important;
-}
-
-#sahdev-ai-panel[data-sahdev-theme="black"] .sahdev-rm-tab:hover {
-    color: #ffffff !important;
-    background: #282828 !important;
-}
-
-#sahdev-ai-panel[data-sahdev-theme="black"] .sahdev-rm-tab.active {
-    color: #38bdf8 !important;
-    border-bottom-color: #38bdf8 !important;
-    background: #222222 !important;
-}
-
-#sahdev-ai-panel[data-sahdev-theme="black"] .form-control,
-#sahdev-ai-panel[data-sahdev-theme="black"] select,
-#sahdev-ai-panel[data-sahdev-theme="black"] input[type="text"],
-#sahdev-ai-panel[data-sahdev-theme="black"] input[type="number"],
-#sahdev-ai-panel[data-sahdev-theme="black"] textarea {
-    background: #151515 !important;
-    color: #f4f4f5 !important;
-    border: 1px solid #383838 !important;
-}
-
-#sahdev-ai-panel[data-sahdev-theme="black"] .form-control:focus {
-    border-color: #6366f1 !important;
-    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.3) !important;
-}
-
-#sahdev-ai-panel[data-sahdev-theme="black"] label {
-    color: #e4e4e7 !important;
-}
-
-#sahdev-ai-panel[data-sahdev-theme="black"] .sahdev-intent-btn {
-    background: #181818 !important;
-    border: 1px solid #383838 !important;
-    color: #d4d4d8 !important;
-}
-
-#sahdev-ai-panel[data-sahdev-theme="black"] .sahdev-intent-btn:hover,
-#sahdev-ai-panel[data-sahdev-theme="black"] .sahdev-intent-btn.active {
-    background: #000000 !important;
-    border-color: #6366f1 !important;
-    color: #ffffff !important;
-}
-
-#sahdev-ai-panel[data-sahdev-theme="black"] #sahdev-results .well {
-    background: #181818 !important;
-    border: 1px solid #333333 !important;
-    color: #e4e4e7 !important;
-}
-
-#sahdev-ai-panel[data-sahdev-theme="black"] #sahdev-results .well p {
-    color: #d4d4d8 !important;
-}
-
-#sahdev-ai-panel[data-sahdev-theme="black"] #sahdev-results .panel {
-    background: #1c1c1c !important;
-    border: 1px solid #333333 !important;
-}
-
-#sahdev-ai-panel[data-sahdev-theme="black"] #sahdev-results .panel-heading {
-    background: #161616 !important;
-    border-bottom: 1px solid #333333 !important;
-    color: #ffffff !important;
-}
-
-#sahdev-ai-panel[data-sahdev-theme="black"] #sahdev-results .panel-body {
-    background: #181818 !important;
-    color: #f4f4f5 !important;
-}
-
-#sahdev-ai-panel[data-sahdev-theme="black"] .sahdev-rm-rewrite {
-    background: #181818 !important;
-    border-top: 1px solid #333333 !important;
-}
-
-#sahdev-ai-panel[data-sahdev-theme="black"] .sahdev-rm-rewrite label {
-    color: #e4e4e7 !important;
-}
-
-#sahdev-ai-panel[data-sahdev-theme="black"] .sahdev-rm-tech-toggle {
-    background: #181818 !important;
-    color: #818cf8 !important;
-    border-left: 3px solid #6366f1 !important;
-}
-
-/* --- Dark Theme (Deep Navy/Slate) --- */
-#sahdev-ai-panel[data-sahdev-theme="dark"],
-.sahdev-theme-dark #sahdev-ai-panel,
-[data-sahdev-theme="dark"] .sahdev-remastered.panel {
-    background: #1e293b !important;
-    border: 1px solid #334155 !important;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4) !important;
-    color: #f8fafc !important;
-}
-
-#sahdev-ai-panel[data-sahdev-theme="dark"] > .panel-heading {
-    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%) !important;
-    color: #ffffff !important;
-    border-bottom: 1px solid #334155 !important;
-}
-
-#sahdev-ai-panel[data-sahdev-theme="dark"] > #sahdev-ai-body,
-#sahdev-ai-panel[data-sahdev-theme="dark"] > .panel-body {
-    background: #1e293b !important;
-    color: #cbd5e1 !important;
-}
-
-#sahdev-ai-panel[data-sahdev-theme="dark"] .sahdev-rm-tabs {
-    background: #0f172a !important;
-    border-bottom: 1px solid #334155 !important;
-}
-
-#sahdev-ai-panel[data-sahdev-theme="dark"] .sahdev-rm-tab {
-    color: #94a3b8 !important;
-}
-
-#sahdev-ai-panel[data-sahdev-theme="dark"] .sahdev-rm-tab.active {
-    color: #38bdf8 !important;
-    border-bottom-color: #38bdf8 !important;
-}
-
-#sahdev-ai-panel[data-sahdev-theme="dark"] .form-control {
-    background: #0f172a !important;
-    color: #f8fafc !important;
-    border-color: #334155 !important;
-}
-
-#sahdev-ai-panel[data-sahdev-theme="dark"] #sahdev-results .well {
-    background: #0f172a !important;
-    border: 1px solid #334155 !important;
-}
-

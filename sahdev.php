@@ -1389,7 +1389,8 @@ function sahdev_output($vars)
         $controller = new \Sahdev\Controllers\AdminController($vars);
 
         if (method_exists($controller, $action)) {
-            echo $controller->$action();
+            $content = $controller->$action();
+            echo \Sahdev\Lib\AdminTheme::wrap((string) $content, (int) \Sahdev\Lib\PermissionService::resolveCurrentAdminId());
         } else {
             echo "Invalid action.";
         }

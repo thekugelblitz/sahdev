@@ -45,6 +45,7 @@ function sahdev_inject_ticket_panel($vars)
     $adminPrefs = \Sahdev\Lib\AdminPreferences::load((int) $adminId);
     $uiTheme = $adminPrefs['ui_theme'] ?? \Sahdev\Lib\AdminPreferences::THEME_REMASTERED;
     $themeMode = \Sahdev\Lib\AdminPreferences::getThemeMode((int) $adminId);
+    $themeAttributes = \Sahdev\Lib\AdminTheme::attributes((int) $adminId);
 
     $defaultTone = 'Professional';
     if ($adminPrefs['tone_default'] !== null && $adminPrefs['tone_default'] !== '') {
@@ -337,21 +338,17 @@ INC_HTML;
         . '<line x1="76" y1="35" x2="62" y2="43" stroke="#ffffff" stroke-width="6" stroke-linecap="round"/>'
         . '</svg></span>';
 
-    $opWhite = ($themeMode === 'white') ? '1' : '0.5';
-    $opDark  = ($themeMode === 'dark') ? '1' : '0.5';
-    $opBlack = ($themeMode === 'black') ? '1' : '0.5';
-
     $themeSwitcherHtml = <<<HTML
 <span class="sahdev-ticket-theme-pills" style="display:inline-flex;align-items:center;background:rgba(0,0,0,0.35);border:1px solid rgba(255,255,255,0.12);border-radius:14px;padding:1px 3px;gap:2px;font-size:10px;" onclick="event.stopPropagation();">
-    <button type="button" class="btn btn-xs" style="background:transparent;border:none;padding:1px 4px;line-height:1;color:#f3f4f6;cursor:pointer;opacity:{$opWhite};" onclick="sahdevSetThemeMode('white')" title="Light / White Theme">☀️</button>
-    <button type="button" class="btn btn-xs" style="background:transparent;border:none;padding:1px 4px;line-height:1;color:#f3f4f6;cursor:pointer;opacity:{$opDark};" onclick="sahdevSetThemeMode('dark')" title="Dark Slate Theme">🌙</button>
-    <button type="button" class="btn btn-xs" style="background:transparent;border:none;padding:1px 4px;line-height:1;color:#f3f4f6;cursor:pointer;opacity:{$opBlack};" onclick="sahdevSetThemeMode('black')" title="Charcoal Black Theme (#222222 &amp; #000000)">🖤</button>
+    <button type="button" class="btn btn-xs" style="background:transparent;border:none;padding:1px 4px;line-height:1;color:#f3f4f6;cursor:pointer;" data-sahdev-mode="white" aria-label="White appearance" onclick="sahdevSetThemeMode('white')" title="Light / White Theme">☀️</button>
+    <button type="button" class="btn btn-xs" style="background:transparent;border:none;padding:1px 4px;line-height:1;color:#f3f4f6;cursor:pointer;" data-sahdev-mode="dark" aria-label="Dark appearance" onclick="sahdevSetThemeMode('dark')" title="Dark Slate Theme">🌙</button>
+    <button type="button" class="btn btn-xs" style="background:transparent;border:none;padding:1px 4px;line-height:1;color:#f3f4f6;cursor:pointer;" data-sahdev-mode="black" aria-label="Black appearance" onclick="sahdevSetThemeMode('black')" title="Charcoal Black Theme (#222222 &amp; #000000)">🖤</button>
 </span>
 HTML;
 
     $htmlPanel = <<<HTML
 {$incidentAlertBanner}
-<div class="{$panelClass}" id="sahdev-ai-panel" data-sahdev-theme="{$themeMode}" style="{$panelStyle}">
+<div class="{$panelClass} sahdev-ui" id="sahdev-ai-panel"{$themeAttributes} style="{$panelStyle}">
     <div class="panel-heading" style="{$headingStyle}" onclick="$('#sahdev-ai-body').slideToggle();">
         <h3 class="panel-title" style="{$titleStyle}">
             {$logoIconSvg}
@@ -832,6 +829,7 @@ HTML;
     if (file_exists($rmCssPath)) {
         $output .= "<style>\n" . file_get_contents($rmCssPath) . "\n</style>\n";
     }
+    $output .= \Sahdev\Lib\AdminTheme::assets();
     $output .= $htmlPanel;
 
 
@@ -842,14 +840,6 @@ HTML;
     var sahdevAutoAnalyze = {$autoAnalyzeEnabled};
     var sahdevQualityScorer = {$qualityScorerEnabled};
     var sahdevCurrentTheme = "{$themeMode}";
-    window.sahdevSetThemeMode = function(mode) {
-        var p = document.getElementById('sahdev-ai-panel');
-        if (p) p.setAttribute('data-sahdev-theme', mode);
-        var root = document.getElementById('sahdevThemeRoot');
-        if (root) root.setAttribute('data-sahdev-theme', mode);
-        try { localStorage.setItem('sahdev_theme_mode', mode); } catch(e) {}
-        $.post(sahdevAjaxUrl, { action: 'set_theme_mode', theme_mode: mode });
-    };
     console.log("Sahdev AI initialized with AJAX URL:", sahdevAjaxUrl, "| Auto-analyze:", sahdevAutoAnalyze, "| Theme:", sahdevCurrentTheme);
 HTML;
 
@@ -2949,7 +2939,8 @@ HTML;
             ? '<a href="' . $accessUrl . '" target="_blank" class="btn btn-default btn-xs" style="font-weight: 600; font-size: 11px; border-radius: 4px; padding: 4px 10px; background: #fff; border: 1px solid #cbd5e0; color: #2d3748;"><i class="fas fa-external-link-alt"></i> Access WHM</a>'
             : '';
 
-        return <<<HTML
+        $themeAttributes = \Sahdev\Lib\AdminTheme::attributes((int) $adminId);
+        return \Sahdev\Lib\AdminTheme::assets() . <<<HTML
 <!-- Sahdev Server Health Card for Client Service -->
 <style>
 #sahdev-clientservices-health-card {
@@ -3009,7 +3000,7 @@ HTML;
 }
 </style>
 
-<div id="sahdev-clientservices-health-card" style="display:none;">
+<div id="sahdev-clientservices-health-card" class="sahdev-ui"{$themeAttributes} style="display:none;">
     <div class="sahdev-accent-bar"></div>
     <div class="sahdev-card-body">
         <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
@@ -3114,7 +3105,8 @@ function sahdev_render_header_topbar_widget($vars)
     $isTicketPage = (isset($vars['ticketid']) || strpos($_SERVER['REQUEST_URI'] ?? '', 'supporttickets.php') !== false);
     if (!$isTicketPage) $ticketId = 0;
 
-    return <<<HTML
+    $themeAttributes = \Sahdev\Lib\AdminTheme::attributes((int) $adminId);
+    return \Sahdev\Lib\AdminTheme::assets() . <<<HTML
 <!-- Sahdev Global Top Header Bar Server Widget -->
 <style>
 .sahdev-header-li {
@@ -3353,7 +3345,7 @@ function sahdev_render_header_topbar_widget($vars)
 </style>
 
 <div id="sahdev-header-widget-container" style="display:none;">
-    <div class="sahdev-top-nav-widget" id="sahdevNavWidgetWrap">
+    <div class="sahdev-top-nav-widget sahdev-ui" id="sahdevNavWidgetWrap"{$themeAttributes}>
         <a href="javascript:void(0);" class="sahdev-nav-pill-btn" id="sahdevNavPillBtn" title="Sahdev Server Telemetry & Status">
             <span id="sahdevNavDot" class="sahdev-nav-dot pulse"></span>
             <i class="fas fa-server sahdev-mobile-icon"></i>
@@ -5210,7 +5202,8 @@ function sahdev_render_admin_copilot_drawer(array $vars = []): string
     $ajaxUrlJs = json_encode($ajaxUrl);
     $csrfTokenJs = json_encode($csrfToken);
 
-    return <<<HTML
+    $themeAttributes = \Sahdev\Lib\AdminTheme::attributes((int) $adminId);
+    return \Sahdev\Lib\AdminTheme::assets() . <<<HTML
 <style>
 /* ── Sahdev Admin Ops Copilot Drawer ───────────────────────────────── */
 #sdv-copilot-launcher {
@@ -5562,7 +5555,7 @@ function sahdev_render_admin_copilot_drawer(array $vars = []): string
 </style>
 
 <!-- Floating Launcher -->
-<div id="sdv-copilot-launcher" title="Open Sahdev Ops Copilot (Ctrl + Space)">
+<div id="sdv-copilot-launcher" class="sahdev-ui"{$themeAttributes} title="Open Sahdev Ops Copilot (Ctrl + Space)">
     <span class="sdv-copilot-sparkle">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
             <path d="M12 2L14.4 7.6L20 10L14.4 12.4L12 18L9.6 12.4L4 10L9.6 7.6L12 2Z"/>
@@ -5574,7 +5567,7 @@ function sahdev_render_admin_copilot_drawer(array $vars = []): string
 </div>
 
 <!-- Slide-out Console -->
-<div id="sdv-copilot-drawer">
+<div id="sdv-copilot-drawer" class="sahdev-ui"{$themeAttributes}>
     <div class="sdv-drawer-header">
         <div class="sdv-drawer-header-left">
             <div class="sdv-copilot-status-dot"></div>

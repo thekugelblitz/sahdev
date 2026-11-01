@@ -144,7 +144,7 @@ class AdminPreferences
         }
         if (array_key_exists('theme_mode', $raw)) {
             $mode = strtolower(trim((string) ($raw['theme_mode'] ?? '')));
-            $out['theme_mode'] = in_array($mode, self::$validThemeModes, true) ? $mode : self::THEME_MODE_BLACK;
+            $out['theme_mode'] = in_array($mode, self::$validThemeModes, true) ? $mode : null;
         }
         $featIn = isset($raw['features']) && is_array($raw['features']) ? $raw['features'] : [];
         foreach (self::allFeatureKeys() as $k) {
@@ -388,7 +388,7 @@ class AdminPreferences
             'default_provider_id' => 0,
             'tone_default'        => null,
             'ui_theme'            => self::THEME_REMASTERED,
-            'theme_mode'          => self::THEME_MODE_BLACK,
+            'theme_mode'          => null, // Inherit the workspace default until explicitly selected.
             'features'            => $features,
         ];
     }
