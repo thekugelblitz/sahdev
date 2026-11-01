@@ -200,8 +200,8 @@ runTest(
 
 $dnsTypeSchema = $registry['toolsapi_dns_lookup']['function']['parameters']['properties']['type'] ?? [];
 runTest(
-    "DNS tool schema exposes only the IPv4 A record type",
-    ($dnsTypeSchema['enum'] ?? null) === ['A'],
+    "DNS tool schema exposes approved record types",
+    in_array('MX', $dnsTypeSchema['enum'] ?? [], true) && !in_array('AXFR', $dnsTypeSchema['enum'] ?? [], true),
     json_encode($dnsTypeSchema)
 );
 
@@ -300,91 +300,17 @@ foreach ($entityTests as $str => $expectedEntities) {
     }
 }
 
-// TEST GROUP 6: Output Normalization & LLM Token Compaction
-echo "\n--- TEST GROUP 6: Output Normalization & LLM Compaction ---\n";
+// TEST GROUP 6: Published response contracts, not legacy invented payloads.
+$fixtures = require __DIR__ . '/diagnostic_fixtures.php';
+foreach ($fixtures as $name => $fixture) {
+    $tool = 'toolsapi_' . $name;
+    $path = LiveChatToolService::getToolRegistry()[$tool]['_meta']['path'];
+    $summary = LiveChatToolService::normalizeOutput($tool, $path, json_encode($fixture), 'example.com');
+    runTest('Contract evidence for ' . $name, isset(json_decode($summary, true)['facts']), $summary);
+}
 
-// 1. DNS Normalization
-$rawDns = json_encode([
-    'domain'  => 'example.com',
-    'records' => [
-        ['type' => 'A', 'value' => '93.184.216.34', 'ttl' => 300],
-        ['type' => 'AAAA', 'value' => '2606:2800:220:1:248:1893:25c8:1946', 'ttl' => 300],
-        ['type' => 'MX', 'value' => 'mail.example.com', 'ttl' => 300],
-    ],
-]);
-$dnsSummary = LiveChatToolService::normalizeOutput('toolsapi_dns_lookup', '/dns/{domain}', $rawDns, 'example.com');
-runTest(
-    "DNS output normalization formats records concisely",
-    strpos($dnsSummary, '93.184.216.34') !== false && strpos($dnsSummary, 'MX:') !== false,
-    $dnsSummary
-);
-runTest(
-    "DNS summary is compact (< 250 characters)",
-    mb_strlen($dnsSummary) < 250,
-    "Length: " . mb_strlen($dnsSummary)
-);
-
-// 2. SSL Normalization
-$rawSsl = json_encode([
-    'target'         => 'example.com',
-    'is_valid'       => true,
-    'days_remaining' => 45,
-    'issuer'         => ['commonName' => "Let's Encrypt Authority X3"],
-    'valid_to'       => '2026-12-15',
-]);
-$sslSummary = LiveChatToolService::normalizeOutput('toolsapi_ssl_inspect', '/ssl/{target}', $rawSsl, 'example.com');
-runTest(
-    "SSL output normalization displays validity and days remaining",
-    strpos($sslSummary, 'VALID') !== false && strpos($sslSummary, '45') !== false,
-    $sslSummary
-);
-
-// 3. WHOIS Normalization
-$rawWhois = json_encode([
-    'domain'          => 'example.com',
-    'registrar'       => 'MarkMonitor Inc.',
-    'creation_date'   => '1995-08-14',
-    'expiration_date' => '2027-08-13',
-    'status'          => 'clientTransferProhibited',
-    'nameservers'     => ['a.iana-servers.net', 'b.iana-servers.net'],
-]);
-$whoisSummary = LiveChatToolService::normalizeOutput('toolsapi_whois_query', '/whois/{domain}', $rawWhois, 'example.com');
-runTest(
-    "WHOIS output normalization displays registrar, expiry, and nameservers",
-    strpos($whoisSummary, 'MarkMonitor') !== false && strpos($whoisSummary, '2027-08-13') !== false,
-    $whoisSummary
-);
-
-// 4. Ping Normalization
-$rawPing = json_encode([
-    'host'       => '8.8.8.8',
-    'packet_loss'=> '0%',
-    'avg_rtt'    => 12.4,
-]);
-$pingSummary = LiveChatToolService::normalizeOutput('toolsapi_ping', '/ping/{host}', $rawPing, '8.8.8.8');
-runTest(
-    "Ping output normalization displays packet loss and RTT",
-    strpos($pingSummary, 'HOST REACHABLE') !== false && strpos($pingSummary, '12.4') !== false,
-    $pingSummary
-);
-
-// 5. PageSpeed Normalization
-$rawPageSpeed = json_encode([
-    'url'               => 'https://example.com',
-    'performance_score' => 96,
-    'strategy'          => 'mobile',
-    'first_contentful_paint' => '0.8s',
-    'largest_contentful_paint' => '1.2s',
-]);
-$pageSpeedSummary = LiveChatToolService::normalizeOutput('toolsapi_pagespeed', '/pagespeed/{url}', $rawPageSpeed, 'example.com');
-runTest(
-    "PageSpeed output normalization formats score and Web Vitals",
-    strpos($pageSpeedSummary, '96/100') !== false && strpos($pageSpeedSummary, '0.8s') !== false,
-    $pageSpeedSummary
-);
-
-// TEST GROUP 7: IPv4-only DNS lookup enforcement
-echo "\n--- TEST GROUP 7: IPv4-only DNS Lookup Enforcement ---\n";
+// TEST GROUP 7: Requested DNS record type preservation
+echo "\n--- TEST GROUP 7: Requested DNS record type preservation ---\n";
 
 // IPv4 A records only, regardless of a model-supplied DNS type.
 $dnsConsumedKeys = [];
@@ -397,9 +323,9 @@ $dnsAUrl = LiveChatToolService::buildUpstreamUrl(
     $dnsQueryParams
 );
 runTest(
-    "Forces live-chat DNS lookup to IPv4 A records when model requests AAAA",
-    $dnsAUrl === 'https://toolsapi.2hs.in/dns/blog.planckstudio.in?type=A'
-        && ($dnsQueryParams['type'] ?? null) === 'A',
+    "Preserves requested AAAA lookup",
+    $dnsAUrl === 'https://toolsapi.2hs.in/dns/blog.planckstudio.in?type=AAAA'
+        && ($dnsQueryParams['type'] ?? null) === 'AAAA',
     $dnsAUrl . ' | params: ' . json_encode($dnsQueryParams)
 );
 

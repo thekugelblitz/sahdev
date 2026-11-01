@@ -260,7 +260,7 @@ class AIController
         }
 
         if ($includeToolsContext) {
-            $toolContext = \Sahdev\Modules\ToolsExecution\ToolsExecutionService::buildPromptContextBlock($this->ticketId);
+            $toolContext = \Sahdev\Modules\ToolsExecution\ToolsExecutionService::buildPromptContextBlock($this->ticketId, true);
             if ($toolContext !== '') {
                 $customInstruction = empty($customInstruction) ? $toolContext : $customInstruction . "\n\n" . $toolContext;
             }
@@ -679,7 +679,7 @@ class AIController
 
         $customInstruction = $this->composeInstructionForIntent($intent, $customInstruction, $technicalContext);
         if ($includeToolsContext && $this->ticketId > 0) {
-            $toolContext = \Sahdev\Modules\ToolsExecution\ToolsExecutionService::buildPromptContextBlock($this->ticketId);
+            $toolContext = \Sahdev\Modules\ToolsExecution\ToolsExecutionService::buildPromptContextBlock($this->ticketId, true);
             if ($toolContext !== '') {
                 $customInstruction = empty($customInstruction) ? $toolContext : $customInstruction . "\n\n" . $toolContext;
             }

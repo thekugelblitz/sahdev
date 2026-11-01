@@ -24,6 +24,9 @@ class GoogleAIProvider implements AIProviderInterface
      */
     public function generateResponse(array $context, array $settings, string $tone, string $customInstruction): array
     {
+        $this->timeout = max(1, min(30, (int) ($settings['timeout'] ?? 30)));
+        $this->maxRetries = isset($settings['timeout']) ? 0 : 2;
+        $this->lastTokenDetails = ['input'=>0, 'output'=>0];
         $model = $settings['model_name'] ?: 'models/gemini-1.5-pro';
         $endpoint = "https://generativelanguage.googleapis.com/v1beta/{$model}:generateContent?key=" . $this->apiKey;
 

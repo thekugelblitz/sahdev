@@ -21,6 +21,7 @@ class ReplicateAIProvider implements AIProviderInterface
     private $lastTokenDetails = ['input' => 0, 'output' => 0];
     private $maxRetries = 2;
     private $timeout = 120;
+    private $deadline = null;
     private $pollInterval = 2; // seconds between poll attempts
     private $maxPollAttempts = 60; // max poll attempts (2s * 60 = 120s max wait)
 
@@ -42,6 +43,9 @@ class ReplicateAIProvider implements AIProviderInterface
      */
     public function generateResponse(array $context, array $settings, string $tone, string $customInstruction): array
     {
+        $this->deadline = isset($settings['timeout']) ? microtime(true) + max(1, (int) $settings['timeout']) : null;
+        $this->maxRetries = $this->deadline !== null ? 0 : 2;
+        $this->lastTokenDetails = ['input'=>0, 'output'=>0];
         $systemMessage = $settings['system_prompt'] ?? "You are a helpful Senior Technical Support Engineer.";
         $userPromptTemplate = $settings['user_prompt_template'] ?? null;
 
@@ -239,6 +243,13 @@ class ReplicateAIProvider implements AIProviderInterface
     /**
      * Create a prediction via Replicate API with sync mode (Prefer: wait).
      */
+    private function remainingTimeoutMs(): int
+    {
+        $remaining = $this->deadline !== null ? $this->deadline - microtime(true) : $this->timeout;
+        if ($remaining <= 0) throw new \RuntimeException('Prediction exceeded response deadline.');
+        return max(1, (int) ($remaining * 1000));
+    }
+
     private function createPrediction(string $endpoint, string $payload): array
     {
         $ch = curl_init($endpoint);
@@ -248,9 +259,9 @@ class ReplicateAIProvider implements AIProviderInterface
         curl_setopt($ch, CURLOPT_HTTPHEADER, [
             'Content-Type: application/json',
             'Authorization: Bearer ' . $this->apiKey,
-            'Prefer: wait=60', // Sync mode: wait up to 60s for completion
+            'Prefer: wait=' . ($this->deadline !== null ? max(1, min(60, (int) ($this->deadline - microtime(true)))) : 60), // Sync mode: wait up to 60s for completion
         ]);
-        curl_setopt($ch, CURLOPT_TIMEOUT, $this->timeout);
+        curl_setopt($ch, CURLOPT_TIMEOUT_MS, $this->remainingTimeoutMs());
 
         // Replicate requires SSL
         curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
@@ -285,10 +296,13 @@ class ReplicateAIProvider implements AIProviderInterface
      */
     private function pollForCompletion(string $getUrl): array
     {
+        $destination = parse_url($getUrl);
+        if (($destination['scheme'] ?? '') !== 'https' || ($destination['host'] ?? '') !== 'api.replicate.com' || isset($destination['user']) || isset($destination['pass']) || (isset($destination['port']) && $destination['port'] !== 443)) throw new \RuntimeException('Invalid prediction polling destination.');
         $attempts = 0;
 
         while ($attempts < $this->maxPollAttempts) {
             $attempts++;
+            if ($this->deadline !== null && $this->deadline - microtime(true) <= $this->pollInterval) throw new \RuntimeException('Prediction exceeded response deadline.');
             sleep($this->pollInterval);
 
             $ch = curl_init($getUrl);
@@ -296,7 +310,7 @@ class ReplicateAIProvider implements AIProviderInterface
             curl_setopt($ch, CURLOPT_HTTPHEADER, [
                 'Authorization: Bearer ' . $this->apiKey,
             ]);
-            curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+            curl_setopt($ch, CURLOPT_TIMEOUT_MS, min(30000, $this->remainingTimeoutMs()));
             curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
 
             $result = curl_exec($ch);

@@ -3,7 +3,9 @@
 Sahdev is a powerful, production-ready WHMCS Addon Module that integrates Google Gemini (or equivalent LLMs) to analyze your WHMCS support tickets, extract client context securely, and propose professional replies.
 
 ## Version
-Current Version: 2.0
+Current Version: 5.0
+
+See [the v5 release and upgrade notes](docs/V5-RELEASE.md) for shared ticket/live-chat diagnostics, provider controls, validation and staging requirements.
 
 ## Features
 - **Smart Analysis:** Provides Root Cause, Responsibility, Risk Level, and an Internal Action Plan.

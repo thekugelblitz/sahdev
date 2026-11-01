@@ -284,7 +284,7 @@ class AdminController
         // 9. Ensure missing prompt templates exist (migration for existing installs)
         try {
             $defs = $this->getDefaultPromptDefinitions();
-            foreach (['cron_insights_system', 'cron_insights', 'tools_evidence_system', 'tools_evidence_user', 'tools_reply_context_wrapper', 'autopilot_system'] as $pkey) {
+            foreach (['diagnostic_planner', 'diagnostic_reply', 'diagnostic_clarification', 'cron_insights_system', 'cron_insights', 'tools_evidence_system', 'tools_evidence_user', 'tools_reply_context_wrapper', 'autopilot_system'] as $pkey) {
                 $exists = Capsule::table('tblsahdev_prompt_templates')
                     ->where('prompt_key', $pkey)
                     ->exists();
@@ -372,7 +372,9 @@ class AdminController
 
         $userPromptDefault = $settings->user_prompt_template ?? "{{CUSTOM_INSTRUCTION_BLOCK}}=== TASK ===\nAnalyze the provided technical support ticket and output ONLY a valid JSON object matching the schema below. No extra text.\n\n=== SCHEMA ===\n{\n  \"ROOT_CAUSE\": \"string (brief technical analysis)\",\n  \"RESPONSIBILITY\": \"string (Client, Host, or 3rd Party)\",\n  \"RISK_LEVEL\": \"string (Low, Medium, High, or Critical)\",\n  \"INTERNAL_ACTION_PLAN\": \"string (detailed steps for the support team)\",\n  \"CLIENT_REPLY\": \"string (reply to client in Markdown — body only, no greeting or sign-off)\"\n}\n\n=== TONE ===\nWrite CLIENT_REPLY in a {{TONE}} tone.\n\n=== TICKET DATA ===\nClient: {{CLIENT_NAME}}\nDepartment: {{DEPARTMENT}}\nSubject: {{SUBJECT}}\n{{SERVICES_BLOCK}}\n=== CONVERSATION ===\n{{MESSAGES}}\n{{ATTACHMENTS_BLOCK}}";
 
-        return [
+        $diagnosticDefaults = [];
+        foreach (\Sahdev\Lib\DiagnosticPolicy::prompts() as $key => $content) $diagnosticDefaults[$key] = ['label'=>ucwords(str_replace('_', ' ', $key)), 'description'=>'Shared v5 diagnostic workflow instructions. Execution policy is enforced separately.', 'content'=>$content];
+        return array_merge($diagnosticDefaults, [
             'system_default' => [
                 'label'       => 'System Prompt (AI Persona)',
                 'description' => 'The AI identity and core behavioral rules injected as the system instruction on every request. Defines tone, empathy, directives, and output format expectations.',
@@ -438,7 +440,7 @@ class AdminController
                 'description' => 'System persona injected when Autopilot generates an automated first reply. This controls the tone, format, and behavior of auto-replies. Output ONLY the reply body — no JSON schema.',
                 'content'     => "You are Sahdev, a Senior Technical Support Specialist for a premium web hosting company. Your goal is to provide helpful, warm, and professional first-response support.\n\nAUTOPILOT RULES:\n1. Write a complete reply to the client's ticket — address their issue specifically.\n2. Include a warm, professional greeting using the client's first name when known.\n3. Do NOT include a sign-off or signature — these are added automatically.\n4. Be empathetic, clear, and solution-focused.\n5. For technical issues, provide step-by-step guidance when possible.\n6. Output ONLY the reply text. No JSON, no schema, no code fences, no preamble.",
             ],
-        ];
+        ]);
     }
 
     /**
@@ -3777,6 +3779,7 @@ class AdminController
                 'autopilot_system'     => 'fas fa-plane-arrival',
             ];
             $orderedKeys = [
+                'diagnostic_planner', 'diagnostic_reply', 'diagnostic_clarification',
                 'system_default',
                 'user_prompt_template',
                 'summarizer',
@@ -5730,7 +5733,10 @@ class AdminController
                 $update['tools_api_key_encrypted'] = encrypt($newKey);
             }
 
-            Capsule::table('tblsahdev_settings')->where('id', 1)->update($update);
+            Capsule::connection()->transaction(function () use ($update) {
+                \Sahdev\Lib\DiagnosticSettings::save($_POST);
+                Capsule::table('tblsahdev_settings')->where('id', 1)->update($update);
+            });
             $successMessage = 'Tools execution settings saved.';
         }
 
@@ -5746,7 +5752,7 @@ class AdminController
         ?>
         <div class="sahdev-page-container">
             <h2 style="margin-top:0;"><i class="fas fa-tools" style="color: #0d6efd;"></i> Tools Execution</h2>
-            <p class="text-muted">Configure automatic AI-selected tool execution. You can edit both API base URL and OpenAPI spec URL.</p>
+            <p class="text-muted">Manage diagnostic evidence, reconnaissance providers and manual tools.</p>
             <div class="alert alert-info" style="margin-bottom:14px;">
                 <strong><i class="fas fa-clock"></i> Separate Sahdev Cron (recommended)</strong><br>
                 Run this command from server cron:
@@ -5755,6 +5761,7 @@ class AdminController
             </div>
             <form method="post" action="<?php echo $actionUrl; ?>">
                 <?php echo $csrfToken; ?>
+                <?php \Sahdev\Lib\DiagnosticSettings::render(); ?>
                 <div class="checkbox">
                     <label><input type="checkbox" name="tools_execution_enabled" <?php echo !empty($settings->tools_execution_enabled) ? 'checked' : ''; ?>> Enable tools execution module</label>
                 </div>
@@ -5771,7 +5778,7 @@ class AdminController
                 <div class="form-group">
                     <label>Tools OpenAPI URL</label>
                     <input type="text" class="form-control" name="tools_openapi_url" value="<?php echo htmlspecialchars((string) ($settings->tools_openapi_url ?? 'https://toolsapi.2hs.in/openapi.json')); ?>">
-                    <small class="text-muted">Used to fetch allowed operations and build AI tool-selection prompt.</small>
+                    <small class="text-muted">Reference URL. Runtime tools use the reviewed local OpenAPI contract; changing this URL does not grant new tool permissions.</small>
                 </div>
                 <div class="form-group">
                     <label>Tools API Key</label>

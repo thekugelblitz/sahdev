@@ -694,7 +694,7 @@ if ($isClientChatAction) {
             $preview = strlen($messageText) > 60 ? substr($messageText, 0, 60) . '...' : $messageText;
             \Sahdev\Lib\ModuleLogger::info('client_chat', "Received user message: \"{$preview}\" (visitor: " . substr($visitorToken, 0, 8) . "...)");
 
-            $res = \Sahdev\Lib\ChatService::handleClientMessage($visitorToken, $messageText, $clientId, $sessionUuid);
+            $res = \Sahdev\Lib\ChatService::handleClientMessage($visitorToken, $messageText, $clientId, $sessionUuid, (string) ($_POST['client_message_id'] ?? ''));
             echo json_encode(array_merge(['status' => ($res['success'] ?? false) ? 'success' : 'error'], $res));
             exit;
         }

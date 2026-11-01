@@ -33,6 +33,8 @@ class SchemaManager
         self::ensureMobileFcmTokensTable();
         self::ensureCannedResponsesTable();
         self::ensureToolCacheTable();
+        require_once __DIR__ . '/DiagnosticPolicy.php';
+        try { DiagnosticPolicy::migrate(); } catch (\Throwable $e) { error_log('Sahdev diagnostic migration failed: ' . $e->getMessage()); }
     }
 
     /**

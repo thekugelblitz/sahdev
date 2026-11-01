@@ -211,6 +211,10 @@ class CronProcessor
 
         $adminStats = $this->collectAdminStats($ticketId);
         $context    = $this->buildLightContext($ticketId);
+        // Insights reuse recorded diagnostics; they never launch a second tool pipeline.
+        require_once dirname(__DIR__) . '/modules/ToolsExecution/ToolsExecutionService.php';
+        $evidence = \Sahdev\Modules\ToolsExecution\ToolsExecutionService::buildPromptContextBlock($ticketId);
+        if ($evidence !== '') $context['services_summary'] .= "\n" . mb_substr($evidence, 0, 4000);
 
         // Capture the ticket's current lastreply so we can store it
         $ticketLastReply = Capsule::table('tbltickets')

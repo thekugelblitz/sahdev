@@ -201,18 +201,7 @@ class LMStudioAIProvider implements AIProviderInterface
             $payload['tool_choice'] = 'auto';
         }
 
-        try {
-            $res = $this->makeRequest($this->apiUrl, json_encode($payload));
-        } catch (\Exception $e) {
-            // Some local model engines (e.g. older LM Studio, Ollama, small models) reject the 'tools' parameter.
-            // If tools were provided and the request failed, retry gracefully without tools.
-            if (!empty($tools)) {
-                unset($payload['tools'], $payload['tool_choice']);
-                $res = $this->makeRequest($this->apiUrl, json_encode($payload));
-            } else {
-                throw $e;
-            }
-        }
+        $res = $this->makeRequest($this->apiUrl, json_encode($payload));
 
         $message = $res['choices'][0]['message'] ?? [];
         $content = $message['content'] ?? '';

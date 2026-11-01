@@ -10,6 +10,8 @@ require_once dirname(__DIR__, 2) . '/lib/LMStudioAIProvider.php';
 require_once dirname(__DIR__, 2) . '/lib/ReplicateAIProvider.php';
 require_once dirname(__DIR__, 2) . '/lib/TicketDataExtractor.php';
 
+require_once dirname(__DIR__, 2) . '/lib/DiagnosticWorkflow.php';
+
 class ToolsExecutionService
 {
     public const DEFAULT_BASE_URL = 'https://toolsapi.2hs.in';
@@ -89,6 +91,9 @@ class ToolsExecutionService
         array $query = [],
         array $body = []
     ): array {
+        if (\Sahdev\Lib\DiagnosticPolicy::get()['emergency_stop']) {
+            throw new \RuntimeException('Diagnostic emergency stop is enabled.');
+        }
         self::ensureSchema();
         $service = new self();
         $settings = $service->settings();
@@ -116,6 +121,10 @@ class ToolsExecutionService
         }
 
         $finalPath = $service->applyPathParams($path, $pathParams, $ticketId);
+        $sharedTool = \Sahdev\Lib\LiveChatToolService::matchOperation($method, $finalPath);
+        if ($sharedTool && in_array($sharedTool['tool'], \Sahdev\Lib\DiagnosticPolicy::get()['disabled_tools'], true)) {
+            throw new \RuntimeException('This diagnostic tool is disabled.');
+        }
         $baseUrl = rtrim((string) ($settings->tools_api_base_url ?: self::DEFAULT_BASE_URL), '/');
         $url = $baseUrl . $finalPath;
         
@@ -152,7 +161,17 @@ class ToolsExecutionService
             'updated_at' => Carbon::now(),
         ]);
 
-        $exec = $service->executeHttp($url, $method, $apiKey, $query, $body, $timeout);
+        $sharedResult = null;
+        if ($sharedTool) {
+            $sharedResult = \Sahdev\Lib\LiveChatToolService::executeToolCall(
+                $sharedTool['tool'], array_merge($query, $sharedTool['args']), $ticketId,
+                (int) ($ticket->userid ?? 0), 'tickets', microtime(true) + $timeout
+            );
+            $exec = ['status'=>$sharedResult['success'] ? 'ok' : 'error', 'http_status'=>0,
+                'body'=>'', 'error'=>$sharedResult['error'] ?? '', 'cached'=>$sharedResult['cached']];
+        } else {
+            $exec = $service->executeHttp($url, $method, $apiKey, $query, $body, $timeout);
+        }
         
         // Log detailed execution info for debugging
         try {
@@ -165,7 +184,8 @@ class ToolsExecutionService
             ]);
         } catch (\Throwable $e) {}
 
-        $normalized = $service->normalizeOutput($method, $finalPath, (string) ($exec['body'] ?? ''), (array) $settings);
+        $normalized = $sharedResult ? ['summary'=>$sharedResult['summary'], 'json'=>'', 'status'=>$sharedResult['success'] ? 'normalized' : 'failed']
+            : $service->normalizeOutput($method, $finalPath, (string) ($exec['body'] ?? ''), (array) $settings);
         
         // Detailed Debug Trace: Log final result
         try {
@@ -201,7 +221,7 @@ class ToolsExecutionService
             'updated_at' => Carbon::now(),
         ]);
 
-        return ['status' => 'success', 'suggestion_id' => $suggestionId, 'execution' => $exec];
+        return ['status' => $exec['status'] === 'ok' ? 'success' : 'error', 'suggestion_id' => $suggestionId, 'execution' => $exec];
     }
 
     public static function getLatestRunSummary(int $ticketId): ?array
@@ -238,24 +258,43 @@ class ToolsExecutionService
         ];
     }
 
-    public static function buildPromptContextBlock(int $ticketId): string
+    public static function ticketEvidence(int $ticketId, bool $force = false): array
     {
+        try {
+            $ticket = Capsule::table('tbltickets')->where('id', $ticketId)->first();
+            if (!$ticket) return [];
+            $message = Capsule::table('tblticketreplies')->where('tid', $ticketId)->where('admin', '')->orderBy('id', 'desc')->first();
+            $text = $message ? (string) $message->message : (string) $ticket->message;
+            $turn = $message ? 'reply:' . $message->id : 'ticket:' . $ticketId;
+            if ($force) $turn .= ':manual:' . microtime(true);
+            return \Sahdev\Lib\DiagnosticWorkflow::run(strip_tags($text), 'tickets', $ticketId, (int) $ticket->userid, $turn);
+        } catch (\Throwable $e) { return ['status'=>'unavailable', 'notice'=>'Diagnostics unavailable; do not claim live verification.']; }
+    }
+
+    public static function diagnosticContext(int $ticketId, bool $force = false): string
+    {
+        return \Sahdev\Lib\DiagnosticWorkflow::promptBlock(self::ticketEvidence($ticketId, $force));
+    }
+
+    public static function buildPromptContextBlock(int $ticketId, bool $refresh = false): string
+    {
+        $v5 = $refresh ? self::diagnosticContext($ticketId) : '';
         $summary = self::getLatestRunSummary($ticketId);
-        if (!$summary) {
-            return '';
+        if (!$summary || ($v5 !== '' && ($summary['model_name'] ?? '') === 'v5 shared diagnostics')) {
+            return $v5;
         }
-        $includeRawFallback = true;
+        $includeRawFallback = false;
         try {
             $settings = Capsule::table('tblsahdev_settings')->first();
             if ($settings) {
-                $includeRawFallback = !isset($settings->tools_include_raw_fallback) || (int) $settings->tools_include_raw_fallback === 1;
+                $includeRawFallback = false;
             }
         } catch (\Throwable $e) {
         }
 
         $lines = [];
         $lines[] = "=== TOOLS EXECUTION RESULTS (AUTO-RUN) ===";
-        $lines[] = "Status: " . $summary['status'];
+        $lines[] = "Status: " . $summary['status'] . "; recorded at " . $summary['created_at'] . ". Historical evidence; not a fresh check.";
         if (!empty($summary['model_name'])) {
             $lines[] = "Suggestion model: " . $summary['model_name'];
         }
@@ -295,7 +334,7 @@ class ToolsExecutionService
             }
         }
 
-        $body = implode("\n", $lines);
+        $body = $v5 . "\n" . implode("\n", $lines);
         try {
             $tpl = Capsule::table('tblsahdev_prompt_templates')
                 ->where('prompt_key', 'tools_reply_context_wrapper')
@@ -320,7 +359,8 @@ class ToolsExecutionService
             'errors' => [],
         ];
 
-        if (!self::isEnabled()) {
+        $policy = \Sahdev\Lib\DiagnosticPolicy::get();
+        if (!self::isEnabled() || !$policy['enabled'] || !$policy['tickets'] || $policy['emergency_stop']) {
             $result['errors'][] = 'Tools execution is disabled.';
             return $result;
         }
@@ -358,115 +398,28 @@ class ToolsExecutionService
     private function processTicket(int $ticketId, int $adminId, bool $force): array
     {
         self::ensureSchema();
-        $settings = $this->settings();
-        if (empty($settings) || (int) ($settings->tools_execution_enabled ?? 0) !== 1) {
-            throw new \Exception('Tools execution disabled.');
-        }
-
-        $apiKeyEncrypted = (string) ($settings->tools_api_key_encrypted ?? '');
-        $apiKey = $apiKeyEncrypted !== '' ? decrypt($apiKeyEncrypted) : '';
-        if ($apiKey === '') {
-            throw new \Exception('Tools API key missing.');
-        }
-
         $ticket = Capsule::table('tbltickets')->where('id', $ticketId)->first();
-        if (!$ticket) {
-            throw new \Exception('Ticket not found.');
-        }
-
+        if (!$ticket) throw new \RuntimeException('Ticket not found.');
         $lastReply = (string) ($ticket->lastreply ?? '');
-        if (!$force) {
-            $lastDone = Capsule::table('tblsahdev_tool_suggestions')
-                ->where('ticket_id', $ticketId)
-                ->orderBy('id', 'desc')
-                ->first();
-            if ($lastDone && (string) ($lastDone->ticket_last_reply_at ?? '') === $lastReply) {
-                return ['status' => 'skipped', 'message' => 'Already processed for current reply state.'];
-            }
-        }
-
-        $extractor = new \Sahdev\Lib\TicketDataExtractor($ticketId, $adminId);
-        $context = $extractor->getContext(false);
-        $suggestions = $this->generateSuggestions($context, $settings);
-
+        $previous = Capsule::table('tblsahdev_tool_suggestions')->where('ticket_id', $ticketId)->orderBy('id', 'desc')->first();
+        if (!$force && $previous && (string) $previous->ticket_last_reply_at === $lastReply) return ['status'=>'skipped'];
+        $evidence = self::ticketEvidence($ticketId, $force);
+        $now = Carbon::now();
         $suggestionId = Capsule::table('tblsahdev_tool_suggestions')->insertGetId([
-            'ticket_id' => $ticketId,
-            'ticket_last_reply_at' => $lastReply ?: null,
-            'status' => 'suggested',
-            'model_name' => (string) ($settings->model_name ?? ''),
-            'suggestions_json' => json_encode($suggestions),
-            'ai_prompt_excerpt' => substr($this->buildSuggestionPrompt($context), 0, 5000),
-            'created_at' => Carbon::now(),
-            'updated_at' => Carbon::now(),
+            'ticket_id'=>$ticketId, 'ticket_last_reply_at'=>$lastReply ?: null,
+            'status'=>$evidence['status'] ?? 'disabled', 'model_name'=>'v5 shared diagnostics',
+            'suggestions_json'=>json_encode([]), 'ai_prompt_excerpt'=>'Shared scoped diagnostic workflow',
+            'created_at'=>$now, 'updated_at'=>$now,
         ]);
-
-        $baseUrl = rtrim((string) ($settings->tools_api_base_url ?: self::DEFAULT_BASE_URL), '/');
-        $allowed = $this->allowedOperations();
-        $maxTools = max(1, min(50, (int) ($settings->tools_max_tools_per_ticket ?? 50)));
-        $timeout = max(5, min(60, (int) ($settings->tools_request_timeout_sec ?? 60)));
-        $retry = max(0, min(3, (int) ($settings->tools_request_retry_count ?? 3)));
-
-        $picked = array_slice($suggestions, 0, $maxTools);
-        foreach ($picked as $item) {
-            $method = strtoupper((string) ($item['method'] ?? 'GET'));
-            $path = (string) ($item['path'] ?? '');
-            if (!$this->isAllowedOperation($allowed, $method, $path)) {
-                continue;
-            }
-            $pathParams = is_array($item['path_params'] ?? null) ? $item['path_params'] : [];
-            $query = is_array($item['query'] ?? null) ? $item['query'] : [];
-            $body = is_array($item['body'] ?? null) ? $item['body'] : [];
-
-            $finalPath = $this->applyPathParams($path, $pathParams, $ticketId);
-            $url = $baseUrl . $finalPath;
-
-            // Detailed Debug Trace
-            try {
-                Capsule::table('tblsahdev_module_logs')->insert([
-                    'level' => 'debug',
-                    'source' => 'ToolsExecutionService::processTicket',
-                    'message' => sprintf('Auto Execution Line: [%s] path=%s, finalPath=%s, url=%s', $method, $path, $finalPath, $url),
-                    'ticket_id' => $ticketId,
-                    'created_at' => Carbon::now(),
-                ]);
-            } catch (\Throwable $e) {}
-
-            $attempt = 0;
-            $exec = null;
-            do {
-                $exec = $this->executeHttp($url, $method, $apiKey, $query, $body, $timeout);
-                $attempt++;
-            } while ($attempt <= $retry && $exec['status'] === 'error');
-            $normalized = $this->normalizeOutput($method, $finalPath, (string) ($exec['body'] ?? ''), (array) $settings);
-
+        foreach ($evidence['checks'] ?? [] as $check) {
             Capsule::table('tblsahdev_tool_runs')->insert([
-                'suggestion_id' => $suggestionId,
-                'ticket_id' => $ticketId,
-                'method' => $method,
-                'path' => $finalPath,
-                'request_query_json' => json_encode($query),
-                'request_body_json' => json_encode($body),
-                'status' => $exec['status'],
-                'http_status' => (int) ($exec['http_status'] ?? 0),
-                'response_body' => (string) ($exec['body'] ?? ''),
-                'normalized_summary' => (string) ($normalized['summary'] ?? ''),
-                'normalized_json' => (string) ($normalized['json'] ?? ''),
-                'normalization_status' => (string) ($normalized['status'] ?? 'raw'),
-                'normalization_error' => (string) ($normalized['error'] ?? ''),
-                'error_message' => (string) ($exec['error'] ?? ''),
-                'created_at' => Carbon::now(),
-                'updated_at' => Carbon::now(),
+                'suggestion_id'=>$suggestionId, 'ticket_id'=>$ticketId, 'method'=>'GET', 'path'=>$check['tool'],
+                'status'=>$check['success'] ? 'ok' : 'error', 'http_status'=>0,
+                'normalized_summary'=>$check['evidence'], 'normalization_status'=>'v5',
+                'created_at'=>$now, 'updated_at'=>$now,
             ]);
         }
-
-        Capsule::table('tblsahdev_tool_suggestions')
-            ->where('id', $suggestionId)
-            ->update([
-                'status' => 'executed',
-                'updated_at' => Carbon::now(),
-            ]);
-
-        return ['status' => 'success', 'suggestion_id' => $suggestionId];
+        return ['status'=>($evidence['status'] ?? '') === 'unavailable' ? 'error' : 'success', 'suggestion_id'=>$suggestionId, 'evidence'=>$evidence];
     }
 
     private function settings()
@@ -636,11 +589,11 @@ class ToolsExecutionService
     private function queueTickets(array $statuses, int $maxPerRun): array
     {
         return Capsule::table('tbltickets as t')
-            ->leftJoin('tblsahdev_tool_suggestions as s', 's.ticket_id', '=', 't.id')
             ->whereIn('t.status', $statuses)
-            ->where(function ($q) {
-                $q->whereNull('s.ticket_id')
-                    ->orWhereRaw('t.lastreply > s.ticket_last_reply_at');
+            ->whereNotExists(function ($q) {
+                $q->select(Capsule::raw('1'))->from('tblsahdev_tool_suggestions as s')
+                    ->whereRaw('s.ticket_id = t.id')
+                    ->whereRaw("COALESCE(s.ticket_last_reply_at, '1970-01-01') >= COALESCE(t.lastreply, '1970-01-01')");
             })
             ->orderBy('t.lastreply', 'asc')
             ->limit($maxPerRun)
@@ -826,24 +779,6 @@ class ToolsExecutionService
 
     private function loadOpenApiRaw(): string
     {
-        // Prefer admin-configured OpenAPI URL so future endpoint changes
-        // can be handled without code deployment.
-        try {
-            $settings = $this->settings();
-            $url = trim((string) ($settings->tools_openapi_url ?? ''));
-            if ($url === '') {
-                $url = self::DEFAULT_OPENAPI_URL;
-            }
-            if (preg_match('#^https?://#i', $url)) {
-                $remote = @file_get_contents($url);
-                if (is_string($remote) && trim($remote) !== '') {
-                    return $remote;
-                }
-            }
-        } catch (\Throwable $e) {
-            // Fall through to local reference file.
-        }
-
         $root = dirname(__DIR__, 2);
         $file = $root . DIRECTORY_SEPARATOR . self::OPENAPI_REF_FILE;
         if (!is_file($file)) {
@@ -1268,7 +1203,7 @@ class ToolsExecutionService
         curl_close($ch);
 
         return [
-            'status' => $error !== '' ? 'error' : 'ok',
+            'status' => $error !== '' || $httpCode < 200 || $httpCode >= 300 ? 'error' : 'ok',
             'http_status' => $httpCode,
             'body' => is_string($resp) ? $resp : '',
             'error' => $error,
@@ -1277,6 +1212,9 @@ class ToolsExecutionService
 
     private function normalizeOutput(string $method, string $path, string $rawBody, array $settings): array
     {
+        $decoded = \Sahdev\Lib\DiagnosticEvidence::decode($path, $rawBody);
+        if ($method === 'GET') return ['status'=>$decoded['valid'] ? 'normalized' : 'unavailable', 'summary'=>\Sahdev\Lib\DiagnosticEvidence::summary('manual', $path, $rawBody, $path), 'json'=>'', 'error'=>$decoded['error'] ?? ''];
+
         $normalizeEnabled = !array_key_exists('tools_normalize_enabled', $settings) || (int) ($settings['tools_normalize_enabled'] ?? 1) === 1;
         $includeRawFallback = !array_key_exists('tools_include_raw_fallback', $settings) || (int) ($settings['tools_include_raw_fallback'] ?? 1) === 1;
         if (!$normalizeEnabled) {

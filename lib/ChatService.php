@@ -7,6 +7,7 @@ use Carbon\Carbon;
 
 require_once __DIR__ . '/ModuleLogger.php';
 require_once __DIR__ . '/LiveChatToolService.php';
+require_once __DIR__ . '/DiagnosticWorkflow.php';
 
 /**
  * Class ChatService
@@ -573,7 +574,29 @@ class ChatService
     /**
      * Handle incoming visitor message in Client Live Chat.
      */
-    public static function handleClientMessage(string $visitorToken, string $messageText, ?int $clientId = null, ?string $sessionUuid = null): array
+    public static function handleClientMessage(string $visitorToken, string $messageText, ?int $clientId = null, ?string $sessionUuid = null, string $requestId = ''): array
+    {
+        $key = 'chat-turn:' . hash('sha256', ($sessionUuid ?: $visitorToken) . ':' . (int) $clientId);
+        if (!DiagnosticLock::acquire($key)) return ['success' => false, 'error' => 'A reply is already being prepared. Please wait before retrying.'];
+        try {
+            $turnKey = preg_match('/^[a-zA-Z0-9_-]{16,80}$/D', $requestId) ? hash('sha256', $key . ':' . $visitorToken . ':' . $requestId) : '';
+            $bodyHash = hash('sha256', $messageText);
+            if ($turnKey !== '') {
+                try {
+                    $saved = DiagnosticWorkflow::getTurn($turnKey);
+                    if ($saved) return ($saved['body_hash'] ?? '') === $bodyHash ? $saved['response'] : ['success'=>false,'error'=>'Message identifier was already used for different text.'];
+                } catch (\Throwable $e) { /* Older installations retain message-level deduplication. */ }
+            }
+            $response = self::processClientMessage($visitorToken, $messageText, $clientId, $sessionUuid);
+            if ($turnKey !== '' && !empty($response['success'])) {
+                try { DiagnosticWorkflow::saveTurn($turnKey, ['body_hash'=>$bodyHash,'response'=>$response]); } catch (\Throwable $e) { ModuleLogger::warning('client_chat', 'Unable to persist message replay record.'); }
+            }
+            return $response;
+        }
+        finally { DiagnosticLock::release($key); }
+    }
+
+    private static function processClientMessage(string $visitorToken, string $messageText, ?int $clientId = null, ?string $sessionUuid = null): array
     {
         self::ensureUtf8mb4Connection();
 
@@ -715,6 +738,8 @@ class ChatService
 
         if ($recentDuplicate) {
             $userMsgId = (int) $recentDuplicate->id;
+            $previousReply = Capsule::table('tblsahdev_chat_messages')->where('session_id', $sessionId)->where('sender_type', 'assistant')->where('id', '>', $userMsgId)->orderBy('id')->first();
+            if ($previousReply) return ['success' => true, 'message_id' => (int) $previousReply->id, 'user_message_id' => $userMsgId, 'reply' => self::safeDisplayText($previousReply->message_text), 'can_escalate' => true];
         } else {
             $userMsgId = Capsule::table('tblsahdev_chat_messages')->insertGetId([
                 'session_id'   => $sessionId,
@@ -808,6 +833,21 @@ class ChatService
             ];
         }
 
+        $diagnostic = DiagnosticWorkflow::run($messageText, 'livechat', $sessionId, (int) $clientId, (string) $userMsgId);
+        if (($diagnostic['status'] ?? '') === 'clarification') {
+            $question = $diagnostic['question'];
+            $id = self::recordAssistantMessage($sessionId, $question);
+            return ['success' => true, 'reply' => $question, 'message_id' => $id, 'user_message_id' => $userMsgId, 'can_escalate' => true];
+        }
+        $toolCallsExecuted = [];
+        foreach ($diagnostic['checks'] ?? [] as $index => $check) {
+            $toolCallsExecuted[] = ['id' => 'diagnostic_' . $index, 'function' => $check['tool'], 'args' => [], 'result' => $check['evidence'], 'cached' => $check['cached'], 'success' => $check['success']];
+        }
+        if ($toolCallsExecuted && !array_filter($toolCallsExecuted, static function ($call) { return $call['success']; })) {
+            $reply = "I couldn't verify the live checks just now. Please retry shortly, or ask our support team to investigate.";
+            $id = self::recordAssistantMessage($sessionId, $reply, [], $toolCallsExecuted);
+            return ['success'=>true, 'reply'=>$reply, 'message_id'=>$id, 'user_message_id'=>$userMsgId, 'can_escalate'=>true, 'tool_calls'=>$toolCallsExecuted];
+        }
         // 3. Fast Intent Classification & Selective Context Routing (Intercom Fin / Zendesk AI pattern)
         $intent = self::classifyQueryIntent($messageText);
 
@@ -818,13 +858,13 @@ class ChatService
 
         // 3.1 Client Account Context (only when authenticated and not a pure greeting)
         if ($clientId && $clientId > 0) {
-            if (!$intent['is_conversational']) {
+            if (!$intent['is_conversational'] && empty($diagnostic)) {
                 $clientContext = self::getClientScopeSummary($clientId);
             }
         }
 
         // 3.2 Knowledge Base Grounding: strictly on technical/how-to queries (prevent irrelevant KB articles during presales/greetings)
-        if ($intent['is_technical'] && !$intent['is_conversational'] && !$intent['is_presales']) {
+        if (empty($diagnostic) && $intent['is_technical'] && !$intent['is_conversational'] && !$intent['is_presales']) {
             $kbContext = self::searchKnowledgeBase($messageText);
         }
 
@@ -841,7 +881,7 @@ class ChatService
         }
 
         // 3.4 Products/Services & Domain Catalog Grounding: presales or domain inquiries
-        if ($intent['is_presales'] || $intent['is_domain'] || (!$intent['is_conversational'] && !$intent['is_technical'] && !$intent['is_billing'])) {
+        if (empty($diagnostic) && ($intent['is_presales'] || $intent['is_domain'] || (!$intent['is_conversational'] && !$intent['is_technical'] && !$intent['is_billing']))) {
             try {
                 require_once __DIR__ . '/ProductDomainCatalogService.php';
                 if (class_exists('Sahdev\Lib\ProductDomainCatalogService')) {
@@ -965,6 +1005,7 @@ class ChatService
             $modelName = self::getChatSetting('client_chat_model_name', 'openai/gpt-4o-mini');
         }
 
+        $systemPrompt .= "\n" . DiagnosticWorkflow::promptBlock($diagnostic);
         $chatHistory = self::formatOpenAIMessages($sessionId, $systemPrompt);
 
         $settings = [
@@ -972,6 +1013,7 @@ class ChatService
             'temperature' => 0.5,
             'max_tokens'  => 1024,
             'timeout'     => 15,
+            'system_prompt' => $systemPrompt,
         ];
 
         $debugMode = !empty(self::getChatSetting('client_chat_debug', 0));
@@ -1018,107 +1060,22 @@ class ChatService
                 } catch (\Throwable $logEx) {}
             }
 
-            // Evaluate intelligent tool pre-routing for ToolsAPI (only when tool calling is enabled)
-            $isToolCallingEnabled = LiveChatToolService::isEnabled();
-            $exposedTools = [];
-            if ($isToolCallingEnabled) {
-                $preRoute = LiveChatToolService::evaluatePreRoute($messageText, $sessionId, $clientId);
-                $exposedTools = $preRoute['needs_tools'] ? $preRoute['tools'] : [];
-
-                if (!empty($exposedTools) && isset($chatHistory[0]['content'])) {
-                    $chatHistory[0]['content'] .= "\n\n=== DIAGNOSTIC TOOLS AVAILABLE ===\n"
-                        . "You have access to real-time external diagnostic tools (DNS, WHOIS, SSL, Ping, etc.). "
-                        . "When the user asks for technical verification or live status of a domain or host, call the appropriate tool to retrieve verified facts before answering. "
-                        . "If a tool reports an error or unavailable result, say you could not verify the result and do not guess diagnostic facts.";
-                }
-            }
-
-            $toolCallsExecuted = [];
-
+            // v5 diagnostics are completed before synthesis; no second independent tool loop.
             if (method_exists($provider, 'generateChat')) {
-                $res = $provider->generateChat($chatHistory, $exposedTools, $settings);
+                $res = $provider->generateChat($chatHistory, [], $settings);
                 $reply = $res['content'] ?? '';
-                $toolCalls = $res['tool_calls'] ?? [];
-
-                // Server-side Tool Execution Loop (only when enabled and tools were exposed)
-                if ($isToolCallingEnabled && !empty($toolCalls) && !empty($exposedTools)) {
-                    $maxExecutions = LiveChatToolService::getMaxExecutionsPerTurn();
-                    $maxRounds = 2;
-                    $executionsCount = 0;
-                    $round = 0;
-                    $executedSignatures = [];
-
-                    while (!empty($toolCalls) && $round < $maxRounds && $executionsCount < $maxExecutions) {
-                        $chatHistory[] = [
-                            'role'       => 'assistant',
-                            'content'    => $res['content'] ?? null,
-                            'tool_calls' => $toolCalls,
-                        ];
-
-                        foreach ($toolCalls as $tc) {
-                            if ($executionsCount >= $maxExecutions) {
-                                break;
-                            }
-
-                            $fnName = (string) ($tc['function']['name'] ?? '');
-                            $rawArgs = $tc['function']['arguments'] ?? '{}';
-                            $fnArgs = is_array($rawArgs) ? $rawArgs : json_decode((string) $rawArgs, true);
-                            if (!is_array($fnArgs)) {
-                                $fnArgs = [];
-                            }
-
-                            // Deduplication in the same turn: prevent infinite looping on identical tool call
-                            $sig = $fnName . ':' . json_encode($fnArgs);
-                            if (isset($executedSignatures[$sig])) {
-                                $toolResult = [
-                                    'success' => true,
-                                    'summary' => $executedSignatures[$sig],
-                                    'cached'  => true,
-                                ];
-                            } else {
-                                $toolResult = LiveChatToolService::executeToolCall($fnName, $fnArgs, $sessionId, $clientId);
-                                $executedSignatures[$sig] = $toolResult['summary'] ?? '';
-                            }
-
-                            $toolCallsExecuted[] = [
-                                'id'       => $tc['id'] ?? ('call_' . ($executionsCount + 1)),
-                                'function' => $fnName,
-                                'args'     => $fnArgs,
-                                'result'   => $toolResult['summary'] ?? '',
-                                'cached'   => !empty($toolResult['cached']),
-                                'success'  => !empty($toolResult['success']),
-                            ];
-
-                            $chatHistory[] = [
-                                'role'         => 'tool',
-                                'tool_call_id' => $tc['id'] ?? ('call_' . ($executionsCount + 1)),
-                                'name'         => $fnName,
-                                'content'      => (string) ($toolResult['summary'] ?? 'Completed'),
-                            ];
-
-                            $executionsCount++;
-                        }
-
-                        $round++;
-
-                        // In final round or when budget reached, pass empty tools [] to guarantee natural language synthesis
-                        $nextTools = ($executionsCount < $maxExecutions && $round < $maxRounds) ? $exposedTools : [];
-                        $followUpRes = $provider->generateChat($chatHistory, $nextTools, $settings);
-                        $reply = $followUpRes['content'] ?? '';
-                        $toolCalls = $followUpRes['tool_calls'] ?? [];
-                    }
-                }
             } else {
                 $res = $provider->generateResponse([
                     'subject'     => 'Client Live Chat',
                     'client_name' => $senderName,
                     'department'  => 'Customer Support',
-                    'messages'    => [['user' => $senderName, 'message' => $messageText]],
+                    'messages'    => [['user' => $senderName, 'admin'=>false, 'date'=>'', 'message' => $messageText]],
                     '__autopilot_raw_reply__' => true,
                 ], $settings, 'Friendly', $systemPrompt);
-                $reply = $res['CLIENT_REPLY'] ?? '';
+                $reply = $res['__raw_text__'] ?? $res['CLIENT_REPLY'] ?? '';
             }
 
+            ModuleLogger::info('diagnostic_usage', json_encode(['channel' => 'livechat', 'session_id' => $sessionId, 'provider_id' => $pRecord->id ?? null, 'reply_tokens' => $provider->getLastTokenDetails(), 'planner_usage' => $diagnostic['usage'] ?? []]));
             $successfulToolCount = count(array_filter($toolCallsExecuted, static function (array $toolCall): bool {
                 return !empty($toolCall['success']);
             }));
@@ -1128,7 +1085,7 @@ class ChatService
 
             $reply = trim((string) $reply);
             if (empty($reply)) {
-                $reply = "Thank you for reaching out. How else may I assist you with your hosting services today?";
+                throw new \RuntimeException('AI provider returned an empty reply.');
             }
 
             // Smart link normalizer ensures all clientarea URLs are fully qualified
@@ -1166,7 +1123,7 @@ class ChatService
                             $fbModel = !empty($fbData->model_name) ? trim($fbData->model_name) : $modelName;
                             $fbSettings = $settings;
                             $fbSettings['model_name'] = $fbModel;
-                            $fbSettings['timeout'] = 15;
+                            $fbSettings['timeout'] = 10;
                             ModuleLogger::info('client_chat', "Executing fallback provider [{$fbData->name} ({$fbData->provider_type})] model [{$fbModel}]");
 
                             if (method_exists($fbProvider, 'generateChat')) {
@@ -1177,11 +1134,12 @@ class ChatService
                                     'subject'     => 'Client Live Chat',
                                     'client_name' => $senderName,
                                     'department'  => 'Customer Support',
-                                    'messages'    => [['user' => $senderName, 'message' => $messageText]],
+                                    'messages'    => [['user' => $senderName, 'admin'=>false, 'date'=>'', 'message' => $messageText]],
                                     '__autopilot_raw_reply__' => true,
                                 ], $fbSettings, 'Friendly', $systemPrompt);
-                                $fallbackReply = $fbRes['CLIENT_REPLY'] ?? '';
+                                $fallbackReply = $fbRes['__raw_text__'] ?? $fbRes['CLIENT_REPLY'] ?? '';
                             }
+                            ModuleLogger::info('diagnostic_usage', json_encode(['channel'=>'livechat_fallback', 'session_id'=>$sessionId, 'provider_id'=>$fbData->id, 'tokens'=>$fbProvider->getLastTokenDetails()]));
                             $fallbackReply = trim((string) $fallbackReply);
                             if (!empty($fallbackReply)) {
                                 $fallbackSuccess = true;
@@ -1799,7 +1757,7 @@ class ChatService
         return null;
     }
 
-    private static function instantiateProviderFromRecord($pData): ?AIProviderInterface
+    public static function instantiateProviderFromRecord($pData): ?AIProviderInterface
     {
         try {
             $apiKey = !empty($pData->api_key) ? decrypt($pData->api_key) : '';

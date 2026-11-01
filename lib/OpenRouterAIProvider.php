@@ -187,6 +187,8 @@ class OpenRouterAIProvider implements AIProviderInterface
      */
     public function generateChat(array $messages, array $tools = [], array $settings = []): array
     {
+        $this->timeout = max(1, min(60, (int) ($settings['timeout'] ?? 15)));
+        $this->lastTokenDetails = ['input' => 0, 'output' => 0];
         $model = !empty($settings['model_name']) ? $settings['model_name'] : 'anthropic/claude-3.5-sonnet';
 
         $payload = [

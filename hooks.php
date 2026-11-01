@@ -13379,6 +13379,7 @@ DISC;
 
         var form = new FormData();
         form.append('action', 'client_chat_message');
+        form.append('client_message_id', sdvGenerateSecureToken());
         form.append('visitor_token', visitorToken);
         if (sessionUuid) form.append('session_uuid', sessionUuid);
         form.append('message', textToSend);
@@ -13391,19 +13392,7 @@ DISC;
             if (err) {
                 try { inputEl.focus(); } catch(e) {}
 
-                var lower = text.toLowerCase();
-                var fallbackReply = "";
-                if (lower.indexOf('hello') !== -1 || lower.indexOf('hi') !== -1 || lower.indexOf('hey') !== -1) {
-                    fallbackReply = "Hello! I am your Sahdev AI Self-Help Assistant. How can I assist you with your hosting, cPanel, or billing today?";
-                } else if (lower.indexOf('invoice') !== -1 || lower.indexOf('bill') !== -1 || lower.indexOf('payment') !== -1) {
-                    fallbackReply = "Here is a summary of your recent billing transactions:\\n\\n[file:invoice_summary_september.csv]\\n\\nAll invoices are up-to-date and paid. Let me know if you need a receipt copy!";
-                } else if (lower.indexOf('server') !== -1 || lower.indexOf('status') !== -1 || lower.indexOf('uptime') !== -1) {
-                    fallbackReply = "All cloud servers and DNS services are currently **operational** with **99.98%** uptime. No incidents reported in the last 24 hours.";
-                } else if (lower.indexOf('whatsapp') !== -1) {
-                    fallbackReply = "You can connect directly with our technical or sales teams using the **WhatsApp** tab at the top of this widget!";
-                } else {
-                    fallbackReply = "Thank you for reaching out! I've received your request regarding: **\"" + sdvEscapeHtml(text) + "\"**.\\n\\nYou can also browse articles in the **Help & KB** tab or connect directly via **WhatsApp** above.";
-                }
+                var fallbackReply = "Your message could not be confirmed. Please retry shortly or contact support. I cannot verify service or account status right now.";
 
                 if (tempBot) {
                     tempBot.innerHTML = parseSimpleMarkdown(fallbackReply);

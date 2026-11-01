@@ -20,6 +20,10 @@ use Sahdev\Lib\ModuleLogger;
  * - Strict SSRF validation and parameter boundary controls
  * - Compact tool response normalization for minimal LLM token consumption
  */
+require_once __DIR__ . '/DiagnosticPolicy.php';
+require_once __DIR__ . '/DiagnosticLock.php';
+require_once __DIR__ . '/DiagnosticEvidence.php';
+
 class LiveChatToolService
 {
     public const DEFAULT_BASE_URL = 'https://toolsapi.2hs.in';
@@ -50,7 +54,7 @@ class LiveChatToolService
             'method'      => 'GET',
             'path'        => '/dns/{domain}',
             'ttl'         => 300,
-            'description' => 'Resolve the IPv4 A record for a domain.',
+            'description' => 'Resolve the requested DNS record type for a domain.',
         ],
         'toolsapi_dns_propagation' => [
             'category'    => self::CATEGORY_DNS,
@@ -359,6 +363,9 @@ class LiveChatToolService
                         $propDef['default'] = $param['schema']['default'];
                     }
 
+                    foreach (['minimum', 'maximum', 'pattern', 'enum'] as $constraint) {
+                        if (isset($param['schema'][$constraint])) $propDef[$constraint] = $param['schema'][$constraint];
+                    }
                     $properties[$pName] = $propDef;
                     if (!empty($param['required'])) {
                         $required[] = $pName;
@@ -381,8 +388,9 @@ class LiveChatToolService
                 // schema aligned with the server-side enforcement below.
                 $properties['type'] = [
                     'type'        => 'string',
-                    'description' => 'Always use A (IPv4) records. Other record types are not supported by this tool.',
-                    'enum'        => ['A'],
+                    'description' => 'Requested DNS record type. Defaults to A.',
+                    'enum'        => ['A', 'AAAA', 'MX', 'TXT', 'NS', 'CNAME', 'SOA', 'CAA'],
+                    'default' => 'A',
                 ];
             }
 
@@ -390,11 +398,12 @@ class LiveChatToolService
                 'type'     => 'function',
                 'function' => [
                     'name'        => $toolName,
-                    'description' => $meta['description'],
+                    'description' => $toolName === 'toolsapi_dns_lookup' ? 'Read the requested DNS record type for a domain.' : $meta['description'],
                     'parameters'  => [
                         'type'       => 'object',
                         'properties' => $properties,
                         'required'   => $required,
+                        'additionalProperties' => false,
                     ],
                 ],
                 '_meta' => $meta,
@@ -541,6 +550,22 @@ class LiveChatToolService
      * @param string $text
      * @return array ['domains' => [], 'ips' => [], 'urls' => []]
      */
+    public static function matchOperation(string $method, string $path): ?array
+    {
+        if (strtoupper($method) !== 'GET') return null;
+        foreach (self::getToolRegistry() as $name => $tool) {
+            $template = $tool['_meta']['path'];
+            preg_match_all('/\{([^}]+)\}/', $template, $parameters);
+            $pattern = preg_quote($template, '~');
+            foreach ($parameters[0] as $parameter) $pattern = str_replace(preg_quote($parameter, '~'), '([^/]+)', $pattern);
+            if (!preg_match('~^' . $pattern . '$~D', $path, $matches)) continue;
+            $args = [];
+            foreach ($parameters[1] as $i => $parameter) $args[$parameter] = rawurldecode($matches[$i + 1]);
+            return ['tool'=>$name, 'args'=>$args];
+        }
+        return null;
+    }
+
     public static function extractEntities(string $text): array
     {
         preg_match_all('/\b(?:\d{1,3}\.){3}\d{1,3}\b/', $text, $ipMatches);
@@ -654,10 +679,10 @@ class LiveChatToolService
             // Strip protocol or paths if loosely formatted
             $host = preg_replace('#^https?://#i', '', $target);
             $host = explode('/', $host)[0];
-            $host = explode(':', $host)[0]; // strip port
+            $host = filter_var(trim($host, '[]'), FILTER_VALIDATE_IP) ? trim($host, '[]') : explode(':', $host)[0]; // strip port
         }
 
-        $host = strtolower(trim($host));
+        $host = strtolower(trim($host, '[] '));
         if ($host === '') {
             return ['valid' => false, 'sanitized' => '', 'error' => 'Unable to resolve target host.'];
         }
@@ -685,13 +710,14 @@ class LiveChatToolService
                 return ['valid' => false, 'sanitized' => '', 'error' => "Target IP address falls within a private or reserved range ({$host})."];
             }
         } else {
-            // Domain validation & DNS rebinding protection: resolve domain to verify it doesn't map to private IP
+            // Preflight validation only; ToolsAPI must also validate resolved destinations and redirects.
             if (!preg_match('/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/i', $host)) {
                 return ['valid' => false, 'sanitized' => '', 'error' => "Invalid domain syntax ({$host})."];
             }
 
             // Verify DNS resolution doesn't resolve to private range
-            $resolvedIps = @gethostbynamel($host);
+            $resolvedIps = @gethostbynamel($host) ?: [];
+            foreach (@dns_get_record($host, DNS_AAAA) ?: [] as $record) if (!empty($record['ipv6'])) $resolvedIps[] = $record['ipv6'];
             if (is_array($resolvedIps)) {
                 foreach ($resolvedIps as $rip) {
                     if (!filter_var($rip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
@@ -714,9 +740,14 @@ class LiveChatToolService
      * @param int|null $clientId Client ID
      * @return array ['success' => bool, 'summary' => string, 'cached' => bool, 'error' => ?string]
      */
-    public static function executeToolCall(string $toolName, array $args, int $sessionId, ?int $clientId = null): array
+    public static function executeToolCall(string $toolName, array $args, int $sessionId, ?int $clientId = null, string $channel = 'livechat', ?float $deadline = null, bool $fresh = false): array
     {
-        if (!self::isEnabled()) {
+        $policy = DiagnosticPolicy::get();
+        $channelEnabled = self::isEnabled();
+        if ($channel === 'tickets') {
+            try { $channelEnabled = (bool) Capsule::table('tblsahdev_settings')->value('tools_execution_enabled'); } catch (\Throwable $e) { $channelEnabled = false; }
+        }
+        if (!$channelEnabled || $policy['emergency_stop']) {
             return [
                 'success' => false,
                 'summary' => 'Tool calling is currently disabled for live chat.',
@@ -738,38 +769,20 @@ class LiveChatToolService
         $meta = $registry[$toolName]['_meta'];
         $pathPattern = $meta['path'];
         $method = strtoupper($meta['method']);
-        $ttl = $meta['ttl'] ?? self::getDefaultCacheTtl();
+        $ttl = min($meta['ttl'] ?? 900, self::getDefaultCacheTtl());
 
-        // 1. Identify and sanitize primary target parameter (domain, host, target, ip, url)
-        $targetParamName = 'domain';
-        if (isset($args['target'])) {
-            $targetParamName = 'target';
-        } elseif (isset($args['host'])) {
-            $targetParamName = 'host';
-        } elseif (isset($args['ip'])) {
-            $targetParamName = 'ip';
-        } elseif (isset($args['url'])) {
-            $targetParamName = 'url';
-        } elseif (isset($args['domain'])) {
-            $targetParamName = 'domain';
+        if (in_array($toolName, $policy['disabled_tools'], true)) return ['success'=>false,'cached'=>false,'summary'=>'This diagnostic is disabled.','error'=>'disabled'];
+        $schema = $registry[$toolName]['function']['parameters'];
+        foreach ($args as $key => $value) {
+            if (!isset($schema['properties'][$key]) || !is_scalar($value)) return ['success'=>false,'cached'=>false,'summary'=>'Invalid diagnostic arguments.','error'=>'invalid_arguments'];
+            $rule = $schema['properties'][$key];
+            if (($rule['type'] ?? '') === 'string' && !is_string($value) || ($rule['type'] ?? '') === 'integer' && !is_int($value) || isset($rule['enum']) && !in_array($value, $rule['enum'], true) || isset($rule['minimum']) && $value < $rule['minimum'] || isset($rule['maximum']) && $value > $rule['maximum'] || isset($rule['pattern']) && !preg_match('~' . str_replace('~', '\~', $rule['pattern']) . '~D', (string) $value)) return ['success'=>false,'cached'=>false,'summary'=>'Diagnostic argument outside permitted bounds.','error'=>'invalid_arguments'];
         }
-
+        foreach ($schema['properties'] as $key => $rule) if (!isset($args[$key]) && isset($rule['default'])) $args[$key] = $rule['default'];
+        preg_match('/\{([^}]+)\}/', $pathPattern, $binding);
+        $targetParamName = $binding[1] ?? '';
         $rawTarget = (string) ($args[$targetParamName] ?? '');
-        if ($rawTarget === '') {
-            // Attempt to resolve target from context if omitted by model
-            $contextTarget = self::resolveContextTarget($sessionId, $clientId);
-            if (!empty($contextTarget)) {
-                $rawTarget = $contextTarget;
-                $args[$targetParamName] = $rawTarget;
-            } else {
-                return [
-                    'success' => false,
-                    'summary' => "Error: Missing required target parameter for {$toolName}.",
-                    'cached'  => false,
-                    'error'   => 'missing_target',
-                ];
-            }
-        }
+        if ($rawTarget === '') return ['success'=>false,'cached'=>false,'summary'=>'Please specify the diagnostic target.','error'=>'missing_target'];
 
         // 2. Strict SSRF Guard
         $secCheck = self::validateTargetSecurity($rawTarget);
@@ -784,10 +797,15 @@ class LiveChatToolService
 
         $sanitizedTarget = $secCheck['sanitized'];
         $args[$targetParamName] = $sanitizedTarget;
+        if (in_array($targetParamName, ['url', 'target'], true) && preg_match('~^https?://~i', $rawTarget)) {
+            $parts = parse_url($rawTarget);
+            if (isset($parts['user']) || isset($parts['pass']) || isset($parts['port']) && !in_array($parts['port'], [80, 443], true)) return ['success'=>false,'cached'=>false,'summary'=>'Unsupported URL credentials or port.','error'=>'invalid_url'];
+            $args[$targetParamName] = strtolower($parts['scheme']) . '://' . (strpos($sanitizedTarget, ':') !== false ? '[' . $sanitizedTarget . ']' : $sanitizedTarget) . ($parts['path'] ?? '/') . (isset($parts['query']) ? '?' . $parts['query'] : '');
+        }
 
         // 3. Cache & Deduplication Check
         $cacheKey = self::generateCacheKey($toolName, $args);
-        $cachedResult = self::getCachedResult($cacheKey);
+        $cachedResult = $fresh ? null : self::getCachedResult($cacheKey);
         if ($cachedResult !== null) {
             ModuleLogger::info('client_chat_tools', "Cache HIT for {$toolName} [target: {$sanitizedTarget}]");
             return [
@@ -801,38 +819,22 @@ class LiveChatToolService
 
         // 4. In-Flight Request Deduplication / Concurrency Lock
         $locked = self::acquireLock($cacheKey);
-        if (!$locked) {
-            // Another concurrent process is executing this exact call; wait briefly for its completion
-            for ($i = 0; $i < 6; $i++) {
-                usleep(250000); // 250ms
-                $cachedResult = self::getCachedResult($cacheKey);
-                if ($cachedResult !== null) {
-                    ModuleLogger::info('client_chat_tools', "Coalesced in-flight duplicate for {$toolName} [target: {$sanitizedTarget}]");
-                    return [
-                        'success' => true,
-                        'summary' => $cachedResult['normalized_summary'],
-                        'data'    => $cachedResult['data'],
-                        'cached'  => true,
-                        'error'   => null,
-                    ];
-                }
-            }
-        }
+        if (!$locked) return ['success'=>false,'cached'=>false,'summary'=>'The same diagnostic is already running; please retry shortly.','error'=>'in_flight'];
 
         // 5. Upstream HTTP Execution
         try {
             $startTime = microtime(true);
-            $httpResult = self::executeUpstreamHttp($method, $pathPattern, $args);
+            $httpResult = self::executeUpstreamHttp($method, $pathPattern, $args, $deadline);
             $latencyMs = (int) round((microtime(true) - $startTime) * 1000);
 
             $httpStatus = (int) ($httpResult['http_status'] ?? 0);
             $rawBody = (string) ($httpResult['body'] ?? '');
 
-            if ($httpResult['status'] !== 'ok' || $httpStatus >= 400) {
+            if ($httpResult['status'] !== 'ok' || $httpStatus < 200 || $httpStatus >= 300) {
                 self::releaseLock($cacheKey);
                 $errDetail = !empty($httpResult['error']) ? $httpResult['error'] : "HTTP {$httpStatus}";
-                $execUrl = $httpResult['url'] ?? '';
-                $bodyExcerpt = substr(trim($rawBody), 0, 300);
+                $execUrl = $pathPattern; // Never log URL query strings or upstream response bodies.
+                $bodyExcerpt = '';
                 $attempts = (int) ($httpResult['attempts'] ?? 1);
                 ModuleLogger::warning('client_chat_tools', "ToolsAPI execution failed for {$toolName} [{$sanitizedTarget}] after {$attempts} attempt(s): {$errDetail} - URL: {$execUrl}" . ($bodyExcerpt !== '' ? " - Response: {$bodyExcerpt}" : ''));
                 return [
@@ -847,9 +849,18 @@ class LiveChatToolService
                 ModuleLogger::info('client_chat_tools', "ToolsAPI recovered for {$toolName} [{$sanitizedTarget}] after " . (int) $httpResult['attempts'] . " attempts (HTTP {$httpStatus})");
             }
 
+            $contract = DiagnosticEvidence::decode($pathPattern, $rawBody);
+            if (!$contract['valid']) return ['success'=>false,'cached'=>false,'summary'=>$contract['error'],'error'=>'invalid_response'];
             // 6. Compact Output Normalization
             $normalizedSummary = self::normalizeOutput($toolName, $pathPattern, $rawBody, $sanitizedTarget);
 
+            if (isset($contract['data']['records']) && is_array($contract['data']['records'])) {
+                foreach ($contract['data']['records'] as $record) if (is_array($record) && isset($record['ttl'])) $ttl = min($ttl, max(0, (int) $record['ttl']));
+            }
+            if (!empty($contract['data']['metadata']['cached'])) {
+                $observed = strtotime((string) ($contract['data']['metadata']['timestamp'] ?? ''));
+                $ttl = $observed ? max(0, $ttl - max(0, time() - $observed)) : 0;
+            }
             // 7. Store in Persistent Cache
             self::storeCache($cacheKey, $toolName, $sanitizedTarget, $args, $rawBody, $normalizedSummary, $ttl);
 
@@ -878,11 +889,11 @@ class LiveChatToolService
             ModuleLogger::error('client_chat_tools', "Exception executing {$toolName}: " . $e->getMessage());
             return [
                 'success' => false,
-                'summary' => "Diagnostic execution encountered an error: " . $e->getMessage(),
+                'summary' => 'Diagnostic execution is unavailable. Please retry shortly.',
                 'cached'  => false,
-                'error'   => $e->getMessage(),
+                'error'   => 'execution_failed',
             ];
-        }
+        } finally { self::releaseLock($cacheKey); }
     }
 
     /**
@@ -890,111 +901,7 @@ class LiveChatToolService
      */
     public static function normalizeOutput(string $toolName, string $path, string $rawBody, string $target): string
     {
-        $decoded = json_decode($rawBody, true);
-        if (!is_array($decoded)) {
-            return "Response for {$target}: " . substr(trim($rawBody), 0, 500);
-        }
-
-        switch ($toolName) {
-            case 'toolsapi_dns_lookup':
-                $records = $decoded['records'] ?? [];
-                if (empty($records)) {
-                    return "DNS lookup for {$target}: No records found.";
-                }
-                $lines = [];
-                foreach (array_slice($records, 0, 8) as $rec) {
-                    $type = $rec['type'] ?? 'RECORD';
-                    $val = $rec['value'] ?? ($rec['data'] ?? '');
-                    $lines[] = "- {$type}: {$val}";
-                }
-                return "DNS Records for {$target}:\n" . implode("\n", $lines);
-
-            case 'toolsapi_dns_propagation':
-                $servers = $decoded['servers'] ?? ($decoded['results'] ?? []);
-                $total = count($servers);
-                $resolved = 0;
-                foreach ($servers as $srv) {
-                    if (!empty($srv['records']) || (!empty($srv['status']) && $srv['status'] === 'ok')) {
-                        $resolved++;
-                    }
-                }
-                return "DNS Propagation for {$target}: {$resolved}/{$total} global resolvers confirmed active propagation.";
-
-            case 'toolsapi_ssl_inspect':
-                $valid = !empty($decoded['is_valid']) ? 'VALID' : 'INVALID/EXPIRED';
-                $days = $decoded['days_remaining'] ?? 'unknown';
-                $issuer = $decoded['issuer']['commonName'] ?? ($decoded['issuer'] ?? 'Unknown');
-                $expiry = $decoded['valid_to'] ?? ($decoded['expiry_date'] ?? 'unknown');
-                return "SSL Inspection for {$target}:\n- Status: {$valid}\n- Issuer: {$issuer}\n- Days Remaining: {$days}\n- Expires: {$expiry}";
-
-            case 'toolsapi_whois_query':
-                $registrar = $decoded['registrar'] ?? 'Unknown';
-                $created = $decoded['creation_date'] ?? 'Unknown';
-                $expiry = $decoded['expiration_date'] ?? 'Unknown';
-                $status = is_array($decoded['status'] ?? null) ? implode(', ', array_slice($decoded['status'], 0, 3)) : ($decoded['status'] ?? 'Active');
-                $ns = is_array($decoded['nameservers'] ?? null) ? implode(', ', $decoded['nameservers']) : ($decoded['nameservers'] ?? 'None');
-                return "WHOIS Details for {$target}:\n- Registrar: {$registrar}\n- Created: {$created}\n- Expires: {$expiry}\n- Status: {$status}\n- Nameservers: {$ns}";
-
-            case 'toolsapi_domain_age':
-                $age = $decoded['age_human'] ?? ($decoded['age_days'] ? "{$decoded['age_days']} days" : 'Unknown');
-                $created = $decoded['created'] ?? 'Unknown';
-                return "Domain Age for {$target}: Registered on {$created} ({$age} old).";
-
-            case 'toolsapi_ping':
-                $loss = $decoded['packet_loss'] ?? ($decoded['loss_percentage'] ?? '0%');
-                $avgRtt = $decoded['avg_rtt'] ?? ($decoded['rtt_avg'] ?? 'N/A');
-                $status = ($loss === '100%' || $loss === 100) ? 'HOST UNREACHABLE' : 'HOST REACHABLE';
-                return "Ping Diagnostics for {$target}:\n- Status: {$status}\n- Packet Loss: {$loss}\n- Round-Trip Average: {$avgRtt} ms";
-
-            case 'toolsapi_traceroute':
-                $hops = $decoded['hops'] ?? [];
-                $count = count($hops);
-                $finalHop = !empty($hops) ? end($hops) : null;
-                $finalIp = $finalHop['ip'] ?? 'target reached';
-                return "Traceroute to {$target}: Completed in {$count} hops. Destination reached at {$finalIp}.";
-
-            case 'toolsapi_pagespeed':
-                $score = $decoded['performance_score'] ?? ($decoded['score'] ?? 'N/A');
-                $strategy = $decoded['strategy'] ?? 'mobile';
-                $fcp = $decoded['first_contentful_paint'] ?? 'N/A';
-                $lcp = $decoded['largest_contentful_paint'] ?? 'N/A';
-                return "PageSpeed ({$strategy}) for {$target}:\n- Performance Score: {$score}/100\n- First Contentful Paint: {$fcp}\n- Largest Contentful Paint: {$lcp}";
-
-            case 'toolsapi_techstack':
-                $techs = $decoded['technologies'] ?? ($decoded['tech_stack'] ?? []);
-                $list = [];
-                if (is_array($techs)) {
-                    foreach (array_slice($techs, 0, 6) as $t) {
-                        $name = is_array($t) ? ($t['name'] ?? '') : (string) $t;
-                        if ($name !== '') $list[] = $name;
-                    }
-                }
-                $techStr = !empty($list) ? implode(', ', $list) : 'Standard Web Stack';
-                return "Technology Stack for {$target}: {$techStr}";
-
-            case 'toolsapi_emailsec':
-                $spf = !empty($decoded['has_spf']) || !empty($decoded['spf_record']) ? 'CONFIGURED' : 'MISSING';
-                $dmarc = !empty($decoded['has_dmarc']) || !empty($decoded['dmarc_record']) ? 'CONFIGURED' : 'MISSING';
-                $policy = $decoded['dmarc_policy'] ?? 'none';
-                return "Email Security for {$target}:\n- SPF: {$spf}\n- DMARC: {$dmarc} (Policy: {$policy})";
-
-            case 'toolsapi_dnsbl':
-                $listed = !empty($decoded['is_listed']) ? 'LISTED ON BLACKLIST' : 'CLEAN (Not Blacklisted)';
-                $count = $decoded['listed_count'] ?? 0;
-                return "IP Reputation (DNSBL) for {$target}: {$listed} ({$count} detections).";
-
-            default:
-                // Generic compact key-value summary
-                $keys = array_slice(array_keys($decoded), 0, 8);
-                $summaryPairs = [];
-                foreach ($keys as $k) {
-                    $val = $decoded[$k];
-                    if (is_scalar($val)) {
-                        $summaryPairs[] = "- {$k}: {$val}";
-                    }
-                }
-                return "Diagnostic Result for {$target}:\n" . implode("\n", $summaryPairs);
-        }
+        return DiagnosticEvidence::summary($toolName, $path, $rawBody, $target);
     }
 
     /**
@@ -1065,10 +972,9 @@ class LiveChatToolService
             }
         }
 
-        // Live chat DNS lookup is IPv4-only, even if the model requests AAAA or
-        // another DNS record type. Explicitly send A so upstream behavior is stable.
+        // Preserve the requested record type; schema validation restricts automatic calls.
         if (preg_match('#^/dns/[^/?]+$#i', $finalPath)) {
-            $queryParams['type'] = 'A';
+            $queryParams['type'] = $args['type'] ?? 'A';
         }
 
         $url = rtrim($baseUrl, '/') . $finalPath;
@@ -1083,7 +989,7 @@ class LiveChatToolService
     /**
      * Upstream HTTP client with authentication and path parameter binding.
      */
-    private static function executeUpstreamHttp(string $method, string $pathPattern, array $args): array
+    private static function executeUpstreamHttp(string $method, string $pathPattern, array $args, ?float $outerDeadline = null): array
     {
         try {
             $settings = Capsule::table('tblsahdev_settings')->first();
@@ -1117,7 +1023,7 @@ class LiveChatToolService
 
         // Keep retries inside the interactive SLA instead of allowing each retry a fresh 15 seconds.
         $startedAt = microtime(true);
-        $deadline = $startedAt + self::UPSTREAM_TOTAL_TIMEOUT_SEC;
+        $deadline = min($outerDeadline ?? PHP_FLOAT_MAX, $startedAt + self::UPSTREAM_TOTAL_TIMEOUT_SEC);
         $configuredRetries = (int) ($settings->tools_request_retry_count ?? self::UPSTREAM_MAX_RETRIES);
         $retryLimit = max(0, min(self::UPSTREAM_MAX_RETRIES, $configuredRetries));
         $attemptLimit = $retryLimit + 1;
@@ -1147,10 +1053,16 @@ class LiveChatToolService
                 break;
             }
             $responseHeaders = [];
+            $responseBody = '';
 
             $optionsSet = curl_setopt_array($ch, [
                 CURLOPT_RETURNTRANSFER    => true,
                 CURLOPT_TIMEOUT_MS         => $requestTimeoutMs,
+                CURLOPT_WRITEFUNCTION => static function ($handle, string $chunk) use (&$responseBody): int {
+                    if (strlen($responseBody) + strlen($chunk) > 1048576) return 0;
+                    $responseBody .= $chunk;
+                    return strlen($chunk);
+                },
                 CURLOPT_CONNECTTIMEOUT_MS  => min(5000, $requestTimeoutMs),
                 CURLOPT_SSL_VERIFYPEER    => true,
                 CURLOPT_SSL_VERIFYHOST    => 2,
@@ -1188,7 +1100,7 @@ class LiveChatToolService
             $result = [
                 'status'      => $error !== '' ? 'error' : 'ok',
                 'http_status' => $httpCode,
-                'body'        => is_string($resp) ? $resp : '',
+                'body'        => $responseBody,
                 'error'       => $error,
                 'url'         => $url,
                 'attempts'    => $attempt,
@@ -1232,7 +1144,8 @@ class LiveChatToolService
     private static function generateCacheKey(string $toolName, array $args): string
     {
         ksort($args);
-        return md5('toolsapi:' . $toolName . ':' . json_encode($args));
+        try { $backend = (string) Capsule::table('tblsahdev_settings')->value('tools_api_base_url'); } catch (\Throwable $e) { $backend = self::DEFAULT_BASE_URL; }
+        return hash('sha256', 'v5:' . $backend . ':' . $toolName . ':' . json_encode($args));
     }
 
     /**
@@ -1253,7 +1166,7 @@ class LiveChatToolService
 
             if ($entry) {
                 return [
-                    'normalized_summary' => (string) $entry->normalized_summary,
+                    'normalized_summary' => (string) $entry->normalized_summary . '\n[Sahdev cache stored at ' . $entry->updated_at . '; expires ' . $entry->expires_at . ']',
                     'data'               => json_decode((string) $entry->response_data, true),
                 ];
             }
@@ -1267,57 +1180,14 @@ class LiveChatToolService
      */
     private static function acquireLock(string $cacheKey): bool
     {
-        try {
-            if (!Capsule::schema()->hasTable('tblsahdev_tool_cache')) {
-                return true;
-            }
-
-            $now = Carbon::now();
-            $lockUntil = Carbon::now()->addSeconds(10);
-
-            $existing = Capsule::table('tblsahdev_tool_cache')->where('cache_key', $cacheKey)->first();
-            if ($existing) {
-                if ($existing->is_locked && $existing->locked_until && Carbon::parse($existing->locked_until)->isFuture()) {
-                    return false; // locked by another process
-                }
-                Capsule::table('tblsahdev_tool_cache')->where('cache_key', $cacheKey)->update([
-                    'is_locked'    => 1,
-                    'locked_until' => $lockUntil,
-                    'updated_at'   => $now,
-                ]);
-            } else {
-                Capsule::table('tblsahdev_tool_cache')->insert([
-                    'cache_key'    => $cacheKey,
-                    'tool_name'    => '',
-                    'target'       => '',
-                    'status'       => 'in_flight',
-                    'is_locked'    => 1,
-                    'locked_until' => $lockUntil,
-                    'expires_at'   => $lockUntil,
-                    'created_at'   => $now,
-                    'updated_at'   => $now,
-                ]);
-            }
-            return true;
-        } catch (\Throwable $e) {
-            return true;
-        }
+        return DiagnosticLock::acquire('tool:' . $cacheKey);
     }
 
-    /**
-     * Release concurrency lock.
-     */
     private static function releaseLock(string $cacheKey): void
     {
-        try {
-            if (Capsule::schema()->hasTable('tblsahdev_tool_cache')) {
-                Capsule::table('tblsahdev_tool_cache')->where('cache_key', $cacheKey)->update([
-                    'is_locked'    => 0,
-                    'locked_until' => null,
-                ]);
-            }
-        } catch (\Throwable $e) {}
+        DiagnosticLock::release('tool:' . $cacheKey);
     }
+
 
     /**
      * Store successful result in persistent cache.
