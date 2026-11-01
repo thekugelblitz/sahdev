@@ -1,0 +1,66 @@
+/* Per-staff Command Station experiences. All colors inherit the active Sahdev mode. */
+#sahdev-ai-panel { --sdv-command-accent:#6366f1; }
+#sahdev-ai-panel[data-sdv-accent="teal"] { --sdv-command-accent:#0d9488; }
+#sahdev-ai-panel[data-sdv-accent="amber"] { --sdv-command-accent:#d97706; }
+#sahdev-ai-panel.sahdev-remastered > .panel-heading { border-bottom:3px solid var(--sdv-command-accent) !important; }
+#sahdev-ai-panel .sahdev-rm-tab.active { color:var(--sdv-command-accent) !important; border-bottom-color:var(--sdv-command-accent) !important; }
+#sahdev-ai-panel .sahdev-intent-active { background:var(--sdv-command-accent) !important; border-color:var(--sdv-command-accent) !important; }
+#sahdev-ai-panel .sahdev-rm-tech-toggle { background:var(--sdv-bg-nested) !important; color:var(--sdv-text-primary) !important; border-left-color:var(--sdv-command-accent) !important; }
+#sahdev-ai-panel .sahdev-rm-tech-toggle i { color:var(--sdv-command-accent) !important; }
+#sahdev-ai-panel #sahdev-results .well { background:var(--sdv-bg-surface) !important; border-color:var(--sdv-border) !important; color:var(--sdv-text-primary) !important; }
+#sahdev-ai-panel #sahdev-results .well strong,
+#sahdev-ai-panel #sahdev-results .well p,
+#sahdev-ai-panel #sahdev-out-plan { color:var(--sdv-text-primary) !important; }
+#sahdev-ai-panel #sahdev-out-plan { border-color:var(--sdv-border) !important; background:var(--sdv-bg-nested) !important; }
+#sahdev-ai-panel #sahdev-results .panel,
+#sahdev-ai-panel #sahdev-results .panel-heading,
+#sahdev-ai-panel #sahdev-results .panel-body { border-color:var(--sdv-border) !important; color:var(--sdv-text-primary) !important; background:var(--sdv-bg-surface) !important; }
+#sahdev-ai-panel .sahdev-rm-tabs { background:var(--sdv-bg-nested) !important; }
+#sahdev-ai-panel .sahdev-rm-tab { color:var(--sdv-text-secondary) !important; }
+#sahdev-ai-panel .sahdev-rm-tab:hover { background:var(--sdv-hover) !important; }
+#sahdev-ai-panel .sahdev-rm-tab { border-top:0; border-left:0; border-right:0; background:transparent; font-family:inherit; }
+#sahdev-ai-panel .sahdev-rm-tab:focus-visible { outline:2px solid var(--sdv-command-accent); outline-offset:-3px; }
+
+/* Focus: a quiet writing desk, with the client reply leading the analysis. */
+#sahdev-ai-panel.sdv-layout-focus { max-width:1250px; margin-inline:auto; }
+#sahdev-ai-panel.sdv-layout-focus .sahdev-rm-tabs { justify-content:center; }
+#sahdev-ai-panel.sdv-layout-focus #sahdev-intent-btns { max-width:1000px; }
+#sahdev-ai-panel.sdv-layout-focus #sahdev-results > .row { display:flex; flex-direction:row-reverse; flex-wrap:wrap; gap:16px; }
+#sahdev-ai-panel.sdv-layout-focus #sahdev-results > .row > [class*="col-"] { float:none; flex:1 1 390px; min-width:0; }
+#sahdev-ai-panel.sdv-layout-focus #sahdev-results > .row > [class*="col-"]:last-child { flex-grow:1.25; }
+#sahdev-ai-panel.sdv-layout-focus #sahdev-results .panel-body { max-height:470px !important; }
+
+/* Canvas: persistent inputs on the left, answer and evidence on the right. */
+#sahdev-ai-panel.sdv-layout-canvas #rm-pane-analysis.active { display:grid; grid-template-columns:minmax(310px, min(38%, 500px)) minmax(0,1fr); gap:18px; align-items:start; }
+#sahdev-ai-panel.sdv-layout-canvas #sahdev-ai-form { grid-column:1; grid-row:1 / span 3; position:sticky; top:12px; border:1px solid var(--sdv-border); background:var(--sdv-bg-nested); border-radius:12px; padding:16px; max-height:80vh; overflow:auto; }
+#sahdev-ai-panel.sdv-layout-canvas #sahdev-results,
+#sahdev-ai-panel.sdv-layout-canvas #sahdev-loading,
+#sahdev-ai-panel.sdv-layout-canvas #sahdev-error { grid-column:2; min-width:0; }
+#sahdev-ai-panel.sdv-layout-canvas #sahdev-results { margin-top:0 !important; }
+#sahdev-ai-panel.sdv-layout-canvas #sahdev-results .row > [class*="col-"] { width:100%; float:none; }
+#sahdev-ai-panel.sdv-layout-canvas #sahdev-results .panel-body { max-height:520px !important; }
+
+/* Console: a compact operations rail with strong evidence hierarchy. */
+#sahdev-ai-panel.sdv-layout-console #sahdev-ai-body { display:grid !important; grid-template-columns:158px minmax(0,1fr); }
+#sahdev-ai-panel.sdv-layout-console .sahdev-rm-tabs { display:flex; flex-direction:column; padding:14px 8px; border-right:1px solid var(--sdv-border); border-bottom:0; min-height:380px; gap:4px; }
+#sahdev-ai-panel.sdv-layout-console .sahdev-rm-tab { border:0; border-left:3px solid transparent; border-radius:6px; margin:0; padding:11px; }
+#sahdev-ai-panel.sdv-layout-console .sahdev-rm-tab.active { border-left-color:var(--sdv-command-accent) !important; background:var(--sdv-hover) !important; }
+#sahdev-ai-panel.sdv-layout-console .sahdev-rm-pane.active { min-width:0; }
+#sahdev-ai-panel.sdv-layout-console #sahdev-results .well { border-left:3px solid var(--sdv-command-accent) !important; border-radius:3px !important; }
+#sahdev-ai-panel.sdv-layout-console #sahdev-out-plan { font-family:ui-monospace,SFMono-Regular,Consolas,monospace; }
+
+/* Spacing variants apply to every layout and color scheme. */
+#sahdev-ai-panel[data-sdv-density="compact"] .sahdev-rm-pane { padding:9px 11px !important; }
+#sahdev-ai-panel[data-sdv-density="compact"] .sahdev-rm-tab { padding:6px 9px; }
+#sahdev-ai-panel[data-sdv-density="compact"] #sahdev-results .well { padding:7px 9px !important; margin-bottom:6px !important; }
+#sahdev-ai-panel[data-sdv-density="featured"] .sahdev-rm-pane { padding:22px 26px !important; }
+#sahdev-ai-panel[data-sdv-density="featured"] .sahdev-rm-tab { padding:13px 18px; }
+#sahdev-ai-panel[data-sdv-density="featured"] #sahdev-results .well { padding:18px !important; margin-bottom:16px !important; }
+#sahdev-ai-panel[data-sdv-density="featured"] #sahdev-results .panel-body { max-height:560px !important; }
+@media(max-width:900px) {
+  #sahdev-ai-panel.sdv-layout-canvas #rm-pane-analysis.active { display:block; }
+  #sahdev-ai-panel.sdv-layout-canvas #sahdev-ai-form { position:static; max-height:none; margin-bottom:16px; }
+  #sahdev-ai-panel.sdv-layout-console #sahdev-ai-body { display:block !important; }
+  #sahdev-ai-panel.sdv-layout-console .sahdev-rm-tabs { flex-direction:row; min-height:0; overflow-x:auto; border-right:0; border-bottom:1px solid var(--sdv-border); }
+  #sahdev-ai-panel.sdv-layout-console .sahdev-rm-tab { white-space:nowrap; }
+}

@@ -82,13 +82,16 @@ class AdminPreferences
     /** Valid UI theme identifiers. */
     public const THEME_CLASSIC     = 'classic';
     public const THEME_REMASTERED  = 'remastered';
+    public const THEME_FOCUS = 'focus';
+    public const THEME_CANVAS = 'canvas';
+    public const THEME_CONSOLE = 'console';
 
     /** Valid theme appearance modes (color schemes). */
     public const THEME_MODE_WHITE = 'white';
     public const THEME_MODE_DARK  = 'dark';
     public const THEME_MODE_BLACK = 'black'; // Charcoal Black #222222 & #000000 combined
 
-    private static array $validThemes = [self::THEME_CLASSIC, self::THEME_REMASTERED];
+    private static array $validThemes = [self::THEME_CLASSIC, self::THEME_REMASTERED, self::THEME_FOCUS, self::THEME_CANVAS, self::THEME_CONSOLE];
     private static array $validThemeModes = [self::THEME_MODE_WHITE, self::THEME_MODE_DARK, self::THEME_MODE_BLACK];
 
     public static function load(int $adminId): array
@@ -145,6 +148,17 @@ class AdminPreferences
         if (array_key_exists('theme_mode', $raw)) {
             $mode = strtolower(trim((string) ($raw['theme_mode'] ?? '')));
             $out['theme_mode'] = in_array($mode, self::$validThemeModes, true) ? $mode : null;
+        }
+        if (array_key_exists('panel_density', $raw)) {
+            $density = strtolower(trim((string) $raw['panel_density']));
+            $out['panel_density'] = in_array($density, ['compact', 'comfortable', 'featured'], true) ? $density : 'comfortable';
+        }
+        if (array_key_exists('panel_accent', $raw)) {
+            $accent = strtolower(trim((string) $raw['panel_accent']));
+            $out['panel_accent'] = in_array($accent, ['indigo', 'teal', 'amber'], true) ? $accent : 'indigo';
+        }
+        foreach (['panel_show_server', 'panel_show_appearance'] as $key) {
+            if (array_key_exists($key, $raw)) $out[$key] = !empty($raw[$key]);
         }
         $featIn = isset($raw['features']) && is_array($raw['features']) ? $raw['features'] : [];
         foreach (self::allFeatureKeys() as $k) {
@@ -389,6 +403,10 @@ class AdminPreferences
             'tone_default'        => null,
             'ui_theme'            => self::THEME_REMASTERED,
             'theme_mode'          => null, // Inherit the workspace default until explicitly selected.
+            'panel_density'       => 'comfortable',
+            'panel_accent'        => 'indigo',
+            'panel_show_server'   => true,
+            'panel_show_appearance' => true,
             'features'            => $features,
         ];
     }

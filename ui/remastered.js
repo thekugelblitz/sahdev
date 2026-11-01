@@ -24,12 +24,12 @@
         { id: 'rm-tab-memory',   icon: '🧠', label: 'Memory',   pane: 'rm-pane-memory' }
     ];
 
-    var tabBarHtml = '<div class="sahdev-rm-tabs">';
+    var tabBarHtml = '<div class="sahdev-rm-tabs" role="tablist" aria-label="Command Station sections">';
     for (var i = 0; i < tabs.length; i++) {
         var t = tabs[i];
         var activeClass = (i === 0) ? ' active' : '';
-        tabBarHtml += '<div class="sahdev-rm-tab' + activeClass + '" data-pane="' + t.pane + '" id="' + t.id + '">';
-        tabBarHtml += '<span class="rm-tab-icon">' + t.icon + '</span>' + t.label + '</div>';
+        tabBarHtml += '<button type="button" class="sahdev-rm-tab' + activeClass + '" data-pane="' + t.pane + '" id="' + t.id + '" role="tab" aria-controls="' + t.pane + '" aria-selected="' + (i === 0 ? 'true' : 'false') + '" tabindex="' + (i === 0 ? '0' : '-1') + '">';
+        tabBarHtml += '<span class="rm-tab-icon">' + t.icon + '</span>' + t.label + '</button>';
     }
     tabBarHtml += '</div>';
 
@@ -50,7 +50,7 @@
     });
 
     // Wrap analysis content
-    var $analysisPane = $('<div class="sahdev-rm-pane active" id="rm-pane-analysis"></div>');
+    var $analysisPane = $('<div class="sahdev-rm-pane active" id="rm-pane-analysis" role="tabpanel" aria-labelledby="rm-tab-analysis"></div>');
     $body.append($analysisPane);
 
     // Move form into analysis pane
@@ -79,7 +79,7 @@
 
     // Tools pane
     var $toolsForm = $body.find('[id*="sahdev-tools-panel"]').closest('.form-group');
-    var $toolsPane = $('<div class="sahdev-rm-pane" id="rm-pane-tools"></div>');
+    var $toolsPane = $('<div class="sahdev-rm-pane" id="rm-pane-tools" role="tabpanel" aria-labelledby="rm-tab-tools"></div>');
     $body.append($toolsPane);
     // Move tools-related elements
     $body.find('#btn-sahdev-run-tools, #btn-sahdev-rerun-tools').closest('.form-group').appendTo($toolsPane);
@@ -89,7 +89,7 @@
         : $('#sahdev-tools-panel').appendTo($toolsPane);
 
     // Summary pane
-    var $summaryPane = $('<div class="sahdev-rm-pane" id="rm-pane-summary"></div>');
+    var $summaryPane = $('<div class="sahdev-rm-pane" id="rm-pane-summary" role="tabpanel" aria-labelledby="rm-tab-summary"></div>');
     $body.append($summaryPane);
     var $summaryOuter = $('#sahdev-summarizer-outer');
     if ($summaryOuter.length) {
@@ -99,7 +99,7 @@
     }
 
     // KB pane
-    var $kbPane = $('<div class="sahdev-rm-pane" id="rm-pane-kb"></div>');
+    var $kbPane = $('<div class="sahdev-rm-pane" id="rm-pane-kb" role="tabpanel" aria-labelledby="rm-tab-kb"></div>');
     $body.append($kbPane);
     var $cannedOuter = $('#sahdev-canned-outer');
     if ($cannedOuter.length) {
@@ -109,7 +109,7 @@
     }
 
     // Memory pane
-    var $memoryPane = $('<div class="sahdev-rm-pane" id="rm-pane-memory"></div>');
+    var $memoryPane = $('<div class="sahdev-rm-pane" id="rm-pane-memory" role="tabpanel" aria-labelledby="rm-tab-memory"></div>');
     $body.append($memoryPane);
     var $historyOuter = $('#sahdev-history-outer');
     if ($historyOuter.length) {
@@ -124,12 +124,19 @@
         var paneId = $tab.data('pane');
 
         // Switch active tab
-        $('.sahdev-rm-tab').removeClass('active');
-        $tab.addClass('active');
+        $('.sahdev-rm-tab').removeClass('active').attr({'aria-selected':'false', 'tabindex':'-1'});
+        $tab.addClass('active').attr({'aria-selected':'true', 'tabindex':'0'});
 
         // Switch active pane
         $('.sahdev-rm-pane').removeClass('active');
         $('#' + paneId).addClass('active');
+    });
+    $(document).on('keydown', '.sahdev-rm-tab', function(event) {
+        if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft' && event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+        event.preventDefault();
+        var $tabs = $(this).closest('.sahdev-rm-tabs').find('.sahdev-rm-tab');
+        var next = ($tabs.index(this) + (event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1 : -1) + $tabs.length) % $tabs.length;
+        $tabs.eq(next).trigger('click').trigger('focus');
     });
 
     // --- 6. Compact Tech Context (collapsible) ---

@@ -141,13 +141,13 @@ function sahdev_inject_ticket_panel($vars)
             $defaultTicketOptionLabel = 'Default: ' . $defRow->name . ($mn !== '' ? ' — ' . $mn : '');
         }
     }
-    $defaultTicketOptionLabelEsc = htmlspecialchars($defaultTicketOptionLabel, ENT_QUOTES, 'UTF-8');
+    $defaultTicketOptionLabelEsc = \Sahdev\Lib\DisplayText::label($defaultTicketOptionLabel);
 
     $adminDefaultPid = (int) ($adminPrefs['default_provider_id'] ?? 0);
     $providerOptionsHtml = '';
     foreach ($routingProviders as $rp) {
         $rid    = (int) $rp->id;
-        $rlabel = htmlspecialchars($rp->name . ' — ' . ($rp->model_name ?? ''), ENT_QUOTES, 'UTF-8');
+        $rlabel = \Sahdev\Lib\DisplayText::label($rp->name . ' — ' . ($rp->model_name ?? ''));
         $optSel = ($adminDefaultPid > 0 && $rid === $adminDefaultPid) ? ' selected' : '';
         $providerOptionsHtml .= '<option value="' . $rid . '"' . $optSel . '>' . $rlabel . '</option>';
     }
@@ -220,9 +220,9 @@ function sahdev_inject_ticket_panel($vars)
             
             // Prepend known emoji if exists
             $emojiPrefix = isset($intentIconMap[$intent->intent_key]) ? $intentIconMap[$intent->intent_key] : '';
-            $displayLabel = $emojiPrefix . $intent->label;
+            $displayLabel = $emojiPrefix . \Sahdev\Lib\DisplayText::plain($intent->label);
 
-            $intentButtonsHtml .= '<button type="button" class="btn btn-xs sahdev-intent-btn' . $isActiveClass . '" data-intent="' . htmlspecialchars($intent->intent_key) . '" style="border-radius: 20px; padding: 4px 12px; font-size: 12px; font-weight: 600;">' . htmlspecialchars($displayLabel) . '</button> ';
+            $intentButtonsHtml .= '<button type="button" class="btn btn-xs sahdev-intent-btn' . $isActiveClass . '" data-intent="' . htmlspecialchars($intent->intent_key) . '" style="border-radius: 20px; padding: 4px 12px; font-size: 12px; font-weight: 600;">' . \Sahdev\Lib\DisplayText::label($displayLabel) . '</button> ';
             $jsIntentLabels[$intent->intent_key] = $displayLabel;
         }
         $defaultIntentVal = htmlspecialchars($intentsList[0]->intent_key);
@@ -293,7 +293,7 @@ INC_HTML;
     }
 
     // Server-side inline styles for each theme — eliminates flash entirely
-    $isRemastered = ($uiTheme === \Sahdev\Lib\AdminPreferences::THEME_REMASTERED);
+    $isRemastered = ($uiTheme !== \Sahdev\Lib\AdminPreferences::THEME_CLASSIC);
     if ($themeMode === \Sahdev\Lib\AdminPreferences::THEME_MODE_BLACK) {
         $panelStyle   = 'margin-top:14px;border:1px solid #333333;border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,0.85);background:#222222;color:#f3f4f6;';
         $headingStyle = 'background:linear-gradient(135deg,#181818 0%,#222222 100%);color:#ffffff;padding:10px 16px;border:none;border-bottom:1px solid #333333;display:flex;justify-content:space-between;align-items:center;cursor:pointer;';
@@ -322,6 +322,10 @@ INC_HTML;
             : 'display: none; background: #f8f9fa;';
     }
     $panelClass   = $isRemastered ? 'panel panel-info sahdev-remastered' : 'panel panel-info';
+    $panelClass .= ' sdv-layout-' . $uiTheme;
+    $panelDensity = htmlspecialchars($adminPrefs['panel_density'] ?? 'comfortable', ENT_QUOTES, 'UTF-8');
+    $panelAccent = htmlspecialchars($adminPrefs['panel_accent'] ?? 'indigo', ENT_QUOTES, 'UTF-8');
+    if (empty($adminPrefs['panel_show_server'])) $serverHealthBadge = '';
     $titleStyle   = $isRemastered
         ? 'display:flex;align-items:center;flex-wrap:wrap;gap:8px;font-size:14px;font-weight:700;letter-spacing:0.3px;'
         : 'display:flex;align-items:center;flex-wrap:wrap;gap:8px;';
@@ -345,10 +349,11 @@ INC_HTML;
     <button type="button" class="btn btn-xs" style="background:transparent;border:none;padding:1px 4px;line-height:1;color:#f3f4f6;cursor:pointer;" data-sahdev-mode="black" aria-label="Black appearance" onclick="sahdevSetThemeMode('black')" title="Charcoal Black Theme (#222222 &amp; #000000)">🖤</button>
 </span>
 HTML;
+    if (empty($adminPrefs['panel_show_appearance'])) $themeSwitcherHtml = '';
 
     $htmlPanel = <<<HTML
 {$incidentAlertBanner}
-<div class="{$panelClass} sahdev-ui" id="sahdev-ai-panel"{$themeAttributes} style="{$panelStyle}">
+<div class="{$panelClass} sahdev-ui" id="sahdev-ai-panel" data-sdv-density="{$panelDensity}" data-sdv-accent="{$panelAccent}"{$themeAttributes} style="{$panelStyle}">
     <div class="panel-heading" style="{$headingStyle}" onclick="$('#sahdev-ai-body').slideToggle();">
         <h3 class="panel-title" style="{$titleStyle}">
             {$logoIconSvg}
@@ -829,6 +834,8 @@ HTML;
     if (file_exists($rmCssPath)) {
         $output .= "<style>\n" . file_get_contents($rmCssPath) . "\n</style>\n";
     }
+    $experienceCss = __DIR__ . '/ui/command-station.css';
+    if (file_exists($experienceCss)) $output .= "<style>\n" . file_get_contents($experienceCss) . "\n</style>\n";
     $output .= \Sahdev\Lib\AdminTheme::assets();
     $output .= $htmlPanel;
 
@@ -2675,7 +2682,7 @@ EOT;
     $output .= $jsContentStart . $jsContentMain . "\n</script>";
 
     // --- Remastered Theme: inject JS if active (CSS already injected before HTML) ---
-    if ($uiTheme === \Sahdev\Lib\AdminPreferences::THEME_REMASTERED) {
+    if ($isRemastered) {
         $rmJsPath  = __DIR__ . '/ui/remastered.js';
         if (file_exists($rmJsPath)) {
             $output .= "\n<script>\n$(function(){ " . file_get_contents($rmJsPath) . " });\n</script>";
@@ -2901,7 +2908,7 @@ function sahdev_render_clientservices_server_card($vars)
         $outagesHtml = '';
         if ($activeInc) {
             $incNum = htmlspecialchars($activeInc->incident_num);
-            $incTitle = htmlspecialchars($activeInc->title);
+            $incTitle = \Sahdev\Lib\DisplayText::label($activeInc->title);
             $outagesHtml .= "<div style='background: #fff5f5; border-top: 1px solid #fed7d7; padding: 8px 14px; font-size: 12px; color: #9b2c2c; display: flex; justify-content: space-between; align-items: center;'><div style='display: flex; align-items: center; gap: 6px;'><i class='fas fa-fire'></i> <strong>Active Outage: [{$incNum}] {$incTitle}</strong></div><a href='addonmodules.php?module=sahdev&action=incidents' target='_blank' class='btn btn-xs btn-danger' style='border-radius: 4px;'><i class='fas fa-search'></i> View Incident</a></div>";
         } elseif (!empty($outages)) {
             $outagesCount = count($outages);
@@ -4177,30 +4184,50 @@ tr.sdv-row-sent-high td { background-color: rgba(220, 53, 69, 0.06) !important; 
     gap: 8px 12px;
     margin: 0 0 12px 0;
     padding: 8px 12px;
-    background: #f8f9fa;
-    border: 1px solid #dee2e6;
-    border-radius: 6px;
+    background: #ffffff;
+    color: #242831;
+    border: 1px solid #d8dce3;
+    border-radius: 10px;
     font-size: 12px;
 }
-.sdv-list-toolbar .sdv-list-toolbar-label { font-weight: 600; color: #495057; margin-right: 4px; }
+.sdv-list-toolbar .sdv-list-toolbar-label { font-weight: 700; color: inherit; margin-right: 4px; }
 .sdv-list-toolbar button.btn-sdv {
     font-size: 11px;
     padding: 4px 10px;
-    border-radius: 4px;
-    border: 1px solid #ced4da;
-    background: #fff;
-    color: #212529;
+    border-radius: 6px;
+    border: 1px solid #cbd2dc;
+    background: transparent;
+    color: inherit;
     cursor: pointer;
 }
-.sdv-list-toolbar button.btn-sdv:hover { background: #e9ecef; }
+.sdv-list-toolbar button.btn-sdv:hover { background: rgba(127,127,127,.13); }
 .sdv-list-toolbar button.btn-sdv:disabled { opacity: 0.55; cursor: not-allowed; }
+.sdv-list-toolbar .sdv-sort-wrap { position:relative; display:inline-flex; max-width:100%; }
+.sdv-list-toolbar .sdv-sort-wrap::after { content:'⌄'; position:absolute; right:12px; top:50%; transform:translateY(-55%); pointer-events:none; font-size:16px; }
 .sdv-list-toolbar select.sdv-sort-select {
-    font-size: 11px;
-    padding: 3px 8px;
-    border-radius: 4px;
-    border: 1px solid #ced4da;
-    max-width: 220px;
+    display:block !important;
+    box-sizing:border-box !important;
+    width:260px !important;
+    max-width:100% !important;
+    height:34px !important;
+    min-height:34px !important;
+    font:inherit !important;
+    font-size:12px !important;
+    line-height:1.4 !important;
+    padding:6px 34px 6px 10px !important;
+    border-radius:6px !important;
+    border:1px solid #cbd2dc !important;
+    background-image:none !important;
+    background-color:transparent !important;
+    color:inherit !important;
+    appearance:none !important;
+    -webkit-appearance:none !important;
+    text-overflow:ellipsis;
 }
+.sdv-list-toolbar select.sdv-sort-select option { background:#fff; color:#242831; }
+.sdv-list-toolbar.sdv-theme-dark { background:#222222; color:#f4f4f5; border-color:#414141; }
+.sdv-list-toolbar.sdv-theme-dark select.sdv-sort-select { border-color:#555 !important; }
+.sdv-list-toolbar.sdv-theme-dark select.sdv-sort-select option { background:#222; color:#f4f4f5; }
 .sdv-list-toolbar .sdv-list-msg {
     flex: 1 1 100%;
     font-size: 11px;
@@ -4210,6 +4237,7 @@ tr.sdv-row-sent-high td { background-color: rgba(220, 53, 69, 0.06) !important; 
 }
 .sdv-list-toolbar .sdv-list-msg.sdv-ok { color: #198754; }
 .sdv-list-toolbar .sdv-list-msg.sdv-err { color: #dc3545; }
+.sdv-list-toolbar .sdv-list-msg:empty { display:none; }
 /* Tooltip */
 .sdv-tooltip-wrap { position: relative; display: inline-flex; }
 .sdv-tooltip-box {
@@ -4874,6 +4902,9 @@ tr.sdv-row-sent-high td { background-color: rgba(220, 53, 69, 0.06) !important; 
         bar.className = 'sdv-list-toolbar';
         bar.setAttribute('role', 'region');
         bar.setAttribute('aria-label', 'Sahdev ticket insights actions');
+        var bodyColor = getComputedStyle(document.body).color;
+        var channel = (bodyColor.match(/\d+/g) || []).slice(0, 3).map(Number);
+        if (channel.length === 3 && (channel[0] * 299 + channel[1] * 587 + channel[2] * 114) / 1000 > 160) bar.classList.add('sdv-theme-dark');
 
         var lbl = document.createElement('span');
         lbl.className = 'sdv-list-toolbar-label';
@@ -4925,7 +4956,10 @@ tr.sdv-row-sent-high td { background-color: rgba(220, 53, 69, 0.06) !important; 
             o.textContent = opt[1];
             sel.appendChild(o);
         });
-        bar.appendChild(sel);
+        var sortWrap = document.createElement('span');
+        sortWrap.className = 'sdv-sort-wrap';
+        sortWrap.appendChild(sel);
+        bar.appendChild(sortWrap);
 
         var msg = document.createElement('p');
         msg.className = 'sdv-list-msg';

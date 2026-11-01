@@ -802,6 +802,10 @@ class AdminController
                     'tone_default'        => $toneDefault,
                     'ui_theme'            => strtolower(trim((string) ($_POST['ui_theme'] ?? 'remastered'))),
                     'theme_mode'          => strtolower(trim((string) ($_POST['theme_mode'] ?? ''))),
+                    'panel_density'       => (string) ($_POST['panel_density'] ?? 'comfortable'),
+                    'panel_accent'        => (string) ($_POST['panel_accent'] ?? 'indigo'),
+                    'panel_show_server'   => !empty($_POST['panel_show_server']),
+                    'panel_show_appearance' => !empty($_POST['panel_show_appearance']),
                     'features'            => [],
                 ];
                 foreach (\Sahdev\Lib\AdminPreferences::allFeatureKeys() as $k) {
@@ -890,9 +894,30 @@ class AdminController
                             <select name="ui_theme" class="form-control" style="max-width:320px;">
                                 <option value="remastered"<?php echo (($prefs['ui_theme'] ?? 'remastered') === 'remastered') ? ' selected' : ''; ?>>✨ Remastered (compact tabs)</option>
                                 <option value="classic"<?php echo (($prefs['ui_theme'] ?? '') === 'classic') ? ' selected' : ''; ?>>📋 Classic (stacked panels)</option>
+                                <option value="focus"<?php echo (($prefs['ui_theme'] ?? '') === 'focus') ? ' selected' : ''; ?>>Focus — reply-first writing desk</option>
+                                <option value="canvas"<?php echo (($prefs['ui_theme'] ?? '') === 'canvas') ? ' selected' : ''; ?>>Canvas — controls and results side by side</option>
+                                <option value="console"<?php echo (($prefs['ui_theme'] ?? '') === 'console') ? ' selected' : ''; ?>>Console — operations rail and dense evidence</option>
                             </select>
-                            <p class="help-block">Choose the layout for the Sahdev AI panel on ticket pages. You can also switch instantly from the panel header.</p>
+                            <p class="help-block">Choose your ticket Command Station layout. Save preferences, then reload a ticket page to apply it.</p>
                         </div>
+                        <div class="form-group">
+                            <label>Command Station spacing</label>
+                            <select name="panel_density" class="form-control" style="max-width:320px;">
+                                <?php foreach (['compact'=>'Compact', 'comfortable'=>'Comfortable', 'featured'=>'Featured'] as $value=>$label): ?>
+                                <option value="<?php echo $value; ?>"<?php echo ($prefs['panel_density'] ?? 'comfortable') === $value ? ' selected' : ''; ?>><?php echo $label; ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Command Station accent</label>
+                            <select name="panel_accent" class="form-control" style="max-width:320px;">
+                                <?php foreach (['indigo'=>'Indigo', 'teal'=>'Teal', 'amber'=>'Amber'] as $value=>$label): ?>
+                                <option value="<?php echo $value; ?>"<?php echo ($prefs['panel_accent'] ?? 'indigo') === $value ? ' selected' : ''; ?>><?php echo $label; ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="checkbox"><label><input type="checkbox" name="panel_show_server" value="1"<?php echo !empty($prefs['panel_show_server']) ? ' checked' : ''; ?>> Show server status in Command Station</label></div>
+                        <div class="checkbox"><label><input type="checkbox" name="panel_show_appearance" value="1"<?php echo !empty($prefs['panel_show_appearance']) ? ' checked' : ''; ?>> Show quick appearance switcher</label></div>
                         <div class="form-group">
                             <label>Color scheme &amp; theme mode</label>
                             <select name="theme_mode" class="form-control" style="max-width:320px;" data-workspace-theme="<?php echo htmlspecialchars(\Sahdev\Lib\AdminPreferences::getThemeMode(), ENT_QUOTES, 'UTF-8'); ?>" onchange="if(typeof sahdevGlobalSetTheme==='function'){sahdevGlobalSetTheme(this.value || this.dataset.workspaceTheme, false);}">
@@ -2808,7 +2833,7 @@ class AdminController
         <div class="provider-card">
             <div class="provider-header">
                 <div>
-                    <strong style="font-size: 15px;"><?php echo htmlspecialchars($p->name); ?></strong>
+                    <strong style="font-size: 15px;"><?php echo \Sahdev\Lib\DisplayText::label($p->name); ?></strong>
                     <span class="text-muted" style="font-size: 12px; margin-left: 8px;">(<?php echo htmlspecialchars(strtoupper($p->provider_type)); ?>)</span>
                     <?php if (!empty($p->model_name)): ?>
                         <code style="margin-left: 8px; font-size: 11px;"><?php echo htmlspecialchars($p->model_name); ?></code>
@@ -2843,7 +2868,7 @@ class AdminController
                 <div class="row" style="margin-bottom: 10px;">
                     <div class="col-md-6">
                         <label>Display Name</label>
-                        <input type="text" name="provider_name" class="form-control" value="<?php echo htmlspecialchars($p->name); ?>" required>
+                        <input type="text" name="provider_name" class="form-control" value="<?php echo \Sahdev\Lib\DisplayText::label($p->name); ?>" required>
                     </div>
                     <div class="col-md-6">
                         <label>API Format Type</label>
@@ -3157,7 +3182,7 @@ class AdminController
                             </div>
                             <div class="col-md-5">
                                 <label>Button Label (<?php echo isset($intentIconMap[$intent->intent_key]) ? $intentIconMap[$intent->intent_key] : ''; ?>)</label>
-                                <input type="text" name="label" class="form-control" value="<?php echo htmlspecialchars($intent->label); ?>" required>
+                                <input type="text" name="label" class="form-control" value="<?php echo \Sahdev\Lib\DisplayText::label($intent->label); ?>" required>
                             </div>
                             <div class="col-md-2">
                                 <label>Sort Order</label>
@@ -3681,7 +3706,7 @@ class AdminController
                             <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
                                 <select name="preset_id" class="form-control" style="flex:1; min-width:160px;">
                                     <?php foreach ($presets as $p): ?>
-                                        <option value="<?php echo $p->id; ?>"><?php echo htmlspecialchars($p->name); ?></option>
+                                        <option value="<?php echo $p->id; ?>"><?php echo \Sahdev\Lib\DisplayText::label($p->name); ?></option>
                                     <?php endforeach; ?>
                                 </select>
                                 <button type="submit" class="btn btn-sm btn-primary" title="Apply Preset"><i class="fas fa-play"></i> Apply</button>
@@ -3693,7 +3718,7 @@ class AdminController
                             <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
                                 <select name="preset_id" class="form-control" style="flex:1; min-width:160px;">
                                     <?php foreach ($presets as $p): ?>
-                                        <option value="<?php echo $p->id; ?>"><?php echo htmlspecialchars($p->name); ?></option>
+                                        <option value="<?php echo $p->id; ?>"><?php echo \Sahdev\Lib\DisplayText::label($p->name); ?></option>
                                     <?php endforeach; ?>
                                 </select>
                                 <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Delete this preset?')" title="Delete Preset"><i class="fas fa-trash"></i> Delete</button>
@@ -3804,7 +3829,7 @@ class AdminController
             <div class="pm-card">
                 <div class="pm-card-header" onclick="this.nextElementSibling.classList.toggle('open')">
                     <div>
-                        <h5><i class="<?php echo $icon; ?>" style="margin-right:7px; color: #667eea;"></i><?php echo htmlspecialchars($tpl->label); ?></h5>
+                        <h5><i class="<?php echo $icon; ?>" style="margin-right:7px; color: #667eea;"></i><?php echo \Sahdev\Lib\DisplayText::label($tpl->label); ?></h5>
                         <div class="pm-desc"><?php echo htmlspecialchars($tpl->description ?? ''); ?></div>
                     </div>
                     <div style="display:flex; gap:6px; align-items:center;">
@@ -4373,7 +4398,7 @@ class AdminController
                             <div class="col-md-4">
                                 <div class="form-group mb-2">
                                     <label>Title</label>
-                                    <input type="text" name="title" class="form-control" value="<?php echo htmlspecialchars($r->title); ?>" required>
+                                    <input type="text" name="title" class="form-control" value="<?php echo \Sahdev\Lib\DisplayText::label($r->title); ?>" required>
                                 </div>
                             </div>
                             <div class="col-md-4">
@@ -6301,7 +6326,7 @@ class AdminController
                                 <?php foreach ($allDepts as $dept): ?>
                                     <label class="ap-dept-check">
                                         <input type="checkbox" name="autopilot_allowed_depts[]" value="<?php echo (int)$dept->id; ?>" <?php echo in_array((int)$dept->id, $allowedDeptIds) ? 'checked' : ''; ?>>
-                                        <?php echo htmlspecialchars($dept->name); ?>
+                                        <?php echo \Sahdev\Lib\DisplayText::label($dept->name); ?>
                                     </label>
                                 <?php endforeach; ?>
                             </div>
@@ -6312,7 +6337,7 @@ class AdminController
                                 <?php foreach ($allDepts as $dept): ?>
                                     <label class="ap-dept-check">
                                         <input type="checkbox" name="autopilot_blocked_depts[]" value="<?php echo (int)$dept->id; ?>" <?php echo in_array((int)$dept->id, $blockedDeptIds) ? 'checked' : ''; ?>>
-                                        <?php echo htmlspecialchars($dept->name); ?>
+                                        <?php echo \Sahdev\Lib\DisplayText::label($dept->name); ?>
                                     </label>
                                 <?php endforeach; ?>
                             </div>
@@ -7082,7 +7107,7 @@ class AdminController
                                         <span class="label label-danger" style="font-size: 11px;"><?php echo htmlspecialchars($inc->severity); ?></span>
                                         <span class="label label-warning" style="font-size: 11px;"><?php echo htmlspecialchars($inc->status); ?></span>
                                         <strong style="font-size: 16px; margin-left: 8px; color: var(--sdv-text-primary, #2d3748);">
-                                            [<?php echo htmlspecialchars($inc->incident_num); ?>] <?php echo htmlspecialchars($inc->title); ?>
+                                            [<?php echo htmlspecialchars($inc->incident_num); ?>] <?php echo \Sahdev\Lib\DisplayText::label($inc->title); ?>
                                         </strong>
                                         <div style="font-size: 12px; color: var(--sdv-text-muted, #718096); margin-top: 4px;">
                                             Detected: <?php echo htmlspecialchars(substr($inc->detected_at, 0, 16)); ?> | 
@@ -9742,7 +9767,7 @@ class AdminController
                             <div class="panel-heading" style="background: var(--sdv-bg-surface, #fff); padding: 14px 20px; display: flex; justify-content: space-between; align-items: center;">
                                 <div>
                                     <span class="label label-primary" style="font-family: monospace; font-size: 11px;"><?php echo htmlspecialchars($p->prompt_key); ?></span>
-                                    <strong style="font-size: 14px; margin-left: 8px;"><?php echo htmlspecialchars($p->label); ?></strong>
+                                    <strong style="font-size: 14px; margin-left: 8px;"><?php echo \Sahdev\Lib\DisplayText::label($p->label); ?></strong>
                                 </div>
                                 <div style="display: flex; gap: 8px;">
                                     <button type="button" class="btn btn-default btn-xs" onclick="resetSinglePrompt('<?php echo htmlspecialchars($p->prompt_key); ?>')">
@@ -10374,7 +10399,7 @@ class AdminController
                                                 <td style="padding: 14px;">
                                                     <div style="font-weight: 700; color: var(--sdv-text-primary, #1e293b); font-size: 14px;">
                                                         <i class="fas <?php echo $ws->source_type === 'url' ? 'fa-globe text-primary' : 'fa-code text-info'; ?>" style="margin-right: 6px;"></i>
-                                                        <?php echo htmlspecialchars($ws->name); ?>
+                                                        <?php echo \Sahdev\Lib\DisplayText::label($ws->name); ?>
                                                     </div>
                                                     <?php if ($ws->source_type === 'url' && !empty($ws->source_url)): ?>
                                                         <div style="font-size: 12px; color: var(--sdv-text-muted, #64748b); margin-top: 3px;">
@@ -10435,13 +10460,13 @@ class AdminController
                                                             </form>
                                                         <?php endif; ?>
 
-                                                        <button type="button" class="btn btn-default btn-xs btn-preview-ws" data-name="<?php echo htmlspecialchars($ws->name); ?>" data-content="<?php echo htmlspecialchars($previewSnippet); ?>" title="Preview AI grounding digest">
+                                                        <button type="button" class="btn btn-default btn-xs btn-preview-ws" data-name="<?php echo \Sahdev\Lib\DisplayText::label($ws->name); ?>" data-content="<?php echo htmlspecialchars($previewSnippet); ?>" title="Preview AI grounding digest">
                                                             <i class="fas fa-eye text-info"></i> Preview
                                                         </button>
 
                                                         <button type="button" class="btn btn-default btn-xs btn-edit-ws"
                                                             data-id="<?php echo (int)$ws->id; ?>"
-                                                            data-name="<?php echo htmlspecialchars($ws->name); ?>"
+                                                            data-name="<?php echo \Sahdev\Lib\DisplayText::label($ws->name); ?>"
                                                             data-type="<?php echo htmlspecialchars($ws->source_type); ?>"
                                                             data-url="<?php echo htmlspecialchars($ws->source_url ?? ''); ?>"
                                                             data-custom="<?php echo htmlspecialchars($ws->custom_content ?? ''); ?>"
@@ -10453,7 +10478,7 @@ class AdminController
                                                         <?php if ($ws->source_type === 'url' && $ws->sync_status === 'error'): ?>
                                                             <button type="button" class="btn btn-default btn-xs btn-paste-json"
                                                                 data-id="<?php echo (int)$ws->id; ?>"
-                                                                data-name="<?php echo htmlspecialchars($ws->name); ?>"
+                                                                data-name="<?php echo \Sahdev\Lib\DisplayText::label($ws->name); ?>"
                                                                 data-url="<?php echo htmlspecialchars($ws->source_url ?? ''); ?>"
                                                                 data-enabled="<?php echo (int)$ws->is_enabled; ?>"
                                                                 title="Cloudflare/WAF blocked server sync? Click to import via browser or paste JSON">
@@ -10994,7 +11019,7 @@ class AdminController
                                                     <option value="0">— Auto-Detect General/Technical Support —</option>
                                                     <?php foreach ($allDepartments as $dept): ?>
                                                         <option value="<?php echo (int)$dept->id; ?>" <?php echo ((int)($settings->client_chat_department_id ?? 0) === (int)$dept->id) ? 'selected' : ''; ?>>
-                                                            #<?php echo (int)$dept->id; ?> &bull; <?php echo htmlspecialchars($dept->name); ?>
+                                                            #<?php echo (int)$dept->id; ?> &bull; <?php echo \Sahdev\Lib\DisplayText::label($dept->name); ?>
                                                         </option>
                                                     <?php endforeach; ?>
                                                 </select>
@@ -11178,7 +11203,7 @@ class AdminController
                                                         <option value="0" <?php echo empty($settings->client_chat_provider_id) ? 'selected' : ''; ?>>-- No Live Chat Provider Selected --</option>
                                                         <?php foreach ($providers as $p): ?>
                                                             <option value="<?php echo (int)$p->id; ?>" <?php echo ((int)($settings->client_chat_provider_id ?? 0) === (int)$p->id) ? 'selected' : ''; ?>>
-                                                                <?php echo htmlspecialchars($p->name); ?> (<?php echo htmlspecialchars($p->provider_type); ?> &bull; <?php echo htmlspecialchars($p->model_name ?: 'default'); ?>)
+                                                                <?php echo \Sahdev\Lib\DisplayText::label($p->name); ?> (<?php echo htmlspecialchars($p->provider_type); ?> &bull; <?php echo htmlspecialchars($p->model_name ?: 'default'); ?>)
                                                             </option>
                                                         <?php endforeach; ?>
                                                     </select>
@@ -11190,7 +11215,7 @@ class AdminController
                                                         <option value="0" <?php echo empty($settings->client_chat_fallback_provider_id) ? 'selected' : ''; ?>>-- No Live Chat Failover --</option>
                                                         <?php foreach ($providers as $p): ?>
                                                             <option value="<?php echo (int)$p->id; ?>" <?php echo ((int)($settings->client_chat_fallback_provider_id ?? 0) === (int)$p->id) ? 'selected' : ''; ?>>
-                                                                <?php echo htmlspecialchars($p->name); ?> (<?php echo htmlspecialchars($p->provider_type); ?> &bull; <?php echo htmlspecialchars($p->model_name ?: 'default'); ?>)
+                                                                <?php echo \Sahdev\Lib\DisplayText::label($p->name); ?> (<?php echo htmlspecialchars($p->provider_type); ?> &bull; <?php echo htmlspecialchars($p->model_name ?: 'default'); ?>)
                                                             </option>
                                                         <?php endforeach; ?>
                                                     </select>
@@ -12218,7 +12243,7 @@ class AdminController
                                         <select id="convertDeptId" name="dept_id" class="form-control">
                                             <?php foreach ($departments as $d): ?>
                                                 <option value="<?php echo (int)$d->id; ?>" <?php echo ($d->id == $defaultDeptId) ? 'selected' : ''; ?>>
-                                                    <?php echo htmlspecialchars($d->name); ?>
+                                                    <?php echo \Sahdev\Lib\DisplayText::label($d->name); ?>
                                                 </option>
                                             <?php endforeach; ?>
                                         </select>
@@ -15367,7 +15392,7 @@ class AdminController
                                 </div>
                                 <div style="flex: 1;">
                                     <strong style="font-size: 14px; color: var(--sdv-text-primary, #2d3748); display: block; margin-bottom: 3px;">
-                                        <?php echo htmlspecialchars($ano->title); ?>
+                                        <?php echo \Sahdev\Lib\DisplayText::label($ano->title); ?>
                                     </strong>
                                     <p style="font-size: 13px; color: var(--sdv-text-muted, #718096); margin-bottom: 8px;">
                                         <?php echo htmlspecialchars($ano->description); ?>
@@ -15430,7 +15455,7 @@ class AdminController
                                 <?php else: ?>
                                     <?php foreach ($topProducts as $tp): ?>
                                         <tr>
-                                            <td><strong><?php echo htmlspecialchars($tp->name); ?></strong></td>
+                                            <td><strong><?php echo \Sahdev\Lib\DisplayText::label($tp->name); ?></strong></td>
                                             <td><?php echo number_format($tp->accounts); ?></td>
                                             <td style="text-align: right; font-weight: 700; color: #2b6cb0;">$<?php echo number_format((float)$tp->revenue, 2); ?></td>
                                         </tr>
