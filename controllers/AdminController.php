@@ -571,6 +571,13 @@ class AdminController
             'url'   => $base . '&action=summaries',
             'desc'  => 'AI interaction summaries & resolution digest'
         ];
+        if ($hasSettingsPerm) {
+            $categories['ticket_ai']['tools']['timeline_settings'] = [
+                'label'=>'Case Timeline & Context', 'icon'=>'fas fa-history',
+                'url'=>$base.'&action=timeline_settings',
+                'desc'=>'Source policies, tool snapshots and retention',
+            ];
+        }
 
         // 3. Knowledge & Content (Knowledge Base, Canned Responses, Prompts, Intents)
         if ($hasKbPerm) {
@@ -782,6 +789,11 @@ class AdminController
      *
      * @return string
      */
+    public function timeline_settings()
+    {
+        return $this->getNavigationMarkup('timeline_settings') . \Sahdev\Lib\CaseTimelineSettings::render();
+    }
+
     public function my_preferences()
     {
         $adminId = (int) ($_SESSION['adminid'] ?? 0);
@@ -897,7 +909,11 @@ class AdminController
                         </div>
                         <div class="form-group">
                             <label>Ticket panel UI theme</label>
+                            <p><a href="addonmodules.php?module=sahdev&amp;action=timeline_settings">Case Timeline &amp; context policies</a></p>
                             <select name="ui_theme" class="form-control" style="max-width:320px;">
+                            <?php foreach (\Sahdev\Lib\CaseTimeline::layouts() as $key=>$label): ?>
+                                <option value="<?php echo htmlspecialchars($key, ENT_QUOTES, 'UTF-8'); ?>"<?php echo ($prefs['ui_theme'] ?? '') === $key ? ' selected' : ''; ?>><?php echo htmlspecialchars($label, ENT_QUOTES, 'UTF-8'); ?></option>
+                            <?php endforeach; ?>
                                 <option value="remastered"<?php echo (($prefs['ui_theme'] ?? 'remastered') === 'remastered') ? ' selected' : ''; ?>>✨ Remastered (compact tabs)</option>
                                 <option value="classic"<?php echo (($prefs['ui_theme'] ?? '') === 'classic') ? ' selected' : ''; ?>>📋 Classic (stacked panels)</option>
                                 <option value="focus"<?php echo (($prefs['ui_theme'] ?? '') === 'focus') ? ' selected' : ''; ?>>Focus — reply-first writing desk</option>

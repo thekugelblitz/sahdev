@@ -34,6 +34,7 @@ class SchemaManager
         self::ensureMobileFcmTokensTable();
         self::ensureCannedResponsesTable();
         self::ensureToolCacheTable();
+        try { CaseTimeline::schema(); } catch (\Throwable $e) { /* Optional timeline remains disabled until its storage is available. */ }
         require_once __DIR__ . '/DiagnosticPolicy.php';
         try { DiagnosticPolicy::migrate(); } catch (\Throwable $e) { error_log('Sahdev diagnostic migration failed: ' . $e->getMessage()); }
     }

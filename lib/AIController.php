@@ -239,7 +239,7 @@ class AIController
         // 2. Extract Data
         $scrubPII = !empty($this->settings['compliance_mode']) || !empty($this->settings['pii_scrub_enabled']);
         $extractor = new TicketDataExtractor($this->ticketId, $this->adminId);
-        $context = $extractor->getContext($scrubPII, $includeAdminNotes);
+        $context = $extractor->getContext($scrubPII, $includeAdminNotes, $includeToolsContext);
 
         if (!$tone) {
             $tone = $this->settings['tone_default'];
@@ -489,7 +489,7 @@ class AIController
         // 2. Extract Data
         $scrubPII = !empty($this->settings['compliance_mode']) || !empty($this->settings['pii_scrub_enabled']);
         $extractor = new TicketDataExtractor($this->ticketId, $this->adminId);
-        $context = $extractor->getContext($scrubPII, $includeAdminNotes);
+        $context = $extractor->getContext($scrubPII, $includeAdminNotes, $includeToolsContext);
 
         if (!$tone) {
             $tone = $this->settings['tone_default'];

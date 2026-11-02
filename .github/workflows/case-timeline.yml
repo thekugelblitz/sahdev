@@ -1,0 +1,31 @@
+name: Case Timeline regression checks
+on:
+  push:
+    branches: [v5.0]
+  pull_request:
+jobs:
+  case-timeline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: mbstring, pdo_sqlite
+          coverage: none
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: PHP source and persistence checks
+        run: |
+          php -l lib/CaseTimeline.php
+          php -l lib/CaseTimelineSettings.php
+          php -l hooks.php
+          php scratch/test_case_timeline.php
+          php scratch/test_diagnostic_workflow.php
+      - name: Install browser test dependencies
+        run: |
+          npm install --no-save --package-lock=false playwright@1.62.1 jquery@3.7.1
+          npx playwright install --with-deps chromium
+      - name: Nine layouts and rewrite editor integration
+        run: node scratch/test_case_timeline_ui.cjs

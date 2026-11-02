@@ -537,7 +537,7 @@ HTML;
         <!-- Rewrite It: Expand Admin Draft from Editor -->
         <div style="border-top: 2px dashed #c0d9f5; margin-top: 12px; padding-top: 12px;">
             <label style="font-weight: 700; font-size: 13px; margin-bottom: 6px; display: block;"><i class="fas fa-pen-nib" style="color:#17a2b8;"></i> ✍️ Expand &amp; Polish My Draft Reply</label>
-            <p class="text-muted" style="font-size: 12px; margin-bottom: 8px;">Write a short rough reply in the editor below first, then click <strong>Rewrite It</strong> — Sahdev will expand it into a complete, professional reply and put it right back in the editor.</p>
+            <p class="text-muted" style="font-size: 12px; margin-bottom: 8px;">Write instructions or a short draft above your signature in the WHMCS ticket editor first, then click <strong>Rewrite It</strong> — Sahdev will expand it into a complete, professional reply and put it right back in the editor.</p>
             <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
                 <button type="button" id="btn-sahdev-rewrite" class="btn btn-info btn-sm" style="font-weight: 600;{$rewriteBtnStyle}">
                     <i class="fas fa-pen-nib"></i> Rewrite It
@@ -853,7 +853,7 @@ HTML;
     // Inject active admin's signature into JS payload for dynamic appending
     $adminSignatureRaw = Capsule::table('tbladmins')->where('id', $adminId)->value('signature');
     $adminSignature = $adminSignatureRaw ? trim(strip_tags($adminSignatureRaw, '<br><p><a><b><strong><i><em>')) : '';
-    $htmlPanel .= "<script>\nvar currentAdminSignature = " . json_encode($adminSignature) . ";\n</script>";
+    $output .= "<script>\nvar currentAdminSignature = " . json_encode($adminSignature) . ";\n</script>";
 
     $jsContentMain = <<<'EOT'
 
@@ -1828,19 +1828,8 @@ HTML;
         // Uses get_rewrite_payload → browser-side LM Studio fetch (or server-side for Google)
         // =====================================================================
         $(document).on('click', '#btn-sahdev-rewrite', function() {
-            var draftText = '';
-
-            // Try TinyMCE first
-            if (typeof tinymce !== 'undefined' && tinymce.activeEditor) {
-                draftText = tinymce.activeEditor.getContent({ format: 'text' }).trim();
-                if (!draftText) {
-                    draftText = tinymce.activeEditor.getContent().replace(/<[^>]*>/g, '').trim();
-                }
-            }
-            // Fallback to raw textarea
-            if (!draftText && $('#replymessage').length) {
-                draftText = $('#replymessage').val().trim();
-            }
+            window.sahdevRewriteSnapshot = SahdevRewriteEditor.capture(typeof currentAdminSignature === 'string' ? currentAdminSignature : '');
+            var draftText = window.sahdevRewriteSnapshot.draft;
 
             if (!draftText) {
                 $('#sahdev-rewrite-error').html('<i class="fas fa-exclamation-circle"></i> Please write a short draft reply in the editor first, then click Rewrite It.').show();
@@ -2013,7 +2002,7 @@ HTML;
 
             // --- Step 2: Convert Markdown → HTML for TinyMCE ---
             function markdownToHtml(md) {
-                var html = md;
+                var html = $('<div>').text(md).html();
 
                 // Escape HTML special chars that aren't already HTML
                 // (light touch — don't escape if it's already HTML from a previous pass)
@@ -2070,21 +2059,11 @@ HTML;
                 return html;
             }
 
+            text = SahdevRewriteEditor.split(text, (window.sahdevRewriteSnapshot || {}).signature || '').draft;
             var finalHtml = markdownToHtml(text);
-
-            // --- Step 3: Insert into TinyMCE or fallback textarea ---
-            if (typeof tinymce !== 'undefined' && tinymce.activeEditor) {
-                tinymce.activeEditor.setContent(finalHtml);
-            } else if ($('#replymessage').length) {
-                // Textarea fallback: strip HTML tags, convert <br>/<p> to newlines
-                var plainText = finalHtml
-                    .replace(/<br\s*\/?>/gi, '\n')
-                    .replace(/<\/p>/gi, '\n')
-                    .replace(/<\/li>/gi, '\n')
-                    .replace(/<[^>]+>/g, '')
-                    .replace(/\n{3,}/g, '\n\n')
-                    .trim();
-                $('#replymessage').val(plainText);
+            if (!SahdevRewriteEditor.insert(finalHtml, window.sahdevRewriteSnapshot)) {
+                $('#sahdev-rewrite-error').text('The reply editor changed while polishing. Your newer draft was kept. Click Rewrite / Polish again to use it.').show();
+                return;
             }
 
             $('#sahdev-rewrite-status').removeClass('label-default label-success label-warning label-danger label-info').addClass('label-success').html('<i class="fas fa-check-circle"></i> Draft polished!').removeAttr('title').show();
@@ -2679,6 +2658,7 @@ HTML;
 
 EOT;
 
+    $output .= '<script>' . file_get_contents(__DIR__ . '/ui/rewrite-editor.js') . '</script>';
     $output .= $jsContentStart . $jsContentMain . "\n</script>";
 
     // --- Remastered Theme: inject JS if active (CSS already injected before HTML) ---
@@ -2689,6 +2669,10 @@ EOT;
         }
     }
 
+    if (isset(\Sahdev\Lib\CaseTimeline::layouts()[$uiTheme])) {
+        $output .= '<style>' . file_get_contents(__DIR__ . '/ui/case-timeline.css') . '</style>';
+        $output .= '<script>$(function(){' . file_get_contents(__DIR__ . '/ui/case-timeline.js') . '});</script>';
+    }
     return $output;
 
 }

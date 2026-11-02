@@ -197,7 +197,7 @@ class ToolsExecutionService
                 'created_at' => Carbon::now(),
             ]);
         } catch (\Throwable $e) {}
-        Capsule::table('tblsahdev_tool_runs')->insert([
+        $timelineRunId = Capsule::table('tblsahdev_tool_runs')->insertGetId([
             'suggestion_id' => $suggestionId,
             'ticket_id' => $ticketId,
             'method' => $method,
@@ -214,6 +214,11 @@ class ToolsExecutionService
             'error_message' => (string) ($exec['error'] ?? ''),
             'created_at' => Carbon::now(),
             'updated_at' => Carbon::now(),
+        ]);
+
+        \Sahdev\Lib\CaseTimeline::capture($ticketId, 'tools_execution', (string)$timelineRunId, [
+            'status'=>(string)($exec['status'] ?? 'unknown'),
+            'summary'=>(string)($normalized['summary'] ?? ''),
         ]);
 
         Capsule::table('tblsahdev_tool_suggestions')->where('id', $suggestionId)->update([

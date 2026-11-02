@@ -1,0 +1,16 @@
+{
+  "concept": "05",
+  "name": "Case Timeline",
+  "category": "Long-running tickets",
+  "status": "user-shortlisted",
+  "snapshot": "case-timeline-original.html",
+  "openAt": "#concept-5",
+  "sha256": "1298734FC5D0260953CF15E9EBA57C88650F70800926B5F4FD0150A2B7E7DB82",
+  "savedAt": "2026-11-02T02:39:47.5854355+05:30",
+  "guidance": [
+    "Prioritize timeline, case context and findings.",
+    "Then emphasize custom instructions, reply intent and technical context.",
+    "Keep remaining controls visible in the page.",
+    "Use Analysis, Tools, Summary, KB and Memory tabs; avoid modal or side-popout workflows."
+  ]
+}

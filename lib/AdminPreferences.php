@@ -91,7 +91,7 @@ class AdminPreferences
     public const THEME_MODE_DARK  = 'dark';
     public const THEME_MODE_BLACK = 'black'; // Charcoal Black #222222 & #000000 combined
 
-    private static array $validThemes = [self::THEME_CLASSIC, self::THEME_REMASTERED, self::THEME_FOCUS, self::THEME_CANVAS, self::THEME_CONSOLE];
+    private static array $validThemes = ['case_timeline', 'timeline_plus', 'timeline_lanes', 'timeline_ledger', 'timeline_split', 'timeline_ribbon', 'timeline_journal', 'timeline_milestones', 'timeline_map', self::THEME_CLASSIC, self::THEME_REMASTERED, self::THEME_FOCUS, self::THEME_CANVAS, self::THEME_CONSOLE];
     private static array $validThemeModes = [self::THEME_MODE_WHITE, self::THEME_MODE_DARK, self::THEME_MODE_BLACK];
 
     public static function load(int $adminId): array

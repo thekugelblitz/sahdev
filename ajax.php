@@ -865,6 +865,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST' && !$isGetAllowed) {
 }
 
 $allowedActions = [
+    'get_case_timeline',
     'get_analytics_period', 'get_open_payload', 'analyze_open_context', 'get_payload', 'save_response',
     'get_rewrite_payload', 'rewrite_reply', 'auto_analyze', 'analyze_ticket',
     'generate_summary', 'get_summary', 'delete_summary',
@@ -1028,6 +1029,7 @@ if ($intensity > 3) {
         'get_header_server_widget'    => \Sahdev\Lib\PermissionService::PERM_TELEMETRY_VIEW,
         'analyze_ticket'              => \Sahdev\Lib\PermissionService::PERM_TICKET_AI,
         'get_payload'                 => \Sahdev\Lib\PermissionService::PERM_TICKET_AI,
+        'get_case_timeline'           => \Sahdev\Lib\PermissionService::PERM_TICKET_AI,
         'auto_analyze'                => \Sahdev\Lib\PermissionService::PERM_TICKET_AI,
         'get_open_payload'            => \Sahdev\Lib\PermissionService::PERM_TICKET_AI,
         'analyze_open_context'        => \Sahdev\Lib\PermissionService::PERM_TICKET_AI,
@@ -1161,7 +1163,7 @@ try {
     $isCopilotAction = in_array($action, [
         'copilot_send_message', 'copilot_stream', 'copilot_execute_op', 'copilot_rollback_op', 'chat_takeover',
     ], true);
-    $controller = $isCopilotAction ? null : new \Sahdev\Lib\AIController($ticketId, $adminId);
+    $controller = ($isCopilotAction || $action === 'get_case_timeline') ? null : new \Sahdev\Lib\AIController($ticketId, $adminId);
 
     if ($action === 'get_analytics_period') {
         // AJAX: return period-filtered KPI data for the analytics dashboard
@@ -1170,6 +1172,8 @@ try {
         $adminCtrl = new \Sahdev\Controllers\AdminController($vars);
         echo $adminCtrl->analytics_data();
         exit;
+    } elseif ($action === 'get_case_timeline') {
+        $response = ['status'=>'success', 'data'=>\Sahdev\Lib\CaseTimeline::read((int)$ticketId)];
     } elseif ($action === 'get_open_payload') {
         if ($userId <= 0) {
             throw new \Exception('Missing or invalid userid.');

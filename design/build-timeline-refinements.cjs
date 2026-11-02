@@ -1,0 +1,12 @@
+const fs=require('node:fs');
+const path=require('node:path');
+const root=__dirname;
+const baseline=fs.readFileSync(path.join(root,'shortlisted/case-timeline-original.html'),'utf8');
+const extension=fs.readFileSync(path.join(root,'timeline-round-2.extension.html'),'utf8');
+if(!extension.includes('__BASELINE_BASE64__'))throw Error('Baseline marker missing');
+const embedded=extension.replace('__BASELINE_BASE64__',Buffer.from(baseline).toString('base64'));
+const base=baseline.replaceAll('sahdev-workflow-studio-v1','sahdev-timeline-refinements-v1');
+const output=base.replace('</body></html>',embedded+'\n</body></html>');
+if(output===base)throw Error('Closing document marker missing');
+fs.writeFileSync(path.join(root,'sahdev-timeline-refinements.html'),output);
+console.log('Built standalone timeline refinements with embedded original snapshot.');

@@ -5,6 +5,7 @@ use WHMCS\Database\Capsule;
 require_once __DIR__ . '/DiagnosticPolicy.php';
 require_once __DIR__ . '/DiagnosticLock.php';
 require_once __DIR__ . '/DiagnosticTrace.php';
+require_once __DIR__ . '/CaseTimeline.php';
 require_once __DIR__ . '/LiveChatToolService.php';
 
 /** Shared ticket/chat workflow. Models propose plans; the executor owns permissions. */
@@ -190,6 +191,11 @@ class DiagnosticWorkflow
                     if (!$result['checks'] && $result['status'] === 'complete') $result['status'] = 'not_run';
                 }
                 DiagnosticTrace::record('completed', $trace + ['status'=>$result['status'], 'check_count'=>count($result['checks'] ?? [])], $policy);
+                $timelineRunKey = $trace['trace_id'] . ':' . sprintf('%.6f', microtime(true));
+                if ($channel === 'tickets') foreach ($result['checks'] ?? [] as $index=>$check) {
+                    if (!empty($check['cached'])) continue;
+                    CaseTimeline::capture($scopeId, 'diagnostics', $timelineRunKey.':'.$index, ['status'=>!empty($check['success'])?'observed':'failed', 'summary'=>(string)($check['evidence']??'')]);
+                }
                 self::write('tblsahdev_diagnostic_runs', $key, $result, 120);
                 return $result;
             } finally { DiagnosticLock::release($key); }
