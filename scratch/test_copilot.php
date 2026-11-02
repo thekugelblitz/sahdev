@@ -25,12 +25,12 @@ expect(count($request['messages']) === 4 && $request['messages'][2]['content'] =
 $other = ChatService::getOrCreateAdminSession(2, $first['session_uuid']);
 expect($other['id'] !== $first['session_id'], 'A different admin cannot resume the original session');
 
-Http::$responses = [reply('', [tool('ticket_change_status', ['ticket_id' => 12, 'status' => 'Closed'])])];
+Http::$responses = [reply('', [tool('ticket_change_status', ['ticket_id' => 12, 'status' => 'Closed'])]), reply('Review the pending plan.')];
 $proposal = ChatService::handleAdminMessage(1, $first['session_uuid'], 'Close ticket 12');
 expect($proposal['success'] && count($proposal['action_cards']) === 1, 'Mutations produce confirmation cards');
 expect($proposal['action_cards'][0]['session_id'] === $first['session_id'], 'Proposal is bound to the current session');
 expect(Capsule::$rows['tbltickets'][0]['status'] === 'Open' && empty(Capsule::$rows['tblsahdev_ops_journal']), 'Proposal does not execute a mutation');
-$executed = SafeOpsService::executeConfirmedOperation('ticket_change_status', ['ticket_id' => 12, 'status' => 'Closed'], 1, $first['session_id']);
+$executed = SafeOpsService::executeConfirmedOperation('ticket_change_status', ['ticket_id' => 12, 'status' => 'Closed'], 1, $first['session_id'], null, $proposal['action_cards'][0]['proposal_id']);
 expect($executed['success'] && Capsule::$rows['tbltickets'][0]['status'] === 'Closed', 'Explicit confirmation executes the operation');
 expect(Capsule::$rows['tblsahdev_ops_journal'][0]['session_id'] === $first['session_id'], 'Journal retains session association');
 $rollback = SafeOpsService::rollbackOperation($executed['journal_id'], 1);
@@ -67,12 +67,47 @@ Http::$responses = [reply('', [tool('financial_metrics', [])]), reply('MRR is US
 $answer = ChatService::handleAdminMessage(1, $first['session_uuid'], "Show today's MRR and revenue status");
 expect($answer['success'] && strpos($answer['reply'], 'USD 40') !== false, 'MRR request completes the provider/tool/synthesis flow');
 $request = json_decode(end(Http::$requests)->options[CURLOPT_POSTFIELDS], true);
-$evidence = json_decode(end($request['messages'])['content'], true);
+$evidence = json_decode(end($request['messages'])['content'], true)['data'];
 expect($evidence['metrics']['mrr'] == 40 && $evidence['currency'] === 'USD', 'Model receives measured financial evidence');
 
 Http::$responses = [reply('', [tool('open_tickets', ['limit' => 20])]), reply('One open ticket: 12')];
 $tickets = ChatService::handleAdminMessage(1, $first['session_uuid'], 'Show open tickets');
 expect($tickets['success'] && strpos($tickets['reply'], 'ticket: 12') !== false, 'Open Tickets shortcut has a working read tool');
+
+Http::$responses = [reply('', [tool('client_lookup', ['search'=>'1'])]), reply('', [tool('client_invoices', ['client_id'=>1])]), reply('Invoices for client #1 are shown below.')];
+$related = ChatService::handleAdminMessage(1, $first['session_uuid'], 'Find client 1 and show all his invoices');
+expect($related['success'] && count($related['result_cards']) === 2, 'Dependent client lookup and invoice query complete in one tool loop');
+expect($related['result_cards'][1]['context']['client_id'] === 1, 'Related cards retain the verified client ID');
+$history = ChatService::getSessionMessages($first['session_id'], 100);
+expect(count(end($history)['result_cards']) === 2, 'Structured result cards survive session reload');
+Http::$responses = [reply('I will use the same verified client.')];
+ChatService::handleAdminMessage(1, $first['session_uuid'], 'What about his services?');
+$request = json_decode(end(Http::$requests)->options[CURLOPT_POSTFIELDS], true);
+expect(strpos(json_encode($request['messages']), 'Verified record context') !== false, 'Follow-up messages retain server-owned relational context');
+$beforeStream = count(Capsule::$rows['tblsahdev_chat_messages']);
+Http::$responses = [reply('Stream reply')]; $chunks=[];
+ChatService::streamAdminMessage(1, $first['session_uuid'], 'Stream test', [], function ($text, $meta) use (&$chunks) { $chunks[]=[$text,$meta]; });
+expect(count(Capsule::$rows['tblsahdev_chat_messages']) === $beforeStream + 2 && $chunks[0][1]['done'], 'Streaming transport uses the shared flow without duplicating the user message');
+
+$oldPolicy = Capsule::$rows['tblsahdev_settings'][0]['copilot_database_policy_json'];
+$revoked = json_decode($oldPolicy,true);$revoked['enabled']=false;
+Capsule::$rows['tblsahdev_settings'][0]['copilot_database_policy_json']=json_encode($revoked);
+$hiddenHistory=ChatService::getSessionMessages($first['session_id'],100);
+expect(strpos(end($hiddenHistory)['message_text'],'earlier reply is hidden')!==false && end($hiddenHistory)['result_cards']===[], 'History no longer exposes replies or cards authorized under revoked rules');
+Http::$responses=[reply('No prior private records are available.')];
+ChatService::handleAdminMessage(1,$first['session_uuid'],'Continue');
+$request=json_decode(end(Http::$requests)->options[CURLOPT_POSTFIELDS],true);
+expect(strpos(json_encode($request['messages']),'Verified record context')===false,'Revoked record context is also removed from the provider prompt');
+Capsule::$rows['tblsahdev_settings'][0]['copilot_database_policy_json']=$oldPolicy;
+$providerRounds=0;
+Http::$beforeResponse=function() use (&$providerRounds,$revoked) {
+    if (++$providerRounds===2) Capsule::$rows['tblsahdev_settings'][0]['copilot_database_policy_json']=json_encode($revoked);
+};
+Http::$responses=[reply('',[tool('client_invoices',['client_id'=>1])]),reply('Private invoice summary that must be withheld')];
+$midTurn=ChatService::handleAdminMessage(1,$first['session_uuid'],'Show the invoices');
+expect(!$midTurn['success'] && $midTurn['result_cards']===[] && strpos(json_encode($midTurn),'Private invoice summary')===false,'Revocation during provider processing withholds already-fetched records and the final summary');
+Http::$beforeResponse=null;
+Capsule::$rows['tblsahdev_settings'][0]['copilot_database_policy_json']=$oldPolicy;
 Http::$responses = [reply('')];
 $empty = ChatService::handleAdminMessage(1, $first['session_uuid'], 'Empty response');
 expect(!$empty['success'] && strpos($empty['error'], 'empty reply') !== false && $empty['session_uuid'] === $first['session_uuid'], 'Empty provider response is an explicit error without losing the thread');

@@ -6,8 +6,9 @@ namespace WHMCS\Database {
         public static function table($name) { return new CopilotQuery($name); }
         public static function schema() { return new CopilotSchema(); }
         public static function connection() { return new self(); }
+        public function getDriverName() { return 'sqlite'; }
         public function statement($sql) { return true; }
-        public function transaction($callback) { return $callback(); }
+        public function transaction($callback) { $before = self::$rows; try { return $callback(); } catch (\Throwable $e) { self::$rows = $before; throw $e; } }
     }
     class CopilotSchema {
         public function hasTable($name) { return true; }
@@ -31,6 +32,7 @@ namespace WHMCS\Database {
         private $filters = [];
         private $sort;
         private $limit;
+        private $offset = 0;
         private $joins = [];
         public function __construct($table) { $this->table = $table; }
         public function __call($name, $args) { return $this; }
@@ -55,6 +57,7 @@ namespace WHMCS\Database {
         public function whereIn($field, $values) { $this->filters[] = function ($r) use ($field, $values) { return in_array($r[$field] ?? null, $values); }; return $this; }
         public function whereNotIn($field, $values) { $this->filters[] = function ($r) use ($field, $values) { return !in_array($r[$field] ?? null, $values); }; return $this; }
         public function orderBy($field, $direction = 'asc') { $this->sort = [$field, $direction]; return $this; }
+        public function offset($offset) { $this->offset = $offset; return $this; }
         public function limit($limit) { $this->limit = $limit; return $this; }
         public function join($table, $left, $operator, $right) { $this->joins[] = [$table, $left, $right]; return $this; }
         private function matches($row) { foreach ($this->filters as $filter) if (!$filter($row)) return false; return true; }
@@ -78,20 +81,22 @@ namespace WHMCS\Database {
                 [$field, $direction] = $this->sort;
                 usort($rows, function ($a, $b) use ($field, $direction) { return (($a[$field] ?? null) <=> ($b[$field] ?? null)) * ($direction === 'desc' ? -1 : 1); });
             }
-            return $this->limit === null ? $rows : array_slice($rows, 0, $this->limit);
+            return array_slice($rows, $this->offset, $this->limit);
         }
-        public function get($columns = []) { return new CopilotCollection(array_map(function ($row) { return (object) $row; }, $this->rows())); }
-        public function first($columns = []) { $rows = $this->rows(); return $rows ? (object) $rows[0] : null; }
+        public function get($columns = []) { return new CopilotCollection(array_map(function ($row) use ($columns) { return (object) $this->project($row, $columns); }, $this->rows())); }
+        private function project($row, $columns) { if (!$columns) return array_filter($row, function ($key) { return strpos($key, '.') === false; }, ARRAY_FILTER_USE_KEY); $out=[]; foreach ($columns as $col) if (array_key_exists($col, $row)) $out[substr($col, strrpos('.'.$col, '.'))] = $row[$col]; return $out; }
+        public function first($columns = []) { $rows = $this->rows(); return $rows ? (object) $this->project($rows[0], $columns) : null; }
         public function value($field) { $row = $this->first(); return $row->$field ?? null; }
         public function count() { return count($this->rows()); }
         public function sum($field) { return array_sum(array_column($this->rows(), $field)); }
         public function exists() { return $this->count() > 0; }
         public function insertGetId($row) {
-            $row['id'] = count(Capsule::$rows[$this->table] ?? []) + 1;
+            $row['id'] = $row['id'] ?? (max(array_merge([0], array_column(Capsule::$rows[$this->table] ?? [], 'id'))) + 1);
             Capsule::$rows[$this->table][] = $row;
             return $row['id'];
         }
         public function insert($row) { $this->insertGetId($row); return true; }
+        public function delete() { Capsule::$rows[$this->table] = array_values(array_filter(Capsule::$rows[$this->table] ?? [], function ($r) { return !$this->matches($r); })); return true; }
         public function update($values) {
             $count = 0;
             foreach (Capsule::$rows[$this->table] ?? [] as $i => $row) {
@@ -113,16 +118,19 @@ namespace Carbon {
         public function startOfMonth() { return $this->modify('first day of this month')->setTime(0, 0); }
         public function endOfMonth() { return $this->modify('last day of this month')->setTime(23, 59, 59); }
         public function subMonth() { return $this->modify('-1 month'); }
+        public function subMinutes($n) { return $this->modify('-'.$n.' minutes'); }
+        public function addMinutes($minutes) { return $this->modify('+' . $minutes . ' minutes'); }
         public function addDay() { return $this->modify('+1 day'); }
     }
 }
 namespace Sahdev\Lib {
-    class CopilotHttpFixture { public static $responses = []; public static $requests = []; }
+    class CopilotHttpFixture { public static $responses = []; public static $requests = []; public static $beforeResponse = null; }
     function curl_init($url) { return (object) ['url' => $url, 'options' => []]; }
     function curl_setopt($handle, $key, $value) { $handle->options[$key] = $value; return true; }
     function curl_setopt_array($handle, $options) { $handle->options = $options; return true; }
     function curl_exec($handle) {
         CopilotHttpFixture::$requests[] = $handle;
+        if (is_callable(CopilotHttpFixture::$beforeResponse)) call_user_func(CopilotHttpFixture::$beforeResponse);
         if (!CopilotHttpFixture::$responses) throw new \RuntimeException('Unexpected provider request');
         return json_encode(array_shift(CopilotHttpFixture::$responses));
     }
@@ -140,7 +148,9 @@ namespace {
     function add_hook($name, $priority, $callback) {}
     function decrypt($value) { return $value; }
     \WHMCS\Database\Capsule::$rows = [
-        'tbladmins' => [['id' => 1, 'username' => 'Fixture Admin', 'email' => 'admin@example.test', 'roleid' => 1]],
+        'tbladmins' => [['id' => 1, 'username' => 'Fixture Admin', 'email' => 'admin@example.test', 'roleid' => 1, 'disabled' => 0]],
+        'tbladminroles' => [['id'=>1, 'name'=>'Full Administrator']],
+        'tblticketstatuses' => [['id'=>1, 'title'=>'Closed'], ['id'=>2, 'title'=>'Open']],
         'tblsahdev_settings' => [[
             'id' => 1, 'primary_provider_id' => 0, 'copilot_primary_provider_id' => 7,
             'copilot_enabled' => 1, 'client_chat_enabled' => 1, 'client_chat_kb_enabled' => 1,
@@ -150,7 +160,14 @@ namespace {
             'model_name' => 'fixture-model', 'api_url' => 'https://provider.example.test/chat/completions', 'api_key' => '',
         ]],
         'tblsahdev_chat_sessions' => [], 'tblsahdev_chat_messages' => [],
-        'tblsahdev_ops_journal' => [],
+        'tblsahdev_ops_journal' => [], 'tblsahdev_ops_proposals'=>[], 'tblsahdev_ops_events'=>[],
         'tbltickets' => [['id' => 12, 'tid' => '123456', 'title' => 'Fixture ticket', 'userid' => 1, 'did' => 1, 'status' => 'Open', 'urgency' => 'High', 'admin' => 'Admin', 'lastreply' => '2026-11-02 10:00:00']],
     ];
+    \WHMCS\Database\Capsule::$rows['tbladmins'][] = ['id'=>2, 'username'=>'Read-only staff', 'email'=>'staff@example.test', 'roleid'=>2, 'disabled'=>0];
+    $rules = [];
+    foreach (\Sahdev\Lib\CopilotDatabasePolicy::resources() as $resource => $definition) {
+        $rules[$resource] = \Sahdev\Lib\CopilotDatabasePolicy::normalizeRule($resource, ['operations'=>array_fill_keys($definition['ops'], true), 'read_fields'=>$definition['read'], 'write_fields'=>$definition['write']]);
+    }
+    \WHMCS\Database\Capsule::$rows['tblsahdev_settings'][0]['copilot_database_policy_json'] = json_encode(['enabled'=>true, 'roles'=>[1=>$rules]]);
+
 }

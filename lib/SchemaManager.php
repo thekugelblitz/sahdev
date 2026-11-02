@@ -23,6 +23,7 @@ class SchemaManager
         self::ensureChatSessionsTable();
         self::ensureChatMessagesTable();
         self::ensureOpsJournalTable();
+        self::ensureCopilotOperationTables();
         self::ensureMetricsTables();
         self::ensureVisitorTable();
         self::ensureClientChatPromptsTable();
@@ -86,6 +87,7 @@ class SchemaManager
                 'copilot_primary_provider_id'  => ['type' => 'integer', 'default' => 0],
                 'copilot_fallback_provider_id' => ['type' => 'integer', 'default' => 0],
                 'copilot_system_prompt'        => ['type' => 'longtext'],
+                'copilot_database_policy_json' => ['type' => 'longtext'],
                 'copilot_temperature'          => ['type' => 'decimal', 'precision' => 3, 'scale' => 2, 'default' => 0.70],
                 'copilot_max_tokens'           => ['type' => 'integer', 'default' => 2048],
                 'copilot_stream_enabled'       => ['type' => 'boolean', 'default' => 1],
@@ -376,6 +378,8 @@ class SchemaManager
                     $table->longText('message_text')->nullable();
                     $table->longText('action_card_json')->nullable();
                     $table->longText('tool_calls_json')->nullable();
+                    $table->longText('result_cards_json')->nullable();
+                    $table->string('copilot_access_fingerprint', 64)->nullable();
                     $table->integer('tokens_used')->default(0);
                     $table->tinyInteger('rating')->nullable()->index(); // 1 = up, -1 = down
                     $table->text('rating_feedback')->nullable();
@@ -390,6 +394,8 @@ class SchemaManager
             } else {
                 // Migrate existing tables
                 $msgCols = [
+                    'result_cards_json' => function ($table) { $table->longText('result_cards_json')->nullable(); },
+                    'copilot_access_fingerprint' => function ($table) { $table->string('copilot_access_fingerprint', 64)->nullable(); },
                     'rating'          => function ($table) { $table->tinyInteger('rating')->nullable()->index(); },
                     'rating_feedback' => function ($table) { $table->text('rating_feedback')->nullable(); },
                     'is_edited'       => function ($table) { $table->tinyInteger('is_edited')->default(0)->index(); },
@@ -477,6 +483,7 @@ class SchemaManager
         try {
             if (!Capsule::schema()->hasTable('tblsahdev_ops_journal')) {
                 Capsule::schema()->create('tblsahdev_ops_journal', function ($table) {
+                    $table->engine = 'InnoDB';
                     $table->increments('id');
                     $table->integer('session_id')->unsigned()->default(0)->index();
                     $table->integer('admin_id')->unsigned()->index();
@@ -499,6 +506,39 @@ class SchemaManager
             }
         } catch (\Throwable $e) {
             // Benign table creation
+        }
+    }
+
+    /** Additive, durable proposals and append-only events for confirmed Copilot changes. */
+    public static function ensureCopilotOperationTables(): void
+    {
+        if (!Capsule::schema()->hasTable('tblsahdev_ops_proposals')) {
+            Capsule::schema()->create('tblsahdev_ops_proposals', function ($table) {
+                $table->engine = 'InnoDB';
+                $table->increments('id');
+                $table->string('proposal_uuid', 64)->unique();
+                $table->integer('admin_id')->unsigned()->index();
+                $table->integer('session_id')->unsigned()->index();
+                $table->string('action_key', 64);
+                $table->longText('card_json');
+                $table->string('status', 32)->default('pending');
+                $table->integer('journal_id')->unsigned()->nullable();
+                $table->timestamp('expires_at');
+                $table->timestamps();
+            });
+        }
+        if (!Capsule::schema()->hasTable('tblsahdev_ops_events')) {
+            Capsule::schema()->create('tblsahdev_ops_events', function ($table) {
+                $table->engine = 'InnoDB';
+                $table->increments('id');
+                $table->string('proposal_uuid', 64)->nullable()->index();
+                $table->integer('journal_id')->unsigned()->nullable()->index();
+                $table->integer('admin_id')->unsigned()->index();
+                $table->string('event', 40)->index();
+                $table->text('message');
+                $table->longText('details_json')->nullable();
+                $table->timestamp('created_at')->useCurrent()->index();
+            });
         }
     }
 

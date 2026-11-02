@@ -5162,10 +5162,7 @@ function sahdev_render_admin_copilot_drawer(array $vars = []): string
         \Sahdev\Lib\SchemaManager::ensureAll();
     } catch (\Throwable $e) {}
 
-    $canUseCopilot = ($adminId === 1)
-        || \Sahdev\Lib\PermissionService::isSuperAdmin($adminId)
-        || \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_COPILOT_USE)
-        || \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_SETTINGS_MANAGE);
+    $canUseCopilot = \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_COPILOT_USE);
 
     if (!$canUseCopilot) {
         return '';
@@ -5243,7 +5240,7 @@ function sahdev_render_admin_copilot_drawer(array $vars = []): string
     $csrfTokenJs = json_encode($csrfToken);
 
     $themeAttributes = \Sahdev\Lib\AdminTheme::attributes((int) $adminId);
-    return \Sahdev\Lib\AdminTheme::assets() . <<<HTML
+    return \Sahdev\Lib\AdminTheme::assets() . \Sahdev\Lib\CopilotPresentation::assets() . <<<HTML
 <style>
 /* ── Sahdev Admin Ops Copilot Drawer ───────────────────────────────── */
 #sdv-copilot-launcher {
@@ -5635,7 +5632,7 @@ function sahdev_render_admin_copilot_drawer(array $vars = []): string
     <div class="sdv-drawer-messages" id="sdv-copilot-msgs">
         <div class="sdv-msg sdv-msg-bot">
             <strong>Welcome, Administrator.</strong><br>
-            I am your Organization Ops Copilot. Ask me to look up tickets, inspect client accounts, analyze payment gateways, or execute safe WHMCS operations with full 2-phase confirmation and 1-click atomic rollback.
+            I am your Organization Ops Copilot. Ask me to look up tickets, inspect client accounts, analyze payment gateways, or prepare permitted database edits for approval with a complete action plan and conflict-checked rollback.
         </div>
     </div>
 
@@ -5741,6 +5738,7 @@ function sahdev_render_admin_copilot_drawer(array $vars = []): string
             { id: 'product_catalog', category: 'Commerce', label: 'Product & Domain Catalog', icon: 'fas fa-shopping-cart', url: baseMod + '&action=product_catalog', desc: 'Catalog grounding for autonomous sales' },
             { id: 'providers', category: 'Settings', label: 'AI Providers & Models', icon: 'fas fa-microchip', url: baseMod + '&action=providers', desc: 'Configure OpenAI, Anthropic, Gemini gateways' },
             { id: 'permissions', category: 'Settings', label: 'Role Permissions & Access', icon: 'fas fa-user-shield', url: baseMod + '&action=permissions', desc: 'Admin group role-based permissions' },
+            { id: 'copilot_access', category: 'Settings', label: 'Copilot Database Access', icon: 'fas fa-database', url: baseMod + '&action=copilot_access', desc: 'Role, resource, field and client-scope rules' },
             { id: 'settings', category: 'Settings', label: 'General AI Settings', icon: 'fas fa-cog', url: baseMod, desc: 'Global feature switches, default models' },
             { id: 'module_logs', category: 'Logs', label: 'Audit & Activity Logs', icon: 'fas fa-clipboard-list', url: baseMod + '&action=module_logs', desc: 'Complete audit trail of all AI operations' },
             { id: 'logs_maintenance', category: 'Maintenance', label: 'Logs & Table Maintenance', icon: 'fas fa-database', url: baseMod + '&action=logs_maintenance', desc: 'Cleanups, table optimization & archiving' }
@@ -5914,8 +5912,8 @@ function sahdev_render_admin_copilot_drawer(array $vars = []): string
         var d = document.createElement('div');
         d.className = 'sdv-msg ' + (role === 'user' ? 'sdv-msg-user' : 'sdv-msg-bot');
         var content = document.createElement('span');
-        content.textContent = text;
-        content.style.whiteSpace = 'pre-wrap';
+        if (role === 'user') { content.textContent = text; content.style.whiteSpace = 'pre-wrap'; }
+        else SahdevCopilot.markdown(content, text);
         d.appendChild(content);
         msgsEl.appendChild(d);
         msgsEl.scrollTop = msgsEl.scrollHeight;
@@ -5924,13 +5922,14 @@ function sahdev_render_admin_copilot_drawer(array $vars = []): string
 
     function getPageContext() {
         var params = new URLSearchParams(window.location.search);
+        var page = window.location.pathname.split('/').pop();
         return {
             url: window.location.href,
             pathname: window.location.pathname,
-            ticket_id: params.get('id') || params.get('ticketid') || '',
+            ticket_id: page === 'supporttickets.php' ? (params.get('id') || params.get('ticketid') || '') : '',
             client_id: params.get('userid') || '',
-            service_id: params.get('serviceid') || params.get('hostingid') || '',
-            invoice_id: params.get('invoiceid') || '',
+            service_id: page === 'clientsservices.php' ? (params.get('id') || params.get('serviceid') || '') : '',
+            invoice_id: page === 'invoices.php' ? (params.get('id') || params.get('invoiceid') || '') : '',
             action: params.get('action') || ''
         };
     }
@@ -5971,18 +5970,11 @@ function sahdev_render_admin_copilot_drawer(array $vars = []): string
                 try { sessionStorage.setItem('sdv_copilot_uuid', sessionUuid); } catch (e) {}
             }
 
-            if (data.status === 'success' || data.success) {
-                var botMsg = appendMsg('bot', data.reply || 'Operation completed.');
-
-                // Render Action Cards if proposed
-                if (data.action_cards && data.action_cards.length > 0) {
-                    data.action_cards.forEach(function(card) {
-                        renderActionCard(botMsg, card);
-                    });
-                }
-            } else {
-                appendMsg('bot', '⚠️ ' + (data.message || data.error || 'Request failed.'));
-            }
+            var botMsg = appendMsg('bot', '');
+            botMsg.textContent = '';
+            if (!data.success && data.status !== 'success') data.error = data.error || data.message || 'Request failed.';
+            SahdevCopilot.message(botMsg, data, drawerOptions());
+            msgsEl.scrollTop = msgsEl.scrollHeight;
         })
         .catch(function(err) {
             statusEl.style.display = 'none';
@@ -5992,132 +5984,18 @@ function sahdev_render_admin_copilot_drawer(array $vars = []): string
         });
     }
 
-    function renderActionCard(parentEl, card) {
-        function escapeText(value) {
-            var el = document.createElement('span');
-            el.textContent = value == null ? '' : (typeof value === 'object' ? JSON.stringify(value) : String(value));
-            return el.innerHTML;
-        }
-        var cardDiv = document.createElement('div');
-        var isDestructive = card.risk_tier === 3 || card.requires_password;
-        cardDiv.className = 'sdv-action-proposal' + (isDestructive ? ' tier-destructive' : '');
-
-        var diffRows = '';
-        if (card.diff) {
-            for (var prop in card.diff) {
-                if (card.diff.hasOwnProperty(prop)) {
-                    var beforeVal = card.diff[prop].before != null ? String(card.diff[prop].before) : '(none)';
-                    var afterVal = card.diff[prop].after != null ? String(card.diff[prop].after) : '(none)';
-                    diffRows += '<tr><td><strong>' + escapeText(prop) + '</strong></td><td class="sdv-diff-before">' + escapeText(beforeVal) + '</td><td>&rarr;</td><td class="sdv-diff-after">' + escapeText(afterVal) + '</td></tr>';
-                }
-            }
-        }
-
-        var pwdPrompt = isDestructive
-            ? '<div style="margin:8px 0;"><input type="password" class="sdv-tier3-pwd" placeholder="Enter admin password to authorize" style="width:100%;padding:6px;border-radius:4px;border:1px solid rgba(255,255,255,0.2);background:#1e1b2e;color:#fff;font-size:11px;"></div>'
-            : '';
-
-        cardDiv.innerHTML =
-            '<div class="sdv-action-header">' +
-                '<strong>' + escapeText(card.title || card.action_key) + '</strong>' +
-                '<span class="sdv-tier-pill' + (isDestructive ? ' tier-destructive' : '') + '">' +
-                    (card.risk_tier === 3 ? 'Tier 3 (Destructive)' : 'Tier 2 (Reversible)') +
-                '</span>' +
-            '</div>' +
-            '<div style="font-size:11px;color:#cbd5e1;">' + escapeText(card.description || '') + '</div>' +
-            (diffRows ? '<table class="sdv-action-diff-tbl"><tbody>' + diffRows + '</tbody></table>' : '') +
-            pwdPrompt +
-            '<div class="sdv-action-footer">' +
-                '<button type="button" class="sdv-btn-confirm">Confirm & Execute</button>' +
-                '<button type="button" class="sdv-btn-dismiss">Dismiss</button>' +
-            '</div>';
-
-        parentEl.appendChild(cardDiv);
-        msgsEl.scrollTop = msgsEl.scrollHeight;
-
-        var confirmBtn = cardDiv.querySelector('.sdv-btn-confirm');
-        var dismissBtn = cardDiv.querySelector('.sdv-btn-dismiss');
-
-        dismissBtn.addEventListener('click', function() {
-            cardDiv.remove();
-        });
-
-        confirmBtn.addEventListener('click', function() {
-            var pwd = isDestructive ? (cardDiv.querySelector('.sdv-tier3-pwd') ? cardDiv.querySelector('.sdv-tier3-pwd').value : '') : '';
-            if (isDestructive && !pwd) {
-                alert('Administrator password is required for Tier-3 operations.');
-                return;
-            }
-
-            confirmBtn.disabled = true;
-            confirmBtn.textContent = 'Executing...';
-
-            var form = new FormData();
-            form.append('action', 'copilot_execute_op');
-            form.append('action_key', card.action_key);
-            form.append('params', JSON.stringify(card.params || {}));
-            form.append('session_id', card.session_id || 0);
-            if (pwd) form.append('admin_password', pwd);
-            form.append('token', csrfToken);
-
-            fetch(ajaxUrl, {
-                method: 'POST',
-                body: form
-            })
-            .then(function(r) { return r.json(); })
-            .then(function(execRes) {
-                if (execRes.status === 'success' || execRes.success) {
-                    var jId = Number(execRes.journal_id) || '';
-                    cardDiv.innerHTML =
-                        '<div style="color:#34d399;font-weight:700;font-size:12px;display:flex;justify-content:space-between;align-items:center;">' +
-                            '<span>✓ Executed ' + (jId ? '[Journal #' + jId + ']' : '') + '</span>' +
-                            (jId ? '<button type="button" class="sdv-btn-rollback" data-journal="' + jId + '">↩ Rollback</button>' : '') +
-                        '</div>' +
-                        '<div style="font-size:11px;color:#94a3b8;margin-top:4px;">' + escapeText(execRes.message || 'Operation executed successfully.') + '</div>';
-
-                    var rbBtn = cardDiv.querySelector('.sdv-btn-rollback');
-                    if (rbBtn) {
-                        rbBtn.addEventListener('click', function() {
-                            rollbackJournal(jId, cardDiv);
-                        });
-                    }
-                } else {
-                    confirmBtn.disabled = false;
-                    confirmBtn.textContent = 'Retry';
-                    alert('Execution failed: ' + (execRes.message || execRes.error || 'Unknown error'));
-                }
-            })
-            .catch(function(err) {
-                confirmBtn.disabled = false;
-                confirmBtn.textContent = 'Retry';
-                alert('Execution error: ' + err.message);
-            });
-        });
-    }
-
-    function rollbackJournal(journalId, containerEl) {
-        if (!confirm('Are you sure you want to rollback this operation?')) return;
-
+    function drawerRequest(action, fields) {
         var form = new FormData();
-        form.append('action', 'copilot_rollback_op');
-        form.append('journal_id', journalId);
-        form.append('token', csrfToken);
-
-        fetch(ajaxUrl, {
-            method: 'POST',
-            body: form
-        })
-        .then(function(r) { return r.json(); })
-        .then(function(data) {
-            if (data.status === 'success' || data.success) {
-                containerEl.textContent = '↩ Rolled Back Successfully. ' + (data.message || '');
-            } else {
-                alert('Rollback failed: ' + (data.message || data.error || 'Unknown error'));
-            }
-        })
-        .catch(function(err) {
-            alert('Rollback error: ' + err.message);
-        });
+        Object.keys(fields).forEach(function(key) { form.append(key, fields[key]); });
+        form.append('action', action); form.append('token', csrfToken);
+        return fetch(ajaxUrl, { method: 'POST', credentials: 'same-origin', body: form }).then(function(r) { return r.json(); });
+    }
+    function drawerOptions() {
+        return {
+            next: function(prompt) { inputEl.value = prompt; sendMessage(); },
+            execute: function(card, password) { return drawerRequest('copilot_execute_op', { action_key: card.action_key, params: JSON.stringify(card.params || {}), proposal_id: card.proposal_id, session_id: card.session_id, admin_password: password }); },
+            rollback: function(id) { return drawerRequest('copilot_rollback_op', { journal_id: id }); }
+        };
     }
 })();
 </script>

@@ -1,0 +1,29 @@
+.copilot-chat-area { min-width: 0; }
+.copilot-bubble.bubble-assistant { max-width: 100%; min-width: 0; }
+.sdv-msg-bot { min-width: 0; }
+.sdv-copilot-markdown { overflow-wrap: anywhere; line-height: 1.6; }
+.sdv-copilot-markdown p { margin: 0 0 .6em; }
+.sdv-copilot-markdown p:last-child { margin-bottom: 0; }
+.sdv-copilot-markdown h2,.sdv-copilot-markdown h3,.sdv-copilot-markdown h4 { font-size: 1.15em; margin: .8em 0 .4em; font-weight: 700; }
+.sdv-copilot-markdown :first-child { margin-top: 0; }
+.sdv-copilot-markdown ul,.sdv-copilot-markdown ol { padding-left: 1.6em; }
+.sdv-copilot-markdown pre { overflow: auto; padding: 12px; background: var(--sdv-bg-nested, #172033); color: inherit; }
+.sdv-copilot-markdown code { color: inherit; background: var(--sdv-bg-nested, rgba(128,128,128,.12)); }
+.sdv-copilot-markdown blockquote { margin: 8px 0; padding-left: 12px; border-left: 3px solid #648bd6; }
+.sdv-copilot-records,.sdv-action-proposal { margin-top: 14px; padding: 14px; border: 1px solid var(--sdv-border, #64748b); border-radius: 8px; color: inherit; }
+.sdv-copilot-records h4,.sdv-action-proposal h4 { margin: 0 0 8px; font-size: 15px; }
+.sdv-action-proposal h5 { margin: 12px 0 6px; font-weight: 700; }
+.sdv-copilot-meta { font-size: 12px; opacity: .85; overflow-wrap: anywhere; }
+.sdv-copilot-table-scroll { max-width: 100%; overflow-x: auto; margin: 10px 0; }
+.sdv-copilot-table-scroll table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.sdv-copilot-table-scroll th,.sdv-copilot-table-scroll td { padding: 8px 10px; border: 1px solid var(--sdv-border, #64748b); text-align: left; vertical-align: top; white-space: pre-wrap; min-width: 70px; max-width: 400px; overflow-wrap: anywhere; }
+.sdv-copilot-table-scroll th { font-weight: 600; }
+.sdv-copilot-markdown a,.sdv-copilot-records a,.sdv-action-proposal a { color: var(--sdv-link, #4b9fff); text-decoration: underline; text-underline-offset: 2px; }
+.sdv-copilot-state { display: inline-block; border: 1px solid currentColor; border-radius: 4px; padding: 1px 5px; white-space: nowrap; }
+.sdv-copilot-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.sdv-copilot-action-status { margin: 10px 0; font-weight: 600; overflow-wrap: anywhere; }
+.sdv-copilot-policy fieldset { padding: 16px; margin: 16px 0; border: 1px solid var(--sdv-border, #64748b); border-radius: 8px; }
+.sdv-copilot-policy label { display: inline-block; margin-right: 16px; }
+.sdv-copilot-policy .sdv-policy-fields { display: flex; flex-wrap: wrap; gap: 20px; margin-top: 12px; }
+.sdv-copilot-policy select[multiple] { min-height: 160px; min-width: 220px; }
+@media (max-width: 800px) { .copilot-container { flex-direction: column; } .copilot-sidebar { width: 100%; max-height: 150px; } .copilot-bubble { max-width: 100%; } }

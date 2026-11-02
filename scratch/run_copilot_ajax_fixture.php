@@ -8,7 +8,10 @@ $_POST = ['action' => 'copilot_send_message', 'token' => 'fixture-csrf', 'messag
 \Sahdev\Lib\CopilotHttpFixture::$responses = [['choices' => [['message' => ['content' => 'Copilot works without Ticket AI', 'tool_calls' => []]]]]];
 if ($mode === 'missing_token') unset($_POST['token']);
 if ($mode === 'invalid_token') $_POST['token'] = 'wrong';
-if ($mode === 'forbidden') $_SESSION['adminid'] = 2;
+if ($mode === 'forbidden') {
+    $_SESSION['adminid'] = 2;
+    \WHMCS\Database\Capsule::$rows['tblsahdev_role_permissions'] = [['id'=>1, 'role_id'=>2, 'permissions_json'=>json_encode(['copilot_use'=>false])]];
+}
 if ($mode === 'empty_message') $_POST['message'] = '';
 if ($mode === 'execute' || $mode === 'rollback') {
     $session = \Sahdev\Lib\ChatService::getOrCreateAdminSession(1);
@@ -16,8 +19,10 @@ if ($mode === 'execute' || $mode === 'rollback') {
     $_POST['action_key'] = 'ticket_change_status';
     $_POST['session_id'] = $session['id'];
     $_POST['params'] = json_encode(['ticket_id' => 12, 'status' => 'Closed']);
+    $proposal = \Sahdev\Lib\SafeOpsService::handleOperationRequest('ticket_change_status', ['ticket_id'=>12, 'status'=>'Closed'], 1, $session['id']);
+    $_POST['proposal_id'] = $proposal['proposal_id'];
     if ($mode === 'rollback') {
-        $result = \Sahdev\Lib\SafeOpsService::executeConfirmedOperation('ticket_change_status', ['ticket_id' => 12, 'status' => 'Closed'], 1, $session['id']);
+        $result = \Sahdev\Lib\SafeOpsService::executeConfirmedOperation('ticket_change_status', ['ticket_id' => 12, 'status' => 'Closed'], 1, $session['id'], null, $proposal['proposal_id']);
         $_POST['action'] = 'copilot_rollback_op';
         $_POST['journal_id'] = $result['journal_id'];
     }

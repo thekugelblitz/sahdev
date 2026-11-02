@@ -24,6 +24,7 @@ namespace WHMCS\Database {
         public function __construct($table) { $this->table = $table; }
         public function __call($name, $args) { return $this; }
         public function first() {
+            if ($this->table === 'tbladmins') return (object) ['id'=>1, 'roleid'=>1, 'disabled'=>0];
             if ($this->table === 'tblsahdev_settings') return Capsule::$settings;
             if ($this->table === 'tblsahdev_admin_preferences' && Capsule::$preferences !== null) {
                 return (object) ['preferences_json' => json_encode(Capsule::$preferences)];

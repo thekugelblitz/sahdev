@@ -30,6 +30,7 @@ jobs:
           php scratch/test_settings_theme.php
           php scratch/test_command_station.php
           php scratch/test_copilot.php
+          php scratch/test_copilot_database.php
           node scratch/test_copilot_ajax.cjs
   copilot-browser:
     runs-on: ubuntu-latest
@@ -49,3 +50,28 @@ jobs:
           npx playwright install --with-deps chromium
       - name: Copilot browser flows
         run: node scratch/test_copilot_ui.cjs
+  copilot-innodb:
+    runs-on: ubuntu-latest
+    services:
+      mariadb:
+        image: mariadb:10.11
+        env:
+          MARIADB_ALLOW_EMPTY_ROOT_PASSWORD: 'yes'
+          MARIADB_DATABASE: sahdev_copilot_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "healthcheck.sh --connect --innodb_initialized"
+          --health-interval 10s --health-timeout 5s --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: mbstring, pdo_mysql
+          coverage: none
+      - name: Concurrent database approval and rollback
+        env:
+          SAHDEV_COPILOT_MYSQL_DSN: 'mysql:host=127.0.0.1;port=3306;dbname=sahdev_copilot_test'
+          SAHDEV_COPILOT_MYSQL_USER: root
+        run: php scratch/test_copilot_mysql.php

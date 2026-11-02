@@ -696,6 +696,12 @@ class AdminController
                 'url'   => $base . '&action=permissions',
                 'desc'  => 'WHMCS admin group role-based access controls'
             ];
+            $categories['settings']['tools']['copilot_access'] = [
+                'label' => 'Copilot Database Access',
+                'icon' => 'fas fa-database',
+                'url' => $base . '&action=copilot_access',
+                'desc' => 'Role, resource, field and client-scope rules for Copilot queries and database changes'
+            ];
         }
         $categories['settings']['tools']['my_preferences'] = [
             'label' => 'My Preferences',
@@ -7723,6 +7729,12 @@ class AdminController
     /**
      * Admin Ops Copilot: Command center, live safe ops execution, rollback journal, and visitor chat takeover.
      */
+    public function copilot_access()
+    {
+        $adminId = (int) ($_SESSION['adminid'] ?? 0);
+        return $this->getNavigationMarkup('copilot_access') . \Sahdev\Lib\CopilotAdminPages::access($this->moduleVars['modulelink'], $adminId);
+    }
+
     public function admin_copilot()
     {
         $adminId = (int) ($_SESSION['adminid'] ?? 0);
@@ -7755,14 +7767,17 @@ class AdminController
 
         $messages = \Sahdev\Lib\ChatService::getSessionMessages($sessionId, 50);
 
-        // Journal records
-        $journal = Capsule::table('tblsahdev_ops_journal')
+        // Only operators with audit/settings access may inspect other admins' evidence.
+        $journalQuery = Capsule::table('tblsahdev_ops_journal');
+        if (!\Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_AUDIT_MANAGE) && !\Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_SETTINGS_MANAGE)) $journalQuery->where('admin_id', $adminId);
+        $journal = $journalQuery
             ->orderBy('id', 'desc')
             ->limit(50)
             ->get();
 
         // Active visitor chats
         $visitorChats = Capsule::table('tblsahdev_chat_sessions')
+            ->where('id', '>', \Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_CLIENT_CHAT_MANAGE) ? 0 : PHP_INT_MAX)
             ->where('session_type', 'client_livechat')
             ->whereIn('status', ['active', 'taken_over'])
             ->orderBy('last_message_at', 'desc')
@@ -7896,13 +7911,13 @@ class AdminController
             }
         </style>
 
-        <?php echo $this->getNavigationMarkup('admin_copilot'); ?>
+        <?php echo \Sahdev\Lib\CopilotPresentation::assets(); echo $this->getNavigationMarkup('admin_copilot'); ?>
         <div class="sahdev-page-container">
 
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
                 <div>
                     <h2 style="margin: 0 0 5px;"><i class="fas fa-terminal text-primary"></i> Admin Ops Copilot</h2>
-                    <p class="text-muted" style="margin: 0;">Autonomous WHMCS Operations Assistant with 3-Tier Safe Ops and Atomic State Rollback.</p>
+                    <p class="text-muted" style="margin: 0;">WHMCS record queries and reviewed database changes with transactional rollback.</p>
                 </div>
                 <div>
                     <span class="label label-info" style="font-size: 12px; padding: 6px 12px;">
@@ -7911,6 +7926,9 @@ class AdminController
                 </div>
             </div>
 
+            <?php if (\Sahdev\Lib\PermissionService::hasPermission($adminId, \Sahdev\Lib\PermissionService::PERM_SETTINGS_MANAGE)): ?>
+                <p><a class="btn btn-default btn-sm" href="<?php echo htmlspecialchars($this->moduleVars['modulelink']); ?>&action=copilot_access">Copilot Database Access</a></p>
+            <?php endif; ?>
             <!-- Sub Navigation Tabs -->
             <ul class="nav nav-tabs" style="margin-bottom: 20px;">
                 <li class="<?php echo ($activeSubTab === 'console') ? 'active' : ''; ?>">
@@ -7992,69 +8010,28 @@ class AdminController
                             <?php if (empty($messages)): ?>
                                 <div class="copilot-bubble bubble-assistant">
                                     👋 <strong>Hello <?php echo htmlspecialchars($_SESSION['adminname'] ?? 'Admin'); ?>!</strong> I am your Sahdev Ops Copilot. 
-                                    I can query WHMCS records, inspect server health, analyze gateway logs, and execute safe ops with 1-click rollback.
+                                    I can query permitted WHMCS records and prepare database changes for your review, with conflict-checked rollback.
                                     <div style="margin-top: 10px;">
                                         <strong>Try asking:</strong>
                                         <div style="margin-top: 6px;">
                                             <span class="shortcut-chip" onclick="applyShortcut(this.innerText)">Check disk load on servers</span>
                                             <span class="shortcut-chip" onclick="applyShortcut(this.innerText)">Lookup client balance and open invoices</span>
                                             <span class="shortcut-chip" onclick="applyShortcut(this.innerText)">Show recent payment gateway failures</span>
-                                            <span class="shortcut-chip" onclick="applyShortcut(this.innerText)">Suspend service #12 for overdue balance</span>
+                                            <span class="shortcut-chip" onclick="applyShortcut(this.innerText)">Show services for client #12</span>
                                         </div>
                                     </div>
                                 </div>
                             <?php else: ?>
                                 <?php foreach ($messages as $m): ?>
-                                    <div class="copilot-bubble <?php echo ($m['sender_type'] === 'user') ? 'bubble-user' : 'bubble-assistant'; ?>">
-                                        <?php echo nl2br(htmlspecialchars($m['message_text'])); ?>
-
-                                        <?php if (!empty($m['action_card'])): ?>
-                                            <?php foreach ($m['action_card'] as $card): ?>
-                                                <div class="action-card">
-                                                    <div class="action-card-header">
-                                                        <i class="fas fa-shield-alt"></i> Action Proposal: <?php echo htmlspecialchars($card['title']); ?>
-                                                        <span class="label label-warning pull-right">Tier <?php echo (int) $card['risk_tier']; ?> <?php echo !empty($card['requires_password']) ? 'Destructive' : 'Reversible'; ?></span>
-                                                    </div>
-                                                    <div style="font-size: 12px; color: var(--sdv-text-secondary, #4a5568);">
-                                                        Target: <strong><?php echo htmlspecialchars($card['target'] ?? 'Record'); ?></strong>
-                                                    </div>
-                                                    <?php if (!empty($card['diff'])): ?>
-                                                        <table class="diff-table">
-                                                            <thead>
-                                                                <tr style="background: var(--sdv-bg-nested, #f8fafc);">
-                                                                    <th>Property</th>
-                                                                    <th>Current Value</th>
-                                                                    <th>Proposed Value</th>
-                                                                </tr>
-                                                            </thead>
-                                                            <tbody>
-                                                                <?php foreach ($card['diff'] as $prop => $d): ?>
-                                                                    <tr>
-                                                                        <td><strong><?php echo htmlspecialchars($prop); ?></strong></td>
-                                                                        <td class="diff-before"><?php echo htmlspecialchars(is_array($d['before']) ? json_encode($d['before']) : ($d['before'] ?? 'None')); ?></td>
-                                                                        <td class="diff-after"><?php echo htmlspecialchars(is_array($d['after']) ? json_encode($d['after']) : ($d['after'] ?? 'None')); ?></td>
-                                                                    </tr>
-                                                                <?php endforeach; ?>
-                                                            </tbody>
-                                                        </table>
-                                                    <?php endif; ?>
-
-                                                    <?php if (!empty($card['requires_password']) || (int) $card['risk_tier'] === 3): ?>
-                                                        <input type="password" class="form-control copilot-admin-password" placeholder="Admin password required" autocomplete="current-password">
-                                                    <?php endif; ?>
-                                                    <div style="margin-top: 12px; display: flex; justify-content: flex-end; gap: 10px;">
-                                                        <button type="button" class="btn btn-xs btn-default" onclick="dismissActionCard(this)">Dismiss</button>
-                                                        <button type="button" class="btn btn-sm btn-success" 
-                                                                onclick="executeActionProposal(<?php echo htmlspecialchars(json_encode($card['action_key']), ENT_QUOTES, 'UTF-8'); ?>, <?php echo htmlspecialchars(json_encode($card['params']), ENT_QUOTES, 'UTF-8'); ?>, <?php echo $sessionId; ?>, this)">
-                                                            <i class="fas fa-check"></i> Confirm & Execute
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            <?php endforeach; ?>
-                                        <?php endif; ?>
-                                    </div>
+                                    <?php
+                                    $savedCards = [];
+                                    foreach ($m['action_card'] ?: [] as $card) if (is_array($card)) $savedCards[] = \Sahdev\Lib\CopilotOperationService::refresh($card);
+                                    $payload = ['reply'=>$m['message_text'], 'action_cards'=>$savedCards, 'result_cards'=>$m['result_cards'] ?? []];
+                                    ?>
+                                    <div class="copilot-bubble <?php echo $m['sender_type'] === 'user' ? 'bubble-user' : 'bubble-assistant'; ?>" data-copilot-message="<?php echo htmlspecialchars(json_encode($payload), ENT_QUOTES, 'UTF-8'); ?>" data-copilot-role="<?php echo $m['sender_type'] === 'user' ? 'user' : 'assistant'; ?>"></div>
                                 <?php endforeach; ?>
                             <?php endif; ?>
+
                         </div>
 
                         <!-- Input Controls -->
@@ -8078,6 +8055,17 @@ class AdminController
                 </div>
 
                 <script>
+                const copilotOptions = {
+                    next: text => { applyShortcut(text); sendCopilotMessage(); },
+                    execute: (card, password) => copilotRequest('copilot_execute_op', { action_key: card.action_key, params: JSON.stringify(card.params || {}), proposal_id: card.proposal_id, session_id: card.session_id, admin_password: password }),
+                    rollback: id => copilotRequest('copilot_rollback_op', { journal_id: id })
+                };
+                document.querySelectorAll('[data-copilot-message]').forEach(el => {
+                    const data = JSON.parse(el.dataset.copilotMessage);
+                    if (el.dataset.copilotRole === 'user') { el.textContent = data.reply; el.style.whiteSpace = 'pre-wrap'; }
+                    else SahdevCopilot.message(el, data, copilotOptions);
+                    el.removeAttribute('data-copilot-message');
+                });
                 function applyShortcut(text) {
                     const input = document.getElementById('copilot-input');
                     input.value = text;
@@ -8128,30 +8116,12 @@ class AdminController
                     .then(data => {
                         btn.disabled = false;
                         thinking.remove();
-                        if (data.success) {
-                            const botBubble = document.createElement('div');
-                            botBubble.className = 'copilot-bubble bubble-assistant';
-                            const replyText = document.createElement('span');
-                            replyText.textContent = data.reply || '';
-                            replyText.style.whiteSpace = 'pre-wrap';
-                            botBubble.appendChild(replyText);
-
-                            if (data.action_cards && data.action_cards.length > 0) {
-                                data.action_cards.forEach(card => {
-                                    const cardEl = renderActionCardHtml(card);
-                                    botBubble.appendChild(cardEl);
-                                });
-                            }
-
-                            container.appendChild(botBubble);
-                            scrollToBottom();
-                        } else {
-                            const errBubble = document.createElement('div');
-                            errBubble.className = 'copilot-bubble bubble-assistant';
-                            errBubble.textContent = '⚠️ Error: ' + (data.error || 'Failed to complete request.');
-                            container.appendChild(errBubble);
-                            scrollToBottom();
-                        }
+                        const botBubble = document.createElement('div');
+                        botBubble.className = 'copilot-bubble bubble-assistant';
+                        if (!data.success) data.error = data.error || 'Failed to complete request.';
+                        SahdevCopilot.message(botBubble, data, copilotOptions);
+                        container.appendChild(botBubble);
+                        scrollToBottom();
                     })
                     .catch(err => {
                         btn.disabled = false;
@@ -8164,143 +8134,9 @@ class AdminController
                     });
                 }
 
-                function renderActionCardHtml(card) {
-                    const div = document.createElement('div');
-                    div.className = 'action-card';
-                    let diffRows = '';
-                    if (card.diff) {
-                        for (let k in card.diff) {
-                            diffRows += `<tr><td><strong>${escapeCopilotHtml(k)}</strong></td><td class="diff-before">${escapeCopilotHtml(card.diff[k].before)}</td><td class="diff-after">${escapeCopilotHtml(card.diff[k].after)}</td></tr>`;
-                        }
-                    }
-
-                    div.innerHTML = `
-                        <div class="action-card-header">
-                            <i class="fas fa-shield-alt"></i> Action Proposal: ${escapeCopilotHtml(card.title)}
-                            <span class="label label-warning pull-right">Tier ${Number(card.risk_tier)} ${card.requires_password || Number(card.risk_tier) === 3 ? 'Destructive' : 'Reversible'}</span>
-                        </div>
-                        <div style="font-size: 12px; color: var(--sdv-text-secondary, #4a5568);">Target: <strong>${escapeCopilotHtml(card.target || 'Record')}</strong></div>
-                        <table class="diff-table">
-                            <thead><tr style="background: var(--sdv-bg-nested, #f8fafc);"><th>Property</th><th>Current</th><th>Proposed</th></tr></thead>
-                            <tbody>${diffRows}</tbody>
-                        </table>
-                        ${card.requires_password || Number(card.risk_tier) === 3 ? '<input type="password" class="form-control copilot-admin-password" placeholder="Admin password required" autocomplete="current-password">' : ''}
-                        <div style="margin-top: 12px; display: flex; justify-content: flex-end; gap: 10px;">
-                            <button type="button" class="btn btn-xs btn-default" onclick="dismissActionCard(this)">Dismiss</button>
-                            <button type="button" class="btn btn-sm btn-success copilot-confirm-action">
-                                <i class="fas fa-check"></i> Confirm & Execute
-                            </button>
-                        </div>
-                    `;
-                    div.querySelector('.copilot-confirm-action').addEventListener('click', function() {
-                        executeActionProposal(card.action_key, card.params || {}, <?php echo $sessionId; ?>, this);
-                    });
-                    return div;
-                }
-
-                function dismissActionCard(btn) {
-                    btn.closest('.action-card').remove();
-                }
-
-                function executeActionProposal(actionKey, params, sessionId, btn) {
-                    if (btn.disabled) return;
-                    const passwordInput = btn.closest('.action-card').querySelector('.copilot-admin-password');
-                    if (passwordInput && !passwordInput.value) {
-                        alert('Administrator password is required for Tier-3 operations.');
-                        passwordInput.focus();
-                        return;
-                    }
-                    btn.disabled = true;
-                    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Executing...';
-
-                    copilotRequest('copilot_execute_op', {
-                        action_key: actionKey, params: JSON.stringify(params), session_id: sessionId,
-                        admin_password: passwordInput ? passwordInput.value : ''
-                    })
-                    .then(data => {
-                        if (data.success) {
-                            if (passwordInput) passwordInput.remove();
-                            btn.className = 'btn btn-sm btn-default';
-                            btn.innerHTML = `<i class="fas fa-check-circle text-success"></i> Executed [Journal #${data.journal_id}]`;
-                            btn.onclick = null;
-                            alert("Operation executed successfully! State snapshot recorded to Journal #" + data.journal_id);
-                        } else {
-                            btn.disabled = false;
-                            btn.innerHTML = '<i class="fas fa-check"></i> Retry Execution';
-                            alert("Execution Failed: " + (data.error || 'Unknown error'));
-                        }
-                    })
-                    .catch(err => {
-                        btn.disabled = false;
-                        btn.innerHTML = '<i class="fas fa-check"></i> Retry Execution';
-                        alert("Network error: " + err.message);
-                    });
-                }
                 </script>
             <?php elseif ($activeSubTab === 'journal'): ?>
-                <!-- OPS ROLLBACK JOURNAL -->
-                <div class="panel panel-default" style="border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
-                    <div class="panel-heading" style="background: var(--sdv-bg-surface, #fff); padding: 15px 20px;">
-                        <strong style="font-size: 15px;"><i class="fas fa-history text-primary"></i> 90-Day Immutable Ops Journal</strong>
-                        <p class="text-muted" style="margin: 3px 0 0; font-size: 12px;">Complete audit trail of every mutating WHMCS operation triggered via Copilot with state diffs and 1-click compensation rollback.</p>
-                    </div>
-                    <div class="table-responsive">
-                        <table class="table table-striped table-hover" style="margin-bottom: 0;">
-                            <thead>
-                                <tr style="background: var(--sdv-bg-nested, #f8fafc);">
-                                    <th>ID</th>
-                                    <th>Timestamp</th>
-                                    <th>Operator</th>
-                                    <th>Operation</th>
-                                    <th>Target Entity</th>
-                                    <th>Risk Tier</th>
-                                    <th>Status</th>
-                                    <th style="text-align: right;">Action</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <?php if ($journal->isEmpty()): ?>
-                                    <tr><td colspan="8" class="text-center text-muted" style="padding: 30px;">No operations executed yet. Use the Ops Copilot to run actions.</td></tr>
-                                <?php else: ?>
-                                    <?php foreach ($journal as $j): ?>
-                                        <tr>
-                                            <td><strong>#<?php echo $j->id; ?></strong></td>
-                                            <td style="font-size: 12px;"><?php echo $j->executed_at; ?></td>
-                                            <td>Admin #<?php echo $j->admin_id; ?></td>
-                                            <td><strong><?php echo htmlspecialchars($j->description); ?></strong></td>
-                                            <td><span class="label label-default"><?php echo htmlspecialchars($j->target_entity_type . ' #' . $j->target_entity_id); ?></span></td>
-                                            <td>
-                                                <?php if ($j->risk_tier == 3): ?>
-                                                    <span class="label label-danger">Tier 3 Destructive</span>
-                                                <?php else: ?>
-                                                    <span class="label label-info">Tier 2 Reversible</span>
-                                                <?php endif; ?>
-                                            </td>
-                                            <td>
-                                                <?php if ($j->status === 'rolled_back'): ?>
-                                                    <span class="label label-warning" style="background: #805ad5;">Rolled Back</span>
-                                                <?php elseif ($j->status === 'executed'): ?>
-                                                    <span class="label label-success">Executed</span>
-                                                <?php else: ?>
-                                                    <span class="label label-danger">Failed</span>
-                                                <?php endif; ?>
-                                            </td>
-                                            <td style="text-align: right;">
-                                                <?php if ($j->status === 'executed'): ?>
-                                                    <button type="button" class="btn btn-xs btn-danger" onclick="triggerRollback(<?php echo $j->id; ?>, this)">
-                                                        <i class="fas fa-undo"></i> Rollback
-                                                    </button>
-                                                <?php else: ?>
-                                                    <span class="text-muted" style="font-size: 11px;">Restored</span>
-                                                <?php endif; ?>
-                                            </td>
-                                        </tr>
-                                    <?php endforeach; ?>
-                                <?php endif; ?>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
+                <?php echo \Sahdev\Lib\CopilotAdminPages::audit($this->moduleVars['modulelink'], $adminId); ?>
 
                 <script>
                 function triggerRollback(journalId, btn) {

@@ -1986,7 +1986,7 @@ try {
             exit;
         }
 
-        $res = \Sahdev\Lib\SafeOpsService::executeConfirmedOperation($actionKey, $params, (int) $adminId, $sessionId, $adminPassword);
+        $res = \Sahdev\Lib\SafeOpsService::executeConfirmedOperation($actionKey, $params, (int) $adminId, $sessionId, $adminPassword, (string) ($_POST['proposal_id'] ?? ''));
         $response = array_merge(['status' => ($res['success'] ?? false) ? 'success' : 'error'], $res);
     } elseif ($action === 'copilot_rollback_op') {
         $journalId = (int) ($_POST['journal_id'] ?? 0);
