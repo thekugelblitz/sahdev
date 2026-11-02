@@ -32,11 +32,20 @@
         var button=el('button','Refresh observations',history);button.type='button';button.className='btn btn-default btn-xs';button.onclick=load;
         if(!data.enabled){el('p','Timeline collection is disabled. Enable a policy in Case Timeline & context settings.',history);return;}
         if(data.notice)el('p',data.notice,history);
+        var overview=el('div',undefined,history);overview.className='sdv-case-overview';
+        [['client','Latest client report'],['staff','Latest staff update'],['tool','Latest diagnostic']].forEach(function(pair){
+            var latest=(data.events||[]).filter(function(e){return e.kind===pair[0];}).slice(-1)[0];
+            var card=el('div',undefined,overview);el('small',pair[1],card);
+            el('strong',latest?(latest.title||latest.source):'No observation',card);
+            if(latest){var update=(latest.highlights||[]).slice(-2).join(' ')||latest.summary||'';el('p',update.length>220?update.slice(0,217)+'…':update,card);}
+            if(latest)el('time',latest.at,card);
+        });
+        el('p','Highlights are selected from source text. Reported actions and offers are not independently verified.',history).className='sdv-case-reading-note';
         var filters=el('div',undefined,history);filters.className='sdv-case-filters';filters.setAttribute('aria-label','Filter case events');
         [['all','All events'],['client','Client'],['staff','Staff'],['tool','Tools']].forEach(function(pair){var b=el('button',pair[1],filters);b.type='button';b.setAttribute('aria-pressed',String(filter===pair[0]));b.onclick=function(){filter=pair[0];render(lastData);};});
         var events=(data.events||[]).filter(function(e){return filter==='all'||e.kind===filter;});
         if(!events.length)el('p','No observations match this view.',history);
-        var eventList=el('div',undefined,history);eventList.className='sdv-case-event-list';
+        var eventList=el('div',undefined,history);eventList.className='sdv-case-event-list';eventList.tabIndex=0;eventList.setAttribute('aria-label','Case events, ordered by observation time');
         var groups={};
         if(mode==='timeline_milestones'){
             [['reported','01 · Reported'],['checked','02 · Checked'],['review','03 · Review next']].forEach(function(pair){var group=el('section',undefined,eventList);el('h4',pair[1],group);groups[pair[0]]=group;});
@@ -51,10 +60,17 @@
             var parent=mode==='timeline_milestones'?groups[e.kind==='tool'?'checked':'reported']:eventList;
             var item=el('article',undefined,parent);item.className='sdv-case-event';item.dataset.kind=e.kind||'report';
             var time=el('time',e.at,item);time.dateTime=String(e.at||'').replace(' ','T');
+            function evidenceBody(parent){
+                if(data.presentation==='excerpts'&&e.excerpt)el('p',e.excerpt,parent);
+                else if(e.highlights&&e.highlights.length){var list=el('ul',undefined,parent);e.highlights.forEach(function(line){el('li',line,list);});}
+                else el('p',e.summary,parent);
+                el('small',e.source+(e.kind==='tool'?' · observation':' · reported'),parent).className='sdv-case-source';
+                if(e.excerpt&&data.presentation!=='excerpts'){var detail=el('details',undefined,parent);el('summary','Read cleaned source excerpt',detail);el('p',e.excerpt,detail);}
+            }
             if(mode==='timeline_map'){
-                var evidence=el('div',undefined,item);el('strong',e.source,evidence);el('span',e.status,evidence);el('p',e.summary,evidence);
+                var evidence=el('div',undefined,item);el('strong',e.title||e.source,evidence);el('span',e.status,evidence);evidenceBody(evidence);
                 var action=el('button',e.kind==='tool'?'Review / recheck in Tools':'Review response brief',item);action.type='button';action.onclick=function(){if(e.kind==='tool')document.getElementById('rm-tab-tools').click();else{form.scrollIntoView({behavior:'smooth',block:'start'});instruction.focus();}};
-            }else{el('strong',e.source,item);el('span',e.status,item);el('p',e.summary,item);}
+            }else{el('strong',e.title||e.source,item);el('span',e.status,item);var body=el('div',undefined,item);body.className='sdv-case-event-body';evidenceBody(body);}
         });
         function fields(obj,parent){Object.keys(obj||{}).forEach(function(k){var val=obj[k];if(val&&typeof val==='object'){el('h4',k.replace(/_/g,' '),parent);fields(val,parent);}else{var row=el('div',undefined,parent);row.className='sdv-case-fact';el('small',k.replace(/_/g,' '),row);el('b',String(val==null?'Unknown':val),row);}});}
         fields(data.context,context);el('p','Account facts describe configuration, not live availability. Compare observation times before interpreting changes.',context);

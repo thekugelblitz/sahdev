@@ -19,6 +19,7 @@ jobs:
       - name: PHP source and persistence checks
         run: |
           php -l lib/CaseTimeline.php
+          php -l lib/CaseTimelineInterpreter.php
           php -l lib/CaseTimelineSettings.php
           php -l hooks.php
           php scratch/test_case_timeline.php
@@ -29,3 +30,5 @@ jobs:
           npx playwright install --with-deps chromium
       - name: Nine layouts and rewrite editor integration
         run: node scratch/test_case_timeline_ui.cjs
+      - name: Command workspace handlers and request states
+        run: node scratch/test_command_workspaces.cjs

@@ -1,6 +1,7 @@
 <?php
 namespace Sahdev\Lib;
 use WHMCS\Database\Capsule;
+require_once __DIR__ . '/CaseTimelineInterpreter.php';
 
 /** Bounded, read-only WHMCS context; writes only to Sahdev-owned tables. */
 class CaseTimeline
@@ -20,6 +21,7 @@ class CaseTimeline
         foreach(['enabled','services','servers','domains','tools','messages','ai'] as $k) $out[$k]=filter_var($p[$k]??false,FILTER_VALIDATE_BOOLEAN);
         $out['limit']=max(5,min(100,(int)($p['limit']??30)));
         $out['days']=max(1,min(90,(int)($p['days']??14)));
+        $out['presentation']=in_array($p['presentation']??'', ['highlights','excerpts'], true)?$p['presentation']:'highlights';
         return $out;
     }
     public static function policy(): array
@@ -41,6 +43,7 @@ class CaseTimeline
         try {
             $p=self::policy();if(!$p['enabled']||!$p['tools']||$ticketId<1)return;
             $payload=['status'=>self::clean((string)($data['status']??'unknown')),'summary'=>self::clean((string)($data['summary']??''))];
+            $payload['presentation']=CaseTimelineInterpreter::tool((string)($data['summary']??''),$payload['status']);
             $evidence=json_decode((string)($data['summary']??''),true);
             if(is_array($evidence)&&!empty($evidence['observed_at']))$data['observed_at']=$evidence['observed_at'];
             $observed=!empty($data['observed_at'])?strtotime((string)$data['observed_at']):false;
@@ -61,6 +64,8 @@ class CaseTimeline
     {
         $p=self::policy();if(!$p['enabled']||!$p['ai'])return '';
         $data=self::read($ticketId, $includeTools);
+        foreach($data['events'] as &$event)unset($event['excerpt'],$event['highlights'],$event['basis']);
+        unset($event);
         do {
             $json=json_encode($data,JSON_UNESCAPED_SLASHES|JSON_INVALID_UTF8_SUBSTITUTE);
             if(strlen($json)<=12000)return $json;
@@ -79,9 +84,10 @@ class CaseTimeline
             $ticket=Capsule::table('tbltickets')->where('id',$ticketId)->first($ticketFields);
             if(!$ticket)return $out;
             $out['context']=['status'=>$ticket->status,'priority'=>$ticket->urgency,'read_at'=>date('Y-m-d H:i:s')];
-            $out['events'][]=['at'=>$ticket->date,'source'=>'WHMCS ticket','kind'=>'client','status'=>'reported','summary'=>$p['messages']?self::clean((string)$ticket->message):'Ticket opened'];
+            $out['presentation']=$p['presentation'];
+            $out['events'][]=array_merge(['at'=>$ticket->date,'source'=>'WHMCS ticket','kind'=>'client','status'=>'reported','summary'=>'Ticket opened','title'=>'Request opened'], $p['messages']?CaseTimelineInterpreter::message((string)$ticket->message,false,true):[]);
             $replyFields=['id','date','admin'];if($p['messages'])$replyFields[]='message';
-            foreach(Capsule::table('tblticketreplies')->where('tid',$ticketId)->orderBy('date','desc')->orderBy('id','desc')->limit($p['limit'])->get($replyFields) as $r)$out['events'][]=['at'=>$r->date,'source'=>'WHMCS reply #'.$r->id,'kind'=>empty($r->admin)?'client':'staff','status'=>'reported','summary'=>$p['messages']?self::clean((string)$r->message):(empty($r->admin)?'Client reply received':'Staff reply recorded')];
+            foreach(Capsule::table('tblticketreplies')->where('tid',$ticketId)->orderBy('date','desc')->orderBy('id','desc')->limit($p['limit'])->get($replyFields) as $r)$out['events'][]=array_merge(['at'=>$r->date,'source'=>'WHMCS reply #'.$r->id,'kind'=>empty($r->admin)?'client':'staff','status'=>'reported','summary'=>empty($r->admin)?'Client reply received':'Staff reply recorded','title'=>empty($r->admin)?'Client update':'Staff update'], $p['messages']?CaseTimelineInterpreter::message((string)$r->message,!empty($r->admin)):[]);
             try { if($p['services']&&(int)$ticket->userid>0){
                 $q=Capsule::table('tblhosting')->where('userid',$ticket->userid);
                 // Only the explicitly linked service, not arbitrary services belonging to another client.
@@ -101,7 +107,7 @@ class CaseTimeline
                     if($d)$out['context']['domain']=(array)$d;
                 }
             }catch(\Throwable $e){$out['notice']='Domain registration context is unavailable; other dated observations are retained.';}
-            if($p['tools'])foreach(Capsule::table('tblsahdev_case_snapshots')->where('ticket_id',$ticketId)->where('observed_at','>=',date('Y-m-d H:i:s',time()-$p['days']*86400))->orderBy('observed_at','desc')->orderBy('id','desc')->limit($p['limit'])->get() as $r){$d=json_decode($r->payload,true)?:[];$out['events'][]=['at'=>$r->observed_at,'source'=>$r->source,'kind'=>'tool','status'=>$d['status']??'unknown','summary'=>$d['summary']??'','snapshot_id'=>$r->id];}
+            if($p['tools'])foreach(Capsule::table('tblsahdev_case_snapshots')->where('ticket_id',$ticketId)->where('observed_at','>=',date('Y-m-d H:i:s',time()-$p['days']*86400))->orderBy('observed_at','desc')->orderBy('id','desc')->limit($p['limit'])->get() as $r){$d=json_decode($r->payload,true)?:[];$out['events'][]=array_merge(['at'=>$r->observed_at,'source'=>$r->source,'kind'=>'tool','status'=>$d['status']??'unknown','snapshot_id'=>$r->id],is_array($d['presentation']??null)?$d['presentation']:CaseTimelineInterpreter::tool((string)($d['summary']??''),(string)($d['status']??'unknown')));}
             usort($out['events'],static function($a,$b){return strcmp($a['at'],$b['at']);});
             $out['events']=array_slice($out['events'],-$p['limit']);
         }catch(\Throwable $e){$out['notice']='Some timeline sources are unavailable; missing evidence is not a successful check.';}

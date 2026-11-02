@@ -1,0 +1,74 @@
+/* Shared workspaces for all nine timeline arrangements. Scoped to Sahdev. */
+#sahdev-ai-panel.sdv-workbench { --desk-radius:12px; }
+#sahdev-ai-panel.sdv-workbench .sahdev-rm-pane {padding:24px;}
+#sahdev-ai-panel.sdv-workbench .sdv-desk-heading {padding:6px 0 24px;border-bottom:1px solid var(--sdv-border);margin-bottom:24px;}
+#sahdev-ai-panel.sdv-workbench .sdv-eyebrow {display:block;font:600 10px/1.5 ui-monospace,monospace;letter-spacing:1.4px;color:var(--sdv-command-accent);margin-bottom:8px;}
+#sahdev-ai-panel.sdv-workbench .sdv-desk-heading h2 {font-size:26px;letter-spacing:-.7px;margin:0 0 8px;font-weight:650;}
+#sahdev-ai-panel.sdv-workbench .sdv-desk-heading p {font-size:13px;max-width:760px;color:var(--sdv-text-secondary);margin:0;line-height:1.7;}
+#sahdev-ai-panel.sdv-workbench .sdv-desk-grid {display:grid;grid-template-columns:minmax(0,1.7fr) minmax(260px,.8fr);gap:22px;align-items:start;}
+#sahdev-ai-panel.sdv-workbench .sdv-tools-grid {grid-template-columns:minmax(280px,.9fr) minmax(0,1.3fr);}
+#sahdev-ai-panel.sdv-workbench .sdv-desk-stack {display:grid;gap:18px;min-width:0;}
+#sahdev-ai-panel.sdv-workbench .sdv-desk-card {min-width:0;border:1px solid var(--sdv-border);border-radius:var(--desk-radius);padding:22px;background:var(--sdv-bg-surface);color:var(--sdv-text-primary);}
+#sahdev-ai-panel.sdv-workbench .sdv-desk-card h3 {font-size:15px;margin:0 0 10px;font-weight:650;}
+#sahdev-ai-panel.sdv-workbench .sdv-desk-hint {font-size:12px;color:var(--sdv-text-secondary);line-height:1.7;margin:0 0 20px;}
+#sahdev-ai-panel.sdv-workbench .sdv-desk-field {min-width:0;margin:0 0 18px;}
+#sahdev-ai-panel.sdv-workbench .sdv-desk-field label {display:block;font-size:12px;font-weight:500;margin:0 0 7px;color:var(--sdv-text-secondary);}
+#sahdev-ai-panel.sdv-workbench .sdv-desk-field :is(input,select,textarea) {width:100%!important;max-width:100%!important;min-width:0;box-sizing:border-box;border:1px solid var(--sdv-border)!important;background:var(--sdv-bg-input)!important;color:var(--sdv-text-primary)!important;border-radius:7px;min-height:40px;padding:9px 11px!important;font-family:inherit;font-size:13px;line-height:1.6;}
+#sahdev-ai-panel.sdv-workbench .sdv-field-grid {display:grid;grid-template-columns:1fr 1fr;gap:0 16px;}
+#sahdev-ai-panel.sdv-workbench .sdv-desk-actions {display:flex;align-items:center;flex-wrap:wrap;gap:9px;margin:12px 0;}
+#sahdev-ai-panel.sdv-workbench .sdv-desk-actions button {margin:0!important;min-height:36px;padding:8px 12px!important;white-space:normal;font-size:12px;}
+#sahdev-ai-panel.sdv-workbench .sdv-desk-card button:not(.btn-danger),#sahdev-ai-panel.sdv-workbench .sdv-case-polish button {background:var(--sdv-bg-nested)!important;color:var(--sdv-text-primary)!important;border:1px solid var(--sdv-border)!important;box-shadow:none;}
+#sahdev-ai-panel.sdv-workbench :is(#btn-sahdev-manual-tool-run,#btn-sahdev-generate-summary,#btn-sahdev-generate-history,#btn-sahdev-rewrite){background:var(--sdv-accent)!important;color:var(--sdv-on-accent)!important;font-weight:650;}
+#sahdev-ai-panel.sdv-workbench .sdv-reading {white-space:pre-wrap!important;overflow-wrap:anywhere;line-height:1.85!important;font-size:14px!important;background:transparent!important;border:0!important;box-shadow:none;color:var(--sdv-text-primary)!important;max-height:none!important;padding:8px 0!important;min-height:240px;}
+#sahdev-ai-panel.sdv-workbench .sdv-empty {padding:40px 22px!important;text-align:center;border:1px dashed var(--sdv-border)!important;border-radius:8px;background:var(--sdv-bg-nested)!important;color:var(--sdv-text-secondary);margin-top:16px;}
+#sahdev-ai-panel.sdv-workbench .sdv-empty strong {display:block;font-size:14px;color:var(--sdv-text-primary);}
+#sahdev-ai-panel.sdv-workbench .sdv-empty p {max-width:350px;margin:12px auto 0;font-size:12px;line-height:1.8;}
+#sahdev-ai-panel.sdv-workbench #sahdev-tools-output-edit {min-height:400px;resize:vertical;font-family:ui-monospace,Consolas,monospace!important;font-size:12px!important;}
+#sahdev-ai-panel.sdv-workbench .sdv-operation-status {border-left:3px solid var(--sdv-command-accent);padding:12px 16px;background:var(--sdv-bg-nested);margin:20px 0 0;font-size:13px!important;}
+#sahdev-ai-panel.sdv-workbench .sdv-operation-status:empty {display:none;}
+#sahdev-ai-panel.sdv-workbench .sdv-option-line {margin-top:22px!important;align-items:start!important;color:var(--sdv-text-primary)!important;line-height:1.6;}
+#sahdev-ai-panel.sdv-workbench :is(#sahdev-summary-meta,#sahdev-history-meta,#sahdev-tools-meta) {display:block;margin:16px 0;color:var(--sdv-text-secondary);font-size:11px;line-height:1.7;}
+#sahdev-ai-panel.sdv-workbench .sdv-desk-card>button {margin:0 0 14px;}
+#sahdev-ai-panel.sdv-workbench #sahdev-canned-results {max-height:none!important;overflow:visible!important;}
+#sahdev-ai-panel.sdv-workbench .sdv-library-grid {margin-top:20px;grid-template-columns:minmax(0,1fr) minmax(0,1fr);}
+#sahdev-ai-panel.sdv-workbench #sahdev-canned-results .list-group {list-style:none;padding:0;margin:0;}
+#sahdev-ai-panel.sdv-workbench #sahdev-canned-results .list-group-item {padding:18px!important;border:1px solid var(--sdv-border)!important;border-radius:8px;margin-bottom:12px;background:var(--sdv-bg-nested)!important;color:var(--sdv-text-primary)!important;}
+#sahdev-ai-panel.sdv-workbench #sahdev-canned-results .list-group-item>div {color:var(--sdv-text-secondary)!important;font-size:12px;line-height:1.7;max-height:none!important;margin:10px 0!important;}
+#sahdev-ai-panel.sdv-workbench #sahdev-canned-results .label {float:none!important;display:inline-block;margin:5px 0 5px 10px;background:transparent!important;border:1px solid var(--sdv-border);color:var(--sdv-text-secondary)!important;padding:3px 6px;border-radius:4px;}
+#sahdev-ai-panel.sdv-workbench .sdv-case-polish {display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px;border:1px solid var(--sdv-border)!important;border-radius:12px;background:var(--sdv-bg-nested);margin:0!important;padding:20px!important;}
+#sahdev-ai-panel.sdv-workbench .sdv-polish-copy {flex:1 1 220px;}
+#sahdev-ai-panel.sdv-workbench .sdv-polish-copy h3 {margin:0 0 6px;font-size:16px;}
+#sahdev-ai-panel.sdv-workbench .sdv-polish-copy p {margin:0;font-size:12px;line-height:1.7;color:var(--sdv-text-secondary);max-width:430px;}
+#sahdev-ai-panel.sdv-workbench .sdv-case-polish>.sdv-desk-actions {flex:1 1 230px;margin:0;}
+#sahdev-ai-panel.sdv-workbench .sdv-case-polish>[id$="error"],#sahdev-ai-panel.sdv-workbench .sdv-case-polish>[id$="loading"] {flex-basis:100%;}
+#sahdev-ai-panel.sdv-workbench .sdv-case-overview {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:20px 0 12px;}
+#sahdev-ai-panel.sdv-workbench .sdv-case-overview>div {padding:13px;background:var(--sdv-bg-nested);border-radius:7px;min-width:0;}
+#sahdev-ai-panel.sdv-workbench .sdv-case-overview small {display:block;font-size:10px;color:var(--sdv-text-secondary);margin-bottom:6px;}
+#sahdev-ai-panel.sdv-workbench .sdv-case-overview strong {display:block;font-size:12px;line-height:1.6;}
+#sahdev-ai-panel.sdv-workbench .sdv-case-overview p {font-size:11px;line-height:1.7;margin:8px 0;color:var(--sdv-text-secondary);}
+#sahdev-ai-panel.sdv-workbench .sdv-case-overview time {display:block;font:10px/1.6 ui-monospace,monospace;margin-top:9px;color:var(--sdv-text-secondary);}
+#sahdev-ai-panel.sdv-workbench .sdv-case-reading-note {font-size:11px;line-height:1.7;color:var(--sdv-text-secondary);}
+#sahdev-ai-panel.sdv-workbench .sdv-case-event-list {max-height:560px;overflow:auto;scrollbar-gutter:stable;padding-right:8px;overscroll-behavior:contain;}
+#sahdev-ai-panel.sdv-workbench :is(button,input,select,textarea,summary,[tabindex]):focus-visible {outline:2px solid var(--sdv-command-accent);outline-offset:3px;}
+#sahdev-ai-panel.sdv-workbench.sdv-layout-timeline_map .sdv-case-event-body {grid-column:2/-1;}
+#sahdev-ai-panel.sdv-workbench .sdv-case-event>strong {font-size:14px;display:block;margin:5px 0 8px;}
+#sahdev-ai-panel.sdv-workbench .sdv-case-event span {display:inline-block;border:1px solid var(--sdv-border);border-radius:5px;padding:2px 7px;font-size:10px;margin-bottom:8px;}
+#sahdev-ai-panel.sdv-workbench .sdv-case-event ul {padding-left:17px;margin:7px 0 12px;}
+#sahdev-ai-panel.sdv-workbench .sdv-case-event li {font-size:12px;line-height:1.85;margin-bottom:7px;overflow-wrap:anywhere;}
+#sahdev-ai-panel.sdv-workbench .sdv-case-source {display:block;font:10px/1.6 ui-monospace,monospace;color:var(--sdv-text-secondary);margin:10px 0;}
+#sahdev-ai-panel.sdv-workbench .sdv-case-event details {font-size:11px;border-top:1px solid var(--sdv-border);padding-top:10px;}
+#sahdev-ai-panel.sdv-workbench .sdv-case-event summary {cursor:pointer;color:var(--sdv-link);}
+#sahdev-ai-panel.sdv-workbench .sdv-case-event details p {font-size:12px;color:var(--sdv-text-secondary);}
+#sahdev-ai-panel.sdv-workbench .sdv-inline-progress {font-size:12px;color:var(--sdv-text-secondary);margin:15px 0 0;}
+#sahdev-ai-panel.sdv-workbench .sdv-updating {opacity:.65;}
+#sahdev-ai-panel .sdv-busy {font-size:0!important;cursor:progress!important;opacity:.85;}
+#sahdev-ai-panel .sdv-busy>* {display:none!important;}
+#sahdev-ai-panel .sdv-busy::after {content:attr(data-busy-label);font-size:12px;vertical-align:middle;}
+#sahdev-ai-panel .sdv-busy::before {content:'';display:inline-block;width:13px;height:13px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;margin-right:9px;vertical-align:middle;animation:sdv-request-spin .75s linear infinite;}
+@keyframes sdv-request-spin {to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){#sahdev-ai-panel .sdv-busy::before{animation:none;border-style:dotted}}
+#sahdev-ai-panel.sdv-workbench [hidden] {display:none!important;}
+#sahdev-ai-panel.sdv-workbench[data-sdv-density="compact"] .sdv-desk-card {padding:16px;}
+#sahdev-ai-panel.sdv-workbench[data-sdv-density="featured"] .sdv-desk-card {padding:28px;}
+@media(max-width:1050px){#sahdev-ai-panel.sdv-workbench .sdv-desk-grid{grid-template-columns:1fr}#sahdev-ai-panel.sdv-workbench .sahdev-rm-pane{padding:16px}#sahdev-ai-panel.sdv-workbench .sdv-case-overview{grid-template-columns:1fr}}
+@media(max-width:500px){#sahdev-ai-panel.sdv-workbench .sdv-desk-card{padding:16px}#sahdev-ai-panel.sdv-workbench .sdv-field-grid{grid-template-columns:1fr}#sahdev-ai-panel.sdv-workbench .sdv-desk-heading h2{font-size:23px}}

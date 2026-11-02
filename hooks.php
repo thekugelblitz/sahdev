@@ -998,6 +998,7 @@ HTML;
             $('#sahdev-loading').show();
             var $btn = $(this);
             $('#btn-sahdev-analyze, #btn-sahdev-regenerate').prop('disabled', true);
+            SahdevActivity.generation(true, 'Preparing ticket context…');
             
             var baseReqData = {
                 ticket_id: $('#sahdev_ticket_id').val(),
@@ -1034,7 +1035,7 @@ HTML;
 
                         executeBackendGoogleCall(baseReqData, $btn);
                     } else {
-                        showSahdevError(res.message || 'Failed to initialize AI request.');
+                        showSahdevError((res && res.message) || 'Failed to initialize AI request.');
                         $('#btn-sahdev-analyze, #btn-sahdev-regenerate').prop('disabled', false);
                     }
                 },
@@ -1323,6 +1324,7 @@ HTML;
         });
         
         function executeBackendGoogleCall(baseReqData, $btn) {
+            SahdevActivity.generation(true, 'Analyzing & drafting…');
             var isOpenContextMode = ($('#sahdev_is_open_context_mode').val() === 'true');
             var backendAction = isOpenContextMode ? 'analyze_open_context' : 'analyze_ticket';
             var reqData = Object.assign({ action: backendAction }, baseReqData);
@@ -1336,7 +1338,7 @@ HTML;
                     if (res && res.status === 'success') {
                         renderSahdevResults(res.data, res.tokens_used, res.execution_time_ms, res.tokens_details);
                     } else {
-                        showSahdevError(res.message || 'Unknown error occurred.');
+                        showSahdevError((res && res.message) || 'Unknown error occurred.');
                     }
                 },
                 error: function(xhr, status, error) {
@@ -1708,6 +1710,8 @@ HTML;
         }
 
         function renderSahdevResults(data, tokensUsed, executionTimeMs, tokenDetails) {
+            if (!data || typeof data !== 'object') { showSahdevError('The provider returned no usable analysis. Please retry.'); return; }
+            SahdevActivity.generation(false);
             $('#sahdev-loading').hide();
             $('#sahdev-out-cause').text(data.ROOT_CAUSE || 'N/A');
             $('#sahdev-out-resp').text(data.RESPONSIBILITY || 'N/A');
@@ -1752,17 +1756,18 @@ HTML;
         }
 
         function showSahdevError(msg) {
+            SahdevActivity.generation(false);
             $('#sahdev-loading').hide();
-            $('#sahdev-error').html('<i class="fas fa-exclamation-circle"></i> ' + msg).show();
+            $('#sahdev-error').text(msg).attr('role','alert').show();
         }
 
         function handleAjaxError(xhr, error) {
             $('#sahdev-loading').hide();
-            var msg = 'AJAX Error: ' + error + ' (Status: ' + xhr.status + ')<br><br>';
+            var msg = error === 'timeout' ? 'The request timed out. Please retry when the provider is available.' : 'Request failed: ' + error + ' (Status: ' + xhr.status + '). ';
             if(xhr.responseJSON && xhr.responseJSON.message) {
                 msg += xhr.responseJSON.message;
             } else if (xhr.responseText) {
-                msg += '<strong>Raw Server Response:</strong><br><textarea class="form-control" rows="5" readonly>' + xhr.responseText + '</textarea>';
+                msg += '\nServer response: ' + xhr.responseText.substring(0, 600);
             } else {
                 msg += 'No response text available.';
             }
@@ -2108,7 +2113,12 @@ HTML;
                         if (r && r.status === 'success' && r.summary) {
                             sahdevSummaryUpdateUI(r.summary);
                             $('#sahdev-summary-meta').text('Auto-loaded from saved summary.');
+                        } else if (!r || r.status !== 'success') {
+                            $('#sahdev-summary-error').text((r && r.message) || 'Saved summary could not be loaded. Reload the ticket to retry.').show();
                         }
+                    },
+                    error: function() {
+                        $('#sahdev-summary-error').text('Saved summary could not be loaded. Reload the ticket to retry.').show();
                     }
                 });
             }
@@ -2135,14 +2145,14 @@ HTML;
                         $('#sahdev-summary-meta').text('Generated in ' + (r.execution_time_ms || 0) + 'ms · ' + (r.message_count || '?') + ' messages condensed.');
                         $('#sahdev-summary-active-badge').show();
                     } else {
-                        $('#sahdev-summary-error').html('<i class="fas fa-exclamation-circle"></i> ' + (r.message || 'Summary generation failed.')).show();
+                        $('#sahdev-summary-error').text((r && r.message) || 'Summary generation failed.').show();
                     }
                 },
                 error: function(xhr, s, e) {
                     $('#sahdev-summary-loading').hide();
                     $btn.prop('disabled', false);
                     var msg = (xhr.responseJSON && xhr.responseJSON.message) ? xhr.responseJSON.message : ('Error: ' + (e || 'HTTP ' + xhr.status));
-                    $('#sahdev-summary-error').html('<i class="fas fa-exclamation-circle"></i> ' + msg).show();
+                    $('#sahdev-summary-error').text(msg).show();
                 }
             });
         });
@@ -2159,11 +2169,19 @@ HTML;
                 dataType: 'json',
                 success: function(r) {
                     $btn.prop('disabled', false);
+                    if (!r || r.status !== 'success') {
+                        $('#sahdev-summary-error').text((r && r.message) || 'Summary could not be deleted. Your saved summary is still available.').show();
+                        return;
+                    }
+                    $('#sahdev-summary-error').hide();
                     sahdevSummaryUpdateUI(null);
                     $('#sahdev-summary-active-badge').hide();
                     $('#sahdev-summary-meta').text('Summary deleted.');
                 },
-                error: function() { $btn.prop('disabled', false); }
+                error: function() {
+                    $btn.prop('disabled', false);
+                    $('#sahdev-summary-error').text('Could not confirm deletion. Refresh the summary before trying again.').show();
+                }
             });
         });
 
@@ -2364,6 +2382,10 @@ HTML;
             var ticket_id = $('#sahdev_ticket_id').val();
             var token = $('input[name="token"]').val();
             $.post(sahdevAjaxUrl, { action: 'get_historical_context', ticket_id: ticket_id, token: token }, function(res) {
+                if (!res || res.status !== 'success') {
+                    $('#sahdev-history-error').text((res && res.message) || 'Saved memory could not be loaded. Reload the ticket to retry.').show();
+                    return;
+                }
                 if (res && res.status === 'success' && res.historical_context) {
                     $('#sahdev-history-display').text(res.historical_context).show();
                     $('#sahdev-history-active-badge').show();
@@ -2379,7 +2401,9 @@ HTML;
                     $('#btn-sahdev-generate-history').html('<i class="fas fa-search"></i> Generate Memory');
                     $('#sahdev_include_history').prop('disabled', true).prop('checked', false);
                 }
-            }, 'json');
+            }, 'json').fail(function() {
+                $('#sahdev-history-error').text('Saved memory could not be loaded. Reload the ticket to retry.').show();
+            });
         }
 
         // Auto-load history availability on document ready
@@ -2410,7 +2434,7 @@ HTML;
                     $('#sahdev-history-meta').text('Analyzed ' + numTickets + ' tickets in ' + ms + 'ms').show();
                     loadSahdevHistory();
                 } else {
-                    $('#sahdev-history-error').text(res.message || 'Error parsing client history.').show();
+                    $('#sahdev-history-error').text((res && res.message) || 'Error parsing client history.').show();
                     loadSahdevHistory();
                 }
             }, 'json').fail(function(xhr) {
@@ -2423,6 +2447,7 @@ HTML;
                 }
                 
                 $('#sahdev-history-error').text(techMsg).show();
+                if ($('#sahdev-history-display').text().trim()) $('#sahdev-history-display').show();
             });
         });
 
@@ -2433,20 +2458,29 @@ HTML;
             var token = $('input[name="token"]').val();
             
             $.post(sahdevAjaxUrl, { action: 'delete_historical_context', ticket_id: ticket_id, token: token }, function(res) {
+                if (!res || res.status !== 'success') {
+                    $('#sahdev-history-error').text((res && res.message) || 'Memory could not be deleted. Your saved context is still available.').show();
+                    return;
+                }
+                $('#sahdev-history-error').hide();
                 loadSahdevHistory();
                 $('#sahdev-history-meta').hide();
-            }, 'json');
+            }, 'json').fail(function() {
+                $('#sahdev-history-error').text('Could not confirm deletion. Reload the ticket to check saved memory before trying again.').show();
+            });
         });
 
         // =====================================================================
         // FEATURE: 📚 Canned Responses & KB Search
         // =====================================================================
-        var sahdevCannedSearchTimer;
-        $(document).on('keyup', '#sahdev-canned-search', function() {
+        var sahdevCannedSearchTimer, sahdevCannedRequest, sahdevCannedSequence = 0;
+        $(document).on('input', '#sahdev-canned-search', function() {
             var query = $(this).val().trim();
             var $resultsContainer = $('#sahdev-canned-results');
             
             clearTimeout(sahdevCannedSearchTimer);
+            var sequence = ++sahdevCannedSequence;
+            if (sahdevCannedRequest) sahdevCannedRequest.abort();
             
             if (query.length < 3) {
                 $resultsContainer.html('<p class="text-muted" style="font-size:12px; margin: 10px 0;">Type at least 3 characters to search.</p>');
@@ -2456,14 +2490,15 @@ HTML;
             $resultsContainer.html('<div style="text-align:center; padding: 10px;"><i class="fas fa-spinner fa-spin"></i> Searching...</div>');
             
             sahdevCannedSearchTimer = setTimeout(function() {
-                $.ajax({
+                sahdevCannedRequest = $.ajax({
                     url: sahdevAjaxUrl,
                     type: 'POST',
                     data: { action: 'search_canned_responses', query: query, token: $('input[name="token"]').val() },
                     dataType: 'json',
                     success: function(r) {
+                        if (sequence !== sahdevCannedSequence) return;
                         if (r && r.status === 'success') {
-                            if (r.results.length === 0) {
+                            if (!Array.isArray(r.results) || r.results.length === 0) {
                                 $resultsContainer.html('<p class="text-muted" style="font-size:12px; margin: 10px 0;">No matching templates or KB articles found.</p>');
                                 return;
                             }
@@ -2477,17 +2512,19 @@ HTML;
                                 
                                 html += '<li class="list-group-item" style="padding: 8px 10px;">';
                                 html += '<strong>' + escapeHtml(item.title) + '</strong> ' + badge + '<br>';
-                                html += '<div style="max-height:40px; overflow:hidden; text-overflow:ellipsis; color:#666; margin:4px 0;">' + escapeHtml(item.content).substring(0, 150) + '...</div>';
+                                html += '<div>' + escapeHtml(String(item.content || '').replace(/<[^>]*>/g, '').substring(0, 160)) + '…</div>';
+                                if ($('#sahdev-ai-panel').hasClass('sdv-workbench')) html += '<button type="button" class="btn btn-xs btn-default sdv-preview-canned" data-title="' + escapeHtml(item.title) + '" data-content="' + btoa(unescape(encodeURIComponent(item.content))) + '">Preview</button> ';
                                 html += '<button type="button" class="btn btn-xs btn-default sahdev-insert-canned" style="margin-top:4px;" data-content="' + btoa(unescape(encodeURIComponent(item.content))) + '"><i class="fas fa-arrow-down"></i> Insert</button>';
                                 html += '</li>';
                             });
                             html += '</ul>';
                             $resultsContainer.html(html);
                         } else {
-                            $resultsContainer.html('<p class="text-danger" style="font-size:12px; margin: 10px 0;">' + escapeHtml(r.message || 'Search failed.') + '</p>');
+                            $resultsContainer.html('<p class="text-danger" style="font-size:12px; margin: 10px 0;">' + escapeHtml((r && r.message) || 'Search failed.') + '</p>');
                         }
                     },
-                    error: function() {
+                    error: function(xhr, status) {
+                        if (status === 'abort' || sequence !== sahdevCannedSequence) return;
                         $resultsContainer.html('<p class="text-danger" style="font-size:12px; margin: 10px 0;">Error connecting to server.</p>');
                     }
                 });
@@ -2508,13 +2545,14 @@ HTML;
             var rawContent = $(this).data('content');
             var content = decodeURIComponent(escape(atob(rawContent)));
             
-            if (typeof tinymce !== "undefined" && tinymce.activeEditor) {
+            var replyEditor = typeof tinymce !== 'undefined' && typeof tinymce.get === 'function' ? tinymce.get('replymessage') : null;
+            if (replyEditor && !(typeof replyEditor.isHidden === 'function' && replyEditor.isHidden())) {
                 // Determine if content has HTML or needs conversion
                 var insertHtml = content;
                 if(insertHtml.indexOf('<p>') === -1 && insertHtml.indexOf('<br') === -1) {
                     insertHtml = '<p>' + insertHtml.replace(/\n/g, '<br>') + '</p>';
                 }
-                tinymce.activeEditor.execCommand('mceInsertContent', false, insertHtml);
+                replyEditor.execCommand('mceInsertContent', false, insertHtml);
             } else if ($('#replymessage').length) {
                 var el = $('#replymessage').get(0);
                 var plain = content.replace(/<br\s*\/?>/gi, "\n").replace(/(<([^>]+)>)/gi, "");
@@ -2659,6 +2697,8 @@ HTML;
 EOT;
 
     $output .= '<script>' . file_get_contents(__DIR__ . '/ui/rewrite-editor.js') . '</script>';
+    $output .= '<style>' . file_get_contents(__DIR__ . '/ui/command-workspace.css') . '</style>';
+    $output .= '<script>window.sahdevWorkspaceFeatures=' . json_encode(['tools'=>$featTools,'summary'=>$featSummarizer,'kb'=>$featCannedKb,'memory'=>$featHistorical]) . ';' . file_get_contents(__DIR__ . '/ui/command-activity.js') . '</script>';
     $output .= $jsContentStart . $jsContentMain . "\n</script>";
 
     // --- Remastered Theme: inject JS if active (CSS already injected before HTML) ---
@@ -2672,6 +2712,7 @@ EOT;
     if (isset(\Sahdev\Lib\CaseTimeline::layouts()[$uiTheme])) {
         $output .= '<style>' . file_get_contents(__DIR__ . '/ui/case-timeline.css') . '</style>';
         $output .= '<script>$(function(){' . file_get_contents(__DIR__ . '/ui/case-timeline.js') . '});</script>';
+        $output .= '<script>$(function(){' . file_get_contents(__DIR__ . '/ui/command-workspace.js') . '});</script>';
     }
     return $output;
 

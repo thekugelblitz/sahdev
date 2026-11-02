@@ -3,7 +3,7 @@
 Sahdev is a powerful, production-ready WHMCS Addon Module that integrates Google Gemini (or equivalent LLMs) to analyze your WHMCS support tickets, extract client context securely, and propose professional replies.
 
 ## Version
-Current Version: 5.0.2
+Current Version: 5.0.3
 
 Case Timeline adds nine staff layouts, configurable read-only context sources, dated tool observations, and editor-only Rewrite / Polish. See [setup and prompt guidance](docs/case-timeline.md). Existing layouts and saved prompts are preserved; timeline collection and AI inclusion require an active opt-in policy.
 

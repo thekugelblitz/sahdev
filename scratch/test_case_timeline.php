@@ -82,6 +82,16 @@ namespace {
     expectCase(strpos($secret,'two words')===false&&strpos($secret,'abc123')===false&&strpos($secret,'user:pass')===false,'Credential redaction');
     expectCase(Timeline::validate(['enabled'=>'false','limit'=>999,'days'=>0])['enabled']===false,'Boolean false respected');
     expectCase(Timeline::validate(['limit'=>999,'days'=>0])['limit']===100,'Limits clamped');
+    $report=Sahdev\Lib\CaseTimelineInterpreter::message("Hi Ashish,\n\nThank you for your patience while we review your request. We are revalidating all commission entries. If you choose credit balance instead of withdrawal, we offer a 30% bonus. Please let us know if you prefer credit or standard withdrawal.\n\n---\nBest Regards!\nSupport Engineer\nOur ChatGPT Support Assistant: https://example.test",true);
+    expectCase($report['title']==='Options & next steps','Decision event classification');
+    expectCase(strpos($report['summary'],'30% bonus')!==false&&strpos($report['summary'],'prefer credit')!==false,'Offer and next decision retained');
+    expectCase(strpos(json_encode($report),'Support Engineer')===false&&strpos(json_encode($report),'ChatGPT Support')===false,'Signature and promotional footer removed');
+    $negative=Sahdev\Lib\CaseTimelineInterpreter::message('We have not escalated the issue yet. Please provide the error first.',true);
+    expectCase(strpos($negative['summary'],'not escalated')!==false,'Negation survives extraction');
+    $tool=Sahdev\Lib\CaseTimelineInterpreter::tool(json_encode(['tool'=>'toolsapi_dns_lookup','target'=>'example.test','facts'=>['records'=>[['value'=>'192.0.2.8']]]]),'observed');
+    expectCase(strpos($tool['summary'],'192.0.2.8')!==false&&strpos($tool['summary'],'{')===false,'Structured evidence becomes readable facts');
+    $largeTool=Sahdev\Lib\CaseTimelineInterpreter::tool(json_encode(['facts'=>array_fill(0,20,str_repeat('測',1500))]),'observed');
+    expectCase(strlen(json_encode($largeTool))<32000,'Presentation stays within snapshot storage budget for multibyte evidence');
     foreach(Timeline::layouts() as $id=>$name)expectCase(Sahdev\Lib\AdminPreferences::normalizeArray(['ui_theme'=>$id])['ui_theme']===$id,'Layout preference persisted');
     $_GET=[];$_SERVER['REQUEST_METHOD']='POST';$_POST=['token'=>'fixture','save_profile'=>1,'name'=>'New','active'=>1,'enabled'=>1,'tools'=>1];
     Sahdev\Lib\CaseTimelineSettings::render();expectCase(DB::table('tblsahdev_case_profiles')->where('active',1)->first()->name==='New','Create and activate policy');

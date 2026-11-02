@@ -4,7 +4,7 @@ use WHMCS\Database\Capsule;
 
 class DiagnosticPolicy
 {
-    public const VERSION = '5.0.2';
+    public const VERSION = '5.0.3';
     public static function defaults(): array
     {
         return ['enabled' => true, 'emergency_stop' => false, 'tickets' => true, 'livechat' => true,

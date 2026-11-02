@@ -5,7 +5,7 @@ const root=path.resolve(__dirname,'..'),read=p=>fs.readFileSync(path.join(root,p
 const hooks=read('hooks.php');
 const template=hooks.match(/\$htmlPanel = <<<HTML\r?\n([\s\S]*?)\r?\nHTML;/)[1];
 new vm.Script(hooks.match(/\$jsContentMain = <<<'EOT'\r?\n([\s\S]*?)\r?\nEOT;/)[1]);
-const css=['admin-theme.css','remastered.css','command-station.css','case-timeline.css'].map(p=>read('ui/'+p)).join('\n');
+const css=['admin-theme.css','remastered.css','command-station.css','command-workspace.css','case-timeline.css'].map(p=>read('ui/'+p)).join('\n');
 const modes=['case_timeline','timeline_plus','timeline_lanes','timeline_ledger','timeline_split','timeline_ribbon','timeline_journal','timeline_milestones','timeline_map'];
 const sample={enabled:true,context:{status:'Open',priority:'High',hosting:{domain:'example.test',status:'Active',recorded_ip:'192.0.2.3'},server:{hostname:'srv.example.test',nameserver1:'ns1.example.test'}},events:[
  {at:'2026-11-02 09:10:00',kind:'client',source:'WHMCS ticket',status:'reported',summary:'The site has been unavailable since this morning.'},
@@ -29,6 +29,7 @@ function html(layout,theme){
   content=html(layout,theme);await page.goto('https://case.test/ticket');await page.addScriptTag({path:process.env.SAHDEV_JQUERY||require.resolve('jquery/dist/jquery.min.js')});
   await page.evaluate(()=>{window.sahdevAjaxUrl='https://case.test/ajax';$('#btn-sahdev-analyze').on('click',()=>{window.analyzed=true;$('#sahdev-out-cause').text('The recorded A record matches the assigned hosting IP. The HTTP check timed out, so availability has not been verified.');$('#sahdev-out-plan').text('Review the HTTP result and request the exact browser error. Recheck before stating a root cause.');$('#sahdev-out-resp').text('Undetermined');$('#sahdev-out-risk').text('Medium');$('#sahdev-out-reply').text('Hello Sandeep,\n\nThe DNS observation points to the hosting IP recorded on your account. The website check did not return a verified result. Please share the exact error you see so we can investigate further.');$('#sahdev-results').show();});});
   await page.addScriptTag({content:read('ui/remastered.js')});await page.addScriptTag({content:read('ui/case-timeline.js')});
+  await page.addScriptTag({content:read('ui/command-workspace.js')});
   await page.waitForFunction(()=>document.querySelector('.sdv-case-history').getAttribute('aria-busy')==='false');
  }
  for(const mode of modes)for(const theme of ['black','dark','white']){

@@ -11,6 +11,16 @@ This update adds the preserved Case Timeline direction and eight refinements to 
 
 Analysis, Tools, Summary, KB and Memory remain the navigation tabs. Intent, custom instructions, technical context, model, tone, depth and evidence options stay inline. The new event filters distinguish client reports, staff reports and tool observations. Milestones groups reports/checks/response review; Evidence to Action provides a review route, not a claim that an action was executed.
 
+## v5.0.3 workspace refinement
+
+All nine timeline layouts now share dedicated Tools, Summary, KB and Memory workspaces in black, dark and white. Tools separates ticket checks, manual parameters and editable evidence. Summary and Memory provide readable documents with inline controls and empty states. KB adds an inline text preview before insertion into the ticket reply editor. The legacy Polish block is replaced by a compact editor action bar, without a second draft input.
+
+In **Ticket AI → Case Timeline & Context**, edit the active policy's **Timeline reading mode**. **Concise highlights** is the default for existing policies; **Cleaned source excerpts** remains available. Both respect the existing public-message permission. The display removes recognizable signatures, greetings and quoted history, selects up to three relevant source sentences, and labels updates by topic. This is bounded extractive processing, not a model-generated interpretation or verified completion state. Original WHMCS messages are unchanged. The event list scrolls independently on long cases and retains source IDs and timestamps. Latest client, staff and diagnostic cards remain visible above it.
+
+New tool snapshots keep readable structured facts before the raw summary is truncated. Older snapshots are interpreted on read; incomplete structured output is explicitly labelled. No extra AI request is introduced, and the AI context excludes duplicate presentation fields. Existing saved prompts are untouched.
+
+Generation buttons show an animated request indicator and the current phase (preparing context or analyzing/drafting); cached responses and failed requests restore both generation buttons. Tools, summary, memory, rewrite and scoring actions also have request indicators. Reduced-motion preferences are respected. Failed deletes retain displayed content and show an error; KB searches cancel superseded requests.
+
 ## Rewrite / Polish
 
 There is no new draft input. Write instructions or a short reply above the signature in WHMCS's `replymessage` TinyMCE editor, then click Rewrite / Polish. The configured admin signature is matched at the end, excluded from the rewrite request and appended to the result. A signature-only editor is treated as empty. Plain textarea mode is supported.
@@ -37,6 +47,8 @@ No saved prompt template, custom prompt or Prompt Manager record is changed. If 
 ## Validation and deployment
 
 `scratch/test_case_timeline.php` uses an isolated SQLite database to test scoping, policy CRUD, CSRF/permissions, deduplication, timestamps, disabled collection, failure isolation, retention and bounded JSON. `scratch/test_case_timeline_ui.cjs` tests the actual hook markup and production DOM transforms for nine layouts in three themes, narrow screens, existing handlers/tabs, filters, retries and signature/draft handling. API responses in browser tests are fixtures, not live WHMCS responses.
+
+`scratch/test_command_workspaces.cjs` executes the actual ticket JavaScript handlers against isolated API fixtures: generation/loading/cache/errors, tool execution and evidence insertion, Summary/Memory creation and deletion failures, KB preview/insertion, and signature-safe polishing. It checks all five tabs in three themes plus mobile and disabled-feature states. No real ticket replies are sent by these checks.
 
 The CI workflow installs pinned browser test dependencies. Locally set `SAHDEV_PLAYWRIGHT`, `SAHDEV_BROWSER_EXECUTABLE` and optionally `SAHDEV_JQUERY` to existing local dependencies. Browser tests produce screenshots in `scratch/` for visual inspection.
 
