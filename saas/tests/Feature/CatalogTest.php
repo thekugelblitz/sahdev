@@ -15,7 +15,7 @@ class CatalogTest extends TestCase
     {
         $this->operator(); $secret='fixture-new-provider-key';
         $v=['name'=>'New Provider','driver'=>'openai_compatible','endpoint'=>'https://openrouter.ai/api/v1/chat/completions','secret'=>$secret,'active'=>1];
-        $this->post('/command/catalog/providers',$v)->assertRedirect('/command#providers');
+        $this->post('/command/catalog/providers',$v)->assertRedirectContains('/command?create=models&provider=');
         $p=DB::table('providers')->where('name','New Provider')->first(); $this->assertNotSame($secret,$p->secret); $this->assertSame($secret,Crypt::decryptString($p->secret));
         $v['secret']=''; $v['name']='Renamed'; $this->post('/command/catalog/providers/'.$p->id,$v)->assertRedirect();
         $this->assertSame($secret,Crypt::decryptString(DB::table('providers')->where('id',$p->id)->value('secret')));
@@ -45,11 +45,12 @@ class CatalogTest extends TestCase
         $this->post('/command/catalog/promotions',['code'=>'LAUNCH10','discount_percent'=>10,'max_redemptions'=>5,'expires_at'=>now()->addDay()->toDateTimeString(),'active'=>1])->assertRedirect();
         $this->post('/command/organizations/'.$this->org,['status'=>'active','plan_id'=>$plan->id,'billing_client_id'=>77,'reason'=>'Verified fixture billing identity'])->assertRedirect();
         $this->assertDatabaseHas('organizations',['id'=>$this->org,'plan_id'=>$plan->id,'billing_client_id'=>77]);
-        $this->post('/command/catalog/providers',['name'=>'Blocked','driver'=>'openai_compatible','endpoint'=>'http://127.0.0.1/chat/completions','secret'=>'secret-fixture-key','active'=>1])->assertUnprocessable();
+        $this->post('/command/catalog/providers',['name'=>'Blocked','driver'=>'openai_compatible','endpoint'=>'http://127.0.0.1/chat/completions','secret'=>'secret-fixture-key','active'=>1])->assertSessionHasErrors('endpoint');
         $this->get('/command')->assertOk()->assertSee('LAUNCH10');
     }
     public function test_customer_signup_ignores_operator_flags_and_starts_with_zero_credit(): void
     {
+        $this->withoutMiddleware(\App\Http\Middleware\PublicRegistration::class);
         $email='new-owner@example.com';
         $this->post('/register',['name'=>'New owner','organization'=>'New hosting','email'=>$email,'password'=>'Test-password-12345','password_confirmation'=>'Test-password-12345','is_operator'=>1,'credits'=>9999999])->assertRedirect('/verify-email');
         $u=\App\Models\User::where('email',$email)->first(); $this->assertFalse($u->is_operator); $this->assertNull($u->email_verified_at);

@@ -1,6 +1,6 @@
 <?php
 namespace App\Http\Controllers;
-use App\Services\{Egress,WalletService};
+use App\Services\{ProviderEndpoint,WalletService};
 use App\Support\{Amount,Audit};
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
@@ -39,11 +39,11 @@ final class OperatorController
         $v = $r->validate($rules);
         $table = match($kind) {'models'=>'ai_models','packs'=>'credit_packs',default=>$kind};
         if ($kind === 'providers') {
-            Egress::validate($v['endpoint'],config('cloud.provider_hosts'));
-            abort_unless(str_ends_with($v['endpoint'],$v['driver']==='anthropic' ? '/messages' : '/chat/completions'),422,'Use the complete provider API endpoint for the selected protocol.');
+            $v['endpoint'] = ProviderEndpoint::normalize($v['endpoint'],$v['driver']);
             if (!empty($v['secret'])) $v['secret'] = Crypt::encryptString($v['secret']); else unset($v['secret']);
         }
         if ($kind === 'packs') { $v['credits'] = Amount::parse($v['credits']); $v['price_minor'] = Amount::parse($v['price'],2); unset($v['price']); abort_if($v['credits'] <= 0 || $v['price_minor'] <= 0,422); }
+        $creatingProvider = $kind === 'providers' && $id === null;
         $id = DB::transaction(function () use ($r,$kind,$table,$id,$v) {
             $exists = $id ? DB::table($table)->where('id',$id)->lockForUpdate()->first() ?? abort(404) : null;
             if ($exists && property_exists($exists,'deleted_at')) abort_if($exists->deleted_at !== null,409);
@@ -69,6 +69,7 @@ final class OperatorController
             Audit::record('catalog.'.$kind.'.saved',$r->user()->id,null,null,['id'=>$id,'before'=>$before,'after'=>$safe,'new_prices'=>$prices,'credential_changed'=>isset($v['secret']),'model_ids'=>$modelIds]);
             return $id;
         });
+        if ($creatingProvider) return redirect('/command?create=models&provider='.$id.'#models')->with('status','Provider saved. Add a model below using its exact provider model identifier, then set prices and grant it to a plan.');
         return redirect('/command#'.$kind)->with('status','Saved. Existing usage keeps its original pricing.');
     }
     public function archive(Request $r,string $kind,string $id)

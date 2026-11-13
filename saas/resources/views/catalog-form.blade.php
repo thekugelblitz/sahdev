@@ -1,16 +1,20 @@
 @php($catalogId = $item->id ?? '')
+@php($restoreInput = old('_catalog') === $kind.':'.$catalogId)
 <form action="/command/catalog/{{ $kind }}{{ $catalogId ? '/'.$catalogId : '' }}" method="post" class="form-grid">@csrf
+<input type="hidden" name="_catalog" value="{{ $kind }}:{{ $catalogId }}">
 @if($kind!=='promotions')@include('partials.field',['name'=>'name','label'=>'Name','value'=>$item->name ?? ''])@endif
 @if($kind==='providers')
 @include('partials.field',['name'=>'driver','label'=>'API protocol','value'=>$item->driver ?? 'openai_compatible','options'=>['openai_compatible'=>'OpenAI compatible — OpenAI, OpenRouter, Gemini, etc.','anthropic'=>'Anthropic Messages']])
-@include('partials.field',['name'=>'endpoint','label'=>'Full API endpoint','type'=>'url','value'=>$item->endpoint ?? '','hint'=>'HTTPS only. Host must appear in the server’s AI_PROVIDER_HOSTS allowlist.'])
+@include('partials.field',['name'=>'endpoint','label'=>'API base URL or full endpoint','type'=>'url','value'=>$item->endpoint ?? '','placeholder'=>'https://openrouter.ai/api/v1','hint'=>'OpenAI: https://api.openai.com/v1 · OpenRouter: https://openrouter.ai/api/v1 · Anthropic: https://api.anthropic.com/v1. The correct completion path is added automatically.'])
 @include('partials.field',['name'=>'secret','label'=>$item ? 'Replace API key (leave empty to retain)' : 'API key','type'=>'password','required'=>!$item,'autocomplete'=>'new-password','hint'=>'Encrypted at rest. Existing credentials are never shown back.'])
+<p class="full muted">This connection stores the API key. Model identifiers such as <code>gpt-5-nano</code> (OpenAI) or <code>openai/gpt-5-nano</code> (OpenRouter) go in <a href="/command?create=models#models">Models & pricing</a>. Saving a new provider opens that form.</p>
 @elseif($kind==='models')
-@include('partials.field',['name'=>'provider_id','label'=>'Provider','value'=>$item->provider_id ?? '', 'options'=>$providers->pluck('name','id')->all()])
-@include('partials.field',['name'=>'remote_model','label'=>'Provider model identifier','value'=>$item->remote_model ?? ''])
+@include('partials.field',['name'=>'provider_id','label'=>'Provider','value'=>$item->provider_id ?? request('provider',''), 'options'=>$providers->pluck('name','id')->all()])
+@include('partials.field',['name'=>'remote_model','label'=>'Provider model identifier','value'=>$item->remote_model ?? '','placeholder'=>'gpt-5-nano or openai/gpt-5-nano','hint'=>'Use the exact API model ID: gpt-5-nano for OpenAI, openai/gpt-5-nano for OpenRouter. The Name field above is your display label.'])
 @include('partials.field',['name'=>'max_input_bytes','label'=>'Maximum input bytes','type'=>'number','min'=>1000,'value'=>$item->max_input_bytes ?? 16000])
 @include('partials.field',['name'=>'max_output_tokens','label'=>'Maximum output tokens','type'=>'number','min'=>1,'value'=>$item->max_output_tokens ?? 2048])
 @include('partials.field',['name'=>'token_parameter','label'=>'Output limit parameter (compatible protocol)','value'=>$item->token_parameter ?? 'max_tokens','options'=>['max_tokens'=>'max_tokens','max_completion_tokens'=>'max_completion_tokens']])
+<p class="full muted">For OpenAI GPT-5 models use <code>max_completion_tokens</code>. Match this setting to your provider’s API. Add the saved model to a plan to make it available to customers.</p>
 @include('partials.field',['name'=>'supports_tools','label'=>'Function calling','value'=>(int)($item->supports_tools ?? false),'options'=>['0'=>'Disabled','1'=>'Enabled']])
 @foreach(['input_rate'=>'Customer input price','output_rate'=>'Customer output price','cost_input_rate'=>'Estimated provider input cost','cost_output_rate'=>'Estimated provider output cost'] as $key=>$label)
 @include('partials.field',['name'=>$key,'label'=>$label.' per 1M tokens','value'=>str_replace(',','',\App\Support\Amount::format($item->price->{$key} ?? 0)),'hint'=>str_starts_with($key,'cost_') ? 'Provider currency units; estimate only, reconcile provider invoices separately.' : 'Sahdev credits. All input tokens, including cached input, use this published input rate.'])

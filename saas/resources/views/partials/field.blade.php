@@ -1,4 +1,5 @@
 @php($fieldId = 'field-'.\Illuminate\Support\Str::random(8))
+@php($value = ($restoreInput ?? false) && ($type ?? '') !== 'password' ? old($name,$value ?? '') : ($value ?? ''))
 <div class="field"><label for="{{ $fieldId }}">{{ $label }}</label>
 @if(isset($options))<select id="{{ $fieldId }}" name="{{ $name }}" @required($required ?? true)>@foreach($options as $key=>$text)<option value="{{ $key }}" @selected((string)($value ?? '')===(string)$key)>{{ $text }}</option>@endforeach</select>
 @elseif(($type ?? '')==='textarea')<textarea id="{{ $fieldId }}" name="{{ $name }}" rows="{{ $rows ?? 3 }}" @required($required ?? true)>{{ $value ?? '' }}</textarea>
