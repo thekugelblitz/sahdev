@@ -2417,6 +2417,7 @@ class AdminController
     {
         $successMessage = '';
         $errorMessage = '';
+        $cloudModels = [];
 
         require_once dirname(__DIR__) . '/lib/SchemaManager.php';
         \Sahdev\Lib\SchemaManager::ensureProviderColumns();
@@ -2426,6 +2427,20 @@ class AdminController
             check_token("WHMCS.admin.default");
 
             $action = $_POST['provider_action'] ?? '';
+
+            if ($action === 'cloud_enroll' || $action === 'cloud_models') {
+                try {
+                    \Sahdev\Lib\PermissionService::enforce(\Sahdev\Lib\PermissionService::resolveCurrentAdminId(), \Sahdev\Lib\PermissionService::PERM_SETTINGS_MANAGE);
+                    require_once dirname(__DIR__) . '/lib/CloudConnector.php';
+                    if ($action === 'cloud_enroll') {
+                        \Sahdev\Lib\CloudConnector::enroll(trim((string)($_POST['cloud_url'] ?? '')), trim((string)($_POST['installation_id'] ?? '')), trim((string)($_POST['enrollment_token'] ?? '')));
+                        \Sahdev\Lib\SchemaManager::ensureCloudRequestsTable();
+                        $successMessage = 'Sahdev Cloud connected. Add a Sahdev Cloud provider below using an allowed model UUID, then assign it to the desired features.';
+                    }
+                    $catalog = (new \Sahdev\Lib\CloudConnector())->request('GET','/api/v1/models');
+                    $cloudModels = $catalog['models'] ?? [];
+                } catch (\Throwable $e) { $errorMessage = $e->getMessage(); }
+            }
 
             if ($action === 'create' || $action === 'update') {
                 $id = (int) ($_POST['provider_id'] ?? 0);
@@ -2579,6 +2594,28 @@ class AdminController
                 <div class="alert alert-danger"><i class="fas fa-exclamation-circle"></i> <?php echo htmlspecialchars($errorMessage); ?></div>
             <?php endif; ?>
 
+            <div class="provider-card">
+                <h4>Sahdev Cloud connection</h4>
+                <p class="text-muted">Connect this WHMCS installation to its verified brand. Provider keys, credits and prices are managed in Cloud Command Station. WHMCS permissions, action previews and rollback stay local.</p>
+                <form method="post" action="<?php echo $actionUrl; ?>" autocomplete="off">
+                    <?php echo $csrfToken; ?>
+                    <input type="hidden" name="provider_action" value="cloud_enroll">
+                    <div class="row">
+                        <div class="col-md-4"><label>Cloud URL</label><input type="url" name="cloud_url" class="form-control" placeholder="https://app.hostingspell.com" required></div>
+                        <div class="col-md-4"><label>Installation ID</label><input name="installation_id" class="form-control" required></div>
+                        <div class="col-md-4"><label>One-time enrollment token</label><input type="password" name="enrollment_token" class="form-control" autocomplete="new-password" required></div>
+                    </div>
+                    <button class="btn btn-primary" type="submit" style="margin-top:12px">Connect installation</button>
+                </form>
+                <form method="post" action="<?php echo $actionUrl; ?>" style="margin-top:12px"><?php echo $csrfToken; ?><input type="hidden" name="provider_action" value="cloud_models"><button class="btn btn-default" type="submit">List allowed cloud models</button></form>
+                <?php if ($cloudModels): ?>
+                    <table class="table"><thead><tr><th>Cloud model</th><th>Model Identifier (copy this UUID)</th><th>Maximum output tokens</th></tr></thead><tbody>
+                    <?php foreach ($cloudModels as $cloudModel): ?><tr><td><?php echo htmlspecialchars((string)($cloudModel['name'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></td><td><code><?php echo htmlspecialchars((string)($cloudModel['id'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></code></td><td><?php echo (int)($cloudModel['max_output_tokens'] ?? 0); ?></td></tr><?php endforeach; ?>
+                    </tbody></table>
+                <?php endif; ?>
+                <p class="text-muted">Choose “Sahdev Cloud” below, leave its API key and API URL empty, and use a model UUID from this list. Cloud currently supports text and function tools. The cloud provider never runs returned tools itself.</p>
+            </div>
+
             <!-- Active Provider Role Assignments Card -->
             <div class="provider-card" style="border-left: 4px solid #0d6efd; background: var(--sdv-bg-nested, #f8fafc); margin-bottom: 25px;">
                 <div class="provider-header">
@@ -2718,7 +2755,8 @@ class AdminController
                         <div class="col-md-6">
                             <label>Provider Format Type</label>
                             <select name="provider_type" class="form-control" id="new_provider_type" onchange="toggleProviderPreset(this.value)">
-                                <option value="openrouter">OpenRouter (Claude, GPT-4o, DeepSeek, Llama, Gemini)</option>
+                                <option value="cloud">Sahdev Cloud (metered brand connection)</option>
+                                <option value="openrouter" selected>OpenRouter (Claude, GPT-4o, DeepSeek, Llama, Gemini)</option>
                                 <option value="google">Google GenAI (Gemini)</option>
                                 <option value="lmstudio">OpenAI Compatible (Local LM Studio, Ollama, OpenAI)</option>
                                 <option value="replicate">Replicate</option>
@@ -2785,7 +2823,13 @@ class AdminController
 
         function toggleProviderPreset(type) {
             const urlInput = document.getElementById('new_api_url');
-            if (type === 'openrouter') {
+            if (type === 'cloud') {
+                urlInput.value = '';
+                document.getElementById('new_model_name').value = '';
+                document.getElementById('new_api_key').value = '';
+                document.getElementById('new_cost_in').value = '0';
+                document.getElementById('new_cost_out').value = '0';
+            } else if (type === 'openrouter') {
                 urlInput.value = 'https://openrouter.ai/api/v1/chat/completions';
                 setPreset('anthropic/claude-3.5-sonnet', 3.0, 15.0);
             } else if (type === 'google') {
@@ -2895,6 +2939,7 @@ class AdminController
                     <div class="col-md-6">
                         <label>API Format Type</label>
                         <select name="provider_type" class="form-control">
+                            <option value="cloud" <?php echo ($p->provider_type == 'cloud') ? 'selected' : ''; ?>>Sahdev Cloud</option>
                             <option value="openrouter" <?php echo ($p->provider_type == 'openrouter') ? 'selected' : ''; ?>>OpenRouter</option>
                             <option value="google" <?php echo ($p->provider_type == 'google') ? 'selected' : ''; ?>>Google GenAI (Gemini)</option>
                             <option value="lmstudio" <?php echo ($p->provider_type == 'lmstudio') ? 'selected' : ''; ?>>OpenAI Compatible (LM Studio / Ollama)</option>

@@ -414,6 +414,9 @@ class CronProcessor
         }
 
         switch ($ptype) {
+            case 'cloud':
+                require_once __DIR__ . '/CloudAIProvider.php';
+                return new CloudAIProvider();
             case 'google':
                 $key = !empty($providerData->api_key) ? decrypt($providerData->api_key) : '';
                 if (empty($key)) return null;

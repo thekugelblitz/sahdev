@@ -1,0 +1,14 @@
+.env
+.env.*
+vendor
+node_modules
+releases
+storage
+bootstrap/cache/*
+.phpunit.cache
+tests
+billing
+docs
+tools
+README.md
+*.sqlite*

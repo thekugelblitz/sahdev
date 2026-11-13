@@ -38,6 +38,14 @@
 
 ## 1. Project Overview
 
+### SaaS pilot branch (November 2026)
+
+`saas/` is an independent Laravel 13 / PHP 8.4 application with a PostgreSQL control plane, per-brand operational databases, customer dashboard and MFA-protected operator Command Station. It owns organization/brand membership, model/provider catalogs, immutable prices, prepaid credit ledger/holds/monthly budgets, HostingSpell WHMCS billing reconciliation, signed enrollment/inference APIs and signed release downloads. See `saas/README.md` for architecture, deployment, recovery, commands, supported flows and the explicit pilot limitations. It does not load inside the WHMCS addon runtime.
+
+The opt-in `cloud` provider (`lib/CloudAIProvider.php`) reuses native prompt/response contracts and sends only text/function-tool inference to `CloudConnector`. `AIController`, `ChatService` and `CronProcessor` recognize it. AI Providers adds CSRF/permission-checked enrollment and a model catalog. Installation credentials are encrypted in `tbladdonmodules` under `cloud_connection`; a separate `cloud_pending_connection` preserves an incomplete handshake without replacing the working connection. `SchemaManager::ensureCloudRequestsTable()` lazily adds `tblsahdev_cloud_requests` for request-key replay protection. Identical completed inputs cache for five minutes; unresolved operations retain their key. No cloud route executes local SQL, trusts a cloud-supplied admin identity, approves a proposal, or bypasses the existing atomic journal/rollback policy. The module's provider interface and PHP 7.4 baseline are unchanged; the LM Studio request method/retry count are protected extension points for the adapter.
+
+SaaS CI is `.github/workflows/saas.yml`; the existing diagnostic workflow also runs on `saas` and includes `scratch/test_cloud_connector.php`. The first distribution is the existing module with a cloud provider bridge, not the completed thin-connector/mobile-SSO migration. Secrets, dependencies, generated releases and development databases are ignored.
+
 ### Admin Ops Copilot, database access and rollback (November 2026)
 
 `hooks.php::sahdev_render_admin_copilot_drawer()` and `AdminController::admin_copilot()` post to the existing authenticated, permission-checked AJAX handler with the WHMCS plain CSRF token. `CopilotPresentation` loads the shared DOM-based Markdown, linked record and action-plan renderer in `ui/copilot.js` / `ui/copilot.css`. Both new and restored replies use it. Raw HTML and unsafe URL schemes are never rendered. Copilot requests bypass Ticket AI initialization; the drawer retains the server-issued session UUID. Provider failures preserve completed result cards only while their access policy still matches.

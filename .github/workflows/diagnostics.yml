@@ -1,7 +1,7 @@
 name: Diagnostic regression checks
 on:
   push:
-    branches: [v5.0]
+    branches: [v5.0, saas]
   pull_request:
 jobs:
   php:
@@ -26,6 +26,7 @@ jobs:
           php scratch/test_diagnostic_contracts.php
           php scratch/test_diagnostic_workflow.php
           php scratch/test_diagnostic_providers.php
+          php scratch/test_cloud_connector.php
           php scratch/test_diagnostic_exchange.php
           php scratch/test_settings_theme.php
           php scratch/test_command_station.php

@@ -1013,7 +1013,8 @@ class ChatService
             $fallbackReply = '';
             try {
                 $settingsRow = Capsule::table('tblsahdev_settings')->first();
-                $fallbackId = (int) ($settingsRow->client_chat_fallback_provider_id ?? 0);
+                $fallbackId = strtolower((string) ($pRecord->provider_type ?? '')) === 'cloud'
+                    ? 0 : (int) ($settingsRow->client_chat_fallback_provider_id ?? 0);
                 if ($fallbackId > 0 && (!isset($pRecord->id) || (int) $pRecord->id !== $fallbackId)) {
                     $fbData = Capsule::table('tblsahdev_providers')->where('id', $fallbackId)->where('is_active', 1)->first();
                     if ($fbData) {
@@ -1674,6 +1675,11 @@ class ChatService
             $apiKey = !empty($pData->api_key) ? decrypt($pData->api_key) : '';
             $apiUrl = trim((string) ($pData->api_url ?? ''));
             $ptype = strtolower(trim((string) ($pData->provider_type ?? '')));
+
+            if ($ptype === 'cloud') {
+                require_once __DIR__ . '/CloudAIProvider.php';
+                return new CloudAIProvider();
+            }
 
             // OpenRouter: either explicitly marked 'openrouter' OR endpoint points to openrouter.ai
             if ($ptype === 'openrouter' || stripos($apiUrl, 'openrouter.ai') !== false) {

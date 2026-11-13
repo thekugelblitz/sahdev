@@ -48,3 +48,7 @@ See [the v5 release and upgrade notes](docs/V5-RELEASE.md) for shared ticket/liv
 
 ## Security Notes
 Do NOT alter the core `ajax.php` to bypass the session check (`$_SESSION['adminid']`). The endpoint is strictly locked down to administrators only to prevent token hijacking.
+
+## SaaS development
+
+The `saas` branch adds an independent cloud platform under [`saas/`](saas/README.md), with multi-brand accounts, credit budgets, Command Station, signed installation connections and a metered cloud provider for this module. Read that guide for deployment and the pilot's remaining rollout requirements. Installing the WHMCS addon alone does not start or require the SaaS application.

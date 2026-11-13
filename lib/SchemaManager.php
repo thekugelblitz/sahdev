@@ -13,6 +13,17 @@ use WHMCS\Database\Capsule;
  */
 class SchemaManager
 {
+    public static function ensureCloudRequestsTable(): void
+    {
+        if (Capsule::schema()->hasTable('tblsahdev_cloud_requests')) return;
+        Capsule::schema()->create('tblsahdev_cloud_requests',function ($table) {
+            $table->engine = 'InnoDB';
+            $table->string('request_hash',64)->primary();
+            $table->string('request_key',64);
+            $table->string('state',20)->default('pending');
+            $table->dateTime('created_at');
+        });
+    }
     /**
      * Ensure all tables, columns, and indexes exist. Safe to run repeatedly.
      */

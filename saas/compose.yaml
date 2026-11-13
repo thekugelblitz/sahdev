@@ -1,0 +1,106 @@
+name: sahdev
+x-app: &app
+  image: sahdev-cloud:${RELEASE_TAG:-local}
+  build:
+    context: .
+    target: app
+  # Deliberate allowlist: POSTGRES_ADMIN_PASSWORD and release signing keys never enter web/worker containers.
+  environment:
+    APP_ENV: production
+    APP_DEBUG: 'false'
+    APP_NAME: Sahdev
+    APP_URL: ${APP_URL:?Set the public HTTPS application URL}
+    APP_KEY: ${APP_KEY:?Generate APP_KEY before starting the application}
+    APP_PREVIOUS_KEYS: ${APP_PREVIOUS_KEYS:-}
+    REGISTRATION_ENABLED: ${REGISTRATION_ENABLED:-false}
+    RELEASE_PUBLIC_KEY: ${RELEASE_PUBLIC_KEY:-}
+    DB_CONNECTION: pgsql
+    DB_HOST: db
+    DB_PORT: 5432
+    DB_DATABASE: sahdev
+    DB_USERNAME: sahdev
+    DB_PASSWORD: ${DB_PASSWORD:?Set the application database password}
+    SESSION_SECURE_COOKIE: 'true'
+    QUEUE_CONNECTION: database
+    CACHE_STORE: database
+    MAIL_MAILER: smtp
+    MAIL_SCHEME: ${MAIL_SCHEME:-smtps}
+    MAIL_HOST: ${MAIL_HOST:-}
+    MAIL_PORT: ${MAIL_PORT:-465}
+    MAIL_USERNAME: ${MAIL_USERNAME:-}
+    MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+    MAIL_FROM_ADDRESS: ${MAIL_FROM_ADDRESS:-sahdev@hostingspell.com}
+    AI_PROVIDER_HOSTS: ${AI_PROVIDER_HOSTS:-api.openai.com,openrouter.ai,generativelanguage.googleapis.com,api.anthropic.com}
+    TENANT_DB_HOST: db
+    TENANT_DB_PORT: 5432
+    CONVERSATION_RETENTION_DAYS: ${CONVERSATION_RETENTION_DAYS:-30}
+    BILLING_WHMCS_URL: ${BILLING_WHMCS_URL:-}
+    BILLING_API_IDENTIFIER: ${BILLING_API_IDENTIFIER:-}
+    BILLING_API_SECRET: ${BILLING_API_SECRET:-}
+    BILLING_WEBHOOK_SECRET: ${BILLING_WEBHOOK_SECRET:-}
+    BILLING_CURRENCY_ID: ${BILLING_CURRENCY_ID:-1}
+    BILLING_CURRENCY: ${BILLING_CURRENCY:-INR}
+  restart: unless-stopped
+  init: true
+  volumes:
+    - storage:/var/www/sahdev/storage
+    - ./releases:/var/www/sahdev/storage/app/releases:ro
+  depends_on:
+    db:
+      condition: service_healthy
+  networks: [private]
+  security_opt: [no-new-privileges:true]
+services:
+  app:
+    <<: *app
+    mem_limit: 1024m
+  worker:
+    <<: *app
+    command: [php, -d, max_execution_time=0, artisan, queue:work, --sleep=1, --tries=1, --timeout=110, --memory=256, --max-jobs=200, --max-time=3600]
+    mem_limit: 512m
+    stop_grace_period: 125s
+  scheduler:
+    <<: *app
+    command: [php, -d, max_execution_time=0, artisan, schedule:work]
+    mem_limit: 256m
+  web:
+    build:
+      context: .
+      target: web
+    image: sahdev-web:${RELEASE_TAG:-local}
+    environment:
+      APP_HOST: ${APP_HOST:?Set APP_HOST to the public SaaS hostname}
+      ACME_EMAIL: ${ACME_EMAIL:?Set ACME_EMAIL for TLS certificate notices}
+    ports: ["80:80", "443:443"]
+    volumes: [caddy_data:/data, caddy_config:/config]
+    depends_on: [app]
+    restart: unless-stopped
+    mem_limit: 128m
+    networks: [private]
+    security_opt: [no-new-privileges:true]
+  db:
+    image: postgres:18-bookworm
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?Set a separate PostgreSQL operator password}
+      SAHDEV_DB_PASSWORD: ${DB_PASSWORD:?Set the non-superuser application database password}
+    command: [postgres, -c, shared_buffers=256MB, -c, max_connections=60, -c, log_min_duration_statement=1000]
+    volumes:
+      - pgdata:/var/lib/postgresql
+      - ./deploy/init-db.sh:/docker-entrypoint-initdb.d/10-sahdev.sh:ro
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U postgres -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    mem_limit: 1024m
+    networks: [private]
+    security_opt: [no-new-privileges:true]
+networks:
+  private:
+    driver: bridge
+volumes:
+  storage:
+  pgdata:
+  caddy_data:
+  caddy_config:

@@ -12,7 +12,7 @@ class LMStudioAIProvider implements AIProviderInterface
     private $apiKey;
     private $lastTokenUsage = 0;
     private $lastTokenDetails = ['input' => 0, 'output' => 0];
-    private $maxRetries = 1;
+    protected $maxRetries = 1;
     private $timeout = 120; // local models can take longer
 
     public function __construct(string $apiUrl, string $apiKey = '')
@@ -276,7 +276,7 @@ class LMStudioAIProvider implements AIProviderInterface
         return $models;
     }
 
-    private function makeRequest(string $endpoint, string $payload): array
+    protected function makeRequest(string $endpoint, string $payload): array
     {
         $ch = curl_init($endpoint);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);

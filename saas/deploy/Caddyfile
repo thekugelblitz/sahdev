@@ -1,0 +1,18 @@
+{
+    email {$ACME_EMAIL}
+}
+{$APP_HOST} {
+    root * /var/www/sahdev/public
+    encode zstd gzip
+    request_body {
+        max_size 256KB
+    }
+    @private path /.env* /.git/* /storage/* /vendor/* /config/*
+    respond @private 404
+    php_fastcgi app:9000 {
+        env HTTPS on
+        env SERVER_PORT 443
+        read_timeout 30s
+    }
+    file_server
+}

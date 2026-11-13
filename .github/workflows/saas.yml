@@ -1,0 +1,101 @@
+name: SaaS platform checks
+on:
+  push:
+    branches: [saas]
+  pull_request:
+    paths: ['saas/**', 'lib/Cloud*', 'lib/LMStudioAIProvider.php', '.github/workflows/saas.yml']
+permissions:
+  contents: read
+jobs:
+  application:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: saas
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: fixture-postgres-password
+          POSTGRES_DB: sahdev_cloud_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d sahdev_cloud_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, pdo_sqlite, pdo_pgsql, intl, sodium, dom, curl, zip, pcntl
+          coverage: none
+      - name: Dependencies and syntax
+        run: |
+          mkdir -p storage/framework/views storage/framework/sessions storage/framework/cache storage/logs storage/app/private
+          composer install --no-interaction --prefer-dist
+          composer validate --strict
+          composer audit --locked
+          find app bootstrap config database routes tests tools billing -name '*.php' -print0 | xargs -0 -n1 php -l
+      - name: Platform authorization, accounting and provider contracts
+        run: vendor/bin/phpunit
+      - name: PostgreSQL competing processes, rollback and database isolation
+        env:
+          APP_ENV: testing
+          APP_KEY: 'base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA='
+          DB_CONNECTION: pgsql
+          DB_HOST: 127.0.0.1
+          DB_PORT: 5432
+          DB_DATABASE: sahdev_cloud_test
+          DB_USERNAME: postgres
+          DB_PASSWORD: fixture-postgres-password
+          TENANT_DB_HOST: 127.0.0.1
+          TENANT_DB_PORT: 5432
+          SAHDEV_PROVISION_DSN: 'pgsql:host=127.0.0.1;port=5432;dbname=postgres'
+          SAHDEV_PROVISION_USER: postgres
+          SAHDEV_PROVISION_PASSWORD: fixture-postgres-password
+        run: php tests/postgres.php
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Browser tooling
+        run: |
+          npm install --no-save --package-lock=false playwright@1.62.1
+          npx playwright install --with-deps chromium
+      - name: Customer and Command Station browser flows
+        run: node tests/browser.cjs
+      - name: Package boundary
+        run: |
+          php tools/package-module.php saas-ci ../build/saas-package --unsigned
+          php tests/package.php ../build/saas-package/sahdev-module-saas-ci.zip
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: saas-verification
+          path: |
+            build/saas-ui/*.png
+            build/saas-package/*
+          retention-days: 7
+  containers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate the production application image
+        run: |
+          docker build --target app -t sahdev-cloud:ci saas
+          docker run --rm sahdev-cloud:ci php-fpm -tt
+      - name: Validate the production web image
+        run: |
+          docker build --target web -t sahdev-web:ci saas
+          docker run --rm -e APP_HOST=saas.example.com -e ACME_EMAIL=ops@example.com sahdev-web:ci caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+      - name: Validate Compose configuration
+        working-directory: saas
+        env:
+          APP_HOST: saas.example.com
+          ACME_EMAIL: ops@example.com
+          POSTGRES_ADMIN_PASSWORD: fixture-postgres-password
+          DB_PASSWORD: fixture-application-password
+          APP_KEY: 'base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA='
+        run: |
+          cp .env.example .env
+          docker compose config --quiet

@@ -1,0 +1,14 @@
+/vendor/
+/.env
+/.env.*
+!/.env.example
+/storage/*
+!/storage/.gitignore
+/bootstrap/cache/*
+!/bootstrap/cache/.gitignore
+/database/*.sqlite*
+/.phpunit.cache/
+/public/downloads/
+/node_modules/
+/releases/
+/.release-signing.key

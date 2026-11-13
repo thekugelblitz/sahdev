@@ -38,6 +38,11 @@ class AIController
         $apiUrl = trim((string) ($providerData->api_url ?? ''));
         $ptype = strtolower(trim((string) ($providerData->provider_type ?? '')));
 
+        if ($ptype === 'cloud') {
+            require_once __DIR__ . '/CloudAIProvider.php';
+            return new CloudAIProvider();
+        }
+
         if ($ptype === 'openrouter' || stripos($apiUrl, 'openrouter.ai') !== false) {
             $apiKey = !empty($providerData->api_key) ? decrypt($providerData->api_key) : '';
             if (empty($apiKey))
@@ -210,7 +215,9 @@ class AIController
         $fallbackRow = null;
         $fallbackInst = null;
         $fallbackCallSettings = null;
-        if ($globalFbId > 0 && $globalFbId !== (int) $primaryRow->id) {
+        // A cloud failure can still have incurred usage. Preserve that operation for
+        // reconciliation instead of starting a second paid request through fallback.
+        if ($globalFbId > 0 && $globalFbId !== (int) $primaryRow->id && strtolower((string) $primaryRow->provider_type) !== 'cloud') {
             $fallbackRow = Capsule::table('tblsahdev_providers')->where('id', $globalFbId)->first();
             if ($fallbackRow) {
                 $fallbackInst = $this->initializeProvider($fallbackRow);

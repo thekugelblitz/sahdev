@@ -1,0 +1,2 @@
+<?php
+return ['default' => env('MAIL_MAILER', 'smtp'), 'mailers' => ['smtp' => ['transport' => 'smtp', 'scheme' => env('MAIL_SCHEME', 'smtps'), 'host' => env('MAIL_HOST'), 'port' => env('MAIL_PORT', 465), 'username' => env('MAIL_USERNAME'), 'password' => env('MAIL_PASSWORD'), 'timeout' => 15], 'log' => ['transport' => 'log']], 'from' => ['address' => env('MAIL_FROM_ADDRESS', 'sahdev@hostingspell.com'), 'name' => 'Sahdev']];
