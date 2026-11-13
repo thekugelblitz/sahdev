@@ -22,7 +22,10 @@ class RunInference implements ShouldQueue
             $payload = json_decode(Crypt::decryptString($r->payload),true,512,JSON_THROW_ON_ERROR);
             $provider = DB::table('providers')->where('id',$payload['provider_id'])->where('active',true)->whereNull('deleted_at')->first();
             if (!$provider) { $wallet->release($r->id,'provider_disabled',true); return; }
-            $result = $gateway->generate($provider,$payload);
+            $result = $gateway->generate($provider,$payload,function (string $reference) use ($r) {
+                DB::table('reservations')->where('id',$r->id)->update(['provider_reference'=>$reference]);
+                Audit::record('usage.provider_reference','worker',$r->organization_id,$r->brand_id,['request_id'=>$r->id,'reference'=>$reference]);
+            });
             if (isset($result['rejected'])) { $wallet->release($r->id,'provider_rejected_'.$result['status'],true); return; }
             $wallet->settle($r->id,$result['input'],$result['output'],$result['result']);
             try { $tenants->record($r,$payload,$result['result']); }

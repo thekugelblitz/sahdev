@@ -23,6 +23,9 @@ final class InferenceService
         ])->validate();
         $model = DB::table('ai_models')->where('id',$v['model_id'])->where('active',true)->whereNull('deleted_at')->first() ?? abort(422,'Model is unavailable.');
         $provider = DB::table('providers')->where('id',$model->provider_id)->where('active',true)->whereNull('deleted_at')->first() ?? abort(422,'Provider is unavailable.');
+        if ($provider->driver === 'replicate') {
+            abort_if(!empty($v['tools']) || !preg_match('~^[a-zA-Z0-9_-]+/[a-zA-Z0-9_.-]+$~D',$model->remote_model) || !in_array($model->token_parameter,['max_tokens','max_output_tokens','max_new_tokens'],true),422,'Replicate requires a supported text model and output-limit parameter; tools are unavailable.');
+        }
         abort_if(!empty($v['tools']) && !$model->supports_tools,422,'This model does not support tools.');
         abort_if(strlen(json_encode([$v['messages'],$v['tools'] ?? []],JSON_THROW_ON_ERROR)) > $model->max_input_bytes || $v['max_output_tokens'] > $model->max_output_tokens,422,'This request exceeds the model input or output limit.');
         app(TenantStore::class)->run($brand->id,fn ($db) => $db->select('select 1'));

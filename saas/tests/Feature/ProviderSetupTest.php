@@ -7,12 +7,15 @@ use Tests\TestCase;
 
 class ProviderSetupTest extends TestCase
 {
-    public function test_base_urls_are_normalized_without_accepting_unapproved_endpoints(): void
+    public function test_base_urls_and_custom_public_hosts_are_normalized(): void
     {
         foreach ([
             ['https://api.openai.com/v1/','openai_compatible','https://api.openai.com/v1/chat/completions'],
             ['https://openrouter.ai','openai_compatible','https://openrouter.ai/api/v1/chat/completions'],
             ['https://api.anthropic.com/v1','anthropic','https://api.anthropic.com/v1/messages'],
+            ['https://api.cheaperinference.com/v1','openai_compatible','https://api.cheaperinference.com/v1/chat/completions'],
+            ['https://custom.example/api/v3','anthropic','https://custom.example/api/v3/messages'],
+            ['https://api.replicate.com','replicate','https://api.replicate.com/v1'],
             ['https://generativelanguage.googleapis.com/v1beta/openai','openai_compatible','https://generativelanguage.googleapis.com/v1beta/openai/chat/completions'],
         ] as [$url,$driver,$expected]) $this->assertSame($expected,ProviderEndpoint::normalize($url,$driver));
         $this->owner->forceFill(['is_operator'=>true])->save();
@@ -25,11 +28,17 @@ class ProviderSetupTest extends TestCase
     public function test_invalid_endpoints_return_form_errors_without_flashing_credentials(): void
     {
         $this->owner->forceFill(['is_operator'=>true])->save();
-        foreach (['http://127.0.0.1/v1','https://evil.example/v1','https://api.openai.com/v1/responses','https://api.openai.com/v1?api_key=secret'] as $url) {
+        foreach (['http://127.0.0.1/v1','https://127.0.0.1/v1','https://api.openai.com/v1/responses','https://api.openai.com/v1?api_key=secret'] as $url) {
             $this->actingAs($this->owner)->from('/command')->post('/command/catalog/providers',['name'=>'Invalid','driver'=>'openai_compatible','endpoint'=>$url,'secret'=>'fixture-private-key','active'=>1,'_catalog'=>'providers:'])
                 ->assertRedirect('/command')->assertSessionHasErrors('endpoint')->assertSessionMissing('_old_input.secret');
         }
         $this->get('/command')->assertOk()->assertSee('Invalid')->assertDontSee('fixture-private-key');
         $this->assertDatabaseMissing('providers',['name'=>'Invalid']);
+    }
+    public function test_custom_provider_dns_cannot_rebind_to_private_networks(): void
+    {
+        $this->app->instance(\App\Services\DnsResolver::class,new class extends \App\Services\DnsResolver { public function addresses(string $host): array { return ['8.8.8.8','127.0.0.1']; } });
+        $this->expectException(\Illuminate\Validation\ValidationException::class);
+        ProviderEndpoint::normalize('https://custom.example/v1','openai_compatible');
     }
 }

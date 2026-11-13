@@ -4,6 +4,18 @@ use Illuminate\Support\Facades\Http;
 use Symfony\Component\HttpFoundation\IpUtils;
 final class Egress
 {
+    /** Operator-saved provider endpoints may use any public DNS hostname. */
+    public static function providerHost(string $url, bool $resolve = false): string
+    {
+        $host = (string)parse_url($url,PHP_URL_HOST);
+        abort_unless(preg_match('/^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,63}$/D',$host),422,'Use a public DNS hostname, not an IP address or local host.');
+        self::validate($url,[$host]);
+        if ($resolve) {
+            $addresses = app(DnsResolver::class)->addresses($host);
+            abort_unless($addresses && collect($addresses)->every(fn ($ip) => self::publicIp($ip)),422,'Provider DNS must resolve only to public addresses.');
+        }
+        return $host;
+    }
     public static function validate(string $url, array $hosts): string
     {
         $p = parse_url($url);

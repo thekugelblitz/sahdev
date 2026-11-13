@@ -30,8 +30,8 @@ final class OperatorController
         abort_unless(in_array($kind,['providers','models','plans','packs','promotions'],true),404);
         $common = ['name'=>'required|string|max:100','active'=>'required|boolean'];
         $rules = match($kind) {
-            'providers'=>$common+['driver'=>'required|in:openai_compatible,anthropic','endpoint'=>'required|string|max:240','secret'=>($id ? 'nullable' : 'required').'|string|min:12|max:4000'],
-            'models'=>$common+['provider_id'=>'required|uuid|exists:providers,id','remote_model'=>'required|string|regex:~^[a-zA-Z0-9:/._-]{1,160}$~','max_input_bytes'=>'required|integer|min:1000|max:180000','max_output_tokens'=>'required|integer|min:1|max:16384','supports_tools'=>'required|boolean','token_parameter'=>'required|in:max_tokens,max_completion_tokens','input_rate'=>'required|string','output_rate'=>'required|string','cost_input_rate'=>'required|string','cost_output_rate'=>'required|string','cost_currency'=>'required|in:USD,INR,EUR'],
+            'providers'=>$common+['driver'=>'required|in:openai_compatible,anthropic,replicate','endpoint'=>'required|string|max:240','secret'=>($id ? 'nullable' : 'required').'|string|min:12|max:4000'],
+            'models'=>$common+['provider_id'=>'required|uuid|exists:providers,id','remote_model'=>'required|string|regex:~^[a-zA-Z0-9:/._-]{1,160}$~','max_input_bytes'=>'required|integer|min:1000|max:180000','max_output_tokens'=>'required|integer|min:1|max:16384','supports_tools'=>'required|boolean','token_parameter'=>'required|in:max_tokens,max_completion_tokens,max_output_tokens,max_new_tokens','input_rate'=>'required|string','output_rate'=>'required|string','cost_input_rate'=>'required|string','cost_output_rate'=>'required|string','cost_currency'=>'required|in:USD,INR,EUR'],
             'plans'=>$common+['brand_limit'=>'required|integer|min:1|max:1000','seat_limit'=>'required|integer|min:1|max:1000','concurrency_limit'=>'required|integer|min:1|max:50','model_ids'=>'sometimes|array','model_ids.*'=>'uuid|exists:ai_models,id'],
             'packs'=>$common+['credits'=>'required|string','price'=>'required|string','currency'=>'required|in:INR,USD,EUR'],
             'promotions'=>['code'=>'required|string|regex:/^[A-Z0-9_-]{3,40}$/','discount_percent'=>'required|integer|min:1|max:95','max_redemptions'=>'required|integer|min:1|max:100000','expires_at'=>'required|date','active'=>'required|boolean'],
@@ -50,6 +50,10 @@ final class OperatorController
             $id = $id ?: (string)Str::uuid(); $prices = []; $modelIds = $v['model_ids'] ?? []; unset($v['model_ids']);
             if ($kind === 'models') {
                 $provider = DB::table('providers')->where('id',$v['provider_id'])->whereNull('deleted_at')->first() ?? abort(422);
+                if ($provider->driver === 'replicate') {
+                    if ($v['supports_tools'] || !preg_match('~^[a-zA-Z0-9_-]+/[a-zA-Z0-9_.-]+$~D',$v['remote_model'])) throw \Illuminate\Validation\ValidationException::withMessages(['remote_model'=>'Replicate text models use owner/model, with Function calling disabled.']);
+                    if (!in_array($v['token_parameter'],['max_tokens','max_output_tokens','max_new_tokens'],true)) throw \Illuminate\Validation\ValidationException::withMessages(['token_parameter'=>'Choose the token limit field from this Replicate model’s input schema.']);
+                } elseif (!in_array($v['token_parameter'],['max_tokens','max_completion_tokens'],true)) throw \Illuminate\Validation\ValidationException::withMessages(['token_parameter'=>'This protocol uses max_tokens or max_completion_tokens.']);
                 foreach (['input_rate','output_rate','cost_input_rate','cost_output_rate'] as $key) { $prices[$key] = Amount::parse($v[$key]); abort_if($prices[$key] > 1000000000000,422,'Rate exceeds supported precision.'); unset($v[$key]); }
                 $prices['cost_currency'] = $v['cost_currency']; unset($v['cost_currency']);
             }

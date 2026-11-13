@@ -3,9 +3,10 @@ namespace App\Services;
 use Illuminate\Support\Facades\Crypt;
 final class ProviderGateway
 {
-    public function generate(object $provider, array $payload): array
+    public function generate(object $provider, array $payload, ?callable $reference = null): array
     {
-        $request = app(Egress::class)->request($provider->endpoint,config('cloud.provider_hosts'));
+        if ($provider->driver === 'replicate') return app(ReplicateGateway::class)->generate($provider,$payload,$reference);
+        $request = app(Egress::class)->request($provider->endpoint,[Egress::providerHost($provider->endpoint)]);
         $key = Crypt::decryptString($provider->secret);
         $body = ['model'=>$payload['remote_model'],'messages'=>$payload['messages'],'max_tokens'=>$payload['max_output_tokens']];
         if (!empty($payload['tools'])) $body['tools'] = $payload['tools'];
