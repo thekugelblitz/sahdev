@@ -7,6 +7,9 @@ Route::get('/', fn () => redirect('/dashboard'));
 Route::middleware('guest')->group(function () {
     Route::get('/login',fn () => view('auth',['mode'=>'login']))->name('login');
     Route::post('/login',[AuthController::class,'login'])->middleware('throttle:login');
+    Route::get('/command/login',fn () => view('auth',['mode'=>'command/login']));
+    Route::post('/command/login',[AuthController::class,'login'])->middleware('throttle:login');
+    Route::redirect('/ops','/command');
     Route::get('/register',function () { abort_unless(config('cloud.registration'),403,'Registration is currently closed.'); return view('auth',['mode'=>'register']); });
     Route::post('/register',[AuthController::class,'register'])->middleware('throttle:5,60');
     Route::get('/forgot-password',fn () => view('auth',['mode'=>'forgot-password']))->name('password.request');
@@ -21,8 +24,8 @@ Route::middleware('auth')->group(function () {
     Route::post('/email/verification-notification',function (Request $r) { $r->user()->sendEmailVerificationNotification(); return back()->with('status','Verification email sent.'); })->middleware('throttle:3,1')->name('verification.send');
 });
 Route::middleware(['auth','verified'])->group(function () {
-    Route::get('/security',[AuthController::class,'security']);
-    Route::post('/security',[AuthController::class,'verifyOperator'])->middleware('throttle:6,1');
+    Route::get('/command/security',[AuthController::class,'security']);
+    Route::post('/command/security',[AuthController::class,'verifyOperator'])->middleware('throttle:6,1');
     Route::middleware(['org'])->group(function () {
         Route::get('/dashboard',[DashboardController::class,'index']);
         Route::get('/downloads',fn (\App\Services\ReleaseService $releases) => view('downloads',['release'=>$releases->catalog()]));
@@ -41,7 +44,7 @@ Route::middleware(['auth','verified'])->group(function () {
         Route::get('/team',[DashboardController::class,'team']);
         Route::post('/team',[DashboardController::class,'membership'])->middleware('throttle:15,1');
     });
-    Route::middleware(['ops','throttle:60,1'])->prefix('ops')->group(function () {
+    Route::middleware(['ops','throttle:60,1'])->prefix('command')->group(function () {
         Route::get('/',[OperatorController::class,'index']);
         Route::post('/catalog/{kind}/{id?}',[OperatorController::class,'save'])->whereUuid('id');
         Route::delete('/catalog/{kind}/{id}',[OperatorController::class,'archive'])->whereUuid('id');

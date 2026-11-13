@@ -10,8 +10,8 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->append(App\Http\Middleware\SecurityHeaders::class);
         $middleware->alias(['org' => App\Http\Middleware\OrganizationAccess::class, 'ops' => App\Http\Middleware\OperatorAccess::class, 'installation' => App\Http\Middleware\InstallationAuth::class]);
         $middleware->prependToPriorityList(\Illuminate\Routing\Middleware\ThrottleRequests::class, App\Http\Middleware\InstallationAuth::class);
-        $middleware->redirectGuestsTo('/login');
-        $middleware->redirectUsersTo('/dashboard');
+        $middleware->redirectGuestsTo(fn ($request) => $request->is('command','command/*') ? '/command/login' : '/login');
+        $middleware->redirectUsersTo(fn ($request) => $request->user()?->is_operator ? '/command' : '/dashboard');
         $middleware->preventRequestForgery(except: []);
         $middleware->trustHosts(at: fn () => ['^'.preg_quote(parse_url(config('app.url'), PHP_URL_HOST) ?: 'localhost').'$'], subdomains: false);
     })

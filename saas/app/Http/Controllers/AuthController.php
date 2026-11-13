@@ -19,9 +19,10 @@ final class AuthController
     public function login(Request $r)
     {
         $v = $r->validate(['email'=>'required|email|max:254','password'=>'required|string|max:200']);
-        if (!Auth::attempt(['email'=>strtolower($v['email']),'password'=>$v['password']])) throw ValidationException::withMessages(['email'=>'The email or password is incorrect.']);
+        $commandLogin = $r->is('command/login');
+        if (!Auth::attempt(['email'=>strtolower($v['email']),'password'=>$v['password'],'is_operator'=>$commandLogin])) throw ValidationException::withMessages(['email'=>'The email or password is incorrect.']);
         $r->session()->regenerate();
-        return redirect()->intended($r->user()->is_operator ? '/ops' : '/dashboard');
+        return $commandLogin ? redirect('/command') : redirect()->intended('/dashboard');
     }
     public function register(Request $r, OrganizationService $organizations)
     {
@@ -76,6 +77,6 @@ final class AuthController
             return $step;
         });
         $r->session()->forget('totp_enrollment'); $r->session()->regenerate(); $r->session()->put('operator_verified_at',time());
-        return redirect('/ops');
+        return redirect('/command');
     }
 }

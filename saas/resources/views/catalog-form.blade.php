@@ -1,5 +1,5 @@
 @php($catalogId = $item->id ?? '')
-<form action="/ops/catalog/{{ $kind }}{{ $catalogId ? '/'.$catalogId : '' }}" method="post" class="form-grid">@csrf
+<form action="/command/catalog/{{ $kind }}{{ $catalogId ? '/'.$catalogId : '' }}" method="post" class="form-grid">@csrf
 @if($kind!=='promotions')@include('partials.field',['name'=>'name','label'=>'Name','value'=>$item->name ?? ''])@endif
 @if($kind==='providers')
 @include('partials.field',['name'=>'driver','label'=>'API protocol','value'=>$item->driver ?? 'openai_compatible','options'=>['openai_compatible'=>'OpenAI compatible — OpenAI, OpenRouter, Gemini, etc.','anthropic'=>'Anthropic Messages']])
@@ -33,4 +33,4 @@
 @endif
 @include('partials.field',['name'=>'active','label'=>'Availability','value'=>(int)($item->active ?? false),'options'=>['0'=>'Disabled','1'=>'Enabled']])
 <div class="form-actions"><button class="primary">{{ $item ? 'Save changes' : 'Create' }}</button>@if($kind==='models')<small>Saving creates a new immutable price version.</small>@endif</div></form>
-@if($catalogId)<form action="/ops/catalog/{{ $kind }}/{{ $catalogId }}" method="post" data-confirm="Archive this item? Financial history will remain available.">@csrf @method('DELETE')<button class="danger">Archive {{ rtrim($kind,'s') }}</button></form>@endif
+@if($catalogId)<form action="/command/catalog/{{ $kind }}/{{ $catalogId }}" method="post" data-confirm="Archive this item? Financial history will remain available.">@csrf @method('DELETE')<button class="danger">Archive {{ rtrim($kind,'s') }}</button></form>@endif

@@ -27,17 +27,17 @@ class AccessTest extends TestCase
     }
     public function test_customer_cannot_become_operator_through_registration_or_settings(): void
     {
-        $this->actingAs($this->owner)->get('/ops')->assertForbidden();
-        $this->post('/ops/catalog/providers',[])->assertForbidden();
-        $this->get('/security')->assertForbidden();
+        $this->actingAs($this->owner)->get('/command')->assertForbidden();
+        $this->post('/command/catalog/providers',[])->assertForbidden();
+        $this->get('/command/security')->assertForbidden();
         $this->assertFalse($this->owner->fresh()->is_operator);
     }
     public function test_operator_requires_recent_mfa_and_never_gets_provider_secret_back(): void
     {
         $this->owner->forceFill(['is_operator'=>true,'totp_secret'=>Totp::secret()])->save();
-        $this->actingAs($this->owner)->get('/ops')->assertRedirect('/security');
-        $this->withSession(['operator_verified_at'=>time()])->get('/ops')->assertOk()->assertDontSee('fixture-api-secret-do-not-display');
-        $this->withSession(['operator_verified_at'=>time()-901])->post('/ops/catalog/providers',[])->assertRedirect('/security');
+        $this->actingAs($this->owner)->get('/command')->assertRedirect('/command/security');
+        $this->withSession(['operator_verified_at'=>time()])->get('/command')->assertOk()->assertDontSee('fixture-api-secret-do-not-display');
+        $this->withSession(['operator_verified_at'=>time()-901])->post('/command/catalog/providers',[])->assertRedirect('/command/security');
     }
     public function test_totp_matches_rfc_vector_and_prevents_replay(): void
     {

@@ -69,7 +69,7 @@ final class OperatorController
             Audit::record('catalog.'.$kind.'.saved',$r->user()->id,null,null,['id'=>$id,'before'=>$before,'after'=>$safe,'new_prices'=>$prices,'credential_changed'=>isset($v['secret']),'model_ids'=>$modelIds]);
             return $id;
         });
-        return redirect('/ops#'.$kind)->with('status','Saved. Existing usage keeps its original pricing.');
+        return redirect('/command#'.$kind)->with('status','Saved. Existing usage keeps its original pricing.');
     }
     public function archive(Request $r,string $kind,string $id)
     {
@@ -82,7 +82,7 @@ final class OperatorController
             DB::table($table)->where('id',$id)->update($v);
             Audit::record('catalog.'.$kind.'.archived',$r->user()->id,null,null,['id'=>$id]);
         });
-        return redirect('/ops#'.$kind)->with('status','Archived. Financial history is retained.');
+        return redirect('/command#'.$kind)->with('status','Archived. Financial history is retained.');
     }
     public function organization(Request $r,string $id)
     {
