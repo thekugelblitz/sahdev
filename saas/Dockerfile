@@ -19,3 +19,4 @@ CMD ["php-fpm", "-F"]
 FROM caddy:2-alpine AS web
 COPY --from=app /var/www/sahdev/public /var/www/sahdev/public
 COPY deploy/Caddyfile /etc/caddy/Caddyfile
+COPY deploy/DokployCaddyfile /etc/caddy/DokployCaddyfile

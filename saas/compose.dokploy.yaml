@@ -1,0 +1,55 @@
+services:
+  db:
+    extends:
+      file: compose.yaml
+      service: db
+  migrate:
+    extends:
+      file: compose.yaml
+      service: app
+    command: [sh, -ec, 'php artisan migrate --force && php artisan db:seed --force']
+    restart: 'no'
+    mem_limit: 256m
+  app:
+    extends:
+      file: compose.yaml
+      service: app
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+  worker:
+    extends:
+      file: compose.yaml
+      service: worker
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+  scheduler:
+    extends:
+      file: compose.yaml
+      service: scheduler
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+  web:
+    image: sahdev-web:${RELEASE_TAG:-local}
+    build:
+      context: .
+      target: web
+    command: [caddy, run, --config, /etc/caddy/DokployCaddyfile, --adapter, caddyfile]
+    expose: ['80']
+    depends_on: [app]
+    restart: unless-stopped
+    mem_limit: 128m
+    networks: [private, dokploy-network]
+    labels:
+      traefik.docker.network: dokploy-network
+    security_opt: [no-new-privileges:true]
+networks:
+  private:
+    driver: bridge
+  dokploy-network:
+    external: true
+volumes:
+  storage:
+  pgdata:
