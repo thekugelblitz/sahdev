@@ -15,11 +15,6 @@ const fixture = JSON.parse(seeded.stdout);
 let stderr = '';
 const server = spawn(php, ['-S', '127.0.0.1:8791', '-t', 'public', 'tests/server-router.php'], { cwd: root, env, stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true });
 server.stderr.on('data', data => stderr += data);
-function totp(secret) {
-  let bits = ''; for (const c of secret) bits += 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'.indexOf(c).toString(2).padStart(5, '0');
-  const key = Buffer.from(bits.match(/.{8}/g).map(b => parseInt(b, 2))); const step = Buffer.alloc(8); step.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30000)));
-  const h = crypto.createHmac('sha1', key).update(step).digest(); const offset = h[19] & 15; return ((h.readUInt32BE(offset) & 0x7fffffff) % 1000000).toString().padStart(6, '0');
-}
 let browser;
 (async () => {
   for (let i = 0; i < 50; i++) { try { const r = await fetch(env.APP_URL + '/login'); if (r.ok) break; } catch {} await new Promise(r => setTimeout(r, 100)); }
@@ -28,9 +23,7 @@ let browser;
   page.on('pageerror', e => errors.push(e.message));
   await page.goto(env.APP_URL + '/command/login');
   await page.getByLabel('Email address').fill('operator@example.test'); await page.getByLabel('Password', { exact: true }).fill('Fixture-password-12345');
-  await Promise.all([page.waitForURL('**/command/security'), page.getByRole('button', { name: 'Sign in →' }).click()]);
-  await page.getByLabel('Account password').fill('Fixture-password-12345'); await page.getByLabel('Authenticator code').fill(totp('JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP'));
-  await Promise.all([page.waitForURL('**/command'), page.getByRole('button', { name: 'Verify and open Command Station' }).click()]);
+  await Promise.all([page.waitForURL('**/command'), page.getByRole('button', { name: 'Sign in →' }).click()]);
   assert(await page.getByRole('heading', { name: 'Platform control.' }).isVisible());
   const createProvider = page.locator('#providers details').last(); await createProvider.locator('summary').click();
   await createProvider.getByLabel('Name', { exact: true }).fill('Browser provider');
@@ -61,7 +54,7 @@ let browser;
   await page.setViewportSize({ width: 390, height: 844 }); await page.screenshot({ path: path.join(folder, 'mobile.png'), fullPage: true });
   assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'Mobile page should not overflow horizontally');
   assert.deepEqual(errors, []);
-  console.log('PASS browser: login, MFA, provider CRUD/redaction, brand creation, allocation, billing, team, CSRF, signed auth and mobile layout.');
+  console.log('PASS browser: operator password login, provider CRUD/redaction, brand creation, allocation, billing, team, CSRF, signed auth and mobile layout.');
 })().catch(error => { console.error(error); console.error(stderr.slice(-3000)); process.exitCode = 1; }).finally(async () => {
   if (browser) await browser.close(); server.kill();
   await new Promise(resolve => setTimeout(resolve, 500));

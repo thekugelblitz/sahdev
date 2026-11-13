@@ -30,14 +30,22 @@ class AccessTest extends TestCase
         $this->actingAs($this->owner)->get('/command')->assertForbidden();
         $this->post('/command/catalog/providers',[])->assertForbidden();
         $this->get('/command/security')->assertForbidden();
+        $this->post('/command/settings',['mfa_required'=>1])->assertForbidden();
         $this->assertFalse($this->owner->fresh()->is_operator);
     }
     public function test_operator_requires_recent_mfa_and_never_gets_provider_secret_back(): void
     {
-        $this->owner->forceFill(['is_operator'=>true,'totp_secret'=>Totp::secret()])->save();
-        $this->actingAs($this->owner)->get('/command')->assertRedirect('/command/security');
-        $this->withSession(['operator_verified_at'=>time()])->get('/command')->assertOk()->assertDontSee('fixture-api-secret-do-not-display');
+        $secret = Totp::secret();
+        $this->owner->forceFill(['is_operator'=>true,'totp_secret'=>$secret,'password'=>'Fixture-password-12345'])->save();
+        $this->actingAs($this->owner)->get('/command')->assertOk()->assertDontSee('fixture-api-secret-do-not-display');
+        $this->post('/command/settings',['mfa_required'=>1,'password'=>'wrong'])->assertSessionHasErrors('password');
+        $this->post('/command/settings',['mfa_required'=>1,'password'=>'Fixture-password-12345'])->assertRedirect('/command');
+        $this->get('/command')->assertRedirect('/command/security');
+        $this->post('/command/security',['password'=>'Fixture-password-12345','code'=>Totp::code($secret,intdiv(time(),30))])->assertRedirect('/command');
+        $this->get('/command')->assertOk();
         $this->withSession(['operator_verified_at'=>time()-901])->post('/command/catalog/providers',[])->assertRedirect('/command/security');
+        $this->withSession(['operator_verified_at'=>time()])->post('/command/settings',['mfa_required'=>0,'password'=>'Fixture-password-12345'])->assertRedirect('/command');
+        $this->get('/command')->assertOk();
     }
     public function test_totp_matches_rfc_vector_and_prevents_replay(): void
     {

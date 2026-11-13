@@ -61,12 +61,15 @@ final class AuthController
     public function security(Request $r)
     {
         abort_unless($r->user()->is_operator,403);
+        if (!DB::table('operator_security')->where('id',1)->value('mfa_required')) return redirect('/command/settings');
         if (!$r->user()->totp_secret && !$r->session()->has('totp_enrollment')) $r->session()->put('totp_enrollment',Totp::secret());
         return view('security',['secret'=>$r->user()->totp_secret ? null : $r->session()->get('totp_enrollment')]);
     }
     public function verifyOperator(Request $r)
     {
         abort_unless($r->user()->is_operator,403);
+        $policy = DB::table('operator_security')->find(1);
+        abort_unless($policy?->mfa_required,403);
         $v = $r->validate(['password'=>'required|string','code'=>'required|string|size:6']);
         $step = DB::transaction(function () use ($r,$v) {
             $user = User::where('id',$r->user()->id)->lockForUpdate()->firstOrFail();
@@ -77,6 +80,28 @@ final class AuthController
             return $step;
         });
         $r->session()->forget('totp_enrollment'); $r->session()->regenerate(); $r->session()->put('operator_verified_at',time());
+        $r->session()->put('operator_mfa_revision',$policy->revision);
         return redirect('/command');
+    }
+
+    public function operatorSettings()
+    {
+        return view('operator-settings', ['required'=>DB::table('operator_security')->where('id',1)->value('mfa_required')]);
+    }
+
+    public function saveOperatorSettings(Request $r)
+    {
+        $settings = $r->validate(['mfa_required'=>'required|boolean','password'=>'required|current_password']);
+        $required = (bool) $settings['mfa_required'];
+        DB::transaction(function () use ($r,$required) {
+            $policy = DB::table('operator_security')->lockForUpdate()->find(1);
+            if ((bool) $policy->mfa_required === $required) return;
+            DB::table('operator_security')->where('id',1)->update([
+                'mfa_required'=>$required,
+                'revision'=>(string) Str::uuid(),
+            ]);
+            Audit::record('operator.mfa_policy_changed',$r->user()->id,null,null,['required'=>$required]);
+        });
+        return redirect('/command')->with('status',$required ? 'Operator MFA enabled.' : 'Operator MFA disabled.');
     }
 }

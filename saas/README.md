@@ -10,7 +10,7 @@ The initial release implements the account → brand → funding → signed conn
 - Multiple brands per organization, pooled credits or explicit allocations, monthly brand budgets, organization/brand suspensions, seat/brand/model/concurrency limits.
 - Integer microcredit accounting: grants, transfers, reservations, settlements, releases, reversals, immutable ledger entries and reconciliation commands. Budget checks and wallet holds commit in one control-plane transaction.
 - Customer dashboard, billing/usage views, staff management, domain verification, enrollment, and signed downloads.
-- Operator Command Station behind password + TOTP verification. CRUD for providers, models, plans, credit packs and promotions; encrypted provider keys; immutable model price versions; operator credit grants and exception reconciliation with evidence.
+- Operator Command Station with password sign-in and optional TOTP managed from Command Station settings. CRUD for providers, models, plans, credit packs and promotions; encrypted provider keys; immutable model price versions; operator credit grants and exception reconciliation with evidence.
 - OpenAI-compatible Chat Completions providers (including OpenRouter and Gemini's compatible endpoint) and Anthropic Messages. Text and locally executed function tools only. No arbitrary endpoints, redirects, automatic paid retries, cloud SQL execution, or silent model fallback.
 - HostingSpell WHMCS invoice creation and verified payment delivery. Its configured Razorpay, PayPal and Stripe gateways remain the payment processors. An outbox hook retries payment notifications; the cloud reconciles missed paid invoices.
 - Separate PostgreSQL database/login for each brand, with per-brand content retention. Provisioning credentials are used only by an operator command and are excluded from web/worker container environments.
@@ -21,7 +21,7 @@ The initial release implements the account → brand → funding → signed conn
 ```mermaid
 flowchart LR
   U[Customer / staff] --> W[Sahdev dashboard]
-  O[HostingSpell operators + MFA] --> C[Command Station]
+  O[HostingSpell operators] --> C[Command Station]
   W --> P[Shared application and worker]
   C --> P
   P --> M[(Control-plane PostgreSQL database)]
@@ -88,7 +88,7 @@ Use a dedicated subdomain, for example `app.hostingspell.com`, whose DNS points 
    docker compose up -d
    ```
 
-3. Sign in, enroll TOTP, configure provider credentials and model prices, grant models to the Launch plan, and create credit packs/promotions. Secrets are write-only in forms and encrypted using `APP_KEY`. Existing keys remain unchanged when the replacement field is empty. Keep `APP_KEY` and previous keys backed up separately; losing them loses access to encrypted provider/installation/tenant credentials and retained content.
+3. Sign in, optionally enable MFA in Command Station settings, configure provider credentials and model prices, grant models to the Launch plan, and create credit packs/promotions. Secrets are write-only in forms and encrypted using `APP_KEY`. Existing keys remain unchanged when the replacement field is empty. Keep `APP_KEY` and previous keys backed up separately; losing them loses access to encrypted provider/installation/tenant credentials and retained content.
 4. After creating a brand, provision its database using a short-lived operator process. Do not place provisioning credentials in the application's `.env` or configuration cache:
 
    ```sh

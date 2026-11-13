@@ -17,7 +17,7 @@ Artisan::command('platform:operator {email} {--create}',function () {
     if (!$user) { $this->error('Create the account first, or use --create.'); return 1; }
     $user->forceFill(['is_operator'=>true,'email_verified_at'=>now()])->save();
     Audit::record('operator.granted','console',null,null,['user_id'=>$user->id]);
-    $this->info('Operator enabled. Sign in and enroll an authenticator before accessing Command Station.');
+    $this->info('Operator enabled. Sign in at /command to access Command Station.');
 })->purpose('Bootstrap a trusted HostingSpell operator; console access is required');
 
 Artisan::command('platform:revoke-operator {email}',function () {

@@ -45,6 +45,8 @@ Route::middleware(['auth','verified'])->group(function () {
         Route::post('/team',[DashboardController::class,'membership'])->middleware('throttle:15,1');
     });
     Route::middleware(['ops','throttle:60,1'])->prefix('command')->group(function () {
+        Route::get('/settings',[AuthController::class,'operatorSettings']);
+        Route::post('/settings',[AuthController::class,'saveOperatorSettings'])->middleware('throttle:6,1,operator-settings');
         Route::get('/',[OperatorController::class,'index']);
         Route::post('/catalog/{kind}/{id?}',[OperatorController::class,'save'])->whereUuid('id');
         Route::delete('/catalog/{kind}/{id}',[OperatorController::class,'archive'])->whereUuid('id');
