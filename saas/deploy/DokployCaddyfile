@@ -9,7 +9,7 @@
     }
     @private path /.env* /.git/* /storage/* /vendor/* /config/*
     respond @private 404
-    php_fastcgi app:9000 {
+    php_fastcgi sahdev-cloud-fpm:9000 {
         env HTTPS on
         env SERVER_PORT 443
         read_timeout 30s
