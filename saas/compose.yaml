@@ -13,6 +13,7 @@ x-app: &app
     APP_KEY: ${APP_KEY:?Generate APP_KEY before starting the application}
     APP_PREVIOUS_KEYS: ${APP_PREVIOUS_KEYS:-}
     REGISTRATION_ENABLED: ${REGISTRATION_ENABLED:-false}
+    THIN_CONNECTOR_PREVIEW: ${THIN_CONNECTOR_PREVIEW:-false}
     RELEASE_PUBLIC_KEY: ${RELEASE_PUBLIC_KEY:-}
     DB_CONNECTION: pgsql
     DB_HOST: db
@@ -30,7 +31,6 @@ x-app: &app
     MAIL_USERNAME: ${MAIL_USERNAME:-}
     MAIL_PASSWORD: ${MAIL_PASSWORD:-}
     MAIL_FROM_ADDRESS: ${MAIL_FROM_ADDRESS:-sahdev@hostingspell.com}
-    AI_PROVIDER_HOSTS: ${AI_PROVIDER_HOSTS:-api.openai.com,openrouter.ai,generativelanguage.googleapis.com,api.anthropic.com}
     TENANT_DB_HOST: db
     TENANT_DB_PORT: 5432
     CONVERSATION_RETENTION_DAYS: ${CONVERSATION_RETENTION_DAYS:-30}

@@ -29,6 +29,8 @@ final class ApiController
     public function result(Request $r, string $id, InferenceService $inference)
     {
         $i = $r->attributes->get('installation');
+        // Structured workflow responses require the actor/ticket-scoped result endpoint.
+        abort_if(DB::table('workflow_requests')->where('reservation_id',$id)->exists(),404);
         return $inference->result(DB::table('reservations')->where('id',$id)->where('brand_id',$i->brand_id)->where('installation_id',$i->id)->first() ?? abort(404));
     }
     public function billing(Request $r, BillingService $billing)

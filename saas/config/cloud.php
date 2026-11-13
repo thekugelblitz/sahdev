@@ -1,9 +1,8 @@
 <?php
 return [
     'registration' => env('REGISTRATION_ENABLED', false),
+    'thin_connector_preview' => env('THIN_CONNECTOR_PREVIEW', false),
     'release_public_key' => env('RELEASE_PUBLIC_KEY'),
-    // Endpoints must be explicitly approved by the server operator before UI configuration.
-    'provider_hosts' => array_filter(explode(',', env('AI_PROVIDER_HOSTS', 'api.openai.com,openrouter.ai,generativelanguage.googleapis.com,api.anthropic.com'))),
     'billing_url' => rtrim(env('BILLING_WHMCS_URL', ''), '/'),
     'billing_identifier' => env('BILLING_API_IDENTIFIER'), 'billing_secret' => env('BILLING_API_SECRET'),
     'billing_webhook_secret' => env('BILLING_WEBHOOK_SECRET'),

@@ -7,4 +7,6 @@ Route::middleware(['installation','throttle:installation'])->prefix('v1')->group
     Route::get('/models',[ApiController::class,'models']);
     Route::post('/inference',[ApiController::class,'submit']);
     Route::get('/inference/{id}',[ApiController::class,'result'])->whereUuid('id');
+    Route::post('/workflows',[\App\Http\Controllers\WorkflowController::class,'submit']);
+    Route::post('/workflows/{id}/result',[\App\Http\Controllers\WorkflowController::class,'result'])->whereUuid('id');
 });

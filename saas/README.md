@@ -1,6 +1,8 @@
 # Sahdev Cloud — pilot release
 
-This directory contains the runnable SaaS platform. It is a Laravel 13 / PHP 8.4 modular monolith with a web process, database queue worker, scheduler, and PostgreSQL. The existing WHMCS module remains independently installable and compatible with PHP 7.4+.
+This directory contains the runnable SaaS platform: Laravel 13 / PHP 8.4, a database queue, scheduler and PostgreSQL. Legacy WHMCS source is retained for migration and existing-installation compatibility, but excluded from new distribution packages.
+
+**Current distribution: acceptance preview, not full feature parity.** `../connector/` contains the thin WHMCS bridge. Five cloud workflows implement ticket analysis, summaries, rewriting, scoring and canned drafts. Live chat, Copilot actions/rollback, knowledge, automation, diagnostics, analytics, mobile and upgrade migration remain incomplete. See `config/migration.php` and `/command/release`. Public signup, purchases and stable downloads stay closed until migration and launch prerequisites are verified.
 
 The initial release implements the account → brand → funding → signed connector → metered AI journey. It is **not a claim that the full product migration or a live deployment is finished**. Provider credentials, SMTP, HostingSpell billing credentials, domains, release signing, backups, and installation-specific WHMCS validation must be supplied and exercised before paid onboarding. No real payment or AI call is made by the regression suite.
 
@@ -11,7 +13,7 @@ The initial release implements the account → brand → funding → signed conn
 - Integer microcredit accounting: grants, transfers, reservations, settlements, releases, reversals, immutable ledger entries and reconciliation commands. Budget checks and wallet holds commit in one control-plane transaction.
 - Customer dashboard, billing/usage views, staff management, domain verification, enrollment, and signed downloads.
 - Operator Command Station with password sign-in and optional TOTP managed from Command Station settings. CRUD for providers, models, plans, credit packs and promotions; encrypted provider keys; immutable model price versions; operator credit grants and exception reconciliation with evidence.
-- OpenAI-compatible Chat Completions providers (including OpenRouter and Gemini's compatible endpoint) and Anthropic Messages. Text and locally executed function tools only. No arbitrary endpoints, redirects, automatic paid retries, cloud SQL execution, or silent model fallback.
+- Custom public HTTPS providers using OpenAI-compatible Chat Completions (including CheaperInference), Anthropic Messages, and native Replicate text predictions. Replicate requires an `owner/model` identifier, a supported output-token limit and reported input/output token counts; arbitrary prediction schemas are not supported. No private-network destinations, redirects, automatic paid retries or silent model fallback. Model IDs and token prices are configured separately from provider credentials.
 - HostingSpell WHMCS invoice creation and verified payment delivery. Its configured Razorpay, PayPal and Stripe gateways remain the payment processors. An outbox hook retries payment notifications; the cloud reconciles missed paid invoices.
 - Separate PostgreSQL database/login for each brand, with per-brand content retention. Provisioning credentials are used only by an operator command and are excluded from web/worker container environments.
 - An opt-in **Sahdev Cloud** provider in the existing WHMCS module. Ticket AI, chat/Copilot and cron provider selection can use it while retaining the module's native rendering, record links, ACL, action previews, transactional changes, journals and rollback.
@@ -65,7 +67,7 @@ php artisan queue:work --tries=1 --timeout=110
 php artisan schedule:work
 ```
 
-The seed adds only a Launch plan with five brands, ten seats and two concurrent requests. It creates no sample users, keys, model prices, credit packs or free funds. Add providers and models, then explicitly grant the models to a plan. The cloud worker needs outbound HTTPS to approved provider domains. Test fixtures are confined to disposable databases.
+The seed adds a Launch plan (five brands, ten seats, two concurrent requests) and draft one-time packs: Starter ₹499 / 499 credits, Growth ₹1,499 / 1,499 credits, Scale ₹3,999 / 3,999 credits, before applicable tax. These are editable preview prices, not approved unit economics or subscriptions. Reseeding preserves operator changes. No sample users, keys, model prices or free funds are created. Add providers/models and explicitly grant models to a plan. Test fixtures use disposable databases.
 
 ## Hetzner pilot deployment
 
@@ -102,8 +104,8 @@ Use a dedicated subdomain, for example `app.hostingspell.com`, whose DNS points 
    ```
 
    Generated role/database names are derived from the brand UUID. Roles cannot create databases or roles. Public database access is revoked. Provisioning preserves encrypted credentials on failure, so rerunning resumes instead of making a second database.
-5. Verify the brand's DNS TXT challenge, issue a 15-minute enrollment token, and open **WHMCS → Sahdev → AI Providers → Sahdev Cloud connection**. Enter the cloud URL, installation ID and token. Click **List allowed cloud models**, add a provider with type **Sahdev Cloud**, copy a model UUID into Model Identifier, leave API key/URL empty, and assign it to the desired features. Keep local model output limits within the cloud model's configured maximum.
-6. Complete the billing setup below, run a small real provider request, test an approved database change/rollback on a staging WHMCS, validate backups/restoration, then enable registration and onboard the first hosts.
+5. Enable `THIN_CONNECTOR_PREVIEW=true` on the cloud acceptance deployment. Verify the staging brand's DNS TXT challenge, issue a 15-minute token and enroll from **WHMCS → Addons → Sahdev Cloud Connector**. In a staging support ticket, load models and test the five draft workflows. See `../connector/README.md` for scope and permissions.
+6. Complete every feature migration and record its acceptance evidence before marking it verified. Validate billing, SMTP delivery, real provider compatibility, backups/restoration and signed stable packaging. Only then enable registration and onboard paid customers. Environment flags cannot bypass incomplete migration.
 
 Deploy changes with immutable image tags. Build in CI where possible. Run additive migrations, then restart app/worker/scheduler together so opcache and queue workers load the same version. Stop workers gracefully (the Compose grace period exceeds the request timeout). Do not use `migrate:fresh` or delete volumes on production. Commands shown for tests explicitly reject production database names.
 
@@ -135,20 +137,21 @@ Logs contain identifiers, non-secret changes and errors, not provider keys or ar
 
 ## Signed distribution
 
-`tools/package-module.php` uses an explicit module path allowlist and versioned files. It excludes the SaaS application, `.env`, tests, workspace drafts and dependencies. This first pilot distributes the existing WHMCS module plus the small cloud adapter; it is **not yet a fully thin proprietary-code-free connector**. Moving prompt planning, knowledge retrieval and the remaining orchestration to the cloud is a later migration; native ACL, WHMCS workflows and rollback must remain local.
+`tools/package-module.php` packages exactly the nine files allowed by `config/distribution.php`, all from `../connector/`. Legacy core files, prompts, cloud code, secrets, tests and workspace drafts are excluded. ZIP verification rejects unexpected entries, missing files, duplicates and excessive uncompressed size. The `moduleV1` branch has independent connector-only history.
 
 Generate an Ed25519 release key outside this repository and keep it in a restricted release job. Configure its public key as `RELEASE_PUBLIC_KEY`. Build from the committed branch:
 
 ```sh
 # SAHDEV_RELEASE_SIGNING_KEY is a base64 Ed25519 secret key injected by the release runner.
-# Optionally set SAHDEV_RELEASE_APK to an already built, properly Android-signed APK.
-php tools/package-module.php 0.1.0 /private/releases/0.1.0
-php tests/package.php /private/releases/0.1.0/sahdev-module-0.1.0.zip
+# Current acceptance artifact; unsigned previews cannot be served as stable downloads.
+php tools/package-module.php 0.2.0-preview /private/releases/0.2.0-preview --preview --unsigned
+php tests/package.php /private/releases/0.2.0-preview/sahdev-connector-0.2.0-preview.zip
+# Remove --preview --unsigned only after every migration domain is verified.
 ```
 
 Copy the artifact(s) and `release.json` to the server's `saas/releases/` directory, readable by the app. The authenticated downloads page verifies the manifest signature and each file's size/hash before serving it. Unsigned CI inspection artifacts are deliberately rejected. The manifest signature does not replace Android's APK signing or a future in-module updater signature check; this release has no automatic remote code updater.
 
-The existing Flutter app and pairing flow remain in `../mobile/`. This branch does not add SaaS SSO to the APK, migrate every WHMCS mobile feature, or publish a new mobile build. Those need a separate device-auth and compatibility rollout; the downloads portal can distribute a validated Android release when one is supplied.
+The existing Flutter app remains in `../mobile/`. SaaS SSO, complete WHMCS mobile parity and a validated mobile release remain blockers. The current package builder excludes APKs.
 
 ## Backups and recovery
 

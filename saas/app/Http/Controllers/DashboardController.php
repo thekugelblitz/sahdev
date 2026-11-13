@@ -80,13 +80,14 @@ final class DashboardController
     public function billing(Request $r)
     {
         $org = $this->org($r); Access::requireRole($r->user(),$org->id,['owner','admin','billing']);
-        return view('billing',['org'=>$org,'packs'=>DB::table('credit_packs')->where('active',true)->get(),'brands'=>Access::brands($r->user(),$org->id)->get(),
+        return view('billing',['org'=>$org,'purchasingOpen'=>app(\App\Services\LaunchReadiness::class)->ready(),'packs'=>DB::table('credit_packs')->where('active',true)->get(),'brands'=>Access::brands($r->user(),$org->id)->get(),
             'orders'=>DB::table('orders')->where('organization_id',$org->id)->orderByDesc('created_at')->limit(100)->get(),
             'ledger'=>DB::table('ledger_entries')->where('organization_id',$org->id)->orderByDesc('created_at')->limit(100)->get()]);
     }
     public function checkout(Request $r,BillingService $billing)
     {
         $org = $this->org($r); Access::requireRole($r->user(),$org->id,['owner','admin','billing']);
+        if (!app(\App\Services\LaunchReadiness::class)->ready()) return back()->withErrors(['checkout'=>'Credit purchases open after release validation. Preview testing uses operator-granted credits.']);
         $v = $r->validate(['pack_id'=>'required|uuid','brand_id'=>'nullable|uuid','promotion'=>'nullable|string|max:40','idempotency_key'=>'required|uuid']);
         DB::transaction(function () use ($r,$org,$billing,$v) {
             $order = $billing->order($org->id,$v['pack_id'],$v['brand_id'] ?? null,$v['promotion'] ?? '',$v['idempotency_key'],$r->user()->id);

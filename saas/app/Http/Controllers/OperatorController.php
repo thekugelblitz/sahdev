@@ -8,22 +8,34 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 final class OperatorController
 {
-    public function index()
+    public function index(Request $request)
     {
         $providers = DB::table('providers')->whereNull('deleted_at')->get(['id','name','driver','endpoint','active']);
         $models = DB::table('ai_models')->whereNull('deleted_at')->get();
         foreach ($models as $m) $m->price = DB::table('model_prices')->where('id',$m->current_price_id)->first();
         return view('ops',[
+            'needsWorkspace'=>!DB::table('memberships')->where('user_id',$request->user()->id)->exists(),
             'providers'=>$providers,'models'=>$models,'plans'=>DB::table('plans')->get(),'packs'=>DB::table('credit_packs')->get(),'promotions'=>DB::table('promotions')->get(),
             'organizations'=>DB::table('organizations')->get(),'brands'=>DB::table('brands')->get(),
             'brand_usage'=>DB::table('reservations')->selectRaw('brand_id, COUNT(*) AS requests, SUM(charged) AS credits')->groupBy('brand_id')->get()->keyBy('brand_id'),
             'wallets'=>DB::table('wallets')->get(),'usage'=>DB::table('reservations')->selectRaw('state, COUNT(*) AS count, SUM(charged) AS charged')->groupBy('state')->get(),
-            'reviews'=>DB::table('reservations')->where('state','uncertain')->orderByDesc('created_at')->limit(50)->get(['id','organization_id','brand_id','amount','error_code','created_at']),
+            'reviews'=>DB::table('reservations')->where('state','uncertain')->orderByDesc('created_at')->limit(50)->get(['id','organization_id','brand_id','amount','error_code','provider_reference','created_at']),
             'orders'=>DB::table('orders')->orderByDesc('created_at')->limit(100)->get(),
             'events'=>DB::table('audit_events')->orderByDesc('created_at')->limit(100)->get(),
             'plan_models'=>DB::table('plan_models')->get(),
             'jobs'=>DB::table('jobs')->count(),'failed_jobs'=>DB::table('failed_jobs')->count(),
         ]);
+    }
+    public function createWorkspace(Request $request, \App\Services\OrganizationService $organizations)
+    {
+        $data=$request->validate(['name'=>'required|string|max:100']);
+        $id=DB::transaction(function () use ($request,$organizations,$data) {
+            DB::table('users')->where('id',$request->user()->id)->lockForUpdate()->firstOrFail();
+            $existing=DB::table('memberships')->where('user_id',$request->user()->id)->where('role','owner')->value('organization_id');
+            return $existing ?: $organizations->create($request->user(),$data['name']);
+        });
+        $request->session()->put('organization_id',$id);
+        return redirect('/dashboard')->with('status','Your operator workspace is ready. Add a staging brand; credits and database provisioning are managed separately.');
     }
     public function save(Request $r,string $kind,?string $id = null)
     {

@@ -2,16 +2,18 @@
 use Illuminate\Support\Facades\Route;
 use Illuminate\Http\Request;
 use Illuminate\Foundation\Auth\EmailVerificationRequest;
-use App\Http\Controllers\{AuthController,DashboardController,OperatorController};
-Route::get('/', fn () => redirect('/dashboard'));
+use App\Http\Controllers\{AuthController,DashboardController,OperatorController,PublicController};
+Route::get('/',[PublicController::class,'home']);
+Route::get('/pricing',[PublicController::class,'pricing']);
+Route::get('/installation',[PublicController::class,'guide']);
 Route::middleware('guest')->group(function () {
     Route::get('/login',fn () => view('auth',['mode'=>'login']))->name('login');
     Route::post('/login',[AuthController::class,'login'])->middleware('throttle:login');
     Route::get('/command/login',fn () => view('auth',['mode'=>'command/login']));
     Route::post('/command/login',[AuthController::class,'login'])->middleware('throttle:login');
     Route::redirect('/ops','/command');
-    Route::get('/register',function () { abort_unless(config('cloud.registration'),403,'Registration is currently closed.'); return view('auth',['mode'=>'register']); });
-    Route::post('/register',[AuthController::class,'register'])->middleware('throttle:5,60');
+    Route::get('/register',fn () => view('auth',['mode'=>'register']))->middleware(\App\Http\Middleware\PublicRegistration::class);
+    Route::post('/register',[AuthController::class,'register'])->middleware([\App\Http\Middleware\PublicRegistration::class,'throttle:5,60']);
     Route::get('/forgot-password',fn () => view('auth',['mode'=>'forgot-password']))->name('password.request');
     Route::post('/forgot-password',[AuthController::class,'forgot'])->middleware('throttle:5,60');
     Route::get('/reset-password/{token}',fn (string $token) => view('auth',['mode'=>'reset-password','token'=>$token]))->name('password.reset');
@@ -45,9 +47,11 @@ Route::middleware(['auth','verified'])->group(function () {
         Route::post('/team',[DashboardController::class,'membership'])->middleware('throttle:15,1');
     });
     Route::middleware(['ops','throttle:60,1'])->prefix('command')->group(function () {
+        Route::get('/release',fn (\App\Services\LaunchReadiness $readiness) => view('release-readiness',['checks'=>$readiness->checks(),'features'=>config('migration.features')]));
         Route::get('/settings',[AuthController::class,'operatorSettings']);
         Route::post('/settings',[AuthController::class,'saveOperatorSettings'])->middleware('throttle:6,1,operator-settings');
         Route::get('/',[OperatorController::class,'index']);
+        Route::post('/workspace',[OperatorController::class,'createWorkspace'])->middleware('throttle:3,1,operator-workspace');
         Route::post('/catalog/{kind}/{id?}',[OperatorController::class,'save'])->whereUuid('id');
         Route::delete('/catalog/{kind}/{id}',[OperatorController::class,'archive'])->whereUuid('id');
         Route::post('/organizations/{id}',[OperatorController::class,'organization'])->whereUuid('id');

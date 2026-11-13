@@ -3,7 +3,7 @@ on:
   push:
     branches: [saas]
   pull_request:
-    paths: ['saas/**', 'lib/Cloud*', 'lib/LMStudioAIProvider.php', '.github/workflows/saas.yml']
+    paths: ['saas/**', 'connector/**', 'lib/Cloud*', 'lib/LMStudioAIProvider.php', '.github/workflows/saas.yml']
 permissions:
   contents: read
 jobs:
@@ -37,6 +37,7 @@ jobs:
           composer validate --strict
           composer audit --locked
           find app bootstrap config database routes tests tools billing -name '*.php' -print0 | xargs -0 -n1 php -l
+          find ../connector -name '*.php' -print0 | xargs -0 -n1 php -l
       - name: Platform authorization, accounting and provider contracts
         run: vendor/bin/phpunit
       - name: PostgreSQL competing processes, rollback and database isolation
@@ -66,8 +67,8 @@ jobs:
         run: node tests/browser.cjs
       - name: Package boundary
         run: |
-          php tools/package-module.php saas-ci ../build/saas-package --unsigned
-          php tests/package.php ../build/saas-package/sahdev-module-saas-ci.zip
+          php tools/package-module.php saas-ci ../build/saas-package --unsigned --preview
+          php tests/package.php ../build/saas-package/sahdev-connector-saas-ci.zip
       - uses: actions/upload-artifact@v4
         if: always()
         with:
