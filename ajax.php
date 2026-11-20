@@ -865,6 +865,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST' && !$isGetAllowed) {
 }
 
 $allowedActions = [
+    'get_autopilot_draft', 'save_autopilot_draft',
     'get_case_timeline',
     'get_analytics_period', 'get_open_payload', 'analyze_open_context', 'get_payload', 'save_response',
     'get_rewrite_payload', 'rewrite_reply', 'auto_analyze', 'analyze_ticket',
@@ -1026,6 +1027,8 @@ if ($intensity > 3) {
     \Sahdev\Lib\PermissionService::ensureSchema();
 
     $actionPermissionMap = [
+        'get_autopilot_draft'        => \Sahdev\Lib\PermissionService::PERM_TICKET_AI,
+        'save_autopilot_draft'       => \Sahdev\Lib\PermissionService::PERM_TICKET_AI,
         'get_header_server_widget'    => \Sahdev\Lib\PermissionService::PERM_TELEMETRY_VIEW,
         'analyze_ticket'              => \Sahdev\Lib\PermissionService::PERM_TICKET_AI,
         'get_payload'                 => \Sahdev\Lib\PermissionService::PERM_TICKET_AI,
@@ -1083,6 +1086,27 @@ if ($intensity > 3) {
     }
 
 try {
+    // These actions need no AI provider. Keep note reads/writes behind the
+    // existing admin-session, POST and CSRF guards above.
+    if (in_array($action, ['get_autopilot_draft', 'save_autopilot_draft'], true)) {
+        try {
+            $noteId = (int) ($_POST['note_id'] ?? 0);
+            if ($ticketId <= 0 || $noteId <= 0) {
+                throw new \InvalidArgumentException('A ticket and draft note are required.', 422);
+            }
+            $draft = $action === 'save_autopilot_draft'
+                ? \Sahdev\Lib\AutopilotDrafts::save($ticketId, $noteId, (int) $adminId, (string) ($_POST['body'] ?? ''), (string) ($_POST['revision'] ?? ''))
+                : \Sahdev\Lib\AutopilotDrafts::read($ticketId, $noteId, (int) $adminId);
+            echo json_encode(['status' => 'success', 'data' => $draft]);
+        } catch (\Throwable $e) {
+            $code = (int) $e->getCode();
+            http_response_code(in_array($code, [403, 404, 409, 422], true) ? $code : 500);
+            echo json_encode(['status' => 'error', 'message' => in_array($code, [403, 404, 409, 422], true)
+                ? $e->getMessage() : 'Unable to load or save the draft. Please try again.']);
+        }
+        exit;
+    }
+
     require_once __DIR__ . '/lib/AIProviderInterface.php';
     require_once __DIR__ . '/lib/GoogleAIProvider.php';
     require_once __DIR__ . '/lib/LMStudioAIProvider.php';

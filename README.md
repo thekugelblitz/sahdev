@@ -12,6 +12,7 @@ See [the v5 release and upgrade notes](docs/V5-RELEASE.md) for shared ticket/liv
 ## Features
 - **Smart Analysis:** Provides Root Cause, Responsibility, Risk Level, and an Internal Action Plan.
 - **AI Suggested Replies:** Click a button to generate a fully contextual reply based on previous ticket messages and attachments.
+- **Autopilot Draft Actions:** Edit private Autopilot drafts using the ticket theme's inline Edit/Save/Cancel controls, or insert the saved Markdown above the existing reply and signature.
 - **Secure Context Extraction:** Strictly read-only queries against WHMCS core tables via Capsule ORM. Safe fallback parsing for `txt`, `log`, `csv` attachments.
 - **Performance Optimized:** Hashes AI responses so reloading the ticket doesn't waste tokens. Async AJAX ensures zero impact on admin page load speeds.
 - **Data Privacy:** Parses minimal context (client first name, active packages) without loading full user payloads. Limits attachment text scanning to 1MB max.
@@ -45,6 +46,12 @@ See [the v5 release and upgrade notes](docs/V5-RELEASE.md) for shared ticket/liv
 - Scroll down slightly and you will see the **Sahdev AI Ticket Intelligence** panel just below the ticket body (or above the replies).
 - Select your desired tone, provide any optional custom instructions like "Ask for their root password", and click **Analyze & Generate Reply**.
 - Click **Insert to Editor** to throw the finalized reply right into TinyMCE.
+
+Autopilot draft notes have **Edit** and **Insert to Editor** beside Delete. Edit saves
+the private draft; Insert to Editor copies only the reply body into the WHMCS reply
+composer, retaining Markdown in Markdown editors and formatting in TinyMCE. Existing
+reply text and the signature are preserved. Review and send using WHMCS's Reply button.
+No database migration or admin theme file changes are required.
 
 ## Security Notes
 Do NOT alter the core `ajax.php` to bypass the session check (`$_SESSION['adminid']`). The endpoint is strictly locked down to administrators only to prevent token hijacking.

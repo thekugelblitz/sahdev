@@ -772,7 +772,7 @@ class AutopilotProcessor
             $displayName = $admin->username;
         }
 
-        $draftPrefix = "[Sahdev Autopilot Draft] Review before sending - Draft Mode is ON\n\n---\n\n";
+        $draftPrefix = AutopilotDrafts::PREFIX;
         $noteText    = $draftPrefix . $replyText;
 
         // WHMCS AddTicketNote: 'message' is the correct content parameter (not 'note')

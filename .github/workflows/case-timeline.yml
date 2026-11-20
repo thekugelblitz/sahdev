@@ -24,6 +24,8 @@ jobs:
           php -l hooks.php
           php scratch/test_case_timeline.php
           php scratch/test_diagnostic_workflow.php
+          php -l lib/AutopilotDrafts.php
+          php scratch/test_autopilot_drafts.php
       - name: Install browser test dependencies
         run: |
           npm install --no-save --package-lock=false playwright@1.62.1 jquery@3.7.1
@@ -32,3 +34,5 @@ jobs:
         run: node scratch/test_case_timeline_ui.cjs
       - name: Command workspace handlers and request states
         run: node scratch/test_command_workspaces.cjs
+      - name: Autopilot draft editing and insertion
+        run: node scratch/test_autopilot_drafts_ui.cjs

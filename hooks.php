@@ -2700,6 +2700,13 @@ EOT;
     $output .= '<style>' . file_get_contents(__DIR__ . '/ui/command-workspace.css') . '</style>';
     $output .= '<script>window.sahdevWorkspaceFeatures=' . json_encode(['tools'=>$featTools,'summary'=>$featSummarizer,'kb'=>$featCannedKb,'memory'=>$featHistorical]) . ';' . file_get_contents(__DIR__ . '/ui/command-activity.js') . '</script>';
     $output .= $jsContentStart . $jsContentMain . "\n</script>";
+    if ($ticketId > 0) {
+        $output .= '<script>window.sahdevAutopilotDraftConfig=' . json_encode([
+            'ticketId' => $ticketId,
+            'ajaxUrl' => $ajaxUrl,
+        ], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT)
+            . ';' . file_get_contents(__DIR__ . '/ui/autopilot-drafts.js') . '</script>';
+    }
 
     // --- Remastered Theme: inject JS if active (CSS already injected before HTML) ---
     if ($isRemastered) {
