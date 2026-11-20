@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="csrf-token" content="{{ csrf_token() }}"><title>@yield('title', 'Workspace') · Sahdev</title><link rel="stylesheet" href="/app.css"><script src="/app.js" defer></script></head>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="csrf-token" content="{{ csrf_token() }}"><title>@yield('title', 'Workspace') · Sahdev</title><link rel="stylesheet" href="/app.css"><script src="/app.js" defer></script>@stack('head')</head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
 @auth

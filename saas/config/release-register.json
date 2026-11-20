@@ -1,0 +1,3385 @@
+{
+  "schema_version": 1,
+  "distribution": "thin-connector",
+  "reviewed_on": "2026-11-20",
+  "scope": "Legacy WHMCS features, cloud control plane, connector, mobile and public launch. Code and baseline test references are inventory, not proof of production acceptance.",
+  "features": {
+    "accounts": {
+      "label": "Accounts, sign-in and team access",
+      "surface": "Customer dashboard",
+      "owner": "Platform engineering",
+      "summary": "Identity and permissions across organizations, brands and operator accounts.",
+      "status": "partial",
+      "source": [
+        "saas/app/Http/Controllers/AuthController.php",
+        "saas/app/Http/Controllers/DashboardController.php",
+        "saas/app/Support/Access.php"
+      ],
+      "tests": [
+        "saas/tests/Feature/AccessTest.php",
+        "saas/tests/Feature/CatalogTest.php"
+      ],
+      "evidence": [],
+      "capabilities": [
+        {
+          "id": "registration",
+          "label": "Signup and organization creation",
+          "status": "implemented",
+          "current": "Signup creates an owner and workspace; the launch gate currently prevents public registration.",
+          "acceptance": [
+            "Create one owner/workspace; reject duplicate emails and invalid passwords.",
+            "A forged operator flag must not create a super admin; a closed release must reject direct POST requests."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "verification",
+          "label": "Email verification and resend",
+          "status": "awaiting_live_validation",
+          "current": "Signed verification routes and resend throttles exist; production delivery is unverified.",
+          "acceptance": [
+            "Deliver a real verification email; expired or altered links must fail.",
+            "Unverified users cannot access brand data, billing or downloads."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "login",
+          "label": "Separate customer and operator sign-in",
+          "status": "implemented",
+          "current": "Customer /login and operator /command/login have separate entry points and throttling.",
+          "acceptance": [
+            "Test valid/invalid login, session regeneration and intended redirects.",
+            "Customer accounts must not enter Command Station."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "password_reset",
+          "label": "Password reset and logout",
+          "status": "awaiting_live_validation",
+          "current": "Reset and logout handlers exist; real reset-email delivery remains unverified.",
+          "acceptance": [
+            "Reset links must expire and work once; reject changed tokens.",
+            "Logout invalidates the session and CSRF token."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "membership",
+          "label": "Organization roles and staff seats",
+          "status": "implemented",
+          "current": "Owner, admin, billing and member roles exist; team management adds existing accounts.",
+          "acceptance": [
+            "Exercise each role against reads and writes, including direct routes.",
+            "Enforce seat limits, protect the last owner and avoid duplicate memberships."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "brand_scope",
+          "label": "Brand viewer and operator access",
+          "status": "implemented",
+          "current": "Members can be restricted to selected brands as viewer or operator.",
+          "acceptance": [
+            "Viewers cannot run inference or change settings; removing a grant immediately denies access.",
+            "Cross-brand IDs must not reveal records, wallet data or results."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "switch",
+          "label": "Organization switching",
+          "status": "implemented",
+          "current": "Dashboard switching requires an existing membership.",
+          "acceptance": [
+            "Switch between two workspaces without leaking brands or usage.",
+            "Reject guessed organization IDs and retain a valid session context."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "operator_workspace",
+          "label": "Operator testing workspace",
+          "status": "implemented",
+          "current": "Operators can create their own workspace; duplicate submissions reuse it and no credits are automatically granted.",
+          "acceptance": [
+            "Repeat creation and confirm one organization, one owner membership and zero initial credits."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "invitations",
+          "label": "Staff invitation and acceptance emails",
+          "status": "pending",
+          "current": "A complete invitation lifecycle is not implemented; the current team flow requires an existing account.",
+          "acceptance": [
+            "Invite, resend, expire, revoke and accept with the intended email.",
+            "Prevent reuse, role escalation and seat-limit bypass."
+          ],
+          "evidence": []
+        }
+      ]
+    },
+    "brands": {
+      "label": "Brands, domains and connector enrollment",
+      "surface": "Customer dashboard",
+      "owner": "Platform and WHMCS engineering",
+      "summary": "Bind each WHMCS installation to its own verified brand.",
+      "status": "partial",
+      "source": [
+        "saas/app/Services/OrganizationService.php",
+        "saas/app/Services/InstallationService.php",
+        "saas/app/Http/Middleware/InstallationAuth.php",
+        "saas/app/Console/Commands/ProvisionBrand.php",
+        "connector/sahdev_cloud/src/Client.php"
+      ],
+      "tests": [
+        "saas/tests/Feature/AccessTest.php",
+        "saas/tests/postgres.php",
+        "saas/tests/Feature/ThinConnectorTest.php"
+      ],
+      "evidence": [],
+      "capabilities": [
+        {
+          "id": "crud",
+          "label": "Create and update brands",
+          "status": "implemented",
+          "current": "Brand name, HTTPS WHMCS URL, credit mode, budget, suspension and retention settings exist.",
+          "acceptance": [
+            "Validate URL and plan limits; reject cross-organization writes.",
+            "Prevent budget reductions below used plus reserved credits."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "dns",
+          "label": "Domain ownership verification",
+          "status": "awaiting_live_validation",
+          "current": "DNS TXT challenge verification exists; real staging-domain acceptance is still needed.",
+          "acceptance": [
+            "Verify the exact hostname, including a WHMCS subdirectory.",
+            "Wrong, missing or stale TXT values cannot mark ownership verified."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "provisioning",
+          "label": "Separate operational database per brand",
+          "status": "implemented",
+          "current": "A console-only provisioner creates a distinct PostgreSQL database/login; signup does not provision automatically.",
+          "acceptance": [
+            "Provision twice and resume an interrupted attempt without duplicate credentials.",
+            "Brand A credentials cannot connect to brand B; web workers cannot provision databases."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "enrollment",
+          "label": "One-time connector enrollment",
+          "status": "implemented",
+          "current": "A short-lived token binds a connector-generated secret to a verified WHMCS URL.",
+          "acceptance": [
+            "Enroll on staging; reject expired tokens and URL mismatch.",
+            "Retry a lost response with the same secret without creating another installation."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "signed_transport",
+          "label": "Signed requests and replay protection",
+          "status": "implemented",
+          "current": "HMAC, timestamps, nonce replay protection and body limits guard installation APIs.",
+          "acceptance": [
+            "Reject altered body/path, stale timestamps, reused nonces and oversized requests.",
+            "Confirm TLS validation, DNS pinning and redirect blocking on the deployed network."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "revoke",
+          "label": "Replace, revoke and suspend installations",
+          "status": "implemented",
+          "current": "Replacing enrollment revokes old credentials; brand/organization suspension blocks cloud work.",
+          "acceptance": [
+            "Old credentials fail after replacement or revocation, including queued work before dispatch.",
+            "Sahdev suspension must not suspend customer hosting services."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "local_access",
+          "label": "WHMCS identity, role and department checks",
+          "status": "implemented",
+          "current": "The connector checks active admin, addon role, native ticket permission, department and CSRF.",
+          "acceptance": [
+            "Test full, restricted and disabled admins on real WHMCS.",
+            "Remove access during polling and confirm result access is denied."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "connection_health",
+          "label": "Connection health and version diagnostics",
+          "status": "partial",
+          "current": "Enrollment errors exist; full last-seen, clock-skew and schema-compatibility diagnostics are missing.",
+          "acceptance": [
+            "Diagnose expired enrollment, clock drift, offline cloud and incompatible versions.",
+            "Health checks must not start paid work or reveal installation secrets."
+          ],
+          "evidence": []
+        }
+      ]
+    },
+    "credits": {
+      "label": "Credits, budgets and usage accounting",
+      "surface": "Customer dashboard",
+      "owner": "Platform engineering",
+      "summary": "Integer accounting, scoped balances and predictable request charging.",
+      "status": "implemented",
+      "source": [
+        "saas/app/Services/WalletService.php",
+        "saas/app/Services/InferenceService.php",
+        "saas/app/Jobs/RunInference.php",
+        "saas/app/Support/Amount.php"
+      ],
+      "tests": [
+        "saas/tests/Feature/CreditTest.php",
+        "saas/tests/Feature/InferenceTest.php",
+        "saas/tests/postgres.php"
+      ],
+      "evidence": [],
+      "capabilities": [
+        {
+          "id": "pool",
+          "label": "Shared organization credit pool",
+          "status": "implemented",
+          "current": "Pooled brands use the organization wallet subject to their own monthly caps.",
+          "acceptance": [
+            "Run two brands against the last available credits concurrently.",
+            "Combined holds and charges must not overspend the pool."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "allocation",
+          "label": "Brand allocation and credit transfers",
+          "status": "implemented",
+          "current": "Allocated brands use their own wallet; transfers produce matching ledger movements.",
+          "acceptance": [
+            "Transfer both directions and replay the request key.",
+            "Credits are conserved and allocated brands cannot implicitly spend the shared pool."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "budgets",
+          "label": "Monthly budgets and UTC periods",
+          "status": "implemented",
+          "current": "Holds count toward the UTC month in which a request was accepted.",
+          "acceptance": [
+            "Cross a month boundary with an outstanding request and settle in the original period.",
+            "Enforce exhausted budgets and prevent lowering below spent plus reserved amounts."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "reservations",
+          "label": "Reserve, dispatch, settle and release",
+          "status": "implemented",
+          "current": "Work reserves credits first; known usage settles once and confirmed rejection releases holds.",
+          "acceptance": [
+            "Inject a failure at every transition and restart the worker.",
+            "Debit, ledger and state commit together; no duplicate paid dispatch."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "uncertain",
+          "label": "Unknown outcomes and reconciliation",
+          "status": "implemented",
+          "current": "Unconfirmed provider outcomes preserve holds for operator review.",
+          "acceptance": [
+            "Timeout after acceptance, then reconcile confirmed usage or no-charge evidence.",
+            "Keep one final ledger movement and the provider request reference."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "rates",
+          "label": "Immutable price versions and microcredits",
+          "status": "implemented",
+          "current": "Reservations snapshot pricing and use integer microcredits.",
+          "acceptance": [
+            "Change rates while work is queued; the original price still applies.",
+            "Test rounding, zero usage, cached input and usage exceeding the reservation."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "limits",
+          "label": "Model, concurrency and spending limits",
+          "status": "implemented",
+          "current": "Plan entitlements and concurrency limits are checked before reserve and dispatch.",
+          "acceptance": [
+            "Revoke model access or suspend a brand while work is queued.",
+            "Denied work makes no provider call and releases its hold safely."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "ledger",
+          "label": "Usage history and accounting invariants",
+          "status": "implemented",
+          "current": "Dashboard history and reconciliation commands expose wallet movements.",
+          "acceptance": [
+            "Reconcile all balances, holds, transfers, charges and reversals after concurrent work.",
+            "Archived models or plans must not erase financial history."
+          ],
+          "evidence": []
+        }
+      ]
+    },
+    "ai_gateway": {
+      "label": "AI providers, models and routing",
+      "surface": "Command Station",
+      "owner": "AI platform engineering",
+      "summary": "Operator-managed credentials, protocols, model capabilities and costs.",
+      "status": "partial",
+      "source": [
+        "saas/app/Services/ProviderEndpoint.php",
+        "saas/app/Services/ProviderGateway.php",
+        "saas/app/Services/ReplicateGateway.php",
+        "saas/app/Services/Egress.php",
+        "saas/app/Http/Controllers/OperatorController.php",
+        "lib/TaskProviderResolver.php"
+      ],
+      "tests": [
+        "saas/tests/Feature/ProviderSetupTest.php",
+        "saas/tests/Feature/CustomProviderTest.php",
+        "saas/tests/Feature/InferenceTest.php"
+      ],
+      "evidence": [],
+      "capabilities": [
+        {
+          "id": "providers",
+          "label": "Custom provider CRUD and credentials",
+          "status": "implemented",
+          "current": "Operators can configure public HTTPS providers; keys are encrypted and not returned in forms.",
+          "acceptance": [
+            "Create, update, disable and archive; an unchanged key remains intact.",
+            "Reject private/mixed DNS, redirects, invalid protocols and unsafe URLs; redact credentials."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "models",
+          "label": "Model IDs, limits, prices and plan assignment",
+          "status": "implemented",
+          "current": "Model identifiers, token parameters, capability flags and rates are separate model records.",
+          "acceptance": [
+            "Test gpt-5-nano, owner/model and custom identifiers.",
+            "Require active provider, valid pricing, compatible token parameter and explicit plan entitlement."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "chat_completions",
+          "label": "OpenAI-compatible text and tool calls",
+          "status": "implemented",
+          "current": "Chat Completions compatible providers, including custom hosts, are supported.",
+          "acceptance": [
+            "Validate a real permitted model with text and supported tools.",
+            "Handle invalid keys, quota, rate limiting, malformed output and missing usage without paid retries."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "anthropic",
+          "label": "Anthropic Messages protocol",
+          "status": "implemented",
+          "current": "Messages requests and response normalization exist.",
+          "acceptance": [
+            "Validate a real Messages model, usage counts and stop reasons.",
+            "Reject malformed content and unsupported tool shapes without claiming success."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "replicate",
+          "label": "Replicate text predictions and polling",
+          "status": "implemented",
+          "current": "One prediction POST is followed by same-host polling; supported text models must report token counts.",
+          "acceptance": [
+            "Test queued, processing, succeeded, failed, canceled and timed-out predictions.",
+            "Never follow a supplied polling URL or submit twice; unsupported schemas stay unavailable."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "live_probe",
+          "label": "Live provider and model acceptance",
+          "status": "awaiting_live_validation",
+          "current": "Automated contracts exist; deployed requests using configured credentials still need evidence.",
+          "acceptance": [
+            "Use a small non-customer prompt for every published model/protocol.",
+            "Compare provider usage with the Sahdev charge and record model, request reference and date."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "task_routing",
+          "label": "Per-feature model routing and fallback rules",
+          "status": "partial",
+          "current": "Legacy task-specific routes exist; SaaS does not yet provide full per-feature routing parity.",
+          "acceptance": [
+            "Configure tickets, summary, chat, Copilot, reconnaissance and cron independently.",
+            "Uncertain usage must not trigger a second model or fallback charge."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "discovery",
+          "label": "Model discovery, presets and test UI",
+          "status": "pending",
+          "current": "Legacy presets and fetch-live-model controls are not migrated into the cloud catalog.",
+          "acceptance": [
+            "List supported models without revealing keys and preserve manual custom IDs.",
+            "Distinguish unsupported discovery, invalid credentials and lack of model access."
+          ],
+          "evidence": []
+        }
+      ]
+    },
+    "billing": {
+      "label": "Credit purchases, invoices and payment recovery",
+      "surface": "Billing",
+      "owner": "Billing integration engineering",
+      "summary": "HostingSpell WHMCS owns tax invoices and gateway processing.",
+      "status": "partial",
+      "source": [
+        "saas/app/Services/BillingService.php",
+        "saas/app/Jobs/CreateInvoice.php",
+        "saas/billing",
+        "saas/app/Http/Controllers/OperatorController.php"
+      ],
+      "tests": [
+        "saas/tests/Feature/BillingTest.php",
+        "saas/tests/Feature/CatalogTest.php"
+      ],
+      "evidence": [],
+      "capabilities": [
+        {
+          "id": "packs",
+          "label": "Prepaid packs and brand attribution",
+          "status": "implemented",
+          "current": "Credit quantities and currency prices are independent; purchases fund the pool with optional brand attribution.",
+          "acceptance": [
+            "Confirm price, credits, currency and attribution before order creation.",
+            "Repricing/archiving must not change existing orders; packs are not recurring subscriptions."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "promotions",
+          "label": "Promotion expiry and redemption limits",
+          "status": "implemented",
+          "current": "Discount, redemption cap, expiry and availability are configurable.",
+          "acceptance": [
+            "Reject expired, disabled or exhausted codes under concurrency.",
+            "An order retry cannot consume another redemption."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "billing_identity",
+          "label": "Verified WHMCS billing-client mapping",
+          "status": "partial",
+          "current": "Operators link organization to a HostingSpell client ID; automatic identity onboarding is incomplete.",
+          "acceptance": [
+            "Verify the payer before mapping; block cross-customer invoice access.",
+            "Existing invoice history protects mapping changes."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "invoices",
+          "label": "Invoice creation and uncertain-result recovery",
+          "status": "implemented",
+          "current": "Async invoice creation sends ambiguous outcomes to review rather than creating another invoice.",
+          "acceptance": [
+            "Timeout after creation, attach the existing verified invoice and retry the order.",
+            "Confirm one order, one invoice and preserved price/tax context."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "payments",
+          "label": "Razorpay, PayPal and Stripe acceptance",
+          "status": "awaiting_live_validation",
+          "current": "Gateways are delegated to HostingSpell WHMCS; live payment acceptance is unrecorded.",
+          "acceptance": [
+            "Validate totals, taxes, currency, redirect and confirmation with configured gateways.",
+            "Canceled/failed payments grant no credits; payment credentials stay with billing."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "events",
+          "label": "Signed events and missed-payment reconciliation",
+          "status": "implemented",
+          "current": "Signatures, replay protection and invoice identity verification guard credit issuance.",
+          "acceptance": [
+            "Deliver duplicate/out-of-order events and reconcile a missed paid event.",
+            "Wrong customer, unpaid invoice, tampered body or stale signature never grants credits."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "reversals",
+          "label": "Refunds, reversals and chargebacks",
+          "status": "partial",
+          "current": "Full reversal and review states exist; partial refunds need a separate policy.",
+          "acceptance": [
+            "Reverse unused and already-spent credits without deleting history or enabling negative spending.",
+            "Require evidence for full reversal and define partial-refund treatment before sales."
+          ],
+          "evidence": []
+        }
+      ]
+    },
+    "command_station": {
+      "label": "Command Station and operator controls",
+      "surface": "Command Station",
+      "owner": "Platform operations",
+      "summary": "Operator changes and exception resolution remain auditable.",
+      "status": "partial",
+      "source": [
+        "saas/app/Http/Controllers/OperatorController.php",
+        "saas/app/Http/Controllers/AuthController.php",
+        "saas/app/Http/Middleware/OperatorAccess.php",
+        "saas/app/Support/Audit.php"
+      ],
+      "tests": [
+        "saas/tests/Feature/AccessTest.php",
+        "saas/tests/Feature/CatalogTest.php",
+        "saas/tests/browser.cjs"
+      ],
+      "evidence": [],
+      "capabilities": [
+        {
+          "id": "catalog",
+          "label": "Catalog create, update, disable and archive",
+          "status": "implemented",
+          "current": "Operators manage providers, models, plans, packs and promotions while retaining history.",
+          "acceptance": [
+            "Exercise CRUD and validation for every catalog type.",
+            "Retain non-secret input after errors and never flash a provider key."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "organizations",
+          "label": "Organization plans, limits and suspension",
+          "status": "implemented",
+          "current": "Operators assign plans, link billing, suspend workspaces and inspect brand usage.",
+          "acceptance": [
+            "Test plan reductions and suspension with pending work.",
+            "Record actor, reason and before/after state."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "grants",
+          "label": "Promotional and correction credit grants",
+          "status": "implemented",
+          "current": "Grants have an idempotency key, reason and ledger/audit entries.",
+          "acceptance": [
+            "Replay a grant and confirm one credit.",
+            "Only operators can grant; invalid or negative amounts fail."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "mfa",
+          "label": "Enable or disable operator MFA",
+          "status": "implemented",
+          "current": "Super-admin settings control optional MFA; the chosen setting remains authoritative.",
+          "acceptance": [
+            "Require current password for setting changes and test verification expiry.",
+            "Validate TOTP replay protection and confirm disabling MFA cannot elevate a customer."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "reconciliation",
+          "label": "Usage and billing exception review",
+          "status": "implemented",
+          "current": "Uncertain usage, provider references and credit orders are available for review.",
+          "acceptance": [
+            "Resolve confirmed outcomes without duplicate charge/refund.",
+            "Preserve operator identity, evidence, request reference and timestamps."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "audit",
+          "label": "Audit trail, errors and queue visibility",
+          "status": "partial",
+          "current": "Application audit log and queue counters exist; external protected logging and alert delivery need acceptance.",
+          "acceptance": [
+            "Check actor, target, before/after state and secret redaction.",
+            "Failed jobs and stale holds must alert the responsible operator."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "operator_roles",
+          "label": "Delegated support and finance operator roles",
+          "status": "pending",
+          "current": "The platform currently uses one trusted operator flag, not distinct operator permission sets.",
+          "acceptance": [
+            "Define support, finance and infrastructure roles and deny unauthorized direct routes.",
+            "Support operators cannot edit pricing or provider keys without explicit grants."
+          ],
+          "evidence": []
+        }
+      ]
+    },
+    "ticket_ai": {
+      "label": "Ticket analysis, replies and editor workflow",
+      "surface": "WHMCS admin",
+      "owner": "WHMCS and AI engineering",
+      "summary": "Five cloud draft workflows exist; complete standard ticket-workspace parity is pending.",
+      "status": "partial",
+      "source": [
+        "saas/app/Domain/Workflows/TicketWorkflow.php",
+        "saas/app/Http/Controllers/WorkflowController.php",
+        "connector/sahdev_cloud/src/Tickets.php",
+        "connector/sahdev_cloud/panel.js",
+        "lib/AIController.php",
+        "lib/TicketDataExtractor.php",
+        "hooks.php"
+      ],
+      "tests": [
+        "saas/tests/Feature/WorkflowTest.php",
+        "saas/tests/Feature/ThinConnectorTest.php",
+        "scratch/test_command_workspaces.cjs"
+      ],
+      "evidence": [],
+      "capabilities": [
+        {
+          "id": "analysis",
+          "label": "Root cause, responsibility, risk and action plan",
+          "status": "implemented",
+          "current": "The cloud returns validated analysis fields and a reviewable client reply.",
+          "acceptance": [
+            "Verify required fields, risk enum and malformed output handling.",
+            "Treat ticket text as untrusted and distinguish hypotheses from facts."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "summary",
+          "label": "Conversation summaries",
+          "status": "implemented",
+          "current": "Cloud summaries use bounded public ticket messages.",
+          "acceptance": [
+            "Test chronology, pending questions and long conversations.",
+            "Never claim proposed actions were executed or expose private notes."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "rewrite",
+          "label": "Tone-aware draft rewriting",
+          "status": "implemented",
+          "current": "Cloud rewrite accepts a supplied draft, selected tone and bounded instruction.",
+          "acceptance": [
+            "Reject empty/non-string drafts and preserve facts/commitments.",
+            "No automatic sending or invented troubleshooting results."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "score",
+          "label": "Reply quality scoring",
+          "status": "implemented",
+          "current": "Cloud output validates clarity, tone, completeness, overall score and notes.",
+          "acceptance": [
+            "Reject missing fields and scores outside 0–100.",
+            "Evaluate against the supplied thread and flag unsupported claims."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "canned_draft",
+          "label": "Reusable canned draft generation",
+          "status": "implemented",
+          "current": "Cloud returns a title and reusable template; publishing to the library is not included.",
+          "acceptance": [
+            "Replace identifying details with placeholders.",
+            "Reject malformed output and require separate permission to save/publish."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "context",
+          "label": "Services, domains, attachments and private notes",
+          "status": "partial",
+          "current": "Preview sends the ticket and 20 public replies; richer account and attachment context is not migrated.",
+          "acceptance": [
+            "Allow only scoped sources and safe bounded attachments; block credential fields and path traversal.",
+            "Expose truncation and prevent internal notes leaking into client replies."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "retry",
+          "label": "Progress, request replay and result access",
+          "status": "implemented",
+          "current": "Encrypted local journal retains one key after timeouts; cloud results are actor/ticket scoped.",
+          "acceptance": [
+            "Lose the submit response, reload and resume without another charge.",
+            "Test queued, released, uncertain, expired and unauthorized results."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "rendering",
+          "label": "Rich formatting and related-record links",
+          "status": "partial",
+          "current": "Markdown and ticket/client links work in the preview; full invoice/service/product context is pending.",
+          "acceptance": [
+            "Render headings, tables, code and lists without scripts or tracking images.",
+            "Each related link must use the correct custom admin path and native permissions."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "editor",
+          "label": "Editor insertion, signature and concurrent edits",
+          "status": "pending",
+          "current": "Legacy TinyMCE/plain-text insertion and signature-safe polishing are not migrated; preview uses Copy draft.",
+          "acceptance": [
+            "Preserve configured signature and staff edits made during a request.",
+            "Support TinyMCE/plain textarea without targeting another editor or sending the reply."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "history",
+          "label": "Saved analysis, summaries and customer memory",
+          "status": "pending",
+          "current": "Legacy saved-result CRUD, historical context and full cache parity remain local.",
+          "acceptance": [
+            "Reuse unchanged results without new charges; invalidate changed context.",
+            "Scope old tickets to the client and preserve content when deletion fails."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "insights",
+          "label": "Sentiment, urgency, tone and ticket tags",
+          "status": "pending",
+          "current": "Legacy insights and ai-* WHMCS tag integration remain local.",
+          "acceptance": [
+            "Validate enums, score bounds and tag syntax; avoid duplicate unchanged analyses.",
+            "Preserve manual tags and distinguish triage from verified evidence."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "controls",
+          "label": "Intent, model, depth and evidence controls",
+          "status": "partial",
+          "current": "Preview exposes workflow, model, tone and token limit; standard per-admin controls are incomplete.",
+          "acceptance": [
+            "Honor global/personal switches consistently in UI and API.",
+            "Hidden controls must not leave unauthorized callable endpoints."
+          ],
+          "evidence": []
+        }
+      ]
+    },
+    "case_timeline": {
+      "label": "Case timeline and historical evidence",
+      "surface": "WHMCS admin",
+      "owner": "WHMCS engineering",
+      "summary": "Preserve source provenance, staff layouts and bounded historical context.",
+      "status": "pending",
+      "source": [
+        "lib/CaseTimeline.php",
+        "lib/CaseTimelineInterpreter.php",
+        "lib/CaseTimelineSettings.php",
+        "hooks.php",
+        "docs/case-timeline.md"
+      ],
+      "tests": [
+        "scratch/test_case_timeline.php",
+        "scratch/test_case_timeline_ui.cjs",
+        "scratch/test_command_workspaces.cjs"
+      ],
+      "evidence": [],
+      "capabilities": [
+        {
+          "id": "policy",
+          "label": "Timeline policy CRUD and active-policy selection",
+          "status": "pending",
+          "current": "Standard module supports source policies; cloud policy management is not migrated.",
+          "acceptance": [
+            "Create, edit, activate and delete policies while retaining existing settings.",
+            "No active policy means no collection; display and AI inclusion are separate switches."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "sources",
+          "label": "Scoped hosting, domain, server and message sources",
+          "status": "pending",
+          "current": "Legacy collectors restrict context to the ticket client and linked service/domain.",
+          "acceptance": [
+            "Test unrelated clients, unlinked services, missing server data and disabled sources.",
+            "Do not read credentials or arbitrary customer records."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "snapshots",
+          "label": "Dated immutable diagnostic snapshots",
+          "status": "pending",
+          "current": "Legacy snapshots keep run identity, observation time and structured facts.",
+          "acceptance": [
+            "Capture once per diagnostic run; cached evidence is not a new observation.",
+            "Distinguish current configuration, customer reports and measured observations."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "layouts",
+          "label": "Nine timeline layouts and workspace navigation",
+          "status": "pending",
+          "current": "Standard module has timeline, lanes, ledger, split, ribbon, journal, milestones and evidence-to-action layouts.",
+          "acceptance": [
+            "Verify every layout in supported themes and narrow screens.",
+            "Keep Analysis, Tools, Summary, KB and Memory controls functional and keyboard accessible."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "interpretation",
+          "label": "Concise highlights and source excerpts",
+          "status": "pending",
+          "current": "Legacy interpretation is bounded extractive processing, not an extra model call.",
+          "acceptance": [
+            "Retain source IDs/timestamps and label stale, conflicting or incomplete facts.",
+            "Removing signatures/quotes must not alter original WHMCS messages."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "retention",
+          "label": "Snapshot inspection, deletion and retention",
+          "status": "pending",
+          "current": "Legacy snapshot cleanup and per-ticket deletion are not migrated.",
+          "acceptance": [
+            "Enforce bounded retention, immediate expiry exclusion and cleanup while collection is disabled.",
+            "Do not delete underlying ticket messages or unrelated tool history."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "ai_context",
+          "label": "Bounded timeline context in AI generation",
+          "status": "pending",
+          "current": "Legacy AI inclusion has a separate switch and byte/event limits.",
+          "acceptance": [
+            "Disable one source or tool evidence and confirm exclusion from the actual request.",
+            "Remove whole oldest events within the budget and avoid duplicate presentation fields."
+          ],
+          "evidence": []
+        }
+      ]
+    },
+    "live_chat": {
+      "label": "Customer widget and live staff console",
+      "surface": "Customer chat",
+      "owner": "Chat and WHMCS engineering",
+      "summary": "Guest/customer identity, human handoff and customer-safe responses.",
+      "status": "pending",
+      "source": [
+        "lib/ChatService.php",
+        "lib/ClientChatScopeService.php",
+        "lib/ClientAccountEnrichment.php",
+        "lib/ProductDomainCatalogService.php",
+        "hooks.php",
+        "modules/addons/sahdev/embed.js"
+      ],
+      "tests": [
+        "scratch/test_live_suite.php",
+        "scratch/test_embed_takeover_widget.php",
+        "scratch/test_quota_exemption.php",
+        "scratch/test_notification_lifecycle.php"
+      ],
+      "evidence": [],
+      "capabilities": [
+        {
+          "id": "widget",
+          "label": "Widget opening, embedding and customizer",
+          "status": "pending",
+          "current": "The standard widget and design/rules editor remain local; no thin SaaS widget is released.",
+          "acceptance": [
+            "Open/close on WHMCS and external allowed pages; test theme, position, mobile and disabled states.",
+            "Fail visibly and safely when the cloud is unavailable."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "identity",
+          "label": "Guest visitor and authenticated client identity",
+          "status": "pending",
+          "current": "Legacy sessions bind visitor tokens or client identity and control account scope.",
+          "acceptance": [
+            "A guest cannot request a client's private invoices/services.",
+            "Login/logout and visitor-email linking must not merge unrelated customers."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "sessions",
+          "label": "Session creation, history and incremental polling",
+          "status": "pending",
+          "current": "Legacy chat supports multiple sessions, history and after-message polling.",
+          "acceptance": [
+            "Create/switch/reload sessions and resume after connection loss.",
+            "Deny session-ID guessing and avoid duplicate messages during concurrent sends."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "answers",
+          "label": "Customer Markdown, citations and record links",
+          "status": "pending",
+          "current": "Legacy customer responses have formatting and record context; cloud migration is pending.",
+          "acceptance": [
+            "Render tables, lists and safe links; no fabricated billing or health answers.",
+            "Internal notes, prompts and unrelated records must never enter customer output."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "account_context",
+          "label": "Client balances, services, invoices and tickets",
+          "status": "pending",
+          "current": "Legacy customer-scoped enrichment is available only inside the standard module.",
+          "acceptance": [
+            "Prove every returned record belongs to the authenticated client and permitted source.",
+            "Correctly handle no results, multiple currencies and unavailable account data."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "catalog",
+          "label": "Public products and domain pricing",
+          "status": "pending",
+          "current": "Legacy product/domain catalog supplies public sales context.",
+          "acceptance": [
+            "Respect hidden products, current currency and active pricing.",
+            "Public visitors see public catalog data only; do not invent stock or availability."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "quotas",
+          "label": "Guest/client quotas and abuse controls",
+          "status": "pending",
+          "current": "Legacy quotas, rate limits, exemptions and input bounds are not migrated.",
+          "acceptance": [
+            "Test guest, customer and human-agent session limits plus concurrent requests.",
+            "An exemption must not grant record access or bypass platform budget limits."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "presence",
+          "label": "Staff availability, heartbeat and typing preview",
+          "status": "pending",
+          "current": "Legacy console has staff presence and visitor sneak-peek.",
+          "acceptance": [
+            "Expire stale presence and reconnect without duplicating staff sessions.",
+            "Restrict previews to permitted staff and expose offline handling."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "takeover",
+          "label": "Human summon, exclusive claim and release",
+          "status": "pending",
+          "current": "Legacy summon/claim/release and timeout logic remain local.",
+          "acceptance": [
+            "Two agents claiming a chat must produce one owner; release/resume works.",
+            "AI stops while a human owns the session and stale claims expire predictably."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "staff_messages",
+          "label": "Staff send, edit, delete and canned shortcuts",
+          "status": "pending",
+          "current": "Legacy staff messaging and optional customer notifications are not migrated.",
+          "acceptance": [
+            "Enforce ownership and permissions on send/edit/delete.",
+            "Preserve ordering, clear edit/deletion state and avoid duplicate notification delivery."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "escalation",
+          "label": "Escalate chat into a support ticket",
+          "status": "pending",
+          "current": "Legacy guest/client escalation and transcript conversion remain local.",
+          "acceptance": [
+            "Choose permitted department, verify identity and create one linked ticket.",
+            "Retry safely; sanitize transcript and exclude private staff-only material."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "feedback",
+          "label": "CSAT ratings and customer feedback",
+          "status": "pending",
+          "current": "Legacy ratings and aggregate CSAT are not migrated.",
+          "acceptance": [
+            "Only an owned message can be rated; duplicate submissions update safely.",
+            "Preserve per-brand scope and distinguish no feedback from a zero score."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "notifications",
+          "label": "Sound, browser alerts and notification ownership",
+          "status": "pending",
+          "current": "Legacy console includes alert rules, audio leadership and notification preferences.",
+          "acceptance": [
+            "Test multiple tabs, muted/offline staff, repeat alerts and resolved summons.",
+            "One event should not cause an uncontrolled alert loop."
+          ],
+          "evidence": []
+        }
+      ]
+    },
+    "copilot": {
+      "label": "Admin Ops Copilot and related records",
+      "surface": "WHMCS admin",
+      "owner": "Operations AI engineering",
+      "summary": "Move conversation orchestration to the cloud while retaining native authorization.",
+      "status": "pending",
+      "source": [
+        "lib/ChatService.php",
+        "lib/CopilotRecords.php",
+        "lib/CopilotPresentation.php",
+        "lib/CopilotAdminPages.php",
+        "lib/SafeOpsService.php",
+        "hooks.php"
+      ],
+      "tests": [
+        "scratch/test_copilot.php",
+        "scratch/test_copilot_ajax.cjs",
+        "scratch/test_copilot_ui.cjs"
+      ],
+      "evidence": [],
+      "capabilities": [
+        {
+          "id": "entry_points",
+          "label": "Floating widget and full Ops Console",
+          "status": "pending",
+          "current": "Standard module has both entry points; thin-connector Copilot is not implemented.",
+          "acceptance": [
+            "Open from multiple admin pages and use the full console.",
+            "Test missing assets, disabled permission, responsive layout and failed request recovery."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "threads",
+          "label": "Admin threads, ownership and history",
+          "status": "pending",
+          "current": "Legacy admin sessions and recent threads remain local.",
+          "acceptance": [
+            "Create, switch, refresh and resume threads without cross-admin leakage.",
+            "Unauthenticated or forged session references fail."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "context",
+          "label": "Page context and conversational record resolution",
+          "status": "pending",
+          "current": "Legacy Copilot accepts bounded page context and resolves related WHMCS records.",
+          "acceptance": [
+            "Resolve a follow-up such as all invoices for this client without changing client scope.",
+            "Ambiguous names require disambiguation and guessed browser context is not authority."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "records",
+          "label": "Clients, invoices, services, products and tickets",
+          "status": "pending",
+          "current": "Legacy typed record reads/cards exist with native related URLs.",
+          "acceptance": [
+            "List/paginate matching records and provide a separate link for each item.",
+            "Enforce resource/field/client rules and handle empty or ambiguous results."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "presentation",
+          "label": "Tables, links, totals and actionable cards",
+          "status": "pending",
+          "current": "Legacy Copilot has a dedicated presenter; SaaS parity is pending.",
+          "acceptance": [
+            "Render Markdown safely, preserve related links and show currency-correct totals.",
+            "Separate a proposed action from an executed result and avoid raw JSON spam."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "tools",
+          "label": "Read-only tools, financial metrics and gateway failures",
+          "status": "pending",
+          "current": "Legacy tool registry covers ticket/account lookup, metrics and telemetry.",
+          "acceptance": [
+            "Select only allowed tools and report tool failures as failures.",
+            "Metrics, gateway logs and server views require their own permissions."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "proposals",
+          "label": "Proposal cards, approval status and rollback journal",
+          "status": "pending",
+          "current": "Legacy proposal/journal views exist; cloud planning and connector execution are not migrated.",
+          "acceptance": [
+            "Expose complete target, before/after values, created/deleted records, impact and rollback limits.",
+            "Approval, execution and rollback remain separate authenticated actions."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "streaming",
+          "label": "Progress, cancellation and uncertain outcomes",
+          "status": "pending",
+          "current": "Legacy streaming/admin message handling remains local.",
+          "acceptance": [
+            "Test interrupted output, reconnect and a late tool result.",
+            "Never execute again because the browser lost its response."
+          ],
+          "evidence": []
+        }
+      ]
+    },
+    "safe_operations": {
+      "label": "Database ACL, approvals and atomic rollback",
+      "surface": "WHMCS admin",
+      "owner": "Database and security engineering",
+      "summary": "Typed, allowlisted WHMCS operations; no unrestricted remote SQL.",
+      "status": "pending",
+      "source": [
+        "lib/CopilotDatabasePolicy.php",
+        "lib/CopilotOperationService.php",
+        "lib/SafeOpsService.php",
+        "lib/CopilotAdminPages.php"
+      ],
+      "tests": [
+        "scratch/test_copilot_database.php",
+        "scratch/test_copilot_mysql.php",
+        "scratch/test_copilot_ajax.cjs"
+      ],
+      "evidence": [],
+      "capabilities": [
+        {
+          "id": "role_rules",
+          "label": "Enablement and explicit per-role grants",
+          "status": "pending",
+          "current": "Legacy database access is disabled by default; even full admins need explicit resource grants.",
+          "acceptance": [
+            "Test disabled access, missing role, disabled admin and permission revocation.",
+            "Cloud prompts and a super-admin role cannot expand the database allowlist."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "field_scope",
+          "label": "Field, operation, value and client-scope constraints",
+          "status": "pending",
+          "current": "Legacy policy intersects read/write fields, allowed operations/values and client filters.",
+          "acceptance": [
+            "Reject forbidden fields, wildcard resources, invalid values and out-of-scope clients.",
+            "Verify limits on returned rows, predicates and mutations."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "select",
+          "label": "Typed SELECT and relational lookup",
+          "status": "pending",
+          "current": "Legacy queries use allowlisted resources and bounded filters, not arbitrary model SQL.",
+          "acceptance": [
+            "Exercise each resource in the database matrix with permitted and forbidden predicates.",
+            "Return only authorized fields and preserve ticket-note ownership joins."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "plan",
+          "label": "Full before/after action plan",
+          "status": "pending",
+          "current": "Legacy planner snapshots target rows and produces immutable proposals.",
+          "acceptance": [
+            "Show every record and field affected, create/delete semantics, risk and expiry.",
+            "Persist a plan digest and prevent the browser or model from replacing the approved payload."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "approval",
+          "label": "Approval, reauthentication and policy recheck",
+          "status": "pending",
+          "current": "Legacy approval validates the actor, session and current authorization.",
+          "acceptance": [
+            "Test expired/cross-session plans, incorrect password and a role revoked after preview.",
+            "Recheck rules and record state immediately before execution."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "transaction",
+          "label": "Atomic database execution and failure rollback",
+          "status": "pending",
+          "current": "Legacy operations check transactional storage and use one local database transaction.",
+          "acceptance": [
+            "Inject failure after the first of multiple writes and confirm no partial business changes.",
+            "Reject nontransactional tables, stale snapshots and changed schema."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "create_delete",
+          "label": "Create/update/delete lifecycle and generated IDs",
+          "status": "pending",
+          "current": "Legacy typed CRUD covers permitted notes and updates, not blanket CRUD on all core tables.",
+          "acceptance": [
+            "Record inserted IDs, complete delete snapshots and exact update differences.",
+            "Protect relations and reject unsupported resource/operation combinations."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "credit_adjustment",
+          "label": "Client balance plus credit-ledger consistency",
+          "status": "pending",
+          "current": "Legacy credit adjustment updates balance and ledger together with compensation rules.",
+          "acceptance": [
+            "Inject failure between balance and ledger writes; both must roll back.",
+            "Reversal must not erase audit evidence or combine currencies."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "rollback",
+          "label": "Conflict-safe reversal after committed changes",
+          "status": "pending",
+          "current": "Legacy rollback compares current state to the original after-state and restores permitted snapshots.",
+          "acceptance": [
+            "Execute then roll back create/update/delete cases on real MySQL/MariaDB.",
+            "Refuse rollback if another actor changed the affected state; repeat rollback safely."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "journal",
+          "label": "Operation journal, failure evidence and audit history",
+          "status": "pending",
+          "current": "Legacy plan, execution, failure and rollback events are retained locally.",
+          "acceptance": [
+            "Trace request to plan, approving admin, affected rows, execution and rollback.",
+            "Failed execution must leave useful redacted evidence without a partial mutation."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "external_effects",
+          "label": "Boundaries for email, payment and provisioning effects",
+          "status": "pending",
+          "current": "Atomic database rollback cannot undo external gateway, mail or server actions; SaaS contracts are not migrated.",
+          "acceptance": [
+            "Classify each operation as local transaction, compensating action or irreversible effect before approval.",
+            "Never describe a service module call, sent email or captured payment as atomically reversible."
+          ],
+          "evidence": []
+        }
+      ]
+    },
+    "knowledge": {
+      "label": "Knowledge, canned replies and content sources",
+      "surface": "WHMCS admin",
+      "owner": "Knowledge engineering",
+      "summary": "Retrieval and prompt methodology move to the cloud; customers get scoped results.",
+      "status": "pending",
+      "source": [
+        "lib/RagKnowledgeService.php",
+        "lib/WebsiteDataSourcesService.php",
+        "lib/AIController.php",
+        "lib/ProductDomainCatalogService.php",
+        "controllers/AdminController.php"
+      ],
+      "tests": [
+        "scratch/test_website_datasources.php",
+        "scratch/test_command_workspaces.cjs"
+      ],
+      "evidence": [],
+      "capabilities": [
+        {
+          "id": "kb",
+          "label": "Knowledge articles, search and editor insertion",
+          "status": "pending",
+          "current": "Legacy KB management, search, previews and insertion are not migrated.",
+          "acceptance": [
+            "Create/update/delete/search articles; handle canceled or failed searches.",
+            "Preview before insertion and respect customer/staff visibility."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "canned",
+          "label": "Canned response CRUD, categories and shortcuts",
+          "status": "pending",
+          "current": "Legacy canned templates and keyboard shortcuts remain local.",
+          "acceptance": [
+            "Create, edit, delete and search with unique shortcuts and safe placeholders.",
+            "Separate draft generation from publishing and restrict library edits."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "retrieval",
+          "label": "RAG, runbooks and predefined response retrieval",
+          "status": "pending",
+          "current": "Legacy relevance search reads KB, canned replies and runbook sources.",
+          "acceptance": [
+            "Retrieve only brand-permitted sources and cite useful evidence.",
+            "Treat retrieved text as untrusted; no-result cases must not invent knowledge."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "websites",
+          "label": "Website source CRUD, sync and structured data",
+          "status": "pending",
+          "current": "Legacy website data sources support source control and remote sync.",
+          "acceptance": [
+            "Create/update/disable/delete and sync supported formats.",
+            "Reject unsafe destinations, oversized responses and stale failed syncs without replacing valid content silently."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "personas",
+          "label": "Cloud-owned prompts, personas and task templates",
+          "status": "pending",
+          "current": "Five preview workflow prompts are server-owned; the complete Prompt Manager migration is pending.",
+          "acceptance": [
+            "Version each template and preserve explicitly supported brand customizations.",
+            "Never distribute proprietary templates or let custom instructions grant executable permissions."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "intents",
+          "label": "Intent matching and action configuration",
+          "status": "pending",
+          "current": "Legacy intent keywords/directives and task actions remain local.",
+          "acceptance": [
+            "Resolve matching/overlapping intents with bounded allowed actions.",
+            "Disabling an intent must stop it in background and interactive flows."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "freshness",
+          "label": "Indexing, freshness and source deletion",
+          "status": "pending",
+          "current": "A unified cloud indexing, invalidation and deletion pipeline is not implemented.",
+          "acceptance": [
+            "Update/remove a source and confirm future retrieval stops serving old content.",
+            "Preserve required audit evidence while respecting retention and tenant boundaries."
+          ],
+          "evidence": []
+        }
+      ]
+    },
+    "automation": {
+      "label": "Ticket Autopilot, cron and scheduled work",
+      "surface": "WHMCS admin",
+      "owner": "Automation engineering",
+      "summary": "Policy-driven background work with duplicate prevention and operator visibility.",
+      "status": "pending",
+      "source": [
+        "lib/AutopilotProcessor.php",
+        "lib/CronProcessor.php",
+        "lib/WhmcsTicketTagHelper.php",
+        "cron/sahdev-cron.php",
+        "hooks.php"
+      ],
+      "tests": [
+        "scratch/test_diagnostic_workflow.php",
+        "scratch/test_missing_ticket_id.php"
+      ],
+      "evidence": [],
+      "capabilities": [
+        {
+          "id": "eligibility",
+          "label": "Autopilot eligibility and exclusion rules",
+          "status": "pending",
+          "current": "Legacy department, status, keyword and first-reply rules are not migrated.",
+          "acceptance": [
+            "Test eligible, blocked and already-replied tickets with the effective policy.",
+            "Recheck eligibility after a queued delay and before a write."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "drafts",
+          "label": "Autopilot draft versus send behavior",
+          "status": "pending",
+          "current": "Legacy auto-draft, internal-note and reply modes remain local.",
+          "acceptance": [
+            "A preview/draft mode cannot send to a customer.",
+            "Sending requires explicit policy, native permission, correct signature and an audit record."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "race",
+          "label": "Duplicate prevention and staff-reply races",
+          "status": "pending",
+          "current": "Legacy attempt tracking and ticket state checks require cloud parity.",
+          "acceptance": [
+            "Run concurrent workers and let a staff member reply while AI is generating.",
+            "Produce at most one intended automated reply and retain the newer staff action."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "queue",
+          "label": "Insights queue, batch triage and retry controls",
+          "status": "pending",
+          "current": "Legacy sentiment/urgency/tags queue and progress controls remain local.",
+          "acceptance": [
+            "Process bounded batches, skip unchanged contexts and report failed tickets.",
+            "Resume safely after timeout without repeating paid analysis unnecessarily."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "schedule",
+          "label": "Cron schedules, authentication and run status",
+          "status": "pending",
+          "current": "Standard Cron Center and WHMCS hooks are not migrated into a per-brand SaaS scheduler.",
+          "acceptance": [
+            "Test protected cron invocation, missed runs, overlapping runs and last-success visibility.",
+            "One brand cannot schedule work against another brand."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "controls",
+          "label": "Emergency pause and per-feature/provider controls",
+          "status": "pending",
+          "current": "Legacy automation switches and task-specific model routes remain local.",
+          "acceptance": [
+            "Pause during queued work and confirm no newly prohibited work dispatches.",
+            "Resume without replaying completed side effects."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "notifications",
+          "label": "Automated tags, staff notes and notifications",
+          "status": "pending",
+          "current": "Legacy post-processing includes optional tags, notes and alerts.",
+          "acceptance": [
+            "Apply allowed side effects once and preserve manual content.",
+            "Notification failure must not cause the underlying ticket mutation to repeat."
+          ],
+          "evidence": []
+        }
+      ]
+    },
+    "diagnostics": {
+      "label": "Diagnostics, tools and technical evidence",
+      "surface": "WHMCS admin",
+      "owner": "Diagnostics engineering",
+      "summary": "Bounded approved tools, truthful observations and source provenance.",
+      "status": "pending",
+      "source": [
+        "lib/DiagnosticWorkflow.php",
+        "lib/DiagnosticPolicy.php",
+        "lib/DiagnosticEvidence.php",
+        "lib/DiagnosticLock.php",
+        "lib/DiagnosticTrace.php",
+        "lib/LiveChatToolService.php",
+        "modules/ToolsExecution/ToolsExecutionService.php",
+        "toolsapi-2hs-in-openapi.json"
+      ],
+      "tests": [
+        "scratch/test_diagnostic_workflow.php",
+        "scratch/test_diagnostic_exchange.php",
+        "scratch/test_diagnostic_contracts.php",
+        "scratch/test_livechat_tools.php"
+      ],
+      "evidence": [],
+      "capabilities": [
+        {
+          "id": "routing",
+          "label": "Issue routing and follow-up target recovery",
+          "status": "pending",
+          "current": "Legacy routes DNS, web, mail, SSL, performance and related diagnostics.",
+          "acceptance": [
+            "Test subdomains, URL paths, email-domain extraction and explicit record types.",
+            "Recover context only from the authorized conversation; do not use assistant-invented targets."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "planning",
+          "label": "Local recipes and optional AI reconnaissance",
+          "status": "pending",
+          "current": "Legacy diagnostics can use bounded local recipes or a planner.",
+          "acceptance": [
+            "Enforce category/tool allowlists, argument schemas and maximum checks.",
+            "Planner failure cannot suppress a valid basic diagnostic recipe or expand permissions."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "manual",
+          "label": "Manual ToolsAPI operations and parameters",
+          "status": "pending",
+          "current": "Legacy tools use an OpenAPI operation registry and explicit admin parameters.",
+          "acceptance": [
+            "Validate methods, endpoints, required parameters and conflicting arguments.",
+            "Disabled tools must be blocked in both automatic and manual paths."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "destination",
+          "label": "Destination and outbound network protection",
+          "status": "pending",
+          "current": "Legacy preflight checks exist; final remote resolution belongs to ToolsAPI.",
+          "acceptance": [
+            "Verify final DNS resolution and every redirect reject internal/link-local destinations.",
+            "Exercise IPv4/IPv6, DNS changes and credential-bearing URLs on the deployed tool service."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "execution",
+          "label": "Deadlines, locks, bounded responses and retries",
+          "status": "pending",
+          "current": "Legacy executor uses deadlines, advisory locks, response caps and scoped caching.",
+          "acceptance": [
+            "Run parallel turns and force upstream timeout/schema errors.",
+            "Release locks and preserve failure state; never cache an error as a healthy result."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "evidence",
+          "label": "DNS, SSL, ping, WHOIS, mail and performance evidence",
+          "status": "pending",
+          "current": "Legacy normalizers retain structured facts and failed-check states.",
+          "acceptance": [
+            "Compare fixtures and real tool responses, including partial/missing facts.",
+            "Keep upstream observation times and distinguish cached evidence from a fresh measurement."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "context",
+          "label": "Service matching and optional telemetry enrichment",
+          "status": "pending",
+          "current": "Legacy diagnostics match only services/domains owned by the ticket/chat client.",
+          "acceptance": [
+            "Test shared IPs, unrelated accounts and disabled enrichment.",
+            "Configuration context must not be described as live server health."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "stop",
+          "label": "Channel switches and emergency stop",
+          "status": "pending",
+          "current": "Legacy policies separately control tickets, chat, automatic/manual tools and emergency stop.",
+          "acceptance": [
+            "Test every switch in UI and API, including work already queued.",
+            "Merely selecting a planner/model cannot enable execution."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "logging",
+          "label": "Diagnostic trace, retention and cleanup",
+          "status": "pending",
+          "current": "Legacy redacted trace events and bounded cleanup remain local.",
+          "acceptance": [
+            "Record route, outcome, HTTP status and elapsed time without raw secrets/messages.",
+            "Cleanup works with logging disabled and preserves unrelated module logs."
+          ],
+          "evidence": []
+        }
+      ]
+    },
+    "telemetry": {
+      "label": "Server health and incident response",
+      "surface": "WHMCS admin",
+      "owner": "Infrastructure integration engineering",
+      "summary": "Server observations, outage clusters and controlled customer communication.",
+      "status": "pending",
+      "source": [
+        "lib/ServerTelemetryService.php",
+        "lib/IncidentDetectionService.php",
+        "controllers/AdminController.php",
+        "hooks.php"
+      ],
+      "tests": [
+        "scratch/test_widget_header_and_badges.php",
+        "scratch/test_diagnostic_workflow.php"
+      ],
+      "evidence": [],
+      "capabilities": [
+        {
+          "id": "polling",
+          "label": "Server polling, role detection and health snapshots",
+          "status": "pending",
+          "current": "Standard server polling and role/port detection remain local.",
+          "acceptance": [
+            "Poll supported configured server types, including timeout/auth failures.",
+            "Timestamp and expire observations; do not present stale or failed reads as healthy."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "accounts",
+          "label": "Account disk, resource and daemon visibility",
+          "status": "pending",
+          "current": "Legacy account/server summaries use the linked service/server.",
+          "acceptance": [
+            "Prove client/service scope and dedicated telemetry permissions.",
+            "Missing account metrics must be labeled unavailable, not zero usage."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "sso",
+          "label": "WHM and service control-panel SSO",
+          "status": "pending",
+          "current": "Legacy server and mobile service SSO are not migrated.",
+          "acceptance": [
+            "Validate native permissions and service/server ownership before issuing a link.",
+            "Do not leak access tokens into logs, history or unrelated users."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "incidents",
+          "label": "Outage clusters and incident status",
+          "status": "pending",
+          "current": "Legacy incident detection groups related tickets and surfaces active incidents.",
+          "acceptance": [
+            "Validate clustering against time, server and service identity; resolve/reopen incidents.",
+            "A generic repeated symptom must not be promoted to a confirmed outage without evidence."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "broadcast",
+          "label": "Incident broadcast replies and client alerts",
+          "status": "pending",
+          "current": "Legacy incident UI can coordinate replies; cloud approval and delivery are pending.",
+          "acceptance": [
+            "Preview affected tickets/clients and exact message before sending.",
+            "Handle partial delivery, duplicates and retries without implying messages can be atomically unsent."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "widgets",
+          "label": "Header status and client service health cards",
+          "status": "pending",
+          "current": "Legacy widgets show outages and account health in WHMCS.",
+          "acceptance": [
+            "Test refresh, no-data, permission-denied and mobile states.",
+            "Widget failures must not break the host WHMCS page."
+          ],
+          "evidence": []
+        }
+      ]
+    },
+    "analytics": {
+      "label": "Business metrics and reporting",
+      "surface": "WHMCS admin",
+      "owner": "Analytics engineering",
+      "summary": "Hosting business metrics and SaaS usage reporting must retain brand, currency and time boundaries.",
+      "status": "partial",
+      "source": [
+        "lib/MetricsIntelligenceService.php",
+        "controllers/AdminController.php",
+        "saas/app/Http/Controllers/DashboardController.php"
+      ],
+      "tests": [],
+      "evidence": [],
+      "capabilities": [
+        {
+          "id": "revenue",
+          "label": "MRR, ARR and revenue trends",
+          "status": "pending",
+          "current": "Hosting revenue calculations remain in the legacy module.",
+          "acceptance": [
+            "Reconcile sampled invoices and recurring services with WHMCS.",
+            "Separate currencies, refunds, one-time charges and reporting periods."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "clients",
+          "label": "Client growth, churn and invoice aging",
+          "status": "pending",
+          "current": "Client and receivables metrics have not migrated.",
+          "acceptance": [
+            "Verify active/new/churned definitions and overdue buckets against a fixed dataset."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "gateways",
+          "label": "Payment success and gateway failures",
+          "status": "pending",
+          "current": "Gateway reporting remains local.",
+          "acceptance": [
+            "Match failed and successful transactions without exposing gateway credentials or raw payment payloads."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "support",
+          "label": "Support velocity and staff performance",
+          "status": "pending",
+          "current": "Ticket and support reporting remains local.",
+          "acceptance": [
+            "Verify response-time boundaries, staff attribution and department permissions."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "products",
+          "label": "Product and service revenue",
+          "status": "pending",
+          "current": "Product revenue breakdown remains local.",
+          "acceptance": [
+            "Follow a product aggregate to authorized services and invoices with consistent totals."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "anomalies",
+          "label": "Trends and anomaly detection",
+          "status": "pending",
+          "current": "Metric aggregation and anomaly logic have not moved to SaaS.",
+          "acceptance": [
+            "Re-run an aggregation without duplicates; distinguish missing data from zero activity."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "usage",
+          "label": "Brand and organization AI usage",
+          "status": "partial",
+          "current": "SaaS shows wallet and request activity; full cost and margin analytics are incomplete.",
+          "acceptance": [
+            "Reconcile tokens, charged credits and provider costs for each brand.",
+            "Include pending and uncertain requests without counting them as settled spend."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "exports",
+          "label": "Report exports and scheduled delivery",
+          "status": "pending",
+          "current": "Tenant-safe exports and scheduled reports need implementation.",
+          "acceptance": [
+            "Apply the same scope to screen and export; redact personal data and limit large exports."
+          ],
+          "evidence": []
+        }
+      ]
+    },
+    "mobile": {
+      "label": "Sahdev Mobile",
+      "surface": "Mobile app",
+      "owner": "Mobile engineering",
+      "summary": "The Flutter client and legacy mobile API need a cloud authentication and authorization migration before distribution.",
+      "status": "pending",
+      "source": [
+        "lib/MobileApiService.php",
+        "lib/FirebasePushService.php",
+        "mobile/"
+      ],
+      "tests": [],
+      "evidence": [],
+      "capabilities": [
+        {
+          "id": "pairing",
+          "label": "Login, QR pairing and session expiry",
+          "status": "pending",
+          "current": "Mobile authenticates against the legacy WHMCS API.",
+          "acceptance": [
+            "Pair one device to one brand; expire QR codes and sessions; reject reused pairing tokens."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "devices",
+          "label": "Device inventory and revocation",
+          "status": "pending",
+          "current": "Device and token management remains local.",
+          "acceptance": [
+            "List devices by brand and revoke one without affecting others; revoked requests fail immediately."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "chat",
+          "label": "Live queue, history and staff takeover",
+          "status": "pending",
+          "current": "Queue and live-chat actions depend on the legacy API.",
+          "acceptance": [
+            "Read the queue, claim a conversation, reply and release; handle offline retries without duplicate messages."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "tickets",
+          "label": "Ticket list, replies, notes and status",
+          "status": "pending",
+          "current": "Ticket operations and AI analysis are not cloud migrated.",
+          "acceptance": [
+            "Open a ticket, add a private note and reply with correct visibility; enforce department access on every action."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "clients",
+          "label": "Client profiles and notes",
+          "status": "pending",
+          "current": "Client search, details and note actions are legacy APIs.",
+          "acceptance": [
+            "Link profile, invoices and services; prevent cross-brand lookups; audit note writes."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "services",
+          "label": "Services, status changes and control-panel SSO",
+          "status": "pending",
+          "current": "Service actions remain on the legacy mobile endpoint.",
+          "acceptance": [
+            "Scope SSO and status updates to authorized services; disclose external effects before approval."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "invoices",
+          "label": "Invoice details and payment actions",
+          "status": "pending",
+          "current": "Invoice viewing and mark-paid actions remain local.",
+          "acceptance": [
+            "Open an invoice and validate currency; require explicit permission and an auditable action plan for payment changes."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "canned",
+          "label": "Canned-response management",
+          "status": "pending",
+          "current": "Canned response CRUD still depends on local APIs.",
+          "acceptance": [
+            "Respect staff permissions for create, edit, delete and use in a reply."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "push",
+          "label": "FCM registration and notification routing",
+          "status": "pending",
+          "current": "Push and background event handling have not migrated.",
+          "acceptance": [
+            "Register and revoke devices; open the correct brand and record from a push; omit sensitive content from notifications."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "release",
+          "label": "Signed APK, updates and device compatibility",
+          "status": "pending",
+          "current": "No accepted SaaS-connected mobile release is published.",
+          "acceptance": [
+            "Verify release signing, upgrade preservation, supported Android versions and recovery from an unavailable API."
+          ],
+          "evidence": []
+        }
+      ]
+    },
+    "preferences": {
+      "label": "Settings, preferences and help",
+      "surface": "WHMCS admin",
+      "owner": "WHMCS engineering",
+      "summary": "Preserve personal preferences while moving organization policy and proprietary logic into the cloud.",
+      "status": "partial",
+      "source": [
+        "controllers/AdminController.php",
+        "hooks.php",
+        "lib/SchemaManager.php"
+      ],
+      "tests": [],
+      "evidence": [],
+      "capabilities": [
+        {
+          "id": "policy",
+          "label": "Global feature and department controls",
+          "status": "pending",
+          "current": "Legacy settings are not yet managed through the cloud.",
+          "acceptance": [
+            "Document defaults and precedence; disabled features must reject direct calls as well as hide UI."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "personal",
+          "label": "Personal model, tone and analysis depth",
+          "status": "pending",
+          "current": "Personal ticket-assistant preferences remain local.",
+          "acceptance": [
+            "Persist per staff member; respect administrator model restrictions and organization budgets."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "themes",
+          "label": "Themes, spacing and accessibility",
+          "status": "pending",
+          "current": "Legacy themes and UI preferences need connector compatibility.",
+          "acceptance": [
+            "Verify keyboard navigation, contrast, reduced motion, small screens and persisted theme choices."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "notifications",
+          "label": "Sound and notification preferences",
+          "status": "pending",
+          "current": "Alert preferences remain in legacy web/mobile flows.",
+          "acceptance": [
+            "Respect mute and focus settings; avoid repeated alerts for one event."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "help",
+          "label": "Help, glossary and version information",
+          "status": "partial",
+          "current": "Cloud installation guidance exists; full feature help is not migrated.",
+          "acceptance": [
+            "Every enabled feature needs accurate instructions, permission requirements and an actionable error path."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "migration",
+          "label": "Settings import and safe defaults",
+          "status": "pending",
+          "current": "No accepted migration exists for all legacy settings.",
+          "acceptance": [
+            "Map each setting; preview unsupported values; repeated imports must not overwrite newer preferences."
+          ],
+          "evidence": []
+        }
+      ]
+    },
+    "security": {
+      "label": "Security, privacy and tenant boundaries",
+      "surface": "Platform",
+      "owner": "Security engineering",
+      "summary": "Cross-cutting checks for every dashboard, connector, worker and external integration.",
+      "status": "partial",
+      "source": [
+        "saas/app/Support/Access.php",
+        "saas/app/Services/TenantStore.php",
+        "saas/app/Services/Egress.php",
+        "saas/app/Http/Middleware/InstallationAuth.php",
+        "saas/app/Support/Audit.php"
+      ],
+      "tests": [
+        "saas/tests/Feature/AccessTest.php",
+        "saas/tests/Feature/CustomProviderTest.php",
+        "saas/tests/Feature/ThinConnectorTest.php"
+      ],
+      "evidence": [],
+      "capabilities": [
+        {
+          "id": "isolation",
+          "label": "Organization and brand isolation",
+          "status": "implemented",
+          "current": "SaaS requests check organization/brand scope and use separate brand data stores.",
+          "acceptance": [
+            "Attempt cross-tenant reads and writes through routes, jobs, exports and guessed identifiers."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "session",
+          "label": "Session, CSRF and operator boundaries",
+          "status": "implemented",
+          "current": "Authenticated routes, CSRF protection and operator middleware exist.",
+          "acceptance": [
+            "Reject missing CSRF, expired sessions and customer access to operator endpoints; test both MFA policy modes."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "encryption",
+          "label": "Encrypted credentials and retained payloads",
+          "status": "partial",
+          "current": "Provider and installation secrets are encrypted; full data lifecycle acceptance remains open.",
+          "acceptance": [
+            "Inspect stored secrets and backups; test key rotation and recovery without printing credentials."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "egress",
+          "label": "External hosts and SSRF defenses",
+          "status": "implemented",
+          "current": "Custom providers require safe HTTPS destinations with public address checks.",
+          "acceptance": [
+            "Reject private/reserved destinations, unsafe redirects and credential-bearing URLs; cover IPv4 and IPv6."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "prompts",
+          "label": "Untrusted content and tool authority",
+          "status": "partial",
+          "current": "Cloud ticket workflows use fixed task boundaries; all legacy tools still need cloud permission checks.",
+          "acceptance": [
+            "Treat tickets, websites and model output as data; prompt injection must not widen tool or database permissions."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "lifecycle",
+          "label": "Data export, deletion and retention",
+          "status": "pending",
+          "current": "A complete tenant export and erasure workflow is not available.",
+          "acceptance": [
+            "Inventory retained data; test deletion, legal retention exceptions and backup expiry; prevent export leakage."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "abuse",
+          "label": "Rate limits and operational abuse",
+          "status": "partial",
+          "current": "Endpoint throttles and credit limits exist; system-wide abuse controls need validation.",
+          "acceptance": [
+            "Bound queue depth, payload size and concurrency; verify overload returns useful errors without double charging."
+          ],
+          "evidence": []
+        }
+      ]
+    },
+    "operations": {
+      "label": "Deployment, reliability and recovery",
+      "surface": "Platform",
+      "owner": "Platform operations",
+      "summary": "Operational acceptance for the deployed cloud, database, workers and release process.",
+      "status": "partial",
+      "source": [
+        "saas/compose.dokploy.yaml",
+        "saas/Dockerfile",
+        "saas/routes/console.php",
+        ".github/workflows/saas.yml",
+        "saas/tests/postgres.php"
+      ],
+      "tests": [
+        "saas/tests/postgres.php",
+        "saas/tests/browser.cjs"
+      ],
+      "evidence": [],
+      "capabilities": [
+        {
+          "id": "deployment",
+          "label": "Dokploy deployment and automated checks",
+          "status": "implemented",
+          "current": "The SaaS branch has a container deployment and automated PHP, database and browser checks.",
+          "acceptance": [
+            "Build from a known commit; verify application, worker and scheduler use the same release."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "workers",
+          "label": "Queue and scheduler health",
+          "status": "partial",
+          "current": "Worker and scheduler services exist; production failure drills are outstanding.",
+          "acceptance": [
+            "Kill a worker mid-request; recover queued jobs without duplicate provider calls or charges."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "backup",
+          "label": "Database and key backup restoration",
+          "status": "awaiting_live_validation",
+          "current": "A tested production restore has not been recorded.",
+          "acceptance": [
+            "Restore control-plane and brand databases plus required encryption keys into an isolated environment; record recovery time and data loss."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "recovery",
+          "label": "Payment and usage disaster reconciliation",
+          "status": "pending",
+          "current": "End-to-end recovery of all external and local financial state is not accepted.",
+          "acceptance": [
+            "Reconcile invoices, payment events, wallet entries and uncertain AI requests after restoring a backup."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "capacity",
+          "label": "Concurrent hosts and load testing",
+          "status": "pending",
+          "current": "Capacity for the first 3–5 providers has not been measured under realistic load.",
+          "acceptance": [
+            "Exercise concurrent chat, tickets and billing; record latency, queue delay, memory and database contention."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "alerts",
+          "label": "Error monitoring and actionable alerts",
+          "status": "pending",
+          "current": "A complete alert-to-resolution operations flow is not accepted.",
+          "acceptance": [
+            "Trigger a failed job, billing delivery failure, low disk and unavailable provider; route alerts without secrets."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "rollback",
+          "label": "Application rollback and schema compatibility",
+          "status": "awaiting_live_validation",
+          "current": "Deploy rollback exists operationally; data compatibility drills are unverified.",
+          "acceptance": [
+            "Roll back one release while preserving wallet journals, queued work and installation credentials."
+          ],
+          "evidence": []
+        }
+      ]
+    },
+    "upgrade": {
+      "label": "Connector distribution and upgrades",
+      "surface": "Distribution",
+      "owner": "Release engineering",
+      "summary": "Only a bounded bridge may be downloaded; proprietary orchestration and secrets stay in SaaS.",
+      "status": "partial",
+      "source": [
+        "saas/tools/package-module.php",
+        "saas/config/distribution.php",
+        "saas/app/Services/ReleaseService.php",
+        "connector/README.md",
+        "lib/SchemaManager.php",
+        "sahdev.php"
+      ],
+      "tests": [
+        "saas/tests/Feature/ReleaseTest.php",
+        "saas/tests/Feature/ThinConnectorTest.php"
+      ],
+      "evidence": [],
+      "capabilities": [
+        {
+          "id": "allowlist",
+          "label": "Thin-connector package boundary",
+          "status": "implemented",
+          "current": "Packaging uses an exact allowlist and rejects proprietary server files.",
+          "acceptance": [
+            "Inspect the ZIP and standalone branch; verify no core logic, private credentials or unrelated files are distributed."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "signature",
+          "label": "Signed stable artifacts and integrity",
+          "status": "awaiting_live_validation",
+          "current": "Signature and hash verification exist; a stable release has not passed acceptance.",
+          "acceptance": [
+            "Verify the signing key, artifact SHA-256 and size; reject tampering and unknown distribution types."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "gates",
+          "label": "Signup, purchase and download gates",
+          "status": "implemented",
+          "current": "Incomplete migration blocks the public launch path; preview artifacts are separate.",
+          "acceptance": [
+            "Try direct signup, checkout and download URLs before and after accepted readiness; preview must never appear as stable."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "legacy_data",
+          "label": "Legacy history and configuration import",
+          "status": "pending",
+          "current": "Full import of legacy conversations, policies and preferences is not implemented.",
+          "acceptance": [
+            "Dry-run counts and mappings; migrate with ownership preserved and reconcile before enabling cloud features."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "repeatable",
+          "label": "Upgrade, reinstall and retry safety",
+          "status": "pending",
+          "current": "Full legacy-to-cloud upgrade acceptance is outstanding.",
+          "acceptance": [
+            "Run install and upgrade twice; preserve custom data and permissions; recover from interruption without duplicate imports."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "compatibility",
+          "label": "Old clients and rollback journal compatibility",
+          "status": "pending",
+          "current": "Compatibility across connector and cloud versions remains unverified.",
+          "acceptance": [
+            "Document supported versions; reject incompatible requests clearly and preserve existing rollback evidence."
+          ],
+          "evidence": []
+        }
+      ]
+    },
+    "public_site": {
+      "label": "Public website and commercial launch",
+      "surface": "Public website",
+      "owner": "Product and operations",
+      "summary": "A preview site is available; commercial opening needs verified functionality and operational evidence.",
+      "status": "partial",
+      "source": [
+        "saas/app/Http/Controllers/PublicController.php",
+        "saas/app/Services/LaunchReadiness.php"
+      ],
+      "tests": [
+        "saas/tests/Feature/PublicSiteTest.php",
+        "saas/tests/browser.cjs"
+      ],
+      "evidence": [],
+      "capabilities": [
+        {
+          "id": "website",
+          "label": "Home, pricing and installation guidance",
+          "status": "implemented",
+          "current": "The public site presents preview plans and installation guidance.",
+          "acceptance": [
+            "Verify mobile navigation, links, plan prices and accurate feature descriptions."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "availability",
+          "label": "Honest preview and launch messaging",
+          "status": "implemented",
+          "current": "The site distinguishes preview from stable availability.",
+          "acceptance": [
+            "Blocked actions explain their status and direct existing operators to readiness; do not advertise pending capabilities as available."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "commercial",
+          "label": "Plan economics and model margins",
+          "status": "awaiting_live_validation",
+          "current": "Entry-level packs exist; real provider cost and margin acceptance is pending.",
+          "acceptance": [
+            "Compare selected model input/output costs, selling rates, taxes, gateway fees and per-brand budgets."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "policies",
+          "label": "Customer terms, privacy and billing policies",
+          "status": "pending",
+          "current": "Launch policies and support processes require publication and acceptance.",
+          "acceptance": [
+            "Publish applicable terms, data handling, refunds, retention and support contacts; test customer access to each page."
+          ],
+          "evidence": []
+        },
+        {
+          "id": "pilot",
+          "label": "Complete onboarding for pilot hosting providers",
+          "status": "pending",
+          "current": "The first 3–5 host onboarding journeys are not accepted.",
+          "acceptance": [
+            "Onboard separate organizations with real WHMCS staging installations, paid credits and one complete support workflow; capture issues and evidence."
+          ],
+          "evidence": []
+        }
+      ]
+    }
+  },
+  "journeys": [
+    {
+      "id": "onboarding",
+      "label": "New hosting provider to first usable brand",
+      "actors": [
+        "Customer",
+        "Billing",
+        "Platform"
+      ],
+      "status": "awaiting_live_validation",
+      "covers": [
+        "accounts.registration",
+        "accounts.verification",
+        "brands.crud",
+        "brands.dns",
+        "brands.enrollment"
+      ],
+      "steps": [
+        "Register and verify email.",
+        "Create the organization and first brand.",
+        "Verify the WHMCS domain and provision its data store.",
+        "Install and pair the connector.",
+        "Complete an authorized signed request."
+      ],
+      "failure_checks": [
+        "Try duplicate signup and an unverified domain.",
+        "Reject another organization's brand and a reused pairing token."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "team_access",
+      "label": "Staff member receives and loses scoped access",
+      "actors": [
+        "Owner",
+        "Staff"
+      ],
+      "status": "awaiting_live_validation",
+      "covers": [
+        "accounts.membership",
+        "accounts.brand_scope",
+        "accounts.switch"
+      ],
+      "steps": [
+        "Add an existing account to the team with a limited role.",
+        "Grant one brand as viewer and another as operator.",
+        "Switch workspaces and test permitted actions.",
+        "Remove the membership and retry the saved links."
+      ],
+      "failure_checks": [
+        "Reject owner removal that leaves no owner.",
+        "Deny direct POST actions from viewers and stale sessions after revocation."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "account_recovery",
+      "label": "Customer recovery and session termination",
+      "actors": [
+        "Customer"
+      ],
+      "status": "awaiting_live_validation",
+      "covers": [
+        "accounts.password_reset",
+        "accounts.login",
+        "security.session"
+      ],
+      "steps": [
+        "Request a reset for an existing email.",
+        "Receive and follow a valid reset link.",
+        "Change the password and sign in.",
+        "Sign out and retry authenticated routes."
+      ],
+      "failure_checks": [
+        "Reject expired and reused tokens.",
+        "Check throttling and avoid exposing whether an email exists."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "mfa_policy",
+      "label": "Operator MFA off, on and recovery",
+      "actors": [
+        "Super admin"
+      ],
+      "status": "awaiting_live_validation",
+      "covers": [
+        "command_station.mfa",
+        "accounts.login",
+        "security.session"
+      ],
+      "steps": [
+        "Sign into Command Station under the current policy.",
+        "Enable the optional MFA requirement from settings.",
+        "Verify the enrolled operator's code.",
+        "Exercise the documented disable/recovery procedure."
+      ],
+      "failure_checks": [
+        "Customers cannot edit the policy.",
+        "Wrong, replayed or expired codes must not grant access."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "provider_model",
+      "label": "Custom provider to usable priced model",
+      "actors": [
+        "Super admin",
+        "Customer"
+      ],
+      "status": "awaiting_live_validation",
+      "covers": [
+        "ai_gateway.providers",
+        "ai_gateway.models",
+        "ai_gateway.live_probe",
+        "credits.rates"
+      ],
+      "steps": [
+        "Save a supported driver and custom HTTPS endpoint.",
+        "Create an explicit provider model identifier and rates.",
+        "Assign it to an active plan.",
+        "Run one real request with a small output cap.",
+        "Reconcile recorded tokens, provider cost and charged credits."
+      ],
+      "failure_checks": [
+        "Reject private endpoints and unsafe redirects.",
+        "Exercise authentication, model-not-found, timeout and quota errors without exposing the API key."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "paid_credits",
+      "label": "Credit purchase to a funded wallet",
+      "actors": [
+        "Customer",
+        "Billing gateway",
+        "Operator"
+      ],
+      "status": "awaiting_live_validation",
+      "covers": [
+        "billing.packs",
+        "billing.invoices",
+        "billing.payments",
+        "billing.events",
+        "credits.ledger"
+      ],
+      "steps": [
+        "Select a published pack and optional valid promo.",
+        "Create the HostingSpell invoice.",
+        "Complete a real supported gateway payment.",
+        "Deliver and authenticate the payment event.",
+        "Verify one wallet credit and an auditable invoice link."
+      ],
+      "failure_checks": [
+        "Replay and reorder delivery; credit once.",
+        "Reject invalid signatures and mismatched amounts/currencies; recover a missed event."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "brand_budgets",
+      "label": "Pooled and allocated budgets across brands",
+      "actors": [
+        "Owner",
+        "Staff"
+      ],
+      "status": "awaiting_live_validation",
+      "covers": [
+        "credits.pool",
+        "credits.allocation",
+        "credits.budgets",
+        "credits.reservations"
+      ],
+      "steps": [
+        "Fund the organization wallet.",
+        "Run two brands on shared credits with independent monthly limits.",
+        "Allocate credits to a third brand.",
+        "Run concurrent requests near the limit.",
+        "Compare reservations, settled spend and available balance."
+      ],
+      "failure_checks": [
+        "Never overspend through concurrency.",
+        "Insufficient funds and budget limits must fail before starting chargeable work."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "uncertain_usage",
+      "label": "Provider timeout to reconciled charge",
+      "actors": [
+        "Worker",
+        "Operator"
+      ],
+      "status": "awaiting_live_validation",
+      "covers": [
+        "credits.uncertain",
+        "command_station.reconciliation",
+        "credits.ledger"
+      ],
+      "steps": [
+        "Reserve funds and send a provider request.",
+        "Interrupt after dispatch so the result is uncertain.",
+        "Inspect the reserved request in Command Station.",
+        "Check provider evidence and reconcile once.",
+        "Verify the wallet and audit trail."
+      ],
+      "failure_checks": [
+        "Do not silently retry and charge again.",
+        "Reject a second settlement or an unauthorized reconciliation."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "installation_rotation",
+      "label": "Connector key rotation and revocation",
+      "actors": [
+        "Brand admin",
+        "Operator"
+      ],
+      "status": "awaiting_live_validation",
+      "covers": [
+        "brands.enrollment",
+        "brands.signed_transport",
+        "brands.revoke"
+      ],
+      "steps": [
+        "Pair a staging WHMCS connector.",
+        "Make a valid signed request.",
+        "Rotate or revoke installation access.",
+        "Re-enroll using the new credentials.",
+        "Confirm old signatures and nonces are rejected."
+      ],
+      "failure_checks": [
+        "Deny replay, stale timestamp, changed body and wrong installation ID.",
+        "Inactive brands and suspended organizations must fail closed."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "ticket_draft",
+      "label": "Ticket context to an accepted AI draft",
+      "actors": [
+        "WHMCS staff",
+        "Cloud worker"
+      ],
+      "status": "awaiting_live_validation",
+      "covers": [
+        "ticket_ai.context",
+        "ticket_ai.analysis",
+        "ticket_ai.rewrite",
+        "ticket_ai.score",
+        "ticket_ai.retry"
+      ],
+      "steps": [
+        "Open an authorized ticket.",
+        "Select model and workflow with bounded context.",
+        "Submit analysis, rewrite or scoring.",
+        "Wait for the persisted request result.",
+        "Review the output before using it in the ticket."
+      ],
+      "failure_checks": [
+        "Reject access to a forbidden department or ticket.",
+        "Duplicate submissions and timeouts must not create duplicate charges; restore usable controls on errors."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "ticket_editor",
+      "label": "Draft, editor preview and final reply",
+      "actors": [
+        "WHMCS staff"
+      ],
+      "status": "pending",
+      "covers": [
+        "ticket_ai.editor",
+        "ticket_ai.rendering",
+        "ticket_ai.history"
+      ],
+      "steps": [
+        "Generate a structured draft and open its preview.",
+        "Preserve formatting, links and the staff signature.",
+        "Edit and insert into the WHMCS reply editor.",
+        "Send through WHMCS.",
+        "Reopen the ticket and confirm history and audit context."
+      ],
+      "failure_checks": [
+        "Do not overwrite unsaved editor text.",
+        "Escape unsafe HTML and avoid sending a draft automatically."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "timeline",
+      "label": "Ticket update to a scoped case timeline",
+      "actors": [
+        "WHMCS staff"
+      ],
+      "status": "pending",
+      "covers": [
+        "case_timeline.sources",
+        "case_timeline.snapshots",
+        "case_timeline.interpretation"
+      ],
+      "steps": [
+        "Enable approved read sources and retention.",
+        "Open a ticket and capture a bounded snapshot.",
+        "Navigate timeline events to related records.",
+        "Run an interpretation with source attribution.",
+        "Verify retention cleanup and preserved snapshots."
+      ],
+      "failure_checks": [
+        "No writes through read sources.",
+        "Missing relations and partial diagnostics must show uncertainty, not invented events."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "visitor_chat",
+      "label": "Visitor widget to grounded answer",
+      "actors": [
+        "Visitor",
+        "Cloud assistant"
+      ],
+      "status": "pending",
+      "covers": [
+        "live_chat.widget",
+        "live_chat.identity",
+        "live_chat.sessions",
+        "live_chat.answers"
+      ],
+      "steps": [
+        "Load the embedded widget on the allowed site.",
+        "Start a visitor session and ask a hosting question.",
+        "Resolve authorized knowledge sources and selected model.",
+        "Stream or render a formatted answer.",
+        "Reload and resume the same conversation."
+      ],
+      "failure_checks": [
+        "Reject untrusted origin/session substitution.",
+        "Handle provider outage, disconnection and quota exhaustion with a usable message."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "client_chat",
+      "label": "Signed-in client asks about their account",
+      "actors": [
+        "WHMCS client",
+        "Cloud assistant"
+      ],
+      "status": "pending",
+      "covers": [
+        "live_chat.identity",
+        "live_chat.account_context",
+        "live_chat.catalog"
+      ],
+      "steps": [
+        "Establish the logged-in client's identity.",
+        "Ask about an invoice, service or product.",
+        "Return scoped records and usable links.",
+        "Follow the links in WHMCS.",
+        "Sign out and verify account context is removed."
+      ],
+      "failure_checks": [
+        "Never reveal another client's records.",
+        "Do not infer account ownership from a name or email in a prompt."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "chat_takeover",
+      "label": "Bot conversation to staff and back",
+      "actors": [
+        "Visitor",
+        "Staff"
+      ],
+      "status": "pending",
+      "covers": [
+        "live_chat.presence",
+        "live_chat.takeover",
+        "live_chat.staff_messages",
+        "live_chat.notifications"
+      ],
+      "steps": [
+        "A visitor requests a human.",
+        "Alert eligible online staff.",
+        "One staff member claims the conversation.",
+        "Exchange messages with clear speaker identity.",
+        "Release the claim or handle its timeout."
+      ],
+      "failure_checks": [
+        "Two staff cannot both own an exclusive claim.",
+        "Bot responses stop while staff owns the conversation; reconnect without duplicate alerts."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "chat_escalation",
+      "label": "Conversation to linked support ticket",
+      "actors": [
+        "Visitor",
+        "Staff"
+      ],
+      "status": "pending",
+      "covers": [
+        "live_chat.escalation",
+        "live_chat.feedback"
+      ],
+      "steps": [
+        "Request ticket escalation.",
+        "Verify contact details and select an allowed department.",
+        "Create one ticket with the relevant transcript.",
+        "Return its authorized link and confirmation.",
+        "Record feedback without changing conversation ownership."
+      ],
+      "failure_checks": [
+        "Replay must not create duplicate tickets.",
+        "Anonymous visitors cannot open private admin ticket links."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "copilot_records",
+      "label": "Admin asks for related invoices and services",
+      "actors": [
+        "WHMCS admin"
+      ],
+      "status": "pending",
+      "covers": [
+        "copilot.entry_points",
+        "copilot.threads",
+        "copilot.records",
+        "copilot.presentation"
+      ],
+      "steps": [
+        "Open the Copilot widget and full console.",
+        "Resolve an unambiguous client from a name.",
+        "Ask for all invoices and related services.",
+        "Render a bounded table with individual record links.",
+        "Follow profile, invoice and service links within the configured WHMCS admin path."
+      ],
+      "failure_checks": [
+        "Ask to disambiguate duplicate names.",
+        "Handle empty/paginated results and escape HTML; unauthorized rows must never appear."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "database_read",
+      "label": "Role-scoped database query",
+      "actors": [
+        "WHMCS admin"
+      ],
+      "status": "pending",
+      "covers": [
+        "safe_operations.role_rules",
+        "safe_operations.field_scope",
+        "safe_operations.select"
+      ],
+      "steps": [
+        "Enable an explicit role/resource read rule.",
+        "Request a bounded SELECT through Copilot.",
+        "Apply permitted fields and ownership scope.",
+        "Display related records and query provenance.",
+        "Record the read operation in the journal."
+      ],
+      "failure_checks": [
+        "Deny unapproved tables, fields, joins and raw SQL.",
+        "Enforce row caps, timeouts and permissions independently of model output."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "database_change",
+      "label": "Plan, approve and atomically apply a change",
+      "actors": [
+        "WHMCS approver",
+        "Executor"
+      ],
+      "status": "pending",
+      "covers": [
+        "safe_operations.plan",
+        "safe_operations.approval",
+        "safe_operations.transaction",
+        "safe_operations.create_delete"
+      ],
+      "steps": [
+        "Propose an allowed create, update or delete.",
+        "Inspect target IDs, before/after values, affected rows and side effects.",
+        "Approve the exact immutable plan.",
+        "Recheck permissions and row versions inside one transaction.",
+        "Commit changes with their rollback snapshot and journal."
+      ],
+      "failure_checks": [
+        "Changed data or revoked permissions invalidate approval.",
+        "Reject replay and expiry; a failure midway leaves no partial writes."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "database_rollback",
+      "label": "Failed operation and later rollback conflict",
+      "actors": [
+        "WHMCS approver",
+        "Executor"
+      ],
+      "status": "pending",
+      "covers": [
+        "safe_operations.transaction",
+        "safe_operations.rollback",
+        "safe_operations.journal",
+        "safe_operations.external_effects"
+      ],
+      "steps": [
+        "Execute an approved multi-row test change.",
+        "Inspect its immutable before/after journal.",
+        "Roll back an untouched result and verify all rows restore together.",
+        "Modify a row independently and attempt rollback.",
+        "Show a conflict with a safe recovery path."
+      ],
+      "failure_checks": [
+        "Do not overwrite newer edits.",
+        "Do not promise reversal of email, payment, provisioning or other external side effects."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "credit_adjustment",
+      "label": "WHMCS client credit adjustment and reversal",
+      "actors": [
+        "WHMCS finance approver"
+      ],
+      "status": "pending",
+      "covers": [
+        "safe_operations.credit_adjustment",
+        "safe_operations.plan",
+        "safe_operations.rollback"
+      ],
+      "steps": [
+        "Preview a permitted client credit adjustment.",
+        "Show balance and credit-ledger effects.",
+        "Approve and update both atomically.",
+        "Verify resulting balance and provenance.",
+        "Roll back only if the recorded state is still current."
+      ],
+      "failure_checks": [
+        "Reject negative/invalid amounts and unauthorized actors.",
+        "Duplicate approval cannot apply credit twice."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "knowledge_ingestion",
+      "label": "Knowledge source to traceable response",
+      "actors": [
+        "Knowledge editor",
+        "Cloud assistant"
+      ],
+      "status": "pending",
+      "covers": [
+        "knowledge.kb",
+        "knowledge.websites",
+        "knowledge.retrieval",
+        "knowledge.freshness"
+      ],
+      "steps": [
+        "Add a permitted knowledge article or website.",
+        "Ingest with bounded fetch and tenant ownership.",
+        "Refresh the index.",
+        "Ask a related question and inspect citations.",
+        "Remove the source and verify it is no longer used."
+      ],
+      "failure_checks": [
+        "Block private destinations and malicious page instructions.",
+        "Show stale or failed ingestion and avoid cross-brand retrieval."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "autopilot",
+      "label": "Eligible ticket to controlled automation",
+      "actors": [
+        "WHMCS admin",
+        "Scheduler"
+      ],
+      "status": "pending",
+      "covers": [
+        "automation.eligibility",
+        "automation.drafts",
+        "automation.race",
+        "automation.controls"
+      ],
+      "steps": [
+        "Configure departments, exclusions and limits.",
+        "Find an eligible ticket.",
+        "Build the approved context and response action.",
+        "Recheck ticket state before execution.",
+        "Record the resulting draft, note or reply and status."
+      ],
+      "failure_checks": [
+        "Do not reply after a human has already responded or the ticket closed.",
+        "Disable stops future work; retries must not create duplicate replies."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "diagnostic_run",
+      "label": "Diagnostic plan to useful evidence",
+      "actors": [
+        "WHMCS staff",
+        "Tools service"
+      ],
+      "status": "pending",
+      "covers": [
+        "diagnostics.planning",
+        "diagnostics.destination",
+        "diagnostics.execution",
+        "diagnostics.evidence",
+        "diagnostics.stop"
+      ],
+      "steps": [
+        "Choose an authorized target and diagnostic scope.",
+        "Review the bounded tool plan.",
+        "Validate the final destination in the execution service.",
+        "Run checks with time and size limits.",
+        "Attach traceable results to the case and stop cleanly."
+      ],
+      "failure_checks": [
+        "Revalidate redirects and DNS at the actual destination.",
+        "Mark partial, timed-out and cancelled checks accurately; never run arbitrary model-supplied commands."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "incident",
+      "label": "Server incident to targeted notification",
+      "actors": [
+        "Scheduler",
+        "WHMCS admin",
+        "Client"
+      ],
+      "status": "pending",
+      "covers": [
+        "telemetry.polling",
+        "telemetry.incidents",
+        "telemetry.broadcast"
+      ],
+      "steps": [
+        "Poll permitted server metrics.",
+        "Detect an incident with supporting measurements.",
+        "Identify affected services and clients.",
+        "Preview and send authorized notifications.",
+        "Record resolution and suppress duplicate alerts."
+      ],
+      "failure_checks": [
+        "A failed poll is not automatically an outage.",
+        "Verify audience selection and do not expose server credentials."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "reporting",
+      "label": "Aggregate metrics to related records",
+      "actors": [
+        "WHMCS admin",
+        "Organization owner"
+      ],
+      "status": "pending",
+      "covers": [
+        "analytics.revenue",
+        "analytics.clients",
+        "analytics.usage",
+        "analytics.exports"
+      ],
+      "steps": [
+        "Select brand, period and currency.",
+        "Generate the report from complete source data.",
+        "Reconcile totals and drill into permitted records.",
+        "Export the same filtered data.",
+        "Confirm late or missing data is labelled."
+      ],
+      "failure_checks": [
+        "Do not mix currencies or tenants.",
+        "Repeat aggregation safely and distinguish settled from reserved usage."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "mobile_operations",
+      "label": "Pair mobile and handle a support request",
+      "actors": [
+        "WHMCS staff",
+        "Android client"
+      ],
+      "status": "pending",
+      "covers": [
+        "mobile.pairing",
+        "mobile.tickets",
+        "mobile.chat",
+        "mobile.push",
+        "mobile.devices"
+      ],
+      "steps": [
+        "Install a signed supported APK.",
+        "Pair a device to the intended brand.",
+        "Open a push notification for a ticket or chat.",
+        "Perform an authorized reply or takeover.",
+        "Revoke the device and retry."
+      ],
+      "failure_checks": [
+        "Offline retries cannot duplicate replies.",
+        "Switching brands or opening a notification must not bypass permissions."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "legacy_upgrade",
+      "label": "Existing WHMCS install to thin connector",
+      "actors": [
+        "WHMCS administrator",
+        "Release operator"
+      ],
+      "status": "pending",
+      "covers": [
+        "upgrade.legacy_data",
+        "upgrade.repeatable",
+        "upgrade.compatibility",
+        "preferences.migration"
+      ],
+      "steps": [
+        "Back up and inventory the legacy installation.",
+        "Dry-run data and setting mappings.",
+        "Install the connector and import scoped state.",
+        "Verify feature parity and old journals.",
+        "Repeat safely and exercise the documented rollback path."
+      ],
+      "failure_checks": [
+        "Do not ship core code in the replacement package.",
+        "Preserve histories and policy defaults; interruption must not corrupt the installation."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "stable_release",
+      "label": "Accepted release to verified download",
+      "actors": [
+        "Release operator",
+        "Customer"
+      ],
+      "status": "awaiting_live_validation",
+      "covers": [
+        "upgrade.allowlist",
+        "upgrade.signature",
+        "upgrade.gates",
+        "public_site.availability"
+      ],
+      "steps": [
+        "Complete versioned feature and journey acceptance evidence.",
+        "Build the exact connector allowlist.",
+        "Sign the stable manifest and verify hashes.",
+        "Confirm live configuration and release checks.",
+        "Download and install through the customer site."
+      ],
+      "failure_checks": [
+        "Reject unsigned/tampered packages and non-connector files.",
+        "Environment flags cannot bypass an incomplete feature register."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "restore",
+      "label": "Production backup to recovered service",
+      "actors": [
+        "Platform operator",
+        "Finance operator"
+      ],
+      "status": "pending",
+      "covers": [
+        "operations.backup",
+        "operations.recovery",
+        "operations.rollback"
+      ],
+      "steps": [
+        "Restore databases and required encryption keys into isolation.",
+        "Reconnect application, workers and scheduler.",
+        "Reconcile payment events and AI requests.",
+        "Verify installations and wallet balances.",
+        "Record recovery time, data loss and rollback results."
+      ],
+      "failure_checks": [
+        "Never replay external side effects blindly.",
+        "Missing keys or stale backups must surface before resuming production traffic."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "pilot_launch",
+      "label": "Three hosting providers complete onboarding",
+      "actors": [
+        "Hosting provider",
+        "Support",
+        "Operator"
+      ],
+      "status": "pending",
+      "covers": [
+        "public_site.pilot",
+        "public_site.commercial",
+        "public_site.policies",
+        "operations.capacity",
+        "operations.alerts"
+      ],
+      "steps": [
+        "Select 3–5 distinct pilot organizations.",
+        "Complete purchase, domain verification and connector installation.",
+        "Run their agreed support workflows with scoped staff.",
+        "Exercise load, failure recovery and escalation to support.",
+        "Record acceptance evidence and unresolved launch issues."
+      ],
+      "failure_checks": [
+        "A successful demo for one organization is not tenant-isolation acceptance.",
+        "Block public launch while required features or journeys remain unverified."
+      ],
+      "evidence": []
+    }
+  ],
+  "database_resources": [
+    {
+      "id": "clients",
+      "label": "Client profiles",
+      "table": "tblclients",
+      "scope": "Client ID",
+      "operations": [
+        "select",
+        "update",
+        "rollback"
+      ],
+      "writable_fields": [
+        "firstname",
+        "lastname",
+        "companyname",
+        "notes",
+        "status"
+      ],
+      "notes": "Client data needs explicit read fields; credit is handled by the dedicated ledger operation.",
+      "status": "pending"
+    },
+    {
+      "id": "invoices",
+      "label": "Invoices",
+      "table": "tblinvoices",
+      "scope": "Client / userid",
+      "operations": [
+        "select",
+        "update",
+        "rollback"
+      ],
+      "writable_fields": [
+        "notes",
+        "status"
+      ],
+      "notes": "Changing a status is not a payment refund or reversal.",
+      "status": "pending"
+    },
+    {
+      "id": "services",
+      "label": "Hosting services",
+      "table": "tblhosting",
+      "scope": "Client / userid",
+      "operations": [
+        "select",
+        "update",
+        "rollback"
+      ],
+      "writable_fields": [
+        "notes"
+      ],
+      "notes": "Provisioning, suspension and SSO have separate permissions and external effects.",
+      "status": "pending"
+    },
+    {
+      "id": "products",
+      "label": "Products",
+      "table": "tblproducts",
+      "scope": "Global catalog",
+      "operations": [
+        "select"
+      ],
+      "writable_fields": [],
+      "notes": "Read-only catalog access; do not expose restricted commercial data.",
+      "status": "pending"
+    },
+    {
+      "id": "tickets",
+      "label": "Support tickets",
+      "table": "tbltickets",
+      "scope": "Client / userid",
+      "operations": [
+        "select",
+        "update",
+        "rollback"
+      ],
+      "writable_fields": [
+        "status",
+        "urgency",
+        "flag"
+      ],
+      "notes": "Apply department and staff access in addition to the resource rule.",
+      "status": "pending"
+    },
+    {
+      "id": "ticket_notes",
+      "label": "Ticket private notes",
+      "table": "tblticketnotes",
+      "scope": "Ticket → client",
+      "operations": [
+        "select",
+        "create",
+        "update",
+        "delete",
+        "rollback"
+      ],
+      "writable_fields": [
+        "message"
+      ],
+      "notes": "Private notes remain staff-only; preserve author and ticket ownership.",
+      "status": "pending"
+    },
+    {
+      "id": "client_notes",
+      "label": "Client notes",
+      "table": "tblnotes",
+      "scope": "Client / userid",
+      "operations": [
+        "select",
+        "create",
+        "update",
+        "delete",
+        "rollback"
+      ],
+      "writable_fields": [
+        "note",
+        "sticky"
+      ],
+      "notes": "Preserve creator, timestamps and client ownership in snapshots.",
+      "status": "pending"
+    },
+    {
+      "id": "credit_ledger",
+      "label": "Client credit ledger",
+      "table": "tblcredit",
+      "scope": "Client / clientid",
+      "operations": [
+        "select",
+        "create",
+        "rollback"
+      ],
+      "writable_fields": [
+        "description",
+        "amount"
+      ],
+      "notes": "Balance and ledger entries must change in the same transaction.",
+      "status": "pending"
+    },
+    {
+      "id": "gateway_logs",
+      "label": "Gateway logs",
+      "table": "tblgatewaylog",
+      "scope": "Global finance logs",
+      "operations": [
+        "select"
+      ],
+      "writable_fields": [],
+      "notes": "Read only the approved ID/date/gateway/result fields; omit raw payment payloads.",
+      "status": "pending"
+    }
+  ],
+  "release_sequence": [
+    {
+      "label": "Prove the cloud foundation",
+      "detail": "Configure a provider and priced model; validate real inference, email delivery, payment events, scoped access and credit reconciliation.",
+      "domains": [
+        "accounts",
+        "brands",
+        "credits",
+        "ai_gateway",
+        "billing",
+        "command_station"
+      ]
+    },
+    {
+      "label": "Move and accept the product workflows",
+      "detail": "Complete ticket, chat, Copilot, database safety, knowledge, automation, diagnostic, analytics and mobile migration through the thin connector.",
+      "domains": [
+        "ticket_ai",
+        "case_timeline",
+        "live_chat",
+        "copilot",
+        "safe_operations",
+        "knowledge",
+        "automation",
+        "diagnostics",
+        "telemetry",
+        "analytics",
+        "mobile",
+        "preferences"
+      ]
+    },
+    {
+      "label": "Exercise failure and upgrade paths",
+      "detail": "Validate tenant isolation, permissions, transaction rollback, legacy imports, backup restore, worker recovery and realistic concurrent load.",
+      "domains": [
+        "security",
+        "operations",
+        "upgrade"
+      ]
+    },
+    {
+      "label": "Pilot and open the stable release",
+      "detail": "Capture acceptance evidence from separate hosting providers, publish required policies, sign the connector and confirm every live release check before opening sales.",
+      "domains": [
+        "public_site"
+      ]
+    }
+  ],
+  "evidence_requirements": [
+    "Accepted commit or artifact version and staging environment.",
+    "Reviewer, review date and a stable reference to the test result or acceptance record.",
+    "Observed outcome for each acceptance criterion, including the denied-access and failure paths.",
+    "Redacted logs or screenshots where useful; never store credentials, client transcripts or payment payloads in this register."
+  ]
+}

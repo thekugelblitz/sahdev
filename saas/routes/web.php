@@ -2,7 +2,7 @@
 use Illuminate\Support\Facades\Route;
 use Illuminate\Http\Request;
 use Illuminate\Foundation\Auth\EmailVerificationRequest;
-use App\Http\Controllers\{AuthController,DashboardController,OperatorController,PublicController};
+use App\Http\Controllers\{AuthController,DashboardController,OperatorController,PublicController,ReleaseReadinessController};
 Route::get('/',[PublicController::class,'home']);
 Route::get('/pricing',[PublicController::class,'pricing']);
 Route::get('/installation',[PublicController::class,'guide']);
@@ -47,7 +47,8 @@ Route::middleware(['auth','verified'])->group(function () {
         Route::post('/team',[DashboardController::class,'membership'])->middleware('throttle:15,1');
     });
     Route::middleware(['ops','throttle:60,1'])->prefix('command')->group(function () {
-        Route::get('/release',fn (\App\Services\LaunchReadiness $readiness) => view('release-readiness',['checks'=>$readiness->checks(),'features'=>config('migration.features')]));
+        Route::get('/release',[ReleaseReadinessController::class,'index']);
+        Route::get('/release/export',[ReleaseReadinessController::class,'export']);
         Route::get('/settings',[AuthController::class,'operatorSettings']);
         Route::post('/settings',[AuthController::class,'saveOperatorSettings'])->middleware('throttle:6,1,operator-settings');
         Route::get('/',[OperatorController::class,'index']);

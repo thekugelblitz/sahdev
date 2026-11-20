@@ -21,7 +21,9 @@ class ReleaseTest extends TestCase
         $sign();
         try {
             $this->assertSame([],app(ReleaseService::class)->catalog(),'Incomplete migration cannot publish a stable release.');
-            config(['migration.features'=>['fixture'=>['status'=>'verified']]]);
+            $evidence = [['reference'=>'fixture acceptance', 'reviewer'=>'Fixture reviewer', 'reviewed_on'=>'2026-11-20', 'environment'=>'test', 'version'=>'fixture']];
+            $accepted = ['status'=>'verified', 'evidence'=>$evidence];
+            config(['migration.features'=>['fixture'=>$accepted + ['capabilities'=>[$accepted]]], 'migration.journeys'=>[$accepted]]);
             $sign('preview'); $this->assertSame([],app(ReleaseService::class)->catalog());
             $sign('stable','legacy'); $this->reject(fn()=>app(ReleaseService::class)->catalog(),503);
             $sign();

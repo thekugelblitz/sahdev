@@ -7,8 +7,7 @@ final class LaunchReadiness
 {
     public function migrationComplete(): bool
     {
-        $features = config('migration.features', []);
-        return $features !== [] && collect($features)->every(fn ($feature) => $feature['status'] === 'verified');
+        return MigrationRegister::complete(config('migration', []));
     }
 
     /** Configuration checks are deliberately separate from end-to-end evidence. */
@@ -23,7 +22,7 @@ final class LaunchReadiness
         try { $catalog = app(ReleaseService::class)->catalog(); if ($catalog) { app(ReleaseService::class)->artifact('module'); $release = ($catalog['distribution'] ?? '') === 'thin-connector' && ($catalog['channel'] ?? '') === 'stable'; } }
         catch (\Throwable $e) { /* Show status without exposing filesystem or cryptographic errors. */ }
         return [
-            'migration'=>['label'=>'Full thin-connector feature parity','ready'=>$this->migrationComplete(),'detail'=>'Every feature domain must have verified migration evidence.'],
+            'migration'=>['label'=>'Full thin-connector feature parity','ready'=>$this->migrationComplete(),'detail'=>'Every domain, capability and end-to-end journey needs verified, versioned acceptance evidence.'],
             'release'=>['label'=>'Signed stable connector download','ready'=>$release,'detail'=>'Signature, distribution type, size and SHA-256 must verify.'],
             'models'=>['label'=>'Priced AI model assigned to an active plan','ready'=>$models,'detail'=>'Configuration check only; run a real request after saving a provider.'],
             'mail'=>['label'=>'Transactional email configured','ready'=>$mail === 'smtp' && (bool)config('mail.mailers.smtp.host') && (bool)config('mail.from.address'),'detail'=>'Verify actual delivery of signup and password-reset messages.'],
