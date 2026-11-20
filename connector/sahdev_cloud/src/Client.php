@@ -4,6 +4,8 @@ use WHMCS\Database\Capsule;
 
 class Client
 {
+    public const VERSION = '0.3.0-preview';
+
     private $connection;
     public function __construct(?array $connection = null)
     {
@@ -32,7 +34,7 @@ class Client
             'secret'=>($pending['installation_id'] ?? '') === $id && ($pending['url'] ?? '') === rtrim($url,'/') ? $pending['secret'] : bin2hex(random_bytes(32))];
         self::save('pending_connection',$connection);
         $client = new self($connection);
-        $response = $client->request('POST','/api/v1/installations/enroll',['installation_id'=>$id,'token'=>$token,'secret'=>$connection['secret'],'whmcs_url'=>$connection['whmcs_url'],'version'=>'thin-0.2.0-dev'],false);
+        $response = $client->request('POST','/api/v1/installations/enroll',['installation_id'=>$id,'token'=>$token,'secret'=>$connection['secret'],'whmcs_url'=>$connection['whmcs_url'],'version'=>'thin-'.self::VERSION],false);
         if (($response['status'] ?? '') !== 'active') throw new \RuntimeException('Enrollment was not confirmed. Retry with the same token.',502);
         Capsule::connection()->transaction(function () use ($connection) {
             self::save('connection',$connection);

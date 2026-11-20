@@ -222,7 +222,7 @@
           "id": "connection_health",
           "label": "Connection health and version diagnostics",
           "status": "partial",
-          "current": "Enrollment errors exist; full last-seen, clock-skew and schema-compatibility diagnostics are missing.",
+          "current": "The connector can confirm its signed connection, preview availability, provisioning and priced model count. Full version and clock-skew diagnostics remain open.",
           "acceptance": [
             "Diagnose expired enrollment, clock drift, offline cloud and incompatible versions.",
             "Health checks must not start paid work or reveal installation secrets."
@@ -1073,8 +1073,12 @@
       "surface": "WHMCS admin",
       "owner": "Operations AI engineering",
       "summary": "Move conversation orchestration to the cloud while retaining native authorization.",
-      "status": "pending",
+      "status": "partial",
       "source": [
+        "connector/sahdev_cloud/src/Records.php",
+        "connector/sahdev_cloud/copilot.js",
+        "saas/app/Domain/Workflows/CopilotRecords.php",
+        "saas/app/Http/Controllers/ConnectorPreviewController.php",
         "lib/ChatService.php",
         "lib/CopilotRecords.php",
         "lib/CopilotPresentation.php",
@@ -1083,6 +1087,7 @@
         "hooks.php"
       ],
       "tests": [
+        "saas/tests/Feature/ThinConnectorTest.php",
         "scratch/test_copilot.php",
         "scratch/test_copilot_ajax.cjs",
         "scratch/test_copilot_ui.cjs"
@@ -1092,8 +1097,8 @@
         {
           "id": "entry_points",
           "label": "Floating widget and full Ops Console",
-          "status": "pending",
-          "current": "Standard module has both entry points; thin-connector Copilot is not implemented.",
+          "status": "partial",
+          "current": "The thin connector has a floating record lookup for authorized admins. Full Ops Console and conversation history still need migration.",
           "acceptance": [
             "Open from multiple admin pages and use the full console.",
             "Test missing assets, disabled permission, responsive layout and failed request recovery."
@@ -1125,8 +1130,8 @@
         {
           "id": "records",
           "label": "Clients, invoices, services, products and tickets",
-          "status": "pending",
-          "current": "Legacy typed record reads/cards exist with native related URLs.",
+          "status": "partial",
+          "current": "The connector searches clients by ID, full name or company, and returns paginated invoice/service tables with native links. Ticket lookup and full parity are pending.",
           "acceptance": [
             "List/paginate matching records and provide a separate link for each item.",
             "Enforce resource/field/client rules and handle empty or ambiguous results."
@@ -1136,8 +1141,8 @@
         {
           "id": "presentation",
           "label": "Tables, links, totals and actionable cards",
-          "status": "pending",
-          "current": "Legacy Copilot has a dedicated presenter; SaaS parity is pending.",
+          "status": "partial",
+          "current": "Cloud-formatted tables show invoice amounts with currency and related record links. Conversational replies, aggregates and action cards remain pending.",
           "acceptance": [
             "Render Markdown safely, preserve related links and show currency-correct totals.",
             "Separate a proposed action from an executed result and avoid raw JSON spam."
@@ -2775,26 +2780,25 @@
     },
     {
       "id": "copilot_records",
-      "label": "Admin asks for related invoices and services",
+      "label": "Admin opens related invoices and services from the connector",
       "actors": [
         "WHMCS admin"
       ],
-      "status": "pending",
+      "status": "awaiting_live_validation",
       "covers": [
         "copilot.entry_points",
-        "copilot.threads",
         "copilot.records",
         "copilot.presentation"
       ],
       "steps": [
-        "Open the Copilot widget and full console.",
-        "Resolve an unambiguous client from a name.",
-        "Ask for all invoices and related services.",
+        "Enable the lookup for an approved role and open the connector widget.",
+        "Find a client by ID, full name or exact company name and choose an account.",
+        "Select invoices or services and page through the results.",
         "Render a bounded table with individual record links.",
         "Follow profile, invoice and service links within the configured WHMCS admin path."
       ],
       "failure_checks": [
-        "Ask to disambiguate duplicate names.",
+        "Require explicit client selection when duplicate names match.",
         "Handle empty/paginated results and escape HTML; unauthorized rows must never appear."
       ],
       "evidence": []

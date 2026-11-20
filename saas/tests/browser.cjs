@@ -16,10 +16,61 @@ let stderr = '';
 const server = spawn(php, ['-S', '127.0.0.1:8791', '-t', 'public', 'tests/server-router.php'], { cwd: root, env, stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true });
 server.stderr.on('data', data => stderr += data);
 let browser;
+async function checkWhmcsCopilot(context) {
+  const addon = path.resolve(root, '../connector/sahdev_cloud');
+  const phpView = spawnSync(php, ['-r', 'require "src/CopilotPanel.php"; echo SahdevConnector\\CopilotPanel::render($argv[1],"fixture-csrf",true,true);', env.APP_URL], { cwd: addon, env, encoding: 'utf8' });
+  assert.equal(phpView.status, 0, phpView.stderr);
+  const page = await context.newPage();
+  try {
+    await page.route('**/custom-admin/index.php', route => route.fulfill({
+      contentType:'text/html',
+      body:'<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' + phpView.stdout
+    }));
+    await page.route('**/sahdev_cloud/panel.css', route => route.fulfill({path:path.join(addon,'panel.css'),contentType:'text/css'}));
+    await page.route('**/sahdev_cloud/copilot.js', route => route.fulfill({path:path.join(addon,'copilot.js'),contentType:'application/javascript'}));
+    await page.route('**/sahdev_cloud/bridge.php', async route => {
+      const request = route.request().postDataJSON();
+      assert.equal(request.csrf,'fixture-csrf');
+      if (request.action === 'copilot_search') {
+        const client = {name:'Fixture Client', company:'Hosting', status:'Active'};
+        await route.fulfill({json:{clients:[{id:5,...client},{id:7,...client}],has_more:false}});
+      } else if (request.client_id === 7 && request.resource === 'invoices') {
+        await route.fulfill({json:{
+          title:'Invoices', client:{text:'Fixture Client',record:{type:'client',id:7}},
+          rows:[[{text:'INV-'+request.page,record:{type:'invoice',id:request.page}}]],
+          columns:['Invoice'], page:request.page, has_more:request.page === 1
+        }});
+      } else {
+        await route.fulfill({status:403,json:{error:'Required WHMCS permission: View Clients Products/Services.'}});
+      }
+    });
+    await page.goto(env.APP_URL+'/custom-admin/index.php');
+    await page.getByText('Sahdev Cloud Copilot',{exact:true}).click();
+    await page.getByLabel('Client ID, full name or exact company name').fill('Fixture Client');
+    await page.getByRole('button',{name:'Find client'}).click();
+    const client = page.getByLabel('Client',{exact:true});
+    await client.waitFor();
+    assert.equal(await client.inputValue(),'');
+    await client.selectOption('7');
+    await page.getByRole('button',{name:'Show records'}).click();
+    const invoice = page.getByRole('link',{name:'INV-1',exact:true});
+    assert.equal(await invoice.getAttribute('href'),env.APP_URL+'/custom-admin/invoices.php?action=view&id=1');
+    assert.equal(await page.getByRole('link',{name:'Fixture Client',exact:true}).getAttribute('href'),env.APP_URL+'/custom-admin/clientssummary.php?userid=7');
+    await page.getByRole('button',{name:'Next page'}).click();
+    await page.getByRole('link',{name:'INV-2',exact:true}).waitFor();
+    await page.getByLabel('Records',{exact:true}).selectOption('services');
+    await page.getByRole('button',{name:'Show records'}).click();
+    await page.getByText('Required WHMCS permission: View Clients Products/Services.',{exact:true}).waitFor();
+    assert.equal(await page.getByRole('link',{name:'INV-2',exact:true}).count(),0);
+  } finally {
+    await page.close();
+  }
+}
 (async () => {
   for (let i = 0; i < 50; i++) { try { const r = await fetch(env.APP_URL + '/login'); if (r.ok) break; } catch {} await new Promise(r => setTimeout(r, 100)); }
   browser = await chromium.launch({ headless: true, ...(process.env.SAHDEV_BROWSER_EXECUTABLE ? { executablePath: process.env.SAHDEV_BROWSER_EXECUTABLE } : {}) });
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } }); const page = await context.newPage(); const errors = [];
+  await checkWhmcsCopilot(context);
   page.on('pageerror', e => errors.push(e.message));
   await page.goto(env.APP_URL + '/command/login');
   await page.getByLabel('Email address').fill('operator@example.test'); await page.getByLabel('Password', { exact: true }).fill('Fixture-password-12345');

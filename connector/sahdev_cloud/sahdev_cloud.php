@@ -6,7 +6,18 @@ require_once __DIR__.'/src/Client.php';
 
 function sahdev_cloud_config(): array
 {
-    return ['name'=>'Sahdev Cloud Connector (acceptance preview)','description'=>'Thin bridge for cloud workflows. Do not replace your existing Sahdev installation until migration acceptance is complete.','version'=>'0.2.0-dev','author'=>'HostingSpell','language'=>'english','fields'=>[]];
+    return [
+        'name'=>'Sahdev Cloud Connector (acceptance preview)',
+        'description'=>'Connect to Sahdev Cloud for ticket drafts and optional read-only Copilot records.',
+        'version'=>\SahdevConnector\Client::VERSION,'author'=>'HostingSpell','language'=>'english',
+        'fields'=>[
+            'copilot_records'=>[
+                'FriendlyName'=>'Copilot record lookup',
+                'Type'=>'yesno',
+                'Description'=>'Allow approved WHMCS roles to send client names and selected invoice or service fields to Sahdev Cloud for formatting.',
+            ],
+        ],
+    ];
 }
 function sahdev_cloud_activate(): array
 {
@@ -30,17 +41,44 @@ function sahdev_cloud_output(array $vars): void
         $admin = \SahdevConnector\Access::admin();
         // WHMCS settings permission is required in addition to addon role access.
         \SahdevConnector\Access::permission($admin,'Configure Addon Modules');
+        $status = null;
+        $notice = '';
+        $error = '';
         if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             \SahdevConnector\Access::csrf((string)($_POST['csrf'] ?? ''));
-            \SahdevConnector\Client::enroll(trim((string)($_POST['url'] ?? '')),trim((string)($_POST['installation_id'] ?? '')),trim((string)($_POST['token'] ?? '')));
-            echo '<div class="alert alert-success">Connector enrolled. Open a permitted staging support ticket to test cloud workflows.</div>';
+            try {
+                if (($_POST['action'] ?? 'enroll') === 'check') {
+                    $status = (new \SahdevConnector\Client())->request('GET','/api/v1/connector-status');
+                } elseif (($_POST['action'] ?? 'enroll') === 'enroll') {
+                    \SahdevConnector\Client::enroll(trim((string)($_POST['url'] ?? '')),trim((string)($_POST['installation_id'] ?? '')),trim((string)($_POST['token'] ?? '')));
+                    $notice = 'Connector enrolled. Check the connection and open a permitted support ticket to try the draft workflows.';
+                }
+            } catch (RuntimeException $e) {
+                $error = in_array($e->getCode(),[401,403,404,409,422,423,429,502,503],true)
+                    ? $e->getMessage() : 'Connector request failed. Verify the addon settings and try again.';
+            } catch (InvalidArgumentException $e) {
+                $error = $e->getMessage();
+            }
         }
         $escape = function ($value) { return htmlspecialchars((string)$value,ENT_QUOTES,'UTF-8'); };
-        echo '<h2>Sahdev Cloud connector</h2><p>Acceptance preview. Core prompts and response processing run in Sahdev Cloud. This build does not yet replace all standard Sahdev features.</p>';
-        echo '<form method="post"><input type="hidden" name="csrf" value="'.$escape(\SahdevConnector\Access::token()).'">';
+        $csrf = $escape(\SahdevConnector\Access::token());
+        echo '<h2>Sahdev Cloud connector</h2><p>Preview for ticket drafting and admin record lookup. Install alongside your existing addon.</p>';
+        if ($notice) echo '<div class="alert alert-success">'.$escape($notice).'</div>';
+        if ($error) echo '<div class="alert alert-danger">'.$escape($error).'</div>';
+        if ($status !== null) {
+            echo '<div class="alert alert-info"><strong>Signed cloud connection confirmed.</strong><ul>'
+                .'<li>Connector preview '.(!empty($status['preview_enabled']) ? 'enabled' : 'disabled').'</li>'
+                .'<li>Brand data store '.(!empty($status['brand_database_ready']) ? 'provisioned' : 'awaiting provisioning').'</li>'
+                .'<li>'.(int)($status['models'] ?? 0).' priced models available to this plan</li></ul></div>';
+        }
+        echo '<form method="post"><input type="hidden" name="csrf" value="'.$csrf.'"><button class="btn btn-default" name="action" value="check">Check connection</button></form>';
+        echo '<h3>Enroll connector</h3><form method="post"><input type="hidden" name="csrf" value="'.$csrf.'">';
         echo '<p><label>Cloud URL <input class="form-control" type="url" name="url" value="https://sahdev.hostingspell.com" required></label></p>';
         echo '<p><label>Installation ID <input class="form-control" name="installation_id" autocomplete="off" required></label></p>';
         echo '<p><label>One-time enrollment token <input class="form-control" type="password" name="token" autocomplete="new-password" required></label></p>';
-        echo '<button class="btn btn-primary">Enroll connector</button></form><p>Issue a token from the verified brand in your SaaS dashboard. No AI provider keys belong in WHMCS.</p>';
-    } catch (Throwable $e) { echo '<div class="alert alert-danger">'.htmlspecialchars($e->getMessage(),ENT_QUOTES,'UTF-8').'</div>'; }
+        echo '<button class="btn btn-primary" name="action" value="enroll">Enroll connector</button></form><p>Issue a token from the verified brand in your SaaS dashboard. Provider keys are configured in Command Station.</p>';
+    } catch (Throwable $e) {
+        $message = in_array($e->getCode(),[403,419],true) ? $e->getMessage() : 'Unable to open connector settings.';
+        echo '<div class="alert alert-danger">'.htmlspecialchars($message,ENT_QUOTES,'UTF-8').'</div>';
+    }
 }

@@ -3,7 +3,8 @@ namespace Tests\Feature;
 
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\{DB,Schema};
-use SahdevConnector\{Access,Client,Tickets};
+use App\Services\InstallationService;
+use SahdevConnector\{Access,Client,Records,Tickets};
 use Tests\TestCase;
 
 class ThinConnectorTest extends TestCase
@@ -13,7 +14,7 @@ class ThinConnectorTest extends TestCase
         parent::setUp();
         if (!class_exists('WHMCS\\Database\\Capsule')) class_alias(DB::class,'WHMCS\\Database\\Capsule');
         require_once __DIR__.'/../Support/WhmcsAdmin.php';
-        foreach (['Access','Client','Tickets'] as $file) require_once dirname(__DIR__,3).'/connector/sahdev_cloud/src/'.$file.'.php';
+        foreach (['Access','Client','Records','Tickets'] as $file) require_once dirname(__DIR__,3).'/connector/sahdev_cloud/src/'.$file.'.php';
         Schema::create('tbladmins',function(Blueprint $t) { $t->integer('id')->primary(); $t->integer('roleid'); $t->boolean('disabled'); $t->string('supportdepts'); });
         Schema::create('tbladdonmodules',function(Blueprint $t) { $t->string('module'); $t->string('setting'); $t->text('value'); });
         Schema::create('tbltickets',function(Blueprint $t) { $t->integer('id')->primary(); $t->integer('did'); $t->integer('userid'); foreach (['title','message','status','date','name'] as $name) $t->text($name); });
@@ -74,5 +75,102 @@ class ThinConnectorTest extends TestCase
         $this->assertCount(21,$context['messages']); $this->assertStringStartsWith('Reply 6',$context['messages'][1]['message']);
         $this->assertSame(6000,mb_strlen($context['messages'][1]['message']));
         $this->assertSame([],$context['invoices']); $this->assertSame([],$context['services']);
+    }
+
+    public function test_copilot_record_pages_enforce_native_permissions_and_use_signed_cloud_presentation(): void
+    {
+        config(['cloud.thin_connector_preview'=>true]);
+        DB::table('tbladdonmodules')->insert(['module'=>'sahdev_cloud','setting'=>'copilot_records','value'=>'on']);
+        Schema::create('tblclients',function(Blueprint $table) {
+            $table->id();
+            foreach (['firstname','lastname','companyname','status','email'] as $column) $table->string($column);
+            $table->integer('currency');
+        });
+        Schema::create('tblcurrencies',function(Blueprint $table) { $table->id(); $table->string('code'); });
+        Schema::create('tblinvoices',function(Blueprint $table) {
+            $table->id(); $table->integer('userid'); $table->decimal('total',10,2);
+            foreach (['invoicenum','status','duedate','notes'] as $column) $table->string($column);
+        });
+        Schema::create('tblhosting',function(Blueprint $table) {
+            $table->id(); $table->integer('userid'); $table->integer('packageid');
+            foreach (['domain','domainstatus','billingcycle','password'] as $column) $table->string($column);
+        });
+        Schema::create('tblproducts',function(Blueprint $table) { $table->id(); $table->string('name'); });
+        DB::table('tblcurrencies')->insert(['id'=>1,'code'=>'USD']);
+        foreach ([19,37] as $id) {
+            DB::table('tblclients')->insert(['id'=>$id,'firstname'=>'Sample','lastname'=>'Client','companyname'=>'Example','status'=>'Active','currency'=>1,'email'=>'private@example.test']);
+        }
+        foreach (range(1,17) as $id) {
+            DB::table('tblinvoices')->insert(['id'=>$id,'userid'=>$id===17 ? 37 : 19,'total'=>'4.25','invoicenum'=>'INV-'.$id,'status'=>'Unpaid','duedate'=>'2026-12-01','notes'=>'private invoice note']);
+        }
+        DB::table('tblproducts')->insert(['id'=>8,'name'=>'Hosting']);
+        DB::table('tblhosting')->insert(['id'=>23,'userid'=>19,'packageid'=>8,'domain'=>'example.test','domainstatus'=>'Active','billingcycle'=>'Monthly','password'=>'private service secret']);
+
+        $installations = app(InstallationService::class);
+        $issued = $installations->issue($this->brand,$this->owner->id);
+        $secret = str_repeat('a',64);
+        $installations->enroll($issued['installation_id'],$issued['token'],$this->brand->whmcs_url,'fixture',$secret);
+        $installation = DB::table('installations')->where('id',$issued['installation_id'])->first();
+        $signedCall = function (string $method, string $path, array $input = []) use ($installation,$secret) {
+            $body = $method === 'GET' ? '' : json_encode($input,JSON_THROW_ON_ERROR);
+            $headers = $this->signedHeaders($installation,$secret,$method,$path,$body)+['Content-Type'=>'application/json'];
+            return $this->call($method,$path,[],[],[],$this->transformHeadersToServerVars($headers),$body);
+        };
+        $client = new class($signedCall) extends Client {
+            public array $payloads = [];
+            private $send;
+            public function __construct(callable $send) { $this->send = $send; }
+            public function request(string $method, string $path, array $data = [], bool $signed = true): array
+            {
+                $this->payloads[] = $data;
+                return ($this->send)($method,$path,$data)->assertOk()->json();
+            }
+        };
+        $signedCall('GET','/api/v1/connector-status')->assertOk()
+            ->assertJsonPath('preview_enabled',true)->assertJsonPath('brand_database_ready',true)->assertJsonPath('models',1);
+        $admin = Access::admin();
+        $this->denied(fn()=>Records::search($admin,'Sample Client'),403);
+        \WHMCS\User\Admin::$permissions = ['List Clients','View Clients Summary','View Invoice','View Clients Products/Services'];
+        $this->assertSame([19,37],array_column(Records::search($admin,'Sample Client')['clients'],'id'));
+        $this->assertSame([],Records::search($admin,'%')['clients']);
+
+        $request = ['resource'=>'invoices','client_id'=>19,'page'=>1,'actor'=>'admin:99'];
+        $first = Records::page($admin,$request,$client);
+        $this->assertCount(15,$first['rows']);
+        $this->assertTrue($first['has_more']);
+        $this->assertSame(19,$first['client']['record']['id']);
+        $this->assertSame(16,$first['rows'][0][0]['record']['id']);
+        $this->assertSame('USD',substr($first['rows'][0][2]['text'],-3));
+        $this->assertSame('admin:7',$client->payloads[0]['actor']);
+        $this->assertStringNotContainsString('private',json_encode($client->payloads[0]));
+        $request['page'] = 2;
+        $second = Records::page($admin,$request,$client);
+        $this->assertFalse($second['has_more']);
+        $this->assertCount(1,$second['rows']);
+        $this->assertSame(1,$second['rows'][0][0]['record']['id']);
+
+        $services = ['resource'=>'services','client_id'=>19,'page'=>1];
+        $service = Records::page($admin,$services,$client);
+        $this->assertSame(['type'=>'service','id'=>23,'client_id'=>19],$service['rows'][0][0]['record']);
+        $this->assertArrayNotHasKey('record',$service['rows'][0][1]);
+        \WHMCS\User\Admin::$permissions[] = 'Configure Products/Services';
+        $this->assertSame('product',Records::page($admin,$services,$client)['rows'][0][1]['record']['type']);
+        \WHMCS\User\Admin::$permissions = ['List Clients','View Clients Summary'];
+        $this->denied(fn()=>Records::page($admin,$request,$client),403);
+        $this->denied(fn()=>Records::page($admin,$services,$client),403);
+        $this->assertCount(4,$client->payloads);
+        $this->assertDatabaseCount('reservations',0);
+        $this->assertSame(4,DB::table('audit_events')->where('event','copilot.records_read')->count());
+
+        $path = '/api/v1/copilot/records';
+        $this->postJson($path,$client->payloads[0])->assertUnauthorized();
+        $bad = $client->payloads[0];
+        $bad['rows'][0]['notes'] = 'unapproved field';
+        $signedCall('POST',$path,$bad)->assertUnprocessable();
+        config(['cloud.thin_connector_preview'=>false]);
+        $signedCall('POST',$path,$client->payloads[0])->assertStatus(503);
+        config(['cloud.thin_connector_preview'=>true]);
+        DB::table('brands')->where('id',$this->brand->id)->update(['status'=>'suspended']);
+        $signedCall('POST',$path,$client->payloads[0])->assertStatus(423);
     }
 }

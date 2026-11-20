@@ -3,6 +3,7 @@ require_once dirname(__DIR__,3).'/init.php';
 require_once __DIR__.'/src/Access.php';
 require_once __DIR__.'/src/Client.php';
 require_once __DIR__.'/src/Tickets.php';
+require_once __DIR__.'/src/Records.php';
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store, private');
 header('X-Content-Type-Options: nosniff');
@@ -10,16 +11,26 @@ try {
     if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') throw new RuntimeException('Use POST.',405);
     if ((int)($_SERVER['CONTENT_LENGTH'] ?? 0)>32768) throw new RuntimeException('Request too large.',413);
     $admin = \SahdevConnector\Access::admin();
-    $input = json_decode(file_get_contents('php://input'),true,32,JSON_THROW_ON_ERROR);
+    $body = file_get_contents('php://input',false,null,0,32769);
+    if (strlen($body) > 32768) throw new RuntimeException('Request too large.',413);
+    $input = json_decode($body,true,32);
     if (!is_array($input)) throw new RuntimeException('Invalid request.',422);
     \SahdevConnector\Access::csrf((string)($input['csrf'] ?? ''));
-    $ticket = \SahdevConnector\Access::ticket((int)($input['ticket_id'] ?? 0),$admin);
-    $client = new \SahdevConnector\Client();
-    switch ($input['action'] ?? '') {
-        case 'models': $result = $client->request('GET','/api/v1/models'); break;
-        case 'submit': $result = \SahdevConnector\Tickets::submit($admin,$ticket,$input,$client); break;
-        case 'result': $result = \SahdevConnector\Tickets::result($admin,$ticket,(string)($input['id'] ?? ''),$client); break;
-        default: throw new RuntimeException('Unsupported bridge action.',422);
+    $action = $input['action'] ?? '';
+    if ($action === 'copilot_search') {
+        $result = \SahdevConnector\Records::search($admin,$input['search'] ?? null);
+    } elseif ($action === 'copilot_records') {
+        $result = \SahdevConnector\Records::page($admin,$input,new \SahdevConnector\Client());
+    } elseif (in_array($action,['models','submit','result'],true)) {
+        $ticket = \SahdevConnector\Access::ticket((int)($input['ticket_id'] ?? 0),$admin);
+        $client = new \SahdevConnector\Client();
+        switch ($action) {
+            case 'models': $result = $client->request('GET','/api/v1/models'); break;
+            case 'submit': $result = \SahdevConnector\Tickets::submit($admin,$ticket,$input,$client); break;
+            case 'result': $result = \SahdevConnector\Tickets::result($admin,$ticket,(string)($input['id'] ?? ''),$client); break;
+        }
+    } else {
+        throw new RuntimeException('Unsupported bridge action.',422);
     }
     echo json_encode($result,JSON_THROW_ON_ERROR);
 } catch (Throwable $error) {
