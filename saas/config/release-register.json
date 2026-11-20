@@ -2259,8 +2259,8 @@
         {
           "id": "legacy_data",
           "label": "Legacy history and configuration import",
-          "status": "pending",
-          "current": "Full import of legacy conversations, policies and preferences is not implemented.",
+          "status": "partial",
+          "current": "The connector discovers original addon tables and captures every column and row into a locally encrypted, verifiable archive. Signed uploads can resume into the brand database and the connector can recover the archive. Mapping archived history and settings into live SaaS features is pending.",
           "acceptance": [
             "Dry-run counts and mappings; migrate with ownership preserved and reconcile before enabling cloud features."
           ],

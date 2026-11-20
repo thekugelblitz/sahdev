@@ -4,7 +4,7 @@ use WHMCS\Database\Capsule;
 
 class Client
 {
-    public const VERSION = '0.3.0-preview';
+    public const VERSION = '0.4.0-preview';
 
     private $connection;
     public function __construct(?array $connection = null)
@@ -66,6 +66,11 @@ class Client
         $result = json_decode($response,true);
         if ($code < 200 || $code >= 300 || !is_array($result)) {
             $messages = [401=>'Reconnect the installation.',402=>'Credits or the brand budget are exhausted.',403=>'Access or model permission denied.',404=>'This request is unavailable to your account.',409=>'Request conflict. Review the existing request before starting another.',422=>'Check the workflow, model and request limits.',423=>'Cloud access is suspended.',429=>'Request limit reached. Retry shortly.',503=>'This cloud feature is not ready for use.'];
+            if (strpos($path,'/api/v1/legacy-archives/') === 0) {
+                $messages[409] = 'Archive capacity, cursor or content conflict. Keep the original archive and retry only the same upload.';
+                $messages[422] = 'The archive exceeds the configured size, or its metadata is invalid.';
+                $messages[503] = 'Archive storage is not ready. Ask the platform operator to provision or upgrade the brand database.';
+            }
             throw new \RuntimeException($messages[$code] ?? 'Cloud request failed. Contact the platform operator.',isset($messages[$code]) ? $code : 502);
         }
         return $result;

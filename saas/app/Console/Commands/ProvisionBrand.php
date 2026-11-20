@@ -16,7 +16,18 @@ final class ProvisionBrand extends Command
         if (!$brand) { $this->error('Unknown brand.'); return self::FAILURE; }
         return Cache::lock('provision:'.$brand->id,120)->block(5,function () use ($brand,$tenants) {
             $db = DB::table('brand_databases')->where('brand_id',$brand->id)->first();
-            if ($db && $db->schema_version === 1) { $this->info('Already provisioned.'); return self::SUCCESS; }
+            if ($db && $db->schema_version >= 2) { $this->info('Already provisioned.'); return self::SUCCESS; }
+            if ($db && $db->schema_version === 1) {
+                try {
+                    $tenants->migrate($db);
+                    DB::table('brand_databases')->where('brand_id',$brand->id)->update(['schema_version'=>2]);
+                    $this->info('Existing brand database upgraded with archive storage.');
+                    return self::SUCCESS;
+                } catch (\Throwable $error) {
+                    $this->error('Brand database upgrade failed. Check tenant connectivity and retry.');
+                    return self::FAILURE;
+                }
+            }
             // Read only process environment: privileged credentials must never live in the web app .env/config cache.
             $dsn = getenv('SAHDEV_PROVISION_DSN'); $user = getenv('SAHDEV_PROVISION_USER'); $password = getenv('SAHDEV_PROVISION_PASSWORD');
             if (!$dsn || !$user || !str_starts_with($dsn,'pgsql:')) { $this->error('Set SAHDEV_PROVISION_DSN, SAHDEV_PROVISION_USER and SAHDEV_PROVISION_PASSWORD for this command only.'); return self::FAILURE; }
@@ -37,7 +48,7 @@ final class ProvisionBrand extends Command
                 $admin->exec('GRANT CONNECT ON DATABASE "'.$db->database_name.'" TO "'.$db->username.'"');
                 $tenants->migrate($db);
                 $tenants->connect($db,function ($connection) { $connection->statement('REVOKE ALL ON SCHEMA public FROM PUBLIC'); });
-                DB::table('brand_databases')->where('brand_id',$brand->id)->update(['schema_version'=>1]);
+                DB::table('brand_databases')->where('brand_id',$brand->id)->update(['schema_version'=>2]);
                 Audit::record('tenant.provisioned','console',$brand->organization_id,$brand->id,['database_name'=>$db->database_name]);
                 $this->info('Brand database provisioned.'); return self::SUCCESS;
             } catch (\Throwable $e) {

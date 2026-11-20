@@ -2,6 +2,7 @@
 return [
     'registration' => env('REGISTRATION_ENABLED', false),
     'thin_connector_preview' => env('THIN_CONNECTOR_PREVIEW', false),
+    'legacy_archive_max_bytes' => (int) env('LEGACY_ARCHIVE_MAX_BYTES', 536870912),
     'release_public_key' => env('RELEASE_PUBLIC_KEY'),
     'billing_url' => rtrim(env('BILLING_WHMCS_URL', ''), '/'),
     'billing_identifier' => env('BILLING_API_IDENTIFIER'), 'billing_secret' => env('BILLING_API_SECRET'),

@@ -11,7 +11,7 @@ final class TenantStore
 {
     public function run(string $brand, callable $callback)
     {
-        $db = DB::table('brand_databases')->where('brand_id',$brand)->where('schema_version',1)->first() ?? abort(503,'This brand database is awaiting provisioning.');
+        $db = DB::table('brand_databases')->where('brand_id',$brand)->where('schema_version','>=',1)->first() ?? abort(503,'This brand database is awaiting provisioning.');
         return $this->connect($db,$callback);
     }
     public function connect(object $db, callable $callback)
@@ -28,6 +28,26 @@ final class TenantStore
         $this->connect($db,function (Connection $connection) {
             $schema = $connection->getSchemaBuilder();
             if (!$schema->hasTable('inference_records')) $schema->create('inference_records',function (Blueprint $t) { $t->uuid('id')->primary(); $t->string('actor'); $t->text('content')->nullable(); $t->timestamp('created_at')->index(); });
+            if (!$schema->hasTable('legacy_archives')) $schema->create('legacy_archives', function (Blueprint $table) {
+                $table->char('id',32)->primary();
+                $table->uuid('installation_id');
+                $table->unsignedInteger('chunks');
+                $table->unsignedBigInteger('bytes');
+                $table->char('chain',64);
+                $table->unsignedInteger('received_chunks')->default(0);
+                $table->unsignedBigInteger('received_bytes')->default(0);
+                $table->char('received_chain',64);
+                $table->timestamp('created_at');
+                $table->timestamp('completed_at')->nullable();
+            });
+            if (!$schema->hasTable('legacy_archive_chunks')) $schema->create('legacy_archive_chunks', function (Blueprint $table) {
+                $table->char('archive_id',32);
+                $table->unsignedInteger('sequence');
+                $table->char('digest',64);
+                $table->text('ciphertext');
+                $table->primary(['archive_id','sequence']);
+                $table->foreign('archive_id')->references('id')->on('legacy_archives')->cascadeOnDelete();
+            });
         });
     }
     public function record(object $reservation, array $payload, array $result): void

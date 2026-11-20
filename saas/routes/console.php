@@ -73,7 +73,7 @@ Artisan::command('platform:maintain',function (WalletService $wallet,TenantStore
     DB::table('request_nonces')->where('expires_at','<',now())->delete();
     DB::table('installations')->where('enrollment_expires_at','<',now())->update(['enrollment_hash'=>null]);
     DB::table('reservations')->whereIn('state',['settled','released'])->where('updated_at','<',now()->subDays(config('cloud.retention_days')))->update(['payload'=>'','result'=>null]);
-    foreach (DB::table('brand_databases')->where('schema_version',1)->get() as $db) {
+    foreach (DB::table('brand_databases')->where('schema_version','>=',1)->get() as $db) {
         try { $tenants->run($db->brand_id,fn ($c) => $c->table('inference_records')->where('created_at','<',now()->subDays(config('cloud.retention_days')))->delete()); }
         catch (\Throwable $e) { $this->warn('Tenant retention pending: '.$db->brand_id); }
     }

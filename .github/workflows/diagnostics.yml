@@ -76,3 +76,5 @@ jobs:
           SAHDEV_COPILOT_MYSQL_DSN: 'mysql:host=127.0.0.1;port=3306;dbname=sahdev_copilot_test'
           SAHDEV_COPILOT_MYSQL_USER: root
         run: php scratch/test_copilot_mysql.php
+      - name: Original WHMCS data snapshot
+        run: php saas/tests/mysql-legacy-source.php

@@ -45,7 +45,7 @@ final class DashboardController
         foreach ($models as $model) $model->price = DB::table('model_prices')->where('id',$model->current_price_id)->first(['input_rate','output_rate']);
         return view('brand',['org'=>$org,'brand'=>$brand,'member'=>Access::membership($r->user(),$org->id),
             'wallet'=>DB::table('wallets')->where('organization_id',$org->id)->where('scope',$id)->first(),
-            'database_ready'=>DB::table('brand_databases')->where('brand_id',$id)->where('schema_version',1)->exists(),
+            'database_ready'=>DB::table('brand_databases')->where('brand_id',$id)->where('schema_version','>=',1)->exists(),
             'installations'=>DB::table('installations')->where('brand_id',$id)->orderByDesc('created_at')->get(['id','status','version','last_seen_at','created_at']),
             'models'=>$models,
             'period'=>DB::table('budget_periods')->where('brand_id',$id)->where('month',now()->format('Y-m'))->first(),
