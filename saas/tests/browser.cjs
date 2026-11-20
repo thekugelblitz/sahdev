@@ -21,6 +21,9 @@ async function checkWhmcsCopilot(context) {
   const phpView = spawnSync(php, ['-r', 'require "src/CopilotPanel.php"; echo SahdevConnector\\CopilotPanel::render($argv[1],"fixture-csrf",true,true);', env.APP_URL], { cwd: addon, env, encoding: 'utf8' });
   assert.equal(phpView.status, 0, phpView.stderr);
   const page = await context.newPage();
+  const fixtureErrors = [];
+  page.on('pageerror', error => fixtureErrors.push(error.message));
+  page.on('requestfailed', request => fixtureErrors.push(request.failure()?.errorText));
   try {
     await page.route('**/custom-admin/index.php', route => route.fulfill({
       contentType:'text/html',
@@ -49,7 +52,7 @@ async function checkWhmcsCopilot(context) {
     await page.getByLabel('Client ID, full name or exact company name').fill('Fixture Client');
     await page.getByRole('button',{name:'Find client'}).click();
     const client = page.getByLabel('Client',{exact:true});
-    await client.waitFor();
+    await client.waitFor({timeout:5000});
     assert.equal(await client.inputValue(),'');
     await client.selectOption('7');
     await page.getByRole('button',{name:'Show records'}).click();
@@ -62,6 +65,9 @@ async function checkWhmcsCopilot(context) {
     await page.getByRole('button',{name:'Show records'}).click();
     await page.getByText('Required WHMCS permission: View Clients Products/Services.',{exact:true}).waitFor();
     assert.equal(await page.getByRole('link',{name:'INV-2',exact:true}).count(),0);
+  } catch (error) {
+    const status = await page.locator('[data-sd-status]').textContent();
+    throw new Error(`Copilot fixture failed. Status: ${status}. Browser errors: ${fixtureErrors.join(', ')}`, {cause:error});
   } finally {
     await page.close();
   }
@@ -126,7 +132,7 @@ async function checkWhmcsCopilot(context) {
   await page.setViewportSize({ width: 390, height: 844 }); await page.screenshot({ path: path.join(folder, 'mobile.png'), fullPage: true });
   assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'Mobile page should not overflow horizontally');
   assert.deepEqual(errors, []);
-  console.log('PASS browser: operator login, provider CRUD/redaction, readiness filters/anchors/export/mobile layout, brands, allocation, billing, team, CSRF and signed auth.');
+  console.log('PASS browser: WHMCS Copilot lookup and links, operator login, provider CRUD/redaction, readiness, brands, allocation, billing, team, CSRF and signed auth.');
 })().catch(error => { console.error(error); console.error(stderr.slice(-3000)); process.exitCode = 1; }).finally(async () => {
   if (browser) await browser.close(); server.kill();
   await new Promise(resolve => setTimeout(resolve, 500));

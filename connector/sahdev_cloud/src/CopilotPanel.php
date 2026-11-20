@@ -17,8 +17,10 @@ final class CopilotPanel
             .'<form data-sd-search><label>Client ID, full name or exact company name'
             .'<input name="search" required maxlength="201" autocomplete="off"></label>'
             .'<button type="submit">Find client</button></form>'
-            .'<form data-sd-records hidden><label>Client<select name="client" required></select></label>'
-            .'<label>Records<select name="resource">'.$options.'</select></label>'
+            .'<form data-sd-records hidden><label><span id="sd-copilot-client-label">Client</span>'
+            .'<select name="client" aria-labelledby="sd-copilot-client-label" required></select></label>'
+            .'<label><span id="sd-copilot-records-label">Records</span>'
+            .'<select name="resource" aria-labelledby="sd-copilot-records-label">'.$options.'</select></label>'
             .'<button type="submit">Show records</button></form>'
             .'<p data-sd-status role="status"></p><div data-sd-card></div></div></details>'
             .'<script src="'.$base.'/copilot.js" defer></script>';
