@@ -8,6 +8,7 @@
     let currentId = null, pendingBody = null, timer = null, polls = 0;
     const post = async data => {
       const response = await fetch(panel.dataset.endpoint, {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'}, body:JSON.stringify({...data, csrf:panel.dataset.csrf, ticket_id:Number(panel.dataset.ticket)})});
+      if (!response.headers.get('Content-Type')?.includes('application/json')) throw new Error('Refresh your WHMCS admin session, then check this request again.');
       const body = await response.json();
       if (!response.ok) { const error = new Error(body.error || 'Cloud request failed.'); error.status = response.status; throw error; }
       return body;
@@ -17,10 +18,27 @@
         status.textContent = 'Loading allowed cloud models…';
         const body = await post({action:'models'}), select = form.elements.model_id;
         select.replaceChildren();
-        body.models.forEach(model => { const option = document.createElement('option'); option.value = model.id; option.textContent = model.name; select.append(option); });
+        if (!body.models.length) select.append(new Option('No models available', ''));
+        body.models.forEach(model => {
+          const option = new Option(model.name, model.id);
+          option.dataset.tokenLimit = model.max_output_tokens;
+          option.disabled = Number(model.max_output_tokens) < 64 || !model.price;
+          select.append(option);
+        });
+        const allowed = [...select.options].find(option => option.value && !option.disabled);
+        select.value = allowed?.value || '';
+        updateOutputLimit();
         status.textContent = body.models.length ? 'Models loaded. Requests consume your brand’s credits.' : 'No models are assigned to this plan.';
       } catch (error) { status.textContent = error.message; }
     });
+    const updateOutputLimit = () => {
+      const option = form.elements.model_id.selectedOptions[0];
+      const maximum = Math.min(4096, Number(option?.dataset.tokenLimit) || 4096);
+      const input = form.elements.max_output_tokens;
+      input.max = String(maximum);
+      if (Number(input.value) > maximum) input.value = String(maximum);
+    };
+    form.elements.model_id.addEventListener('change', updateOutputLimit);
     const display = body => {
       result.replaceChildren();
       if (!body.output) { result.textContent = 'Response unavailable or expired. Check the usage record before making another request.'; return; }

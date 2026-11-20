@@ -1,6 +1,8 @@
 <?php
 if (!defined('WHMCS')) die('This file cannot be accessed directly.');
 require_once __DIR__.'/src/Access.php';
+require_once __DIR__.'/src/Records.php';
+require_once __DIR__.'/src/CopilotPanel.php';
 add_hook('AdminAreaViewTicketPage',1,function ($vars) {
     try {
         $admin = \SahdevConnector\Access::admin();
@@ -15,4 +17,17 @@ add_hook('AdminAreaViewTicketPage',1,function ($vars) {
             .'<label>Draft to rewrite, score or reuse<textarea name="draft" maxlength="12000" rows="3"></textarea></label><label>Editing instruction<input name="instruction" maxlength="2000"></label>'
             .'<div class="sd-actions"><button type="button" data-load-models>Load models</button><button type="submit">Run workflow</button><button type="button" data-check-result hidden>Check request</button><span data-status role="status"></span></div></form><div data-result aria-live="polite"></div></section><script src="'.$escape($base).'/panel.js" defer></script>';
     } catch (Throwable $e) { return ''; }
+});
+
+add_hook('AdminAreaFooterOutput',1,function () {
+    try {
+        $admin = \SahdevConnector\Access::admin();
+        \SahdevConnector\Records::access($admin);
+        $url = (string)\WHMCS\Database\Capsule::table('tblconfiguration')->where('setting','SystemURL')->value('value');
+        $invoices = \SahdevConnector\Access::allows($admin,'View Invoice');
+        $services = \SahdevConnector\Access::allows($admin,'View Clients Products/Services');
+        return \SahdevConnector\CopilotPanel::render($url,\SahdevConnector\Access::token(),$invoices,$services);
+    } catch (Throwable $error) {
+        return '';
+    }
 });

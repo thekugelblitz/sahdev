@@ -24,8 +24,12 @@ final class Access
     }
     public static function permission(object $admin, string $permission): void
     {
-        $native = \WHMCS\User\Admin::find((int)$admin->id);
-        if (!$native || !$native->hasPermission($permission)) throw new \RuntimeException('Required WHMCS permission: '.$permission.'.',403);
+        if (!self::allows($admin,$permission)) throw new \RuntimeException('Required WHMCS permission: '.$permission.'.',403);
+    }
+    public static function allows(object $admin, string $permission): bool
+    {
+        $native = \WHMCS\User\Admin::find((int) $admin->id);
+        return $native && $native->hasPermission($permission);
     }
     public static function token(): string
     {
