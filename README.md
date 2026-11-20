@@ -1,4 +1,4 @@
-# Sahdev Cloud Connector 0.3 — acceptance preview
+# Sahdev Cloud Connector 0.4 — acceptance preview
 
 This directory is the **only** source permitted in the new distribution archive. It is not the production replacement for the standard Sahdev module yet. The full migration register is in `saas/config/migration.php`.
 
@@ -27,3 +27,29 @@ For a limited test on production WHMCS, use a test client and sanitized support 
 Implemented preview: asynchronous ticket analysis, summary, rewrite, scoring and canned draft generation. Drafts are copied for human review, never automatically sent. Context includes bounded ticket messages and public staff replies; attachments, private notes and other account tables are not yet migrated. The cloud owns prompts, validation and Markdown rendering. The connector holds only connection credentials, a local request journal, fixed record extraction, WHMCS permission checks and UI transport. Deactivation removes local connection credentials but deliberately retains request references; revoke the installation in the SaaS dashboard too.
 
 Public launch still requires chat, conversational Copilot, approval and atomic rollback, knowledge, diagnostics, automation, analytics, mobile and existing-data migration.
+
+## Capture and transfer original Sahdev data
+
+Run the commands on the WHMCS host under an account permitted to read the WHMCS configuration. Use the PHP CLI version supported by WHMCS, with `pdo_mysql`, `sodium`, `zlib` and `curl`. An existing brand can be upgraded by the cloud operator with `php artisan brand:provision BRAND_UUID` from the SaaS app. The update adds archive storage without replacing its existing records.
+
+From the WHMCS root:
+
+```sh
+php modules/addons/sahdev_cloud/legacy-migrate.php capture /private/sahdev-captures/first
+php modules/addons/sahdev_cloud/legacy-migrate.php verify /private/sahdev-captures/first
+php modules/addons/sahdev_cloud/legacy-migrate.php upload /private/sahdev-captures/first
+```
+
+Create the parent directory in advance, outside every web document root. Capture requires a new directory. Run it during a quiet period and avoid upgrading the original addon while it runs. The read-only InnoDB snapshot includes every installed `tblsahdev_*` base table and only the original `sahdev` rows in `tbladdonmodules`. It keeps each table definition, column order and every row, including duplicate rows, empty tables, historical IDs, binary values and nulls. Missing tables are not fabricated. Non-InnoDB sources fail with the table name. Use a transactional staging copy for those installations.
+
+The capture includes customer content and stored settings. Each chunk is compressed and encrypted on the WHMCS host. Only ciphertext and transfer metadata go to the brand's private PostgreSQL database. Save the `key` and `manifest.json` separately in a protected backup. Anyone with the key and ciphertext can read the snapshot, and Sahdev Cloud cannot recover a lost key.
+
+Rerun the same `upload` command after an interruption. The connector checks the remote prefix before sending any remaining chunks. Remote storage accepts up to two archives per brand, with a default 512 MiB encoded limit per archive. The cloud operator can configure `LEGACY_ARCHIVE_MAX_BYTES` to fit a larger archive. Capture rejects encoded records larger than 64 MiB with an explicit error instead of truncating them.
+
+To verify recovery, copy the original manifest and key into a new private directory (mode `0700`) on the enrolled WHMCS host, then run:
+
+```sh
+php modules/addons/sahdev_cloud/legacy-migrate.php recover /private/sahdev-captures/recovered
+```
+
+The command makes the recovered file available after authenticating it and checking counts. The archive reader exposes the verified schema, positional values (base64 or null), and per-table counts for subsequent migrations. Current SaaS features continue to use their own tables. Native WHMCS account, invoice, service and ticket tables remain authoritative in WHMCS.
