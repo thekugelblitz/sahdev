@@ -1,0 +1,2 @@
+import{test}from'node:test';import assert from'node:assert/strict';import{identity}from'../worker/auth';
+test('ordinary runtime callers cannot assert a Sites identity header',async()=>{const r=new Request('https://x/api/bootstrap',{headers:{'oai-authenticated-user-id':'forged-owner'}});assert.equal(await identity(r,{}),null);assert.equal((await identity(r,{},{trustSitesHeaders:true}))?.subject,'sites:forged-owner');});

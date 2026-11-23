@@ -1,0 +1,27 @@
+import type { Workspace } from '../src/lib/model';
+export function makeWorkspace(id: string, name: string, owner: string, sample = true): Workspace {
+  const now = Date.now(), at = (minutes: number) => new Date(now - minutes * 60000).toISOString();
+  const contacts = sample ? [
+    { id:'c1', name:'Olivia Rhye', email:'olivia@example.com', company:'Layers', plan:'Cloud Pro', color:'peach' },
+    { id:'c2', name:'Phoenix Baker', email:'phoenix@example.com', company:'Sisyphus', plan:'Business', color:'lavender' },
+    { id:'c3', name:'Lana Steiner', email:'lana@example.com', company:'Catalog', plan:'Cloud Pro', color:'mint' },
+    { id:'c4', name:'Demi Wilkinson', email:'demi@example.com', company:'Quotient', plan:'Starter', color:'blue' },
+    { id:'c5', name:'Drew Cano', email:'drew@example.com', company:'Circooles', plan:'Business', color:'pink' }
+  ] : [];
+  const topics = ['Help connecting our custom domain', 'Can we move to the Business plan?', 'A quick question about team access', 'SSL certificate is still pending', 'Thank you, that worked perfectly!', 'Where can I find my invoices?', 'Moving an existing website to Sahdev', 'How do I invite a teammate?'];
+  const texts = ['Hi team! We just connected our domain but it’s still showing the old page. Could you help us check the DNS settings?', 'We’re growing our team and would like to understand the Business plan. Can you walk us through the options?', 'I’d like to give our support agents inbox access without exposing billing. Which role should I choose?', 'Our domain is connected but the certificate is still pending. Is there anything else we need to do?', 'Everything looks great now. Thank you for the quick help!', 'Could you point me to our latest invoices?', 'We are planning a website migration next week. What should we prepare?', 'What is the best way to invite another support agent?'];
+  return {
+    id, name, sample, contacts,
+    members: [{id:owner,name:'You',email:'Workspace owner',role:'owner',status:'active'}, ...(sample ? [{id:'sample-maya',name:'Maya Patel',email:'maya@example.com',role:'admin' as const,status:'sample' as const},{id:'sample-alex',name:'Alex Morgan',email:'alex@example.com',role:'agent' as const,status:'sample' as const}] : [])],
+    conversations: sample ? topics.map((subject,i)=>({id:`conv${i+1}`,subject,contactId:`c${i%5+1}`,status:i===4?'resolved':i===1||i===5?'pending':'open',priority:i===3?'urgent':i===0?'high':'normal',channel:i===1||i===5?'email':i===6?'portal':'chat',assignee:i%3===0?'You':i%3===1?'Maya Patel':'',createdAt:at(45+i*50),updatedAt:at(3+i*13),tags:[i===0||i===3?'Domains':i===1||i===5?'Billing':'Getting started'],messages:[{id:`m${i}`,text:texts[i],author:contacts[i%5].name,kind:'customer',at:at(45+i*50)}, ...(i===0?[{id:'m0r',text:'Hi Olivia! Happy to help. Which DNS provider are you using for your domain?',author:'You',kind:'reply' as const,at:at(12)},{id:'m0c',text:'We’re using Cloudflare. The CNAME was added about 20 minutes ago.',author:'Olivia Rhye',kind:'customer' as const,at:at(3)}]:[])]})) : [],
+    articles: sample ? [
+      {id:'kb1',title:'Connect your custom domain',body:'Add the CNAME value provided in your hosting dashboard to your DNS provider. Remove conflicting A or AAAA records for the same hostname. DNS changes may take up to 48 hours to propagate. Once verified, your certificate is issued automatically. If verification still fails, send the domain name to support. Never send your DNS account password.',category:'Domains & hosting',audience:'public',status:'published',updatedAt:at(180)},
+      {id:'kb2',title:'Roles and workspace permissions',body:'Owners manage workspace settings and membership. Administrators manage knowledge and support configuration. Agents reply to conversations and use internal notes. Viewers can read the team inbox. Clients only see their own conversations and published public knowledge. Internal notes are never shared with clients.',category:'Workspace',audience:'public',status:'published',updatedAt:at(500)},
+      {id:'kb3',title:'Find and download your invoices',body:'Your billing provider manages invoices. If you use WHMCS, open the billing portal and choose Billing, then My Invoices. Choose an invoice to view or download it. For billing changes, ask your workspace owner.',category:'Billing',audience:'public',status:'published',updatedAt:at(1000)},
+      {id:'kb4',title:'Escalation playbook',body:'For suspected account compromise, stop automated responses and escalate to a workspace administrator. Verify identity through an established channel. Never ask for passwords or one-time codes in chat.',category:'Team playbooks',audience:'internal',status:'published',updatedAt:at(1400)},
+      {id:'kb5',title:'Website migration checklist',body:'Back up your website and database, inventory DNS records, agree a maintenance window, and verify the new deployment before changing DNS. Keep your previous deployment until the migration is confirmed.',category:'Domains & hosting',audience:'public',status:'draft',updatedAt:at(2000)}
+    ] : [],
+    audit: [{id:crypto.randomUUID(),actor:'System',action:'workspace.created',detail:sample?'Private sample workspace created':'Workspace created',at:at(0)}],
+    settings: {replyName:'Sahdev support',welcome:'Hi there! How can we help you today?',accent:'#245b48',officeHours:'Monday – Friday, 9:00 – 18:00 IST',monthlyBudget:50,requireApproval:true,autoAssign:false,slaMinutes:60,aiMode:'disabled'}
+  };
+}

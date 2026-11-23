@@ -4,6 +4,13 @@
 :80 {
     root * /var/www/sahdev/public
     encode zstd gzip
+    @business {
+        path /app /app/* /portal /portal/* /widget-preview /widget-preview/* /widget.js /widget.css /orb.css /_astro/* /manifest.webmanifest /api/*
+        not path /api/v1 /api/v1/*
+    }
+    handle @business {
+        reverse_proxy business:8080
+    }
     request_body {
         max_size 256KB
     }

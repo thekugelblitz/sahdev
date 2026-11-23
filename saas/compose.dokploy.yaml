@@ -34,6 +34,19 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
+  business:
+    build: ../business
+    environment:
+      SAHDEV_AUTH_MODE: cloud
+      SAHDEV_HOST: 0.0.0.0
+      SAHDEV_ORIGIN: ${APP_URL:?Set the public HTTPS application URL}
+      SAHDEV_DATA_DIR: /data
+    volumes: [business_data:/data]
+    expose: ['8080']
+    networks: [private]
+    restart: unless-stopped
+    mem_limit: 384m
+    security_opt: [no-new-privileges:true]
   web:
     image: sahdev-web:${RELEASE_TAG:-local}
     build:
@@ -44,7 +57,10 @@ services:
     depends_on: [app]
     restart: unless-stopped
     mem_limit: 128m
-    networks: [private, dokploy-network]
+    networks:
+      private:
+        aliases: [sahdev-business-gateway]
+      dokploy-network: {}
     labels:
       traefik.docker.network: dokploy-network
     security_opt: [no-new-privileges:true]
@@ -56,3 +72,4 @@ networks:
 volumes:
   storage:
   pgdata:
+  business_data:

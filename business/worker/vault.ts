@@ -1,0 +1,6 @@
+import {HTTPError}from'./support';
+export async function sealSecret(secret:string,master:string,scope:string){
+ if(!master)throw new HTTPError(503,'Encrypted credential storage is not configured.');let raw:Uint8Array<ArrayBuffer>;try{raw=Uint8Array.from(atob(master),c=>c.charCodeAt(0));}catch{throw new HTTPError(503,'Credential storage configuration is invalid.');}if(raw.length!==32)throw new HTTPError(503,'Credential storage requires a 256-bit encryption key.');
+ const key=await crypto.subtle.importKey('raw',raw,{name:'AES-GCM'},false,['encrypt']),iv=crypto.getRandomValues(new Uint8Array(12));const ciphertext=await crypto.subtle.encrypt({name:'AES-GCM',iv,additionalData:new TextEncoder().encode(scope)},key,new TextEncoder().encode(secret));return {iv:btoa(String.fromCharCode(...iv)),data:btoa(String.fromCharCode(...new Uint8Array(ciphertext)))};
+}
+export async function openSecret(sealed:{iv:string;data:string},master:string,scope:string){const bytes=(s:string)=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));const key=await crypto.subtle.importKey('raw',bytes(master),{name:'AES-GCM'},false,['decrypt']);const value=await crypto.subtle.decrypt({name:'AES-GCM',iv:bytes(sealed.iv),additionalData:new TextEncoder().encode(scope)},key,bytes(sealed.data));return new TextDecoder().decode(value);}

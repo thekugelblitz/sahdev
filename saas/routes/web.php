@@ -6,6 +6,30 @@ use App\Http\Controllers\{AuthController,DashboardController,OperatorController,
 Route::get('/',[PublicController::class,'home']);
 Route::get('/pricing',[PublicController::class,'pricing']);
 Route::get('/installation',[PublicController::class,'guide']);
+Route::middleware(['auth','verified','org'])->group(function () {
+    Route::get('/business/ai-options',function (Request $r) {
+        $org = $r->attributes->get('org');
+        abort_unless($org->status === 'active',403);
+        $member = \App\Support\Access::membership($r->user(),$org->id);
+        $brands = \App\Support\Access::brands($r->user(),$org->id)->where('status','active')
+            ->whereIn('id',\Illuminate\Support\Facades\DB::table('brand_databases')->where('schema_version','>=',1)->select('brand_id'));
+        if (!in_array($member->role,['admin','owner'],true)) {
+            $brands->whereIn('id',\Illuminate\Support\Facades\DB::table('brand_memberships')->where('user_id',$r->user()->id)->where('role','operator')->select('brand_id'));
+            abort_unless($member->role==='member',403);
+        }
+        $models = \Illuminate\Support\Facades\DB::table('ai_models')->where('active',true)->whereNull('deleted_at')
+            ->whereIn('provider_id',\Illuminate\Support\Facades\DB::table('providers')->where('active',true)->whereNull('deleted_at')->select('id'))
+            ->whereIn('id',\Illuminate\Support\Facades\DB::table('plan_models')->where('plan_id',$org->plan_id)->select('model_id'));
+        return response()->json(['brands'=>$brands->get(['id','name']),'models'=>$models->get(['id','name','max_output_tokens']),'csrf'=>csrf_token()])->header('Cache-Control','no-store');
+    });
+    Route::get('/business/open',fn () => redirect('/app/'));
+    Route::get('/business/signout',fn () => view('business-signout'));
+    Route::get('/business/session',function (Request $r) {
+        $org = $r->attributes->get('org');
+        abort_unless($org->status === 'active',403);
+        return response()->json(['subject'=>'cloud:'.$org->id.':'.$r->user()->id,'name'=>$r->user()->name])->header('Cache-Control','no-store');
+    });
+});
 Route::middleware('guest')->group(function () {
     Route::get('/login',fn () => view('auth',['mode'=>'login']))->name('login');
     Route::post('/login',[AuthController::class,'login'])->middleware('throttle:login');

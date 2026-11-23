@@ -1,0 +1,5 @@
+---
+import Layout from '../layouts/Layout.astro';
+import Dashboard from '../components/Dashboard.vue';
+---
+<Layout title="Workspace · Sahdev" app><Dashboard client:only="vue"><div slot="fallback" class="boot-screen"><img src="/favicon.svg" width="44" alt=""/><p>Opening your workspace…</p></div></Dashboard></Layout>

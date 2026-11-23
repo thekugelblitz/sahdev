@@ -1,0 +1,12 @@
+---
+---
+<!doctype html><html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/><title>Sahdev widget preview</title><style>html,body{margin:0;min-height:100%;background:transparent;font-family:system-ui,sans-serif}body{background:radial-gradient(ellipse at 70% 15%,#d9d4f775,transparent 60%),radial-gradient(ellipse at 10% 85%,#ffe0db80,transparent 65%)}.sample{padding:35px;color:#b8acb6;font-size:10px;letter-spacing:2px}.sample b{display:block;font-size:17px;margin:0 0 10px;letter-spacing:0;color:#8b7c98}.sample i{display:block;background:#b7adbd22;border-radius:5px;height:8px;width:45%;margin:8px 0}</style></head><body><div class="sample"><b>Your website</b>A PERSONAL WELCOME<i></i><i style="width:30%"></i></div>
+<script is:inline src="/widget.js"></script>
+<script is:inline>
+(()=>{const params=new URLSearchParams(location.search),workspace=params.get('workspace'),live=params.get('mode')==='live';let widget;
+if(!workspace)return;
+if(live)widget=window.SahdevWidget.mount({workspace,open:true,storageSuffix:'-studio'});
+window.addEventListener('message',e=>{if(e.source!==parent||e.origin!==location.origin||e.data?.type!=='sahdev:preview-config'||live)return;if(widget)widget.update(e.data.config);else widget=window.SahdevWidget.mount({workspace,preview:true,config:e.data.config,open:true});});
+parent.postMessage({type:'sahdev:preview-loaded'},location.origin);
+})();
+</script></body></html>

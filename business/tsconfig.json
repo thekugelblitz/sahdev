@@ -1,0 +1,6 @@
+{
+  "extends": "astro/tsconfigs/strict",
+  "compilerOptions": { "types": ["node", "@cloudflare/workers-types"], "skipLibCheck": true, "allowImportingTsExtensions": true },
+  "include": ["src/**/*", "worker/**/*", "tests/**/*", ".astro/types.d.ts"],
+  "exclude": ["node_modules", "dist"]
+}

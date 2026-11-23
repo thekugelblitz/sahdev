@@ -1,0 +1,17 @@
+---
+import '../styles/global.css';
+import '../styles/platform.css';
+import '../styles/brand.css';
+const { title = 'Sahdev — Support that sees the whole picture', description = 'One calm workspace for customer conversations, knowledge and human-led support.', app = false } = Astro.props;
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content={description} /><meta name="theme-color" content="#ff5c00" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" /><link rel="manifest" href="/manifest.webmanifest" />
+    <title>{title}</title>
+    <script is:inline>try { document.documentElement.dataset.theme = localStorage.getItem('sahdev-theme') || 'dark'; } catch {}</script>
+  <link rel="stylesheet" href="/orb.css"/></head>
+  <body class:list={[app && 'application']}><slot /></body>
+</html>

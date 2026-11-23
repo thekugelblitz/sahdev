@@ -43,7 +43,9 @@ final class DashboardController
         $org = $this->org($r); $brand = Access::brand($r->user(),$org->id,$id);
         $models = DB::table('ai_models')->where('active',true)->whereNull('deleted_at')->whereIn('provider_id',DB::table('providers')->where('active',true)->whereNull('deleted_at')->select('id'))->whereIn('id',DB::table('plan_models')->where('plan_id',$org->plan_id)->select('model_id'))->get();
         foreach ($models as $model) $model->price = DB::table('model_prices')->where('id',$model->current_price_id)->first(['input_rate','output_rate']);
-        return view('brand',['org'=>$org,'brand'=>$brand,'member'=>Access::membership($r->user(),$org->id),
+        $canTest = in_array($memberRole = Access::membership($r->user(), $org->id)->role, ['owner','admin'], true)
+            || ($memberRole === 'member' && DB::table('brand_memberships')->where('brand_id',$id)->where('user_id',$r->user()->id)->where('role','operator')->exists());
+        return view('brand',['canTest'=>$canTest,'org'=>$org,'brand'=>$brand,'member'=>Access::membership($r->user(),$org->id),
             'wallet'=>DB::table('wallets')->where('organization_id',$org->id)->where('scope',$id)->first(),
             'database_ready'=>DB::table('brand_databases')->where('brand_id',$id)->where('schema_version','>=',1)->exists(),
             'installations'=>DB::table('installations')->where('brand_id',$id)->orderByDesc('created_at')->get(['id','status','version','last_seen_at','created_at']),

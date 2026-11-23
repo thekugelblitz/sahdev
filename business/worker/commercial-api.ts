@@ -1,0 +1,35 @@
+import {z} from 'zod';import { Billing,planSchema,platformSchema,type BillingEnv } from './billing';import {HTTPError} from './support';import {checkout,capturePayPal,gatewayStatus} from './payments';
+import type {Identity} from './auth';import type {Session,Workspace} from '../src/lib/model';
+export const isPlatformAdmin=(principal:Identity,env:BillingEnv)=>(env.PLATFORM_ADMIN_SUBS||'').split(',').map(s=>s.trim()).filter(Boolean).includes(principal.subject);
+export async function masterAPI(request:Request,billing:Billing,env:BillingEnv,principal:Identity){
+ if(!isPlatformAdmin(principal,env))throw new HTTPError(403,'Platform administrator access is required.');
+ const route=new URL(request.url).pathname.slice(11);
+ if(request.method==='GET'){const config=await billing.config(),plans=await billing.plans();const tenants=await billing.db.prepare('SELECT id,data,version FROM workspaces').all<{id:string;data:string;version:number}>();const invoices=await billing.db.prepare('SELECT * FROM invoices ORDER BY created_at DESC LIMIT 200').all();const subscriptions=await billing.db.prepare('SELECT * FROM subscriptions').all();return {config:config.data,version:config.version,plans,gateways:gatewayStatus(env),tenants:tenants.results.map(t=>{const w=JSON.parse(t.data) as Workspace;return {id:t.id,name:w.name,sample:w.sample,seats:w.members.length,conversations:w.conversations.length,sources:w.articles.length};}),invoices:invoices.results,subscriptions:subscriptions.results.map((s:any)=>({...s,state:s.admin_hold||s.recovery_hold?'suspended':s.state}))};}
+ const body=await boundedBody(request);
+ if(route==='/config'&&request.method==='PATCH'){const data=platformSchema.parse(body);if(data.models.some(m=>m.enabled))throw new HTTPError(409,'Provider activation is disabled until end-to-end AI usage and safety validation is complete. Save model offers with enabled=false.');const result=await billing.db.prepare('UPDATE platform_config SET data=?,version=version+1 WHERE id=? AND version=?').bind(JSON.stringify(data),'main',Number(request.headers.get('if-match'))).run();if(result.meta.changes!==1)throw new HTTPError(409,'Platform settings changed. Refresh before saving.');return {saved:true};}
+ if(route==='/plans'&&request.method==='POST'){const data=planSchema.parse(body);const current=(await billing.plans()).filter(p=>p.key===data.key);data.version=Math.max(0,...current.map(p=>p.version))+1;data.id=`${data.key}_v${data.version}`;const inserted=await billing.db.prepare('INSERT OR IGNORE INTO plan_versions (id,data,created_at) VALUES (?,?,?)').bind(data.id,JSON.stringify(data),new Date().toISOString()).run();if(inserted.meta.changes!==1)throw new HTTPError(409,'Another plan version was saved. Refresh and retry.');return data;}
+ if(route==='/suspension'&&request.method==='POST'){const b=z.object({workspaceId:z.string(),suspended:z.boolean(),reason:z.string().trim().min(3).max(200)}).strict().parse(body);await billing.entitlement(b.workspaceId);await billing.db.prepare('UPDATE subscriptions SET admin_hold=? WHERE workspace_id=?').bind(b.suspended?b.reason:null,b.workspaceId).run();return {saved:true};}
+ throw new HTTPError(404,'Master console action not found.');
+}
+export async function billingAPI(request:Request,billing:Billing,env:BillingEnv,session:Session){
+ if(!['owner','admin'].includes(session.role))throw new HTTPError(403,'Billing is restricted to workspace administrators.');const route=new URL(request.url).pathname.slice(12);
+ if(request.method==='GET'){const config=(await billing.config()).data;return {...await billing.summary(session.workspaceId),plans:(await billing.plans()).filter(p=>p.published),gateways:Object.fromEntries(Object.entries(gatewayStatus(env)).map(([k,v])=>[k,v&&config.gateways[k as keyof typeof config.gateways]])),billingLabel:config.billingLabel};}
+ const body:any=await boundedBody(request);
+ if(route==='/invoices'&&request.method==='POST'){const b=z.object({planId:z.string().optional(),amountMinor:z.number().optional(),currency:z.enum(['USD','INR']).optional(),promoCode:z.string().max(30).optional()}).strict().parse(body);return billing.createInvoice(session.workspaceId,b);}
+ if(route==='/checkout'&&request.method==='POST'){const b=z.object({invoiceId:z.string(),gateway:z.enum(['stripe','paypal','razorpay'])}).strict().parse(body);return checkout(billing,env,b.invoiceId,session.workspaceId,b.gateway,new URL(request.url).origin);}
+ if(route==='/paypal-capture'&&request.method==='POST'){const b=z.object({orderId:z.string()}).strict().parse(body);return capturePayPal(env,b.orderId,billing,session.workspaceId);}
+ if(route==='/change-plan'&&request.method==='POST'){const b=z.object({planId:z.string()}).strict().parse(body);const target=await billing.plan(b.planId);if(!target?.published)throw new HTTPError(400,'Plan is unavailable.');const current=await billing.entitlement(session.workspaceId);
+  if(target.priceMinor===0){if(current.plan.priceMinor===0){await billing.db.prepare("UPDATE subscriptions SET plan_id=?,state='active',pending_plan_id=NULL,suspension_reason=NULL,billing_revision=billing_revision+1 WHERE workspace_id=?").bind(target.id,session.workspaceId).run();return {message:'Free plan active'};}await billing.db.prepare('UPDATE subscriptions SET pending_plan_id=?,billing_revision=billing_revision+1 WHERE workspace_id=?').bind(target.id,session.workspaceId).run();return {message:'Downgrade scheduled for the end of your paid period'};}
+  return {invoice:await billing.createInvoice(session.workspaceId,{planId:target.id}),message:'Pay the invoice to activate the new prepaid plan period. No automatic charge has been made.'};
+ }
+ throw new HTTPError(404,'Billing action not found.');
+}
+export async function enforceEntitlement(billing:Billing,w:Workspace,route:string,method:string){
+ const e=await billing.entitlement(w.id);if(e.subscription.state==='suspended')throw new HTTPError(402,'Workspace suspended. Open Billing to renew or contact the platform owner.');
+ if(w.audit.filter(a=>Date.parse(a.at)>Date.now()-60000).length>=e.plan.limits.requestsPerMinute)throw new HTTPError(429,'Workspace request limit reached. Please retry in a minute.');
+ if(w.sample)return; // Explicit fictional sandbox; never used for real customer accounts.
+ if(route==='/conversations'&&method==='POST'&&w.conversations.length>=e.plan.limits.conversations)throw new HTTPError(402,'Your plan’s conversation capacity is full. Upgrade in Billing.');
+ if(route==='/members'&&method==='POST'&&w.members.length>=e.plan.limits.seats)throw new HTTPError(402,'Your plan’s member limit has been reached.');
+ if(['/articles','/intelligence/sources'].includes(route)&&method==='POST'&&w.articles.length+(w.intelligence?.sources.filter(s=>!s.articleId).length||0)>=e.plan.limits.sources)throw new HTTPError(402,'Your plan’s knowledge source limit has been reached.');
+}
+async function boundedBody(request:Request){const raw=await request.text();if(raw.length>65536)throw new HTTPError(413,'Request too large.');return JSON.parse(raw||'{}');}

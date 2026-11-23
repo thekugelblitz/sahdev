@@ -8,7 +8,14 @@ final class PublicController
 {
     public function home()
     {
-        return view('public.home', $this->catalog());
+        $catalog = $this->catalog();
+        $status = $catalog['open'] ? 'Registration open.' : 'RELEASE PREVIEW · Access is by invitation.';
+        $pack = $catalog['packs']->first();
+        if ($pack) {
+            $status .= ' Credit packs from '.number_format($pack->price_minor / 100, 2).' '.$pack->currency.'.';
+        }
+        $html = file_get_contents(public_path('business-home.html'));
+        return response(str_replace('Pilot availability and pricing', e($status), $html));
     }
     public function pricing() { return view('public.pricing', $this->catalog()); }
     public function guide() { return view('public.guide'); }
