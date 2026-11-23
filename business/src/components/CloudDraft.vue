@@ -4,12 +4,14 @@ import type {Conversation} from '../lib/model';
 const props=defineProps<{conversation:Conversation}>();
 const emit=defineEmits<{draft:[text:string]}>();
 type Choice={id:string;name:string;max_output_tokens:number};
-const options=ref<{brands:Choice[];models:Choice[];csrf:string}>(),brand=ref(''),model=ref(''),status=ref(''),working=ref(false),opened=ref(false);
+type Options={brands:Choice[];models:Choice[];csrf:string};
+type Inference={id:string;state:string;message?:string;result?:{content?:string};charged_credits:number;credit_scale:number};
+const options=ref<Options>(),brand=ref(''),model=ref(''),status=ref(''),working=ref(false),opened=ref(false);
 let active=true,lastInput='',key='';
 onUnmounted(()=>{active=false;});
 async function configure(){
  opened.value=!opened.value;if(!opened.value||options.value)return;
- try{const r=await fetch('/business/ai-options',{headers:{Accept:'application/json'}});if(!r.ok)throw Error('Sign in with a brand operator account.');const data=await r.json();options.value=data;brand.value=data.brands[0]?.id||'';model.value=data.models[0]?.id||'';if(!brand.value||!model.value)status.value='Configure a provider, plan model and provisioned brand in Command Station.';}
+ try{const r=await fetch('/business/ai-options',{headers:{Accept:'application/json'}});if(!r.ok)throw Error('Sign in with a brand operator account.');const data=await r.json() as Options;options.value=data;brand.value=data.brands[0]?.id||'';model.value=data.models[0]?.id||'';if(!brand.value||!model.value)status.value='Configure a provider, plan model and provisioned brand in Command Station.';}
  catch(e:any){status.value=e.message;}
 }
 async function generate(){
@@ -22,8 +24,8 @@ async function generate(){
  working.value=true;status.value='Waiting for the AI worker…';
  try{
   let r=await fetch('/brands/'+brand.value+'/inference',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json','X-CSRF-TOKEN':options.value.csrf},body:JSON.stringify({...data,idempotency_key:key})});
-  let result=await r.json();if(!r.ok)throw Error(result.message||'Request declined.');
-  for(let i=0;i<80&&['reserved','dispatched'].includes(result.state);i++){await new Promise(resolve=>setTimeout(resolve,1500));if(!active)return;r=await fetch('/inference/'+result.id,{headers:{Accept:'application/json'}});if(!r.ok)throw Error('Unable to read request status.');result=await r.json();}
+  let result=await r.json() as Inference;if(!r.ok)throw Error(result.message||'Request declined.');
+  for(let i=0;i<80&&['reserved','dispatched'].includes(result.state);i++){await new Promise(resolve=>setTimeout(resolve,1500));if(!active)return;r=await fetch('/inference/'+result.id,{headers:{Accept:'application/json'}});if(!r.ok)throw Error('Unable to read request status.');result=await r.json() as Inference;}
   if(result.state==='settled'&&result.result?.content){emit('draft',result.result.content);status.value='Draft ready for review. Charged '+result.charged_credits/result.credit_scale+' credits.';lastInput='';}
   else{status.value='Request '+result.id+' · '+result.state;if(result.state==='released')lastInput='';}
  }catch(e:any){status.value=e.message;}finally{working.value=false;}
