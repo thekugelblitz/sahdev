@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="csrf-token" content="<?php echo e(csrf_token()); ?>"><title><?php echo $__env->yieldContent('title', 'Workspace'); ?> · Sahdev</title><link rel="stylesheet" href="/app.css"><script src="/app.js" defer></script></head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<?php if(auth()->guard()->check()): ?>
+<aside class="sidebar"><a class="wordmark" href="/dashboard"><span class="mark">S</span> SAHDEV <small>CLOUD</small></a><div class="nav-label">WORKSPACE</div><nav aria-label="Main navigation"><a href="/dashboard" class="<?php echo \Illuminate\Support\Arr::toCssClasses(['selected'=>request()->is('dashboard')]); ?>">Overview <span>↗</span></a><a href="/billing" class="<?php echo \Illuminate\Support\Arr::toCssClasses(['selected'=>request()->is('billing')]); ?>">Credits & billing</a><a href="/downloads">Downloads</a><a href="/team" class="<?php echo \Illuminate\Support\Arr::toCssClasses(['selected'=>request()->is('team')]); ?>">Team & access</a><?php if(auth()->user()->is_operator): ?><div class="nav-label">HOSTINGSPELL</div><a href="/ops" class="<?php echo \Illuminate\Support\Arr::toCssClasses(['selected'=>request()->is('ops*')]); ?>">Command Station</a><a href="/security">Operator security</a><?php endif; ?></nav><form class="mobile-logout" method="post" action="/logout"><?php echo csrf_field(); ?><button>Sign out</button></form><div class="sidebar-footer"><span class="avatar"><?php echo e(mb_substr(auth()->user()->name,0,1)); ?></span><div><strong><?php echo e(auth()->user()->name); ?></strong><small><?php echo e(auth()->user()->email); ?></small></div><form method="post" action="/logout"><?php echo csrf_field(); ?><button class="text-button" title="Sign out">↪</button></form></div></aside>
+<?php endif; ?>
+<main id="main" class="<?php echo \Illuminate\Support\Arr::toCssClasses(['workspace'=>auth()->check(),'auth-shell'=>!auth()->check()]); ?>">
+<?php if(auth()->guard()->check()): ?><header class="topbar"><span>Hosting operations, connected.</span><span class="environment"><?php echo e(app()->isProduction() ? 'Secure workspace' : 'Development environment'); ?></span></header><?php endif; ?>
+<?php if(session('status')): ?><div class="notice success" role="status"><?php echo e(session('status')); ?></div><?php endif; ?>
+<?php if($errors->any()): ?><div class="notice error" role="alert"><strong>Please check the following:</strong><ul><?php $__currentLoopData = $errors->all(); $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $error): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?><li><?php echo e($error); ?></li><?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?></ul></div><?php endif; ?>
+<?php echo $__env->yieldContent('content'); ?>
+<footer class="page-footer">Sahdev by HostingSpell <span>Credit usage and monthly budgets use UTC.</span></footer>
+</main></body></html>
+<?php /**PATH E:\MainStream\Code\sahdev-main\saas\resources\views\layout.blade.php ENDPATH**/ ?>

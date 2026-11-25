@@ -1,0 +1,4 @@
+<?php $__env->startSection('title','Verify email'); ?>
+<?php $__env->startSection('content'); ?><div class="panel narrow"><p class="eyebrow">ONE MORE STEP</p><h1>Verify your email.</h1><p>Open the verification link sent to <?php echo e(auth()->user()->email); ?> to access your brands.</p><form method="post" action="/email/verification-notification"><?php echo csrf_field(); ?><button class="primary">Send another verification email</button></form></div><?php $__env->stopSection(); ?>
+
+<?php echo $__env->make('layout', array_diff_key(get_defined_vars(), ['__data' => 1, '__path' => 1]))->render(); ?><?php /**PATH E:\MainStream\Code\sahdev-main\saas\resources\views\verify.blade.php ENDPATH**/ ?>

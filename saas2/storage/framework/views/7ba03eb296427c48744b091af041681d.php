@@ -1,0 +1,6 @@
+<?php $__env->startSection('title','Release availability'); ?>
+<?php $__env->startSection('content'); ?>
+<section class="site-wrap inner-hero availability-page"><p class="kicker">RELEASE AVAILABILITY</p><h1>Getting ready<br>for your <em>team.</em></h1><p>Public signup and production downloads are not open yet. We’re validating the cloud connector and its workflows before accepting new customer purchases.</p><div class="hero-actions"><a class="site-button dark" href="/login">Existing account? Sign in ↗</a><a class="plain-link" href="/installation">Read the current release scope →</a></div><p class="hero-footnote">For onboarding enquiries, <a href="https://hostingspell.com" rel="noopener">contact HostingSpell</a>.</p></section>
+<?php $__env->stopSection(); ?>
+
+<?php echo $__env->make('public.layout', array_diff_key(get_defined_vars(), ['__data' => 1, '__path' => 1]))->render(); ?><?php /**PATH E:\MainStream\Code\sahdev-main\saas\resources\views/public/registration-closed.blade.php ENDPATH**/ ?>

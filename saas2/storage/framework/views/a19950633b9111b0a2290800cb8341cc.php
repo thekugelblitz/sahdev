@@ -1,0 +1,14 @@
+<?php $__env->startSection('title',ucfirst(str_replace('-',' ',$mode))); ?>
+<?php $__env->startSection('content'); ?>
+<div class="auth-card"><a class="wordmark" href="/login"><span class="mark">S</span> SAHDEV <small>CLOUD</small></a><p class="eyebrow">YOUR HOSTING WORKSPACE</p><h1><?php echo e(match($mode) {'register'=>'One workspace. Every brand.','forgot-password'=>'Reset your password','reset-password'=>'Choose a new password',default=>'Welcome back.'}); ?></h1><p class="muted">Manage your brands, control AI spending, and keep operations in view.</p>
+<form action="/<?php echo e($mode); ?>" method="post" class="stack"><?php echo csrf_field(); ?>
+<?php if($mode==='register'): ?><?php echo $__env->make('partials.field',['name'=>'name','label'=>'Your name','value'=>old('name')], array_diff_key(get_defined_vars(), ['__data' => 1, '__path' => 1]))->render(); ?> <?php echo $__env->make('partials.field',['name'=>'organization','label'=>'Company / organization','value'=>old('organization')], array_diff_key(get_defined_vars(), ['__data' => 1, '__path' => 1]))->render(); ?><?php endif; ?>
+<?php echo $__env->make('partials.field',['name'=>'email','label'=>'Email address','type'=>'email','value'=>old('email',request('email')),'autocomplete'=>'email'], array_diff_key(get_defined_vars(), ['__data' => 1, '__path' => 1]))->render(); ?>
+<?php if($mode!=='forgot-password'): ?><?php echo $__env->make('partials.field',['name'=>'password','label'=>'Password','type'=>'password','autocomplete'=>$mode==='login' ? 'current-password' : 'new-password'], array_diff_key(get_defined_vars(), ['__data' => 1, '__path' => 1]))->render(); ?><?php endif; ?>
+<?php if(in_array($mode,['register','reset-password'])): ?><?php echo $__env->make('partials.field',['name'=>'password_confirmation','label'=>'Confirm password','type'=>'password','hint'=>'At least 12 characters, including letters and numbers.'], array_diff_key(get_defined_vars(), ['__data' => 1, '__path' => 1]))->render(); ?><?php endif; ?>
+<?php if($mode==='reset-password'): ?><input type="hidden" name="token" value="<?php echo e($token); ?>"><?php endif; ?>
+<button class="primary"><?php echo e(match($mode) {'register'=>'Create your workspace','forgot-password'=>'Send reset link','reset-password'=>'Reset password',default=>'Sign in →'}); ?></button>
+</form><div class="auth-links"><a href="/login">Sign in</a><?php if(config('cloud.registration')): ?><a href="/register">Create an account</a><?php endif; ?><a href="/forgot-password">Forgot password?</a></div></div>
+<?php $__env->stopSection(); ?>
+
+<?php echo $__env->make('layout', array_diff_key(get_defined_vars(), ['__data' => 1, '__path' => 1]))->render(); ?><?php /**PATH E:\MainStream\Code\sahdev-main\saas\resources\views\auth.blade.php ENDPATH**/ ?>
